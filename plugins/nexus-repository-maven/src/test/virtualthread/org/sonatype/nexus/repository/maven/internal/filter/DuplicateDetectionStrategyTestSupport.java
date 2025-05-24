@@ -15,335 +15,329 @@ package org.sonatype.nexus.repository.maven.internal.filter;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
+import java.util.function.Consumer;
 
+import org.sonatype.goodies.testsupport.TestSupport;
+
+import com.google.common.collect.ImmutableMap;
 import org.apache.maven.index.reader.Record;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-// Import for Java 21 String Templates
-import static java.lang.StringTemplate.STR;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.apache.maven.index.reader.Record.ARTIFACT_ID;
+import static org.apache.maven.index.reader.Record.CLASSIFIER;
+import static org.apache.maven.index.reader.Record.FILE_EXTENSION;
+import static org.apache.maven.index.reader.Record.GROUP_ID;
+import static org.apache.maven.index.reader.Record.Type.ARTIFACT_ADD;
+import static org.apache.maven.index.reader.Record.VERSION;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- * Virtual Thread-specific test support for duplicate detection strategies.
- * Extends the original test support class with Virtual Thread capabilities for
- * testing concurrent operations and performance characteristics.
- * 
- * <p>This class leverages Java 21 Virtual Threads to provide enhanced testing capabilities
- * for duplicate detection strategies under high concurrency. It includes methods for
- * creating Virtual Thread executors, detecting thread pinning issues, and comparing
- * performance between platform threads and virtual threads.</p>
- *
- * @since 3.60
- * @see java.lang.Thread#ofVirtual()
- * @see java.util.concurrent.Executors#newVirtualThreadPerTaskExecutor()
+ * Test support class for duplicate detection strategies using Virtual Threads.
+ * Extends the original test support class with additional methods for testing
+ * concurrent operations using Java 21's Virtual Threads.
  */
 public class DuplicateDetectionStrategyTestSupport
-    extends org.sonatype.nexus.repository.maven.internal.filter.DuplicateDetectionStrategyTestSupport
+    extends TestSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(DuplicateDetectionStrategyTestSupport.class);
+  private ExecutorService virtualThreadExecutor;
+  private ExecutorService platformThreadExecutor;
   
-  // Using String Templates (Java 21 feature) for more readable log messages
-  private static void logInfo(String message, Object... args) {
-    if (log.isInfoEnabled()) {
-      log.info(STR."\{message}", args);
+  @BeforeEach
+  public void setUp() {
+    // Create executors for both virtual and platform threads for comparison testing
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    platformThreadExecutor = Executors.newCachedThreadPool();
+  }
+  
+  @AfterEach
+  public void tearDown() throws Exception {
+    // Clean up executors
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+    
+    if (platformThreadExecutor != null) {
+      platformThreadExecutor.shutdown();
+      platformThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
     }
   }
   
-  private static final int DEFAULT_CONCURRENT_THREADS = 10;
-  private static final int DEFAULT_TIMEOUT_SECONDS = 30;
-
   /**
-   * Creates a Virtual Thread executor service optimized for I/O-bound operations.
-   * 
-   * <p>Virtual Threads are particularly well-suited for I/O-bound operations like
-   * repository access and network operations. This executor creates a new virtual
-   * thread for each submitted task, which is ideal for testing duplicate detection
-   * strategies under high concurrency.</p>
-   * 
-   * @return an executor service that creates a new virtual thread for each task
-   * @since Java 21
+   * Verifies duplicate detection functionality with a single thread.
+   * This method is compatible with the original implementation for backward compatibility.
    */
-  protected ExecutorService createVirtualThreadExecutor() {
-    return Executors.newVirtualThreadPerTaskExecutor();
+  public void verifyDuplicateDetection(final DuplicateDetectionStrategy<Record> strategy) throws Exception {
+    int expectedUnique = 3;
+
+    for (int i = 1; i <= expectedUnique; i++) {
+      Record uniqueRecord = buildRecord("group1", "artifact" + i, "1.0", "sources", "jar");
+      assertTrue(strategy.apply(uniqueRecord));
+    }
+
+    for (int i = 0; i < 10; i++) {
+      Record duplicateRecord = buildRecord("group1", "artifact" + expectedUnique, "1.0", "sources", "jar");
+      assertFalse(strategy.apply(duplicateRecord));
+    }
+
+    strategy.close();
   }
   
   /**
-   * Creates a Virtual Thread factory for custom thread creation.
-   * 
-   * @return a thread factory that creates virtual threads
-   */
-  protected ThreadFactory createVirtualThreadFactory() {
-    return Thread.ofVirtual().factory();
-  }
-
-  /**
-   * Verifies duplicate detection with concurrent Virtual Threads.
-   * This method tests the strategy under high concurrency using Virtual Threads,
-   * which is particularly important for repository operations that may experience
-   * high load in production environments.
+   * Verifies duplicate detection functionality with multiple concurrent virtual threads.
+   * This tests the strategy's behavior under high concurrency using Virtual Threads.
    *
-   * @param strategy the duplicate detection strategy to test
-   * @param concurrentThreads the number of concurrent threads to use
-   * @throws Exception if an error occurs during testing
+   * @param strategy The duplicate detection strategy to test
+   * @param threadCount The number of concurrent threads to use
+   * @param recordsPerThread The number of records each thread should process
    */
   public void verifyDuplicateDetectionWithVirtualThreads(
       final DuplicateDetectionStrategy<Record> strategy,
-      final int concurrentThreads) throws Exception {
+      final int threadCount,
+      final int recordsPerThread) throws Exception {
     
-    int expectedUnique = 3;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
     AtomicInteger uniqueCount = new AtomicInteger(0);
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(concurrentThreads);
-    AtomicBoolean hasErrors = new AtomicBoolean(false);
+    AtomicInteger duplicateCount = new AtomicInteger(0);
     
-    try (ExecutorService executor = createVirtualThreadExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
+    // Create and start virtual threads
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    
+    for (int t = 0; t < threadCount; t++) {
+      final int threadId = t;
       
-      // Create concurrent tasks
-      for (int t = 0; t < concurrentThreads; t++) {
-        futures.add(executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready
-            startLatch.await();
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        try {
+          // First half of threads add unique records, second half try duplicates
+          boolean addUnique = threadId < threadCount / 2;
+          
+          for (int i = 0; i < recordsPerThread; i++) {
+            String artifactId = "artifact" + (addUnique ? (threadId * 1000 + i) : (i % 10));
+            Record record = buildRecord("group1", artifactId, "1.0", "sources", "jar");
             
-            // First try to add unique records
-            for (int i = 1; i <= expectedUnique; i++) {
-              Record uniqueRecord = buildRecord("group1", "artifact" + i, "1.0", "sources", "jar");
-              if (strategy.apply(uniqueRecord)) {
+            boolean isUnique = strategy.apply(record);
+            
+            if (addUnique) {
+              if (isUnique) {
                 uniqueCount.incrementAndGet();
+              } else {
+                // This should be unique but was detected as duplicate
+                errorCount.incrementAndGet();
+              }
+            } else {
+              if (!isUnique) {
+                duplicateCount.incrementAndGet();
+              } else {
+                // This should be a duplicate but was detected as unique
+                errorCount.incrementAndGet();
               }
             }
-            
-            // Then try to add duplicate records
-            for (int i = 0; i < 5; i++) {
-              Record duplicateRecord = buildRecord("group1", "artifact" + expectedUnique, "1.0", "sources", "jar");
-              assertFalse("Duplicate record should be rejected", strategy.apply(duplicateRecord));
-            }
           }
-          catch (Exception e) {
-            log.error(STR."Error in virtual thread test on thread \{Thread.currentThread().getName()}", e);
-            hasErrors.set(true);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        }));
-      }
+        } catch (Exception e) {
+          log.error("Error in virtual thread {}", threadId, e);
+          errorCount.incrementAndGet();
+        } finally {
+          latch.countDown();
+        }
+      }, virtualThreadExecutor);
       
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for completion with timeout
-      if (!completionLatch.await(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        fail(STR."Test timed out after \{DEFAULT_TIMEOUT_SECONDS} seconds");
-      }
-      
-      // Check for errors
-      assertFalse("Errors occurred during concurrent execution", hasErrors.get());
-      
-      // Verify that exactly the expected number of unique records were accepted
-      assertEquals(STR."Expected exactly \{expectedUnique} unique records", expectedUnique, uniqueCount.get());
+      futures.add(future);
     }
+    
+    // Wait for all threads to complete
+    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    
+    // Check for errors
+    if (!completed) {
+      fail("Test timed out - not all virtual threads completed in time");
+    }
+    
+    if (errorCount.get() > 0) {
+      fail("Test encountered " + errorCount.get() + " errors during concurrent execution");
+    }
+    
+    log.info("Processed {} unique records and {} duplicate records with {} virtual threads",
+        uniqueCount.get(), duplicateCount.get(), threadCount);
     
     strategy.close();
   }
   
   /**
-   * Convenience method that uses the default number of concurrent threads.
+   * Compares performance between virtual threads and platform threads for the given strategy.
+   * This method helps identify the performance benefits of using virtual threads for I/O-bound operations.
    *
-   * @param strategy the duplicate detection strategy to test
-   * @throws Exception if an error occurs during testing
+   * @param strategy The duplicate detection strategy to test
+   * @param recordCount The number of records to process in each test
+   * @param consumer A consumer that receives performance metrics
    */
-  public void verifyDuplicateDetectionWithVirtualThreads(final DuplicateDetectionStrategy<Record> strategy) throws Exception {
-    verifyDuplicateDetectionWithVirtualThreads(strategy, DEFAULT_CONCURRENT_THREADS);
-  }
-  
-  /**
-   * Detects potential thread pinning issues when using the strategy.
-   * Thread pinning occurs when a Virtual Thread cannot unmount from its carrier thread,
-   * typically due to synchronized blocks or native methods, reducing the benefits of Virtual Threads.
-   * 
-   * <p>Thread pinning can significantly reduce the performance benefits of Virtual Threads
-   * by preventing them from yielding the carrier thread during blocking operations. This method
-   * helps identify potential pinning issues in the duplicate detection strategy implementation.</p>
-   * 
-   * <p>Common causes of thread pinning include:</p>
-   * <ul>
-   *   <li>Use of synchronized blocks or methods</li>
-   *   <li>Calling native methods</li>
-   *   <li>Using foreign function interfaces</li>
-   * </ul>
-   *
-   * @param strategy the duplicate detection strategy to test
-   * @return true if thread pinning is detected, false otherwise
-   * @since Java 21
-   */
-  public boolean detectThreadPinning(final DuplicateDetectionStrategy<Record> strategy) {
-    AtomicBoolean pinningDetected = new AtomicBoolean(false);
-    int testThreads = Runtime.getRuntime().availableProcessors() * 2;
-    CountDownLatch latch = new CountDownLatch(testThreads);
+  public void compareThreadPerformance(
+      final DuplicateDetectionStrategy<Record> strategy,
+      final int recordCount,
+      final Consumer<PerformanceResult> consumer) throws Exception {
     
-    try (ExecutorService executor = createVirtualThreadExecutor()) {
-      // Start more threads than available processors
-      for (int i = 0; i < testThreads; i++) {
-        executor.submit(() -> {
-          try {
-            long startTime = System.nanoTime();
-            
-            // Perform operations that might cause pinning
-            for (int j = 0; j < 100; j++) {
-              Record record = buildRecord("group1", "artifact" + j, "1.0", "sources", "jar");
-              strategy.apply(record);
-              
-              // Check if this thread is taking too long (potential pinning)
-              if (System.nanoTime() - startTime > TimeUnit.MILLISECONDS.toNanos(500)) {
-                log.warn(STR."Potential thread pinning detected in duplicate detection strategy on thread \{Thread.currentThread().getName()}");
-                pinningDetected.set(true);
-                break;
-              }
-            }
-          }
-          catch (Exception e) {
-            log.error("Error while testing for thread pinning", e);
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      try {
-        latch.await(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        log.error("Thread pinning test was interrupted", e);
-      }
+    // Test with platform threads
+    long platformStart = System.nanoTime();
+    runConcurrentTest(strategy, recordCount, 100, platformThreadExecutor);
+    long platformDuration = System.nanoTime() - platformStart;
+    
+    // Reset strategy if needed
+    strategy.close();
+    
+    // Create a new strategy instance of the same type
+    DuplicateDetectionStrategy<Record> newStrategy = null;
+    if (strategy instanceof HashBasedDuplicateDetectionStrategy) {
+      newStrategy = new HashBasedDuplicateDetectionStrategy();
+    } else if (strategy instanceof DiskBackedDuplicateDetectionStrategy) {
+      newStrategy = new DiskBackedDuplicateDetectionStrategy(temporaryFolder().toFile());
+    } else if (strategy instanceof BloomFilterDuplicateDetectionStrategy) {
+      newStrategy = new BloomFilterDuplicateDetectionStrategy();
+    } else {
+      fail("Unknown strategy type: " + strategy.getClass().getName());
     }
     
-    return pinningDetected.get();
+    // Test with virtual threads
+    long virtualStart = System.nanoTime();
+    runConcurrentTest(newStrategy, recordCount, 1000, virtualThreadExecutor);
+    long virtualDuration = System.nanoTime() - virtualStart;
+    
+    newStrategy.close();
+    
+    // Calculate results
+    PerformanceResult result = new PerformanceResult(
+        Duration.ofNanos(platformDuration),
+        Duration.ofNanos(virtualDuration),
+        recordCount);
+    
+    // Report results
+    log.info("Performance comparison:\n" +
+        "  Platform threads: {} ms ({} records/sec)\n" +
+        "  Virtual threads:  {} ms ({} records/sec)\n" +
+        "  Improvement factor: {}x",
+        result.getPlatformDurationMs(),
+        result.getPlatformThroughput(),
+        result.getVirtualDurationMs(),
+        result.getVirtualThroughput(),
+        result.getImprovementFactor());
+    
+    // Pass results to consumer if provided
+    if (consumer != null) {
+      consumer.accept(result);
+    }
   }
   
   /**
-   * Compares performance between platform threads and virtual threads.
-   * This method helps evaluate the performance benefits of using Virtual Threads
-   * with the duplicate detection strategy.
-   *
-   * @param strategy the duplicate detection strategy to test
-   * @param operations the number of operations to perform
-   * @return a Duration representing the time saved by using Virtual Threads (negative if platform threads were faster)
+   * Runs a concurrent test with the specified executor service.
    */
-  /**
-   * Compares performance between platform threads and virtual threads.
-   * This method helps evaluate the performance benefits of using Virtual Threads
-   * with the duplicate detection strategy.
-   * 
-   * <p>This is particularly useful for identifying operations that benefit most from
-   * Virtual Threads and for quantifying the performance improvement in your specific environment.</p>
-   *
-   * @param strategy the duplicate detection strategy to test
-   * @param operations the number of operations to perform
-   * @return a Duration representing the time saved by using Virtual Threads (negative if platform threads were faster)
-   * @since Java 21
-   */
-  public Duration compareThreadPerformance(final DuplicateDetectionStrategy<Record> strategy, final int operations) {
-    // Measure platform thread performance
-    long platformThreadTime = measureExecutionTime(() -> {
-      try (ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())) {
-        runConcurrentOperations(executor, strategy, operations);
-      }
-      return null;
-    });
-    
-    // Measure virtual thread performance
-    long virtualThreadTime = measureExecutionTime(() -> {
-      try (ExecutorService executor = createVirtualThreadExecutor()) {
-        runConcurrentOperations(executor, strategy, operations);
-      }
-      return null;
-    });
-    
-    logInfo("Performance comparison: Platform threads: {0}ms, Virtual threads: {1}ms", 
-        platformThreadTime, virtualThreadTime);
-    
-    return Duration.ofMillis(platformThreadTime - virtualThreadTime);
-  }
-  
-  /**
-   * Runs concurrent operations using the provided executor service.
-   * 
-   * @param executor the executor service to use
-   * @param strategy the duplicate detection strategy to test
-   * @param operations the total number of operations to perform
-   */
-  private void runConcurrentOperations(
-      final ExecutorService executor,
+  private void runConcurrentTest(
       final DuplicateDetectionStrategy<Record> strategy,
-      final int operations) {
+      final int recordCount,
+      final int threadCount,
+      final ExecutorService executor) throws Exception {
     
-    int threads = Runtime.getRuntime().availableProcessors() * 2;
-    int opsPerThread = operations / threads;
-    CountDownLatch latch = new CountDownLatch(threads);
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicBoolean failed = new AtomicBoolean(false);
     
-    for (int t = 0; t < threads; t++) {
-      final int threadNum = t;
+    int recordsPerThread = recordCount / threadCount;
+    
+    for (int t = 0; t < threadCount; t++) {
+      final int threadId = t;
+      
       executor.submit(() -> {
         try {
-          for (int i = 0; i < opsPerThread; i++) {
-            Record record = buildRecord("group" + threadNum, "artifact" + i, "1.0", "sources", "jar");
+          for (int i = 0; i < recordsPerThread; i++) {
+            Record record = buildRecord(
+                "group" + (threadId % 10),
+                "artifact" + (i % 100),
+                "1.0",
+                "sources",
+                "jar");
+            
             strategy.apply(record);
           }
-        }
-        catch (Exception e) {
-          log.error(STR."Error during performance test on thread \{Thread.currentThread().getName()}", e);
-        }
-        finally {
+        } catch (Exception e) {
+          log.error("Error in thread {}", threadId, e);
+          failed.set(true);
+        } finally {
           latch.countDown();
         }
       });
     }
     
-    try {
-      if (!latch.await(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        log.warn(STR."Performance test timed out after \{DEFAULT_TIMEOUT_SECONDS} seconds");
-      }
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      log.error(STR."Performance test was interrupted on thread \{Thread.currentThread().getName()}", e);
+    boolean completed = latch.await(60, TimeUnit.SECONDS);
+    
+    if (!completed || failed.get()) {
+      fail("Test failed or timed out");
     }
   }
   
   /**
-   * Measures the execution time of a supplier function.
-   * 
-   * @param supplier the function to measure
-   * @return the execution time in milliseconds
+   * Detects thread pinning issues by running the strategy with virtual threads and monitoring for pinning.
+   * Thread pinning occurs when a virtual thread is unable to yield its carrier thread during blocking operations,
+   * which can significantly impact performance and scalability.
+   *
+   * @param strategy The duplicate detection strategy to test
+   * @return true if thread pinning was detected, false otherwise
    */
-  private long measureExecutionTime(final Supplier<Void> supplier) {
-    long startTime = System.currentTimeMillis();
-    supplier.get();
-    return System.currentTimeMillis() - startTime;
+  public boolean detectThreadPinning(final DuplicateDetectionStrategy<Record> strategy) throws Exception {
+    // Set up thread pinning detection
+    // Note: In a real environment, you would use JFR events or the jdk.tracePinnedThreads system property
+    // For this test, we'll use a simple approach to detect potential pinning scenarios
+    
+    AtomicBoolean pinningDetected = new AtomicBoolean(false);
+    CountDownLatch latch = new CountDownLatch(10);
+    
+    // Run multiple virtual threads that perform operations concurrently
+    for (int i = 0; i < 10; i++) {
+      final int threadId = i;
+      
+      Thread.ofVirtual().name("pinning-detection-" + threadId).start(() -> {
+        try {
+          // Perform operations that might cause pinning
+          for (int j = 0; j < 100; j++) {
+            Record record = buildRecord("group1", "artifact" + j, "1.0", "sources", "jar");
+            
+            // Measure time taken for the operation
+            long start = System.nanoTime();
+            strategy.apply(record);
+            long duration = System.nanoTime() - start;
+            
+            // If an operation takes significantly longer than expected, it might indicate pinning
+            // This is a simplified heuristic - real pinning detection would use JFR events
+            if (duration > TimeUnit.MILLISECONDS.toNanos(100)) {
+              log.warn("Potential thread pinning detected in thread {} - operation took {} ms",
+                  threadId, TimeUnit.NANOSECONDS.toMillis(duration));
+              pinningDetected.set(true);
+            }
+          }
+        } catch (Exception e) {
+          log.error("Error in pinning detection thread {}", threadId, e);
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    latch.await(30, TimeUnit.SECONDS);
+    strategy.close();
+    
+    return pinningDetected.get();
   }
-  
+
   /**
-   * Builds a record for testing, making the method protected for use in subclasses.
-   * This overrides the private method in the parent class.
+   * Builds a test record with the specified attributes.
    */
   protected Record buildRecord(final String g,
                              final String a,
@@ -351,6 +345,45 @@ public class DuplicateDetectionStrategyTestSupport
                              final String c,
                              final String e)
   {
-    return super.buildRecord(g, a, v, c, e);
+    return new Record(ARTIFACT_ADD, ImmutableMap.of(GROUP_ID, g,
+        ARTIFACT_ID, a,
+        VERSION, v,
+        CLASSIFIER, c,
+        FILE_EXTENSION, e));
+  }
+  
+  /**
+   * Class to hold performance comparison results.
+   */
+  public static class PerformanceResult {
+    private final Duration platformDuration;
+    private final Duration virtualDuration;
+    private final int recordCount;
+    
+    public PerformanceResult(Duration platformDuration, Duration virtualDuration, int recordCount) {
+      this.platformDuration = platformDuration;
+      this.virtualDuration = virtualDuration;
+      this.recordCount = recordCount;
+    }
+    
+    public long getPlatformDurationMs() {
+      return platformDuration.toMillis();
+    }
+    
+    public long getVirtualDurationMs() {
+      return virtualDuration.toMillis();
+    }
+    
+    public double getPlatformThroughput() {
+      return recordCount / (platformDuration.toMillis() / 1000.0);
+    }
+    
+    public double getVirtualThroughput() {
+      return recordCount / (virtualDuration.toMillis() / 1000.0);
+    }
+    
+    public double getImprovementFactor() {
+      return platformDuration.toNanos() / (double) virtualDuration.toNanos();
+    }
   }
 }

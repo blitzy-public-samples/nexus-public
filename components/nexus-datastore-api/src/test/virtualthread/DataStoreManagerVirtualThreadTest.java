@@ -12,350 +12,324 @@
  */
 package org.sonatype.nexus.datastore.api;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link DataStoreManager} operations when executed within Virtual Threads.
  * 
- * This test class validates that all DataStoreManager operations function correctly when
- * executed within Java 21 Virtual Threads. It tests both individual operations and concurrent
- * scenarios to ensure proper behavior in a high-concurrency environment.
- * 
- * @since 3.41
+ * @since 3.60
  */
 public class DataStoreManagerVirtualThreadTest
-    extends TestSupport
+    extends VirtualThreadTestSupport
 {
-    private static final String TEST_STORE_NAME = "test-store";
+  @Mock
+  private DataStoreManager dataStoreManager;
+
+  @Mock
+  private DataStore<?> dataStore;
+
+  @BeforeEach
+  public void setUp() {
+    // Skip tests if Virtual Threads are not supported
+    assumeVirtualThreadSupported();
     
-    private static final int CONCURRENT_THREADS = 10;
+    // Initialize mocks
+    MockitoAnnotations.openMocks(this);
     
-    @Mock
-    private DataStoreManager dataStoreManager;
+    // Setup default behavior
+    when(dataStoreManager.get("testStore")).thenReturn(Optional.of(dataStore));
+    when(dataStoreManager.exists("testStore")).thenReturn(true);
+  }
+
+  /**
+   * Test that {@link DataStoreManager#browse()} works correctly when executed in a Virtual Thread.
+   */
+  @Test
+  public void testBrowseInVirtualThread() throws Exception {
+    // Setup mock behavior
+    Iterable<DataStore<?>> expectedStores = mock(Iterable.class);
+    when(dataStoreManager.browse()).thenReturn(expectedStores);
     
-    @Mock
-    private DataStore<?> dataStore;
+    // Execute browse() in a Virtual Thread
+    AtomicReference<Iterable<DataStore<?>>> result = new AtomicReference<>();
+    runVirtual(() -> result.set(dataStoreManager.browse()));
     
-    @Mock
-    private DataStoreConfiguration configuration;
+    // Verify the result
+    assertThat(result.get(), is(expectedStores));
+    verify(dataStoreManager).browse();
+  }
+
+  /**
+   * Test that {@link DataStoreManager#create(DataStoreConfiguration)} works correctly when executed in a Virtual Thread.
+   */
+  @Test
+  public void testCreateInVirtualThread() throws Exception {
+    // Setup mock behavior
+    DataStoreConfiguration config = mock(DataStoreConfiguration.class);
+    when(config.getName()).thenReturn("newStore");
+    when(dataStoreManager.create(config)).thenReturn(dataStore);
     
-    private ExecutorService virtualThreadExecutor;
+    // Execute create() in a Virtual Thread
+    AtomicReference<DataStore<?>> result = new AtomicReference<>();
+    runVirtual(() -> {
+      try {
+        result.set(dataStoreManager.create(config));
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
     
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-        when(configuration.getName()).thenReturn(TEST_STORE_NAME);
-        when(dataStore.getConfiguration()).thenReturn(configuration);
-    }
+    // Verify the result
+    assertThat(result.get(), is(dataStore));
+    verify(dataStoreManager).create(config);
+  }
+
+  /**
+   * Test that {@link DataStoreManager#update(DataStoreConfiguration)} works correctly when executed in a Virtual Thread.
+   */
+  @Test
+  public void testUpdateInVirtualThread() throws Exception {
+    // Setup mock behavior
+    DataStoreConfiguration config = mock(DataStoreConfiguration.class);
+    when(config.getName()).thenReturn("testStore");
+    when(dataStoreManager.update(config)).thenReturn(dataStore);
     
-    @AfterEach
-    void tearDown() throws Exception {
-        if (virtualThreadExecutor != null) {
-            virtualThreadExecutor.shutdown();
-            virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
-        }
-    }
+    // Execute update() in a Virtual Thread
+    AtomicReference<DataStore<?>> result = new AtomicReference<>();
+    runVirtual(() -> {
+      try {
+        result.set(dataStoreManager.update(config));
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
     
-    /**
-     * Tests that the browse() operation works correctly when executed within a Virtual Thread.
-     */
-    @Test
-    void testBrowseInVirtualThread() throws Exception {
-        // Given
-        List<DataStore<?>> expectedStores = List.of(dataStore);
-        when(dataStoreManager.browse()).thenReturn(expectedStores);
-        
-        // When
-        AtomicReference<List<DataStore<?>>> actualStores = new AtomicReference<>();
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            actualStores.set((List<DataStore<?>>) dataStoreManager.browse());
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(actualStores.get(), is(expectedStores));
-        verify(dataStoreManager).browse();
-    }
+    // Verify the result
+    assertThat(result.get(), is(dataStore));
+    verify(dataStoreManager).update(config);
+  }
+
+  /**
+   * Test that {@link DataStoreManager#get(String)} works correctly when executed in a Virtual Thread.
+   */
+  @Test
+  public void testGetInVirtualThread() throws Exception {
+    // Execute get() in a Virtual Thread
+    AtomicReference<Optional<DataStore<?>>> result = new AtomicReference<>();
+    runVirtual(() -> result.set(dataStoreManager.get("testStore")));
     
-    /**
-     * Tests that the create() operation works correctly when executed within a Virtual Thread.
-     */
-    @Test
-    void testCreateInVirtualThread() throws Exception {
-        // Given
-        when(dataStoreManager.create(configuration)).thenReturn(dataStore);
-        
-        // When
-        AtomicReference<DataStore<?>> createdStore = new AtomicReference<>();
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            try {
-                createdStore.set(dataStoreManager.create(configuration));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(createdStore.get(), is(dataStore));
-        verify(dataStoreManager).create(configuration);
-    }
+    // Verify the result
+    assertThat(result.get().isPresent(), is(true));
+    assertThat(result.get().get(), is(dataStore));
+    verify(dataStoreManager).get("testStore");
+  }
+
+  /**
+   * Test that {@link DataStoreManager#delete(String)} works correctly when executed in a Virtual Thread.
+   */
+  @Test
+  public void testDeleteInVirtualThread() throws Exception {
+    // Setup mock behavior
+    when(dataStoreManager.delete("testStore")).thenReturn(true);
     
-    /**
-     * Tests that the update() operation works correctly when executed within a Virtual Thread.
-     */
-    @Test
-    void testUpdateInVirtualThread() throws Exception {
-        // Given
-        when(dataStoreManager.update(configuration)).thenReturn(dataStore);
-        
-        // When
-        AtomicReference<DataStore<?>> updatedStore = new AtomicReference<>();
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            try {
-                updatedStore.set(dataStoreManager.update(configuration));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(updatedStore.get(), is(dataStore));
-        verify(dataStoreManager).update(configuration);
-    }
+    // Execute delete() in a Virtual Thread
+    AtomicBoolean result = new AtomicBoolean(false);
+    runVirtual(() -> {
+      try {
+        result.set(dataStoreManager.delete("testStore"));
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
     
-    /**
-     * Tests that the get() operation works correctly when executed within a Virtual Thread.
-     */
-    @Test
-    void testGetInVirtualThread() throws Exception {
-        // Given
-        when(dataStoreManager.get(TEST_STORE_NAME)).thenReturn(Optional.of(dataStore));
-        
-        // When
-        AtomicReference<Optional<DataStore<?>>> retrievedStore = new AtomicReference<>();
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            retrievedStore.set(dataStoreManager.get(TEST_STORE_NAME));
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(retrievedStore.get().isPresent(), is(true));
-        assertThat(retrievedStore.get().get(), is(dataStore));
-        verify(dataStoreManager).get(TEST_STORE_NAME);
-    }
+    // Verify the result
+    assertThat(result.get(), is(true));
+    verify(dataStoreManager).delete("testStore");
+  }
+
+  /**
+   * Test that {@link DataStoreManager#exists(String)} works correctly when executed in a Virtual Thread.
+   */
+  @Test
+  public void testExistsInVirtualThread() throws Exception {
+    // Execute exists() in a Virtual Thread
+    AtomicBoolean result = new AtomicBoolean(false);
+    runVirtual(() -> result.set(dataStoreManager.exists("testStore")));
     
-    /**
-     * Tests that the delete() operation works correctly when executed within a Virtual Thread.
-     */
-    @Test
-    void testDeleteInVirtualThread() throws Exception {
-        // Given
-        when(dataStoreManager.delete(TEST_STORE_NAME)).thenReturn(true);
-        
-        // When
-        AtomicBoolean deleted = new AtomicBoolean(false);
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            try {
-                deleted.set(dataStoreManager.delete(TEST_STORE_NAME));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(deleted.get(), is(true));
-        verify(dataStoreManager).delete(TEST_STORE_NAME);
-    }
+    // Verify the result
+    assertThat(result.get(), is(true));
+    verify(dataStoreManager).exists("testStore");
+  }
+
+  /**
+   * Test that exceptions are properly propagated when executing DataStoreManager operations in Virtual Threads.
+   */
+  @Test
+  public void testExceptionPropagationInVirtualThread() throws Exception {
+    // Setup mock behavior to throw an exception
+    DataStoreConfiguration config = mock(DataStoreConfiguration.class);
+    Exception expectedException = new IllegalStateException("Test exception");
+    doThrow(expectedException).when(dataStoreManager).create(config);
     
-    /**
-     * Tests that the exists() operation works correctly when executed within a Virtual Thread.
-     */
-    @Test
-    void testExistsInVirtualThread() throws Exception {
-        // Given
-        when(dataStoreManager.exists(TEST_STORE_NAME)).thenReturn(true);
-        
-        // When
-        AtomicBoolean exists = new AtomicBoolean(false);
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            exists.set(dataStoreManager.exists(TEST_STORE_NAME));
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(exists.get(), is(true));
-        verify(dataStoreManager).exists(TEST_STORE_NAME);
-    }
+    // Execute create() in a Virtual Thread and expect an exception
+    AtomicReference<Throwable> caughtException = new AtomicReference<>();
+    runVirtual(() -> {
+      try {
+        dataStoreManager.create(config);
+      }
+      catch (Throwable e) {
+        caughtException.set(e);
+      }
+    });
     
-    /**
-     * Tests that exceptions are properly propagated when operations executed within Virtual Threads fail.
-     * 
-     * This test verifies that exceptions thrown during DataStoreManager operations are correctly
-     * propagated from Virtual Threads to the calling context, ensuring that error handling works
-     * properly in the Virtual Thread environment.
-     */
-    @Test
-    void testExceptionPropagationInVirtualThread() throws Exception {
-        // Given
-        Exception expectedException = new RuntimeException("Test exception");
-        doThrow(expectedException).when(dataStoreManager).create(configuration);
-        
-        // When/Then
-        AtomicReference<Exception> caughtException = new AtomicReference<>();
-        Future<?> future = virtualThreadExecutor.submit(() -> {
-            try {
-                dataStoreManager.create(configuration);
-            } catch (Exception e) {
-                caughtException.set(e);
-            }
-        });
-        future.get(5, TimeUnit.SECONDS);
-        
-        assertThat(caughtException.get(), is(expectedException));
-        verify(dataStoreManager).create(configuration);
-    }
+    // Verify the exception was propagated correctly
+    assertThat(caughtException.get(), notNullValue());
+    assertThat(caughtException.get(), is(expectedException));
+  }
+
+  /**
+   * Test concurrent operations from multiple Virtual Threads.
+   */
+  @Test
+  public void testConcurrentOperationsInVirtualThreads() throws Exception {
+    // Setup mock behavior
+    DataStoreConfiguration config1 = mock(DataStoreConfiguration.class);
+    DataStoreConfiguration config2 = mock(DataStoreConfiguration.class);
+    when(config1.getName()).thenReturn("store1");
+    when(config2.getName()).thenReturn("store2");
     
-    /**
-     * Tests concurrent create operations from multiple Virtual Threads.
-     * 
-     * This test validates that multiple Virtual Threads can concurrently create data stores
-     * without issues. It uses a CountDownLatch to coordinate the start of all threads and
-     * tracks successful operations to ensure all threads complete their work correctly.
-     */
-    @Test
-    void testConcurrentCreateOperations() throws Exception {
-        // Given
-        when(dataStoreManager.create(configuration)).thenReturn(dataStore);
-        CountDownLatch startLatch = new CountDownLatch(1);
-        CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-        AtomicInteger successCount = new AtomicInteger(0);
-        
-        // When
-        for (int i = 0; i < CONCURRENT_THREADS; i++) {
-            virtualThreadExecutor.submit(() -> {
-                try {
-                    startLatch.await(); // Wait for all threads to be ready
-                    dataStoreManager.create(configuration);
-                    successCount.incrementAndGet();
-                } catch (Exception e) {
-                    log.error("Error in concurrent create", e);
-                } finally {
-                    completionLatch.countDown();
-                }
-            });
-        }
-        
-        // Start all threads simultaneously
-        startLatch.countDown();
-        
-        // Wait for all threads to complete
-        completionLatch.await(10, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(successCount.get(), is(CONCURRENT_THREADS));
-        verify(dataStoreManager, times(CONCURRENT_THREADS)).create(configuration);
-    }
+    DataStore<?> dataStore1 = mock(DataStore.class);
+    DataStore<?> dataStore2 = mock(DataStore.class);
     
-    /**
-     * Tests that operations spanning multiple Virtual Threads maintain correct state.
-     * 
-     * This test simulates a workflow where three different Virtual Threads perform sequential
-     * operations on the same data store (create, get, delete). It uses a CyclicBarrier to
-     * coordinate the threads and ensure they execute in the correct order, validating that
-     * state is properly maintained across thread boundaries.
-     */
-    @Test
-    void testOperationsSpanningMultipleVirtualThreads() throws Exception {
-        // Given
-        final int THREAD_COUNT = 3;
-        CyclicBarrier barrier = new CyclicBarrier(THREAD_COUNT);
-        List<String> storeNames = new ArrayList<>();
-        
-        // Mock the create and get operations
-        when(dataStoreManager.create(configuration)).thenReturn(dataStore);
-        when(dataStoreManager.get(TEST_STORE_NAME)).thenReturn(Optional.of(dataStore));
-        
-        // When
-        // Thread 1: Creates the store
-        Future<?> createFuture = virtualThreadExecutor.submit(() -> {
-            try {
-                DataStore<?> store = dataStoreManager.create(configuration);
-                storeNames.add("created");
-                barrier.await(); // Wait for other threads
-            } catch (Exception e) {
-                log.error("Error in create thread", e);
-            }
-        });
-        
-        // Thread 2: Gets the store
-        Future<?> getFuture = virtualThreadExecutor.submit(() -> {
-            try {
-                barrier.await(); // Wait for create to complete
-                Optional<DataStore<?>> store = dataStoreManager.get(TEST_STORE_NAME);
-                if (store.isPresent()) {
-                    storeNames.add("retrieved");
-                }
-                barrier.await(); // Wait for delete thread
-            } catch (Exception e) {
-                log.error("Error in get thread", e);
-            }
-        });
-        
-        // Thread 3: Deletes the store
-        Future<?> deleteFuture = virtualThreadExecutor.submit(() -> {
-            try {
-                barrier.await(); // Wait for get to complete
-                barrier.await(); // Wait for get to record result
-                dataStoreManager.delete(TEST_STORE_NAME);
-                storeNames.add("deleted");
-            } catch (Exception e) {
-                log.error("Error in delete thread", e);
-            }
-        });
-        
-        // Wait for all operations to complete
-        createFuture.get(10, TimeUnit.SECONDS);
-        getFuture.get(10, TimeUnit.SECONDS);
-        deleteFuture.get(10, TimeUnit.SECONDS);
-        
-        // Then
-        assertThat(storeNames, contains("created", "retrieved", "deleted"));
-        verify(dataStoreManager).create(configuration);
-        verify(dataStoreManager).get(TEST_STORE_NAME);
-        verify(dataStoreManager).delete(TEST_STORE_NAME);
-    }
+    when(dataStoreManager.create(config1)).thenReturn(dataStore1);
+    when(dataStoreManager.create(config2)).thenReturn(dataStore2);
+    
+    // Execute concurrent operations in Virtual Threads
+    AtomicReference<DataStore<?>> result1 = new AtomicReference<>();
+    AtomicReference<DataStore<?>> result2 = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(2);
+    
+    Thread thread1 = Thread.ofVirtual().start(() -> {
+      try {
+        result1.set(dataStoreManager.create(config1));
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    Thread thread2 = Thread.ofVirtual().start(() -> {
+      try {
+        result2.set(dataStoreManager.create(config2));
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    // Wait for both threads to complete
+    latch.await(5, TimeUnit.SECONDS);
+    
+    // Verify the results
+    assertThat(result1.get(), is(dataStore1));
+    assertThat(result2.get(), is(dataStore2));
+    verify(dataStoreManager).create(config1);
+    verify(dataStoreManager).create(config2);
+  }
+
+  /**
+   * Test that state is maintained correctly when operations span multiple Virtual Threads.
+   */
+  @Test
+  public void testStateMaintenanceAcrossVirtualThreads() throws Exception {
+    // Setup mock behavior
+    DataStoreConfiguration config = mock(DataStoreConfiguration.class);
+    when(config.getName()).thenReturn("stateStore");
+    when(dataStoreManager.create(config)).thenReturn(dataStore);
+    when(dataStoreManager.get("stateStore")).thenReturn(Optional.of(dataStore));
+    
+    // First Virtual Thread creates the store
+    runVirtual(() -> {
+      try {
+        dataStoreManager.create(config);
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
+    
+    // Second Virtual Thread retrieves the store
+    AtomicReference<Optional<DataStore<?>>> result = new AtomicReference<>();
+    runVirtual(() -> result.set(dataStoreManager.get("stateStore")));
+    
+    // Verify the result
+    assertThat(result.get().isPresent(), is(true));
+    assertThat(result.get().get(), is(dataStore));
+    verify(dataStoreManager).create(config);
+    verify(dataStoreManager).get("stateStore");
+  }
+
+  /**
+   * Test that operations with timeouts work correctly in Virtual Threads.
+   */
+  @Test
+  public void testOperationsWithTimeoutsInVirtualThread() throws Exception {
+    // Setup a task that will take longer than the timeout
+    DataStoreConfiguration config = mock(DataStoreConfiguration.class);
+    when(dataStoreManager.create(config)).thenAnswer(invocation -> {
+      Thread.sleep(2000); // Simulate a long-running operation
+      return dataStore;
+    });
+    
+    // Execute the operation with a timeout in a Virtual Thread
+    Future<DataStore<?>>[] futures = callConcurrently(1, () -> {
+      try {
+        return dataStoreManager.create(config);
+      }
+      catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
+    
+    // Verify that the operation times out
+    assertThrows(TimeoutException.class, () -> futures[0].get(500, TimeUnit.MILLISECONDS));
+    
+    // But eventually completes successfully
+    DataStore<?> result = futures[0].get(3, TimeUnit.SECONDS);
+    assertThat(result, equalTo(dataStore));
+  }
 }

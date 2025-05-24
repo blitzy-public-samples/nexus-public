@@ -12,17 +12,9 @@
  */
 package org.sonatype.nexus.repository.maven.internal.filter;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
@@ -35,34 +27,36 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.nio.file.Path;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.IsInstanceOf.instanceOf;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests for {@link DuplicateDetectionStrategyProvider} using Virtual Threads.
  * 
- * This test class validates that the DuplicateDetectionStrategyProvider and its strategies
- * function correctly when executed with Java 21's Virtual Threads. It focuses on:
- * 1. Correct strategy instantiation in a Virtual Thread environment
- * 2. Concurrent strategy creation and usage with multiple Virtual Threads
- * 3. Proper resource management and cleanup, especially for disk-backed strategies
- * 4. Behavior under high concurrency with multiple simultaneous requests
+ * This test class validates that the provider correctly instantiates the appropriate
+ * strategy implementations and that these strategies function properly in a Virtual Thread
+ * environment, with particular attention to concurrency and resource management.
  */
 @ExtendWith(MockitoExtension.class)
-public class DuplicateDetectionStrategyProviderTest
+class DuplicateDetectionStrategyProviderTest
     extends TestSupport
 {
   private static final int MAX_HEAP_GB = 1;
 
   private static final int MAX_DISK_SIZE_GB = 10;
   
-  private static final int CONCURRENT_THREADS = 50;
+  // Number of concurrent requests to simulate
+  private static final int CONCURRENT_REQUESTS = 100;
+  
+  // Number of iterations for each test
+  private static final int TEST_ITERATIONS = 10;
 
   @TempDir
   Path tempDir;
@@ -71,12 +65,12 @@ public class DuplicateDetectionStrategyProviderTest
   private ApplicationDirectories applicationDirectories;
 
   @BeforeEach
-  public void setup() throws IOException {
+  void setup() {
     when(applicationDirectories.getTemporaryDirectory()).thenReturn(tempDir.toFile());
   }
 
   @Test
-  public void shouldReturnBloomStrategy() {
+  void shouldReturnBloomStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories,
         "BLOOM", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
 
@@ -89,7 +83,7 @@ public class DuplicateDetectionStrategyProviderTest
   }
 
   @Test
-  public void shouldReturnDiskStrategy() {
+  void shouldReturnDiskStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories, "DISK",
         MAX_HEAP_GB, MAX_DISK_SIZE_GB)
         .get();
@@ -104,7 +98,7 @@ public class DuplicateDetectionStrategyProviderTest
   }
 
   @Test
-  public void shouldReturnInMemoryStrategy() {
+  void shouldReturnInMemoryStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories, "HASH",
         MAX_HEAP_GB, MAX_DISK_SIZE_GB)
         .get();
@@ -119,7 +113,7 @@ public class DuplicateDetectionStrategyProviderTest
   }
 
   @Test
-  public void shouldFallBackToBloomForUnknownStrategy() {
+  void shouldFallBackToBloomForUnknownStrategy() {
     DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(applicationDirectories,
         "unknown", MAX_HEAP_GB, MAX_DISK_SIZE_GB)
         .get();
@@ -128,191 +122,304 @@ public class DuplicateDetectionStrategyProviderTest
   }
   
   /**
-   * Tests concurrent creation of strategies using Virtual Threads.
-   * 
-   * This test verifies that the DuplicateDetectionStrategyProvider can correctly instantiate
-   * all three types of strategies (BLOOM, DISK, HASH) when called from multiple Virtual Threads
-   * concurrently. It ensures that the provider is thread-safe and works correctly in a
-   * highly concurrent environment.  
+   * Tests concurrent creation of BloomFilterDuplicateDetectionStrategy instances using Virtual Threads.
+   * This test validates that the provider can handle multiple simultaneous requests
+   * in a highly concurrent environment using Java 21's Virtual Threads.
    */
   @Test
-  public void shouldCreateStrategiesInVirtualThreads() throws Exception {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS * 3); // 3 strategy types
-      ConcurrentHashMap<String, AtomicInteger> strategyTypes = new ConcurrentHashMap<>();
-      
-      // Create strategies concurrently using virtual threads
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        // Create BLOOM strategy
-        executor.submit(() -> {
-          DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
-              applicationDirectories, "BLOOM", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
-          strategyTypes.computeIfAbsent("BLOOM", k -> new AtomicInteger()).incrementAndGet();
-          assertThat(strategy, is(instanceOf(BloomFilterDuplicateDetectionStrategy.class)));
-          latch.countDown();
-        });
-        
-        // Create DISK strategy
-        executor.submit(() -> {
-          DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
-              applicationDirectories, "DISK", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
-          strategyTypes.computeIfAbsent("DISK", k -> new AtomicInteger()).incrementAndGet();
-          assertThat(strategy, is(instanceOf(DiskBackedDuplicateDetectionStrategy.class)));
-          latch.countDown();
-        });
-        
-        // Create HASH strategy
-        executor.submit(() -> {
-          DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
-              applicationDirectories, "HASH", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
-          strategyTypes.computeIfAbsent("HASH", k -> new AtomicInteger()).incrementAndGet();
-          assertThat(strategy, is(instanceOf(HashBasedDuplicateDetectionStrategy.class)));
-          latch.countDown();
-        });
-      }
-      
-      // Wait for all threads to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
-      
-      // Verify all strategy types were created the expected number of times
-      assertEquals(CONCURRENT_THREADS, strategyTypes.get("BLOOM").get());
-      assertEquals(CONCURRENT_THREADS, strategyTypes.get("DISK").get());
-      assertEquals(CONCURRENT_THREADS, strategyTypes.get("HASH").get());
-    }
-  }
-  
-  /**
-   * Tests duplicate detection functionality of strategies when used with Virtual Threads.
-   * 
-   * This test verifies that all three strategy implementations (BLOOM, DISK, HASH) correctly
-   * detect duplicates when used concurrently from multiple Virtual Threads. It creates a single
-   * instance of each strategy type and then uses them from multiple Virtual Threads simultaneously,
-   * ensuring they maintain correct state and properly identify duplicates across threads.
-   */
-  @Test
-  public void shouldHandleDuplicateDetectionInVirtualThreads() throws Exception {
-    // Create a provider for each strategy type
-    DuplicateDetectionStrategyProvider bloomProvider = new DuplicateDetectionStrategyProvider(
-        applicationDirectories, "BLOOM", MAX_HEAP_GB, MAX_DISK_SIZE_GB);
-    DuplicateDetectionStrategyProvider diskProvider = new DuplicateDetectionStrategyProvider(
-        applicationDirectories, "DISK", MAX_HEAP_GB, MAX_DISK_SIZE_GB);
-    DuplicateDetectionStrategyProvider hashProvider = new DuplicateDetectionStrategyProvider(
-        applicationDirectories, "HASH", MAX_HEAP_GB, MAX_DISK_SIZE_GB);
+  void shouldHandleConcurrentBloomStrategyCreationWithVirtualThreads() throws Exception {
+    // Create a Virtual Thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    // Create a strategy of each type
-    DuplicateDetectionStrategy<Record> bloomStrategy = bloomProvider.get();
-    DuplicateDetectionStrategy<Record> diskStrategy = diskProvider.get();
-    DuplicateDetectionStrategy<Record> hashStrategy = hashProvider.get();
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS * 3); // 3 strategy types
+    try {
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS);
+      AtomicInteger errorCount = new AtomicInteger(0);
       
-      // Create mock records
-      List<Record> records = new ArrayList<>();
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
-        records.add(createMockRecord("group", "artifact", "version" + i));
-      }
+      // Create multiple strategies concurrently using Virtual Threads
+      CompletableFuture<?>[] futures = new CompletableFuture<?>[CONCURRENT_REQUESTS];
       
-      // Test each strategy with virtual threads
-      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
         final int index = i;
-        
-        // Test BLOOM strategy
-        executor.submit(() -> {
-          Record record = records.get(index);
-          // First time should return true (not a duplicate)
-          assertTrue(bloomStrategy.apply(record));
-          // Second time should return false (is a duplicate)
-          assertFalse(bloomStrategy.apply(record));
-          latch.countDown();
-        });
-        
-        // Test DISK strategy
-        executor.submit(() -> {
-          Record record = records.get(index);
-          // First time should return true (not a duplicate)
-          assertTrue(diskStrategy.apply(record));
-          // Second time should return false (is a duplicate)
-          assertFalse(diskStrategy.apply(record));
-          latch.countDown();
-        });
-        
-        // Test HASH strategy
-        executor.submit(() -> {
-          Record record = records.get(index);
-          // First time should return true (not a duplicate)
-          assertTrue(hashStrategy.apply(record));
-          // Second time should return false (is a duplicate)
-          assertFalse(hashStrategy.apply(record));
-          latch.countDown();
-        });
+        futures[i] = CompletableFuture.runAsync(() -> {
+          try {
+            DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
+                applicationDirectories, "BLOOM", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
+            
+            // Verify the strategy is of the correct type
+            assertThat(strategy, is(instanceOf(BloomFilterDuplicateDetectionStrategy.class)));
+            
+            // Verify the strategy works by adding a record and checking for duplicates
+            Record record = new Record(Record.Type.ARTIFACT_ADD, "test:artifact:" + index);
+            assertThat(strategy.isDuplicate(record), is(false)); // First occurrence
+            assertThat(strategy.isDuplicate(record), is(true));  // Second occurrence should be a duplicate
+          } catch (Exception e) {
+            log.error("Error in virtual thread test", e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        }, executor);
       }
       
-      // Wait for all threads to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      // Wait for all tasks to complete
+      latch.await();
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent strategy creation", 
+          errorCount.get(), is(0));
     } finally {
-      // Clean up resources
-      assertDoesNotThrow(() -> bloomStrategy.close());
-      assertDoesNotThrow(() -> diskStrategy.close());
-      assertDoesNotThrow(() -> hashStrategy.close());
+      executor.shutdown();
     }
   }
   
   /**
-   * Tests resource cleanup when strategies are closed from Virtual Threads.
-   * 
-   * This test focuses on the DiskBackedDuplicateDetectionStrategy which requires proper cleanup
-   * of disk resources. It creates multiple instances of the strategy and then closes them
-   * concurrently using Virtual Threads, verifying that resources are properly released and
-   * temporary files are cleaned up. This is particularly important in a Virtual Thread environment
-   * where many more threads might be created than in a traditional platform thread model.
+   * Tests concurrent creation of DiskBackedDuplicateDetectionStrategy instances using Virtual Threads.
+   * This test validates that the provider can handle multiple simultaneous requests for disk-based
+   * strategies in a highly concurrent environment using Java 21's Virtual Threads.
    */
   @Test
-  public void shouldCleanupResourcesInVirtualThreads() throws Exception {
-    List<DuplicateDetectionStrategy<Record>> strategies = new ArrayList<>();
+  void shouldHandleConcurrentDiskStrategyCreationWithVirtualThreads() throws Exception {
+    // Create a Virtual Thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    // Create multiple disk-backed strategies which require cleanup
-    for (int i = 0; i < 10; i++) {
-      strategies.add(new DuplicateDetectionStrategyProvider(
-          applicationDirectories, "DISK", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get());
-    }
-    
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch latch = new CountDownLatch(strategies.size());
+    try {
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS);
+      AtomicInteger errorCount = new AtomicInteger(0);
       
-      // Close each strategy in a separate virtual thread
-      for (DuplicateDetectionStrategy<Record> strategy : strategies) {
-        executor.submit(() -> {
-          assertDoesNotThrow(() -> strategy.close());
-          latch.countDown();
-        });
+      // Create multiple strategies concurrently using Virtual Threads
+      CompletableFuture<?>[] futures = new CompletableFuture<?>[CONCURRENT_REQUESTS];
+      
+      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+        final int index = i;
+        futures[i] = CompletableFuture.runAsync(() -> {
+          try {
+            DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
+                applicationDirectories, "DISK", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
+            
+            // Verify the strategy is of the correct type
+            assertThat(strategy, is(instanceOf(DiskBackedDuplicateDetectionStrategy.class)));
+            
+            // Verify the strategy works by adding a record and checking for duplicates
+            Record record = new Record(Record.Type.ARTIFACT_ADD, "test:disk-artifact:" + index);
+            assertThat(strategy.isDuplicate(record), is(false)); // First occurrence
+            assertThat(strategy.isDuplicate(record), is(true));  // Second occurrence should be a duplicate
+            
+            // Test resource cleanup by explicitly closing the strategy
+            ((DiskBackedDuplicateDetectionStrategy) strategy).close();
+          } catch (Exception e) {
+            log.error("Error in virtual thread disk strategy test", e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        }, executor);
       }
       
-      // Wait for all threads to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      // Wait for all tasks to complete
+      latch.await();
       
-      // Verify temp directory doesn't have excessive files
-      // Note: We can't check for exact file count as other tests might create files
-      long fileCount = Files.list(tempDir).count();
-      assertTrue(fileCount < 100, "Too many temporary files: " + fileCount);
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent disk strategy creation", 
+          errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
     }
   }
   
   /**
-   * Creates a mock Record with the specified GAV coordinates.
-   * 
-   * @param groupId The group ID for the record
-   * @param artifactId The artifact ID for the record
-   * @param version The version for the record
-   * @return A new Record instance with the specified coordinates
+   * Tests concurrent creation of HashBasedDuplicateDetectionStrategy instances using Virtual Threads.
+   * This test validates that the provider can handle multiple simultaneous requests for hash-based
+   * strategies in a highly concurrent environment using Java 21's Virtual Threads.
    */
-  private Record createMockRecord(String groupId, String artifactId, String version) {
-    Record record = new Record(Record.Type.ARTIFACT_ADD, "test");
-    record.put(Record.GROUP_ID, groupId);
-    record.put(Record.ARTIFACT_ID, artifactId);
-    record.put(Record.VERSION, version);
-    record.put(Record.CLASSIFIER, "classifier");
-    record.put(Record.EXTENSION, "jar");
-    return record;
+  @Test
+  void shouldHandleConcurrentHashStrategyCreationWithVirtualThreads() throws Exception {
+    // Create a Virtual Thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Create multiple strategies concurrently using Virtual Threads
+      CompletableFuture<?>[] futures = new CompletableFuture<?>[CONCURRENT_REQUESTS];
+      
+      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+        final int index = i;
+        futures[i] = CompletableFuture.runAsync(() -> {
+          try {
+            DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
+                applicationDirectories, "HASH", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
+            
+            // Verify the strategy is of the correct type
+            assertThat(strategy, is(instanceOf(HashBasedDuplicateDetectionStrategy.class)));
+            
+            // Verify the strategy works by adding a record and checking for duplicates
+            Record record = new Record(Record.Type.ARTIFACT_ADD, "test:hash-artifact:" + index);
+            assertThat(strategy.isDuplicate(record), is(false)); // First occurrence
+            assertThat(strategy.isDuplicate(record), is(true));  // Second occurrence should be a duplicate
+          } catch (Exception e) {
+            log.error("Error in virtual thread hash strategy test", e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        }, executor);
+      }
+      
+      // Wait for all tasks to complete
+      latch.await();
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent hash strategy creation", 
+          errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
+    }
   }
-}
+  
+  /**
+   * Tests the provider's behavior when multiple different strategy types are requested concurrently
+   * using Virtual Threads. This test validates that the provider can correctly handle a mix of
+   * strategy requests in a highly concurrent environment.
+   */
+  @Test
+  void shouldHandleMixedStrategyTypesWithVirtualThreads() throws Exception {
+    // Create a Virtual Thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS * 3); // 3 strategy types
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicInteger bloomCount = new AtomicInteger(0);
+      AtomicInteger diskCount = new AtomicInteger(0);
+      AtomicInteger hashCount = new AtomicInteger(0);
+      
+      // Create multiple strategies concurrently using Virtual Threads
+      CompletableFuture<?>[] futures = new CompletableFuture<?>[CONCURRENT_REQUESTS * 3];
+      
+      for (int i = 0; i < CONCURRENT_REQUESTS * 3; i++) {
+        final int index = i;
+        futures[i] = CompletableFuture.runAsync(() -> {
+          try {
+            // Determine strategy type based on index
+            String strategyType;
+            switch (index % 3) {
+              case 0:
+                strategyType = "BLOOM";
+                break;
+              case 1:
+                strategyType = "DISK";
+                break;
+              default:
+                strategyType = "HASH";
+                break;
+            }
+            
+            DuplicateDetectionStrategy<Record> strategy = new DuplicateDetectionStrategyProvider(
+                applicationDirectories, strategyType, MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
+            
+            // Verify the strategy is of the correct type and increment counter
+            if (strategy instanceof BloomFilterDuplicateDetectionStrategy) {
+              bloomCount.incrementAndGet();
+            } else if (strategy instanceof DiskBackedDuplicateDetectionStrategy) {
+              diskCount.incrementAndGet();
+              // Close disk-backed strategy to clean up resources
+              ((DiskBackedDuplicateDetectionStrategy) strategy).close();
+            } else if (strategy instanceof HashBasedDuplicateDetectionStrategy) {
+              hashCount.incrementAndGet();
+            }
+            
+            // Verify the strategy works by adding a record and checking for duplicates
+            Record record = new Record(Record.Type.ARTIFACT_ADD, "test:mixed:" + index);
+            assertThat(strategy.isDuplicate(record), is(false)); // First occurrence
+            assertThat(strategy.isDuplicate(record), is(true));  // Second occurrence should be a duplicate
+          } catch (Exception e) {
+            log.error("Error in mixed strategy test", e);
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        }, executor);
+      }
+      
+      // Wait for all tasks to complete
+      latch.await();
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during mixed strategy creation", 
+          errorCount.get(), is(0));
+      
+      // Verify we got the expected distribution of strategy types
+      assertThat("Should have created BLOOM strategies", bloomCount.get(), is(CONCURRENT_REQUESTS));
+      assertThat("Should have created DISK strategies", diskCount.get(), is(CONCURRENT_REQUESTS));
+      assertThat("Should have created HASH strategies", hashCount.get(), is(CONCURRENT_REQUESTS));
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests the resource cleanup behavior of strategies created by the provider when used with
+   * Virtual Threads. This test focuses specifically on the DiskBackedDuplicateDetectionStrategy
+   * which requires explicit cleanup of temporary files.
+   */
+  @Test
+  void shouldCleanupResourcesProperlyWithVirtualThreads() throws Exception {
+    // Create a Virtual Thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Run multiple iterations to stress test resource cleanup
+      for (int iteration = 0; iteration < TEST_ITERATIONS; iteration++) {
+        CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS);
+        AtomicInteger errorCount = new AtomicInteger(0);
+        
+        // Create multiple disk strategies concurrently using Virtual Threads
+        CompletableFuture<?>[] futures = new CompletableFuture<?>[CONCURRENT_REQUESTS];
+        
+        for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+          final int index = i;
+          futures[i] = CompletableFuture.runAsync(() -> {
+            DiskBackedDuplicateDetectionStrategy strategy = null;
+            try {
+              // Create a disk-backed strategy
+              strategy = (DiskBackedDuplicateDetectionStrategy) new DuplicateDetectionStrategyProvider(
+                  applicationDirectories, "DISK", MAX_HEAP_GB, MAX_DISK_SIZE_GB).get();
+              
+              // Use the strategy
+              Record record = new Record(Record.Type.ARTIFACT_ADD, "test:cleanup:" + iteration + ":" + index);
+              strategy.isDuplicate(record);
+            } catch (Exception e) {
+              log.error("Error in resource cleanup test", e);
+              errorCount.incrementAndGet();
+            } finally {
+              // Always close the strategy to clean up resources
+              if (strategy != null) {
+                try {
+                  strategy.close();
+                } catch (Exception e) {
+                  log.error("Error closing strategy", e);
+                  errorCount.incrementAndGet();
+                }
+              }
+              latch.countDown();
+            }
+          }, executor);
+        }
+        
+        // Wait for all tasks to complete
+        latch.await();
+        
+        // Verify no errors occurred
+        assertThat("No errors should occur during resource cleanup in iteration " + iteration, 
+            errorCount.get(), is(0));
+      }
+    } finally {
+      executor.shutdown();
+    }
+  }

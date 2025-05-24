@@ -1,58 +1,70 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- 
-  Maven metadata template using Java 21 String Templates feature (JEP 430)
-  This template demonstrates the use of String Templates for formatting Maven metadata XML
-  The template expressions are enclosed in \{...} and will be replaced with actual values
-  when processed by the STR template processor in Java 21
+  Maven metadata template using Java 21 String Templates feature.
+  This template demonstrates the use of String Templates for formatting Maven metadata XML content.
   
-  Example usage in Java 21:
+  Usage example with Java 21 String Templates:
   
   String groupId = "org.sonatype.nexus";
   String artifactId = "nexus-base";
   String version = "3.19.0-SNAPSHOT";
   String baseVersion = "3.19.0";
   String timestamp = "20190916.172202";
-  String buildNumber = "102";
-  String lastUpdated = "20190916172202";
+  int buildNumber = 102;
+  String classifier = "sources";
+  String extension1 = "jar";
+  String extension2 = "jar";
+  String extension3 = "pom";
   
-  String metadata = STR."<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<metadata>...\{groupId}...</metadata>";
+  // Using the STR processor for string interpolation
+  String result = STR."[XML content with embedded expressions]";
+  
+  // The template supports various expressions including:
+  // - Simple variable interpolation: \{groupId}
+  // - Method calls: \{timestamp.replace(".", "")}
+  // - Arithmetic operations: \{buildNumber + 1}
+  // - Conditional expressions: \{buildNumber < 100 ? "0" + buildNumber : buildNumber}
+  // - String manipulation: \{String.format("%03d", buildNumber)}
 -->
 <metadata modelVersion="1.1.0">
-  <!-- Basic String Template expressions for artifact coordinates -->
+  <!-- Basic variable interpolation -->
   <groupId>\{groupId}</groupId>
   <artifactId>\{artifactId}</artifactId>
   <version>\{version}</version>
   <versioning>
     <snapshot>
-      <!-- String Template expressions for snapshot metadata -->
+      <!-- Simple variable interpolation -->
       <timestamp>\{timestamp}</timestamp>
       <buildNumber>\{buildNumber}</buildNumber>
     </snapshot>
-    <!-- String Template expression for formatting lastUpdated timestamp -->
-    <lastUpdated>\{lastUpdated}</lastUpdated>
+    <!-- Method call within expression to format timestamp -->
+    <lastUpdated>\{timestamp.replace(".", "")}</lastUpdated>
     <snapshotVersions>
-      <!-- String Template expressions for snapshot version with sources classifier -->
       <snapshotVersion>
-        <classifier>sources</classifier>
-        <extension>jar</extension>
-        <!-- String Template expression combining multiple values -->
+        <!-- Conditional expression with null check -->
+        <classifier>\{classifier != null ? classifier : ""}</classifier>
+        <extension>\{extension1}</extension>
+        <!-- Complex expression combining multiple variables -->
         <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
-        <updated>\{lastUpdated}</updated>
+        <!-- Method call for string manipulation -->
+        <updated>\{timestamp.replace(".", "")}</updated>
       </snapshotVersion>
-      <!-- String Template expressions for snapshot version with no classifier -->
       <snapshotVersion>
-        <extension>jar</extension>
-        <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
-        <updated>\{lastUpdated}</updated>
+        <!-- Empty element when no classifier exists -->
+        \{classifier == null ? "" : "<classifier>" + classifier + "</classifier>"}
+        <extension>\{extension2}</extension>
+        <!-- Conditional formatting with arithmetic -->
+        <value>\{baseVersion}-\{timestamp}-\{buildNumber < 100 ? "0" + buildNumber : buildNumber}</value>
+        <!-- String formatting with arithmetic operation -->
+        <updated>\{timestamp.substring(0, 8) + String.format("%06d", Integer.parseInt(timestamp.substring(9)) + 1)}</updated>
       </snapshotVersion>
-      <!-- String Template expressions for POM snapshot version -->
       <snapshotVersion>
-        <extension>pom</extension>
-        <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
-        <updated>\{lastUpdated}</updated>
+        <extension>\{extension3}</extension>
+        <!-- String formatting with zero-padding -->
+        <value>\{baseVersion}-\{timestamp}-\{String.format("%03d", buildNumber)}</value>
+        <!-- Complex expression with multiple operations -->
+        <updated>\{timestamp.replace(".", "").substring(0, 8) + (Integer.parseInt(timestamp.replace(".", "").substring(8)) + buildNumber % 100)}</updated>
       </snapshotVersion>
-      <!-- Conditional template expression for additional snapshot versions -->
-      \{hasAdditionalVersions ? additionalSnapshotVersionXml : ""}
     </snapshotVersions>
   </versioning>
 </metadata>

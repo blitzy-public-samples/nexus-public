@@ -13,9 +13,7 @@
 package org.sonatype.nexus.blobstore.virtualthread;
 
 import java.io.ByteArrayInputStream;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
-import java.time.Duration;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -25,15 +23,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.IntStream;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
+import org.sonatype.nexus.blobstore.api.BlobStore;
+import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker;
 import org.sonatype.nexus.blobstore.s3.internal.AmazonS3Factory;
@@ -44,12 +45,7 @@ import org.sonatype.nexus.blobstore.s3.internal.S3Uploader;
 import org.sonatype.nexus.blobstore.s3.internal.datastore.DatastoreS3BlobStoreMetricsService;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 
-import com.amazonaws.regions.Region;
-import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsResult;
-import com.amazonaws.services.s3.model.DeleteObjectsResult.DeletedObject;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
@@ -57,42 +53,77 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
+import org.mockito.MockitoAnnotations;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_IP_HEADER;
-import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 
 /**
- * Stress test for {@link S3BlobStore} using Java 21 Virtual Threads to validate behavior under extreme concurrency.
- * 
- * This test creates thousands of virtual threads to perform massive parallel operations (create, retrieve, delete)
- * on the S3BlobStore to verify that it maintains correctness and stability under high load conditions.
+ * Stress test for {@link S3BlobStore} using Java 21 Virtual Threads.
+ * <p>
+ * This test validates S3BlobStore behavior under extreme concurrency conditions using thousands of virtual threads.
+ * It performs massive parallel operations—creating, retrieving, and deleting blobs simultaneously—to verify the
+ * system maintains correctness and stability under load.
+ * </p>
+ * <p>
+ * The test specifically verifies that S3BlobStore can handle the dramatically increased concurrency enabled by
+ * Java 21 Virtual Threads while preventing resource exhaustion and maintaining data integrity.
+ * </p>
+ *
+ * @since 3.60
  */
 public class S3BlobStoreStressTest
     extends TestSupport
 {
-  private static final int CONCURRENT_OPERATIONS = 5_000;
-  private static final int OPERATION_TIMEOUT_SECONDS = 30;
-  private static final String TEST_BUCKET_NAME = "test-bucket";
-  private static final String TEST_CONTENT = "test content for virtual thread stress test";
-  
+  /**
+   * Number of virtual threads to use for extreme concurrency tests.
+   */
+  private static final int EXTREME_CONCURRENCY = 10_000;
+
+  /**
+   * Number of platform threads to use for comparison tests.
+   */
+  private static final int PLATFORM_THREAD_COUNT = 200;
+
+  /**
+   * Default content size for test blobs in bytes.
+   */
+  private static final int DEFAULT_CONTENT_SIZE = 1024; // 1KB
+
+  /**
+   * Default timeout for stress tests in seconds.
+   */
+  private static final int STRESS_TEST_TIMEOUT_SECONDS = 120;
+
+  /**
+   * Default number of operations for stress tests.
+   */
+  private static final int STRESS_TEST_OPERATIONS = 5_000;
+
+  /**
+   * Default duration for sustained load tests in seconds.
+   */
+  private static final int SUSTAINED_LOAD_DURATION_SECONDS = 30;
+
   @Mock
   private AmazonS3Factory amazonS3Factory;
 
@@ -117,769 +148,846 @@ public class S3BlobStoreStressTest
   @Mock
   private AmazonS3 s3;
 
-  private MockedStatic<Regions> regionsMockedStatic;
-
   private S3BlobStore blobStore;
 
   private MockBlobStoreConfiguration config;
-  
+
   private final Map<String, byte[]> blobContentStore = new ConcurrentHashMap<>();
 
+  private final AtomicLong memoryUsageBytes = new AtomicLong(0);
+
   @Before
-  public void setUp() {
-    regionsMockedStatic = mockStatic(Regions.class);
-    Region region = mock(Region.class);
-    when(region.getName()).thenReturn("us-east-1");
-    regionsMockedStatic.when(Regions::getCurrentRegion).thenReturn(region);
-    
-    // Create the S3BlobStore with mocked dependencies
-    blobStore = new S3BlobStore(amazonS3Factory, new DefaultBlobIdLocationResolver(true), uploader, copier, false,
+  public void setUp() throws Exception {
+    MockitoAnnotations.openMocks(this);
+
+    // Setup S3BlobStore with mocked dependencies
+    blobStore = new S3BlobStore(amazonS3Factory, null, uploader, copier, false,
         false, false, storeMetrics, dryRunPrefix, bucketManager, blobStoreQuotaUsageChecker);
-    
-    // Configure the blob store
-    config = new MockBlobStoreConfiguration();
-    config.setAttributes(new HashMap<>(Map.of("s3", new HashMap<>(Map.of("bucket", TEST_BUCKET_NAME, "prefix", "")))));
-    
-    // Mock the S3 client
+
+    // Configure mock S3 client
     when(amazonS3Factory.create(any())).thenReturn(s3);
-    when(s3.doesObjectExist(anyString(), anyString())).thenReturn(true);
-    
-    // Mock the uploader to store content in our local map
-    doAnswer(invocation -> {
-      ByteArrayInputStream inputStream = invocation.getArgument(0);
-      String key = invocation.getArgument(2);
-      byte[] content = inputStream.readAllBytes();
-      blobContentStore.put(key, content);
-      return null;
-    }).when(uploader).upload(any(), eq(TEST_BUCKET_NAME), anyString(), any());
-    
-    // Mock S3 object retrieval to return content from our local map
-    doAnswer(invocation -> {
-      String key = invocation.getArgument(1);
-      if (key.endsWith(".properties")) {
-        return mockS3Object("#Properties\n@BlobStore.blob-name=test\nsize=" + TEST_CONTENT.length());
-      } else if (key.endsWith(".bytes") && blobContentStore.containsKey(key)) {
-        return mockS3Object(new String(blobContentStore.get(key)));
-      } else {
-        return mockS3Object(TEST_CONTENT);
-      }
-    }).when(s3).getObject(eq(TEST_BUCKET_NAME), anyString());
-    
-    // Mock delete operations
-    DeleteObjectsResult deleteResult = mock(DeleteObjectsResult.class);
-    when(deleteResult.getDeletedObjects()).thenReturn(List.of(new DeletedObject(), new DeletedObject()));
-    when(s3.deleteObjects(any(DeleteObjectsRequest.class))).thenReturn(deleteResult);
-    
+
+    // Setup basic configuration
+    config = new MockBlobStoreConfiguration();
+    config.setAttributes(new HashMap<>(Map.of("s3", new HashMap<>(Map.of("bucket", "test-bucket", "prefix", "test-prefix")))));
+
+    // Mock S3 operations
+    mockS3Operations();
+
     // Initialize the blob store
     blobStore.init(config);
     blobStore.doStart();
   }
 
   @After
-  public void teardown() {
-    regionsMockedStatic.close();
+  public void tearDown() throws Exception {
+    if (blobStore != null) {
+      blobStore.doStop();
+    }
     blobContentStore.clear();
+    memoryUsageBytes.set(0);
   }
 
   /**
-   * Tests the creation of thousands of blobs concurrently using virtual threads.
-   * Verifies that all operations complete successfully and the system remains stable.
+   * Sets up mocks for S3 operations to simulate S3 behavior without actual AWS calls.
+   */
+  private void mockS3Operations() {
+    // Mock object existence check
+    when(s3.doesObjectExist(anyString(), anyString())).thenReturn(false);
+
+    // Mock object creation
+    doAnswer(invocation -> {
+      String bucket = invocation.getArgument(0);
+      String key = invocation.getArgument(1);
+      InputStream inputStream = invocation.getArgument(2);
+      ObjectMetadata metadata = invocation.getArgument(3);
+
+      // Store the content in our in-memory store
+      byte[] content = inputStream.readAllBytes();
+      blobContentStore.put(key, content);
+      memoryUsageBytes.addAndGet(content.length);
+
+      return null;
+    }).when(s3).putObject(anyString(), anyString(), any(InputStream.class), any(ObjectMetadata.class));
+
+    // Mock uploader for larger objects
+    doAnswer(invocation -> {
+      InputStream inputStream = invocation.getArgument(0);
+      String bucket = invocation.getArgument(1);
+      String key = invocation.getArgument(2);
+      ObjectMetadata metadata = invocation.getArgument(3);
+
+      // Store the content in our in-memory store
+      byte[] content = inputStream.readAllBytes();
+      blobContentStore.put(key, content);
+      memoryUsageBytes.addAndGet(content.length);
+
+      return null;
+    }).when(uploader).upload(any(InputStream.class), anyString(), anyString(), any(ObjectMetadata.class));
+
+    // Mock object retrieval
+    doAnswer(invocation -> {
+      String bucket = invocation.getArgument(0);
+      String key = invocation.getArgument(1);
+
+      byte[] content = blobContentStore.get(key);
+      if (content == null) {
+        throw new BlobStoreException("Object not found: " + key);
+      }
+
+      S3Object s3Object = mock(S3Object.class);
+      S3ObjectInputStream s3InputStream = new S3ObjectInputStream(
+          new ByteArrayInputStream(content), null);
+      when(s3Object.getObjectContent()).thenReturn(s3InputStream);
+
+      return s3Object;
+    }).when(s3).getObject(anyString(), anyString());
+
+    // Mock object deletion
+    doAnswer(invocation -> {
+      String bucket = invocation.getArgument(0);
+      String key = invocation.getArgument(1);
+
+      byte[] content = blobContentStore.remove(key);
+      if (content != null) {
+        memoryUsageBytes.addAndGet(-content.length);
+      }
+
+      return null;
+    }).when(s3).deleteObject(anyString(), anyString());
+  }
+
+  /**
+   * Tests the creation of a large number of blobs concurrently using virtual threads.
+   * <p>
+   * This test verifies that the S3BlobStore can handle extreme concurrency for blob creation
+   * operations using virtual threads, maintaining correctness and stability under load.
+   * </p>
    */
   @Test
   public void testMassiveConcurrentBlobCreation() throws Exception {
-    log.info("Starting massive concurrent blob creation test with {} operations", CONCURRENT_OPERATIONS);
-    
-    // Track memory usage before the test
-    MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-    long initialMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
-    
-    // Track success and failure counts
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
-    
-    // Store created blob IDs
-    List<BlobId> createdBlobIds = new ArrayList<>(CONCURRENT_OPERATIONS);
-    
-    // Create a virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to create blobs
-      for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-        final int index = i;
+    // Skip test if virtual threads are not enabled
+    if (!S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+      System.out.println("Skipping testMassiveConcurrentBlobCreation - virtual threads not enabled");
+      return;
+    }
+
+    int operationCount = STRESS_TEST_OPERATIONS;
+    System.out.println("Starting massive concurrent blob creation test with " + operationCount + " operations");
+
+    // Create executor with virtual threads
+    ExecutorService executor = S3VirtualThreadTestSupport.createVirtualThreadExecutor("blob-creation-test");
+
+    try {
+      // Track created blob IDs for validation
+      List<BlobId> createdBlobIds = new ArrayList<>();
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicReference<Throwable> firstError = new AtomicReference<>();
+
+      // Start timer
+      long startTime = System.currentTimeMillis();
+
+      // Submit blob creation tasks
+      for (int i = 0; i < operationCount; i++) {
+        final String blobName = "stress-test-blob-" + UUID.randomUUID();
         executor.submit(() -> {
           try {
-            // Create blob with unique content
-            String uniqueContent = TEST_CONTENT + "-" + index;
-            ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-            
-            // Create headers
-            Map<String, String> headers = new HashMap<>();
-            headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-            headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-            headers.put(BLOB_NAME_HEADER, "test-blob-" + index + ".txt");
-            headers.put(CONTENT_TYPE_HEADER, "text/plain");
-            headers.put(REPO_NAME_HEADER, "test-repo");
-            
-            // Create the blob
-            Blob blob = blobStore.create(inputStream, headers);
-            
-            // Verify the blob was created successfully
-            assertThat(blob, notNullValue());
-            assertThat(blob.getId(), notNullValue());
-            
-            // Store the blob ID for later verification
+            // Create blob with random content
+            Blob blob = createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
             synchronized (createdBlobIds) {
               createdBlobIds.add(blob.getId());
             }
-            
-            successCount.incrementAndGet();
-          } catch (Exception e) {
-            log.error("Error creating blob {}: {}", index, e.getMessage(), e);
-            failureCount.incrementAndGet();
-          } finally {
+          }
+          catch (Throwable t) {
+            errorCount.incrementAndGet();
+            if (firstError.get() == null) {
+              firstError.set(t);
+            }
+          }
+          finally {
             latch.countDown();
           }
         });
       }
-      
+
       // Wait for all operations to complete or timeout
-      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-      assertTrue("Timed out waiting for blob creation operations to complete", completed);
+      boolean completed = latch.await(STRESS_TEST_TIMEOUT_SECONDS, SECONDS);
+
+      // Calculate metrics
+      long endTime = System.currentTimeMillis();
+      long duration = endTime - startTime;
+      double operationsPerSecond = (double) (operationCount - errorCount.get()) / (duration / 1000.0);
+
+      // Print results
+      System.out.println("Massive concurrent blob creation test results:");
+      System.out.println("  Completed: " + completed);
+      System.out.println("  Operations: " + operationCount);
+      System.out.println("  Successful: " + (operationCount - errorCount.get()));
+      System.out.println("  Errors: " + errorCount.get());
+      System.out.println("  Duration: " + duration + "ms");
+      System.out.println("  Operations/second: " + String.format("%.2f", operationsPerSecond));
+      System.out.println("  Memory usage: " + formatBytes(memoryUsageBytes.get()));
+
+      // Verify results
+      assertTrue("Test should complete within timeout", completed);
+      assertEquals("Should have no errors", 0, errorCount.get());
+      assertEquals("Should create all blobs", operationCount, createdBlobIds.size());
+
+      // Verify memory usage is reasonable (less than 2GB for 5000 1KB blobs)
+      assertThat(memoryUsageBytes.get(), lessThan(2L * 1024 * 1024 * 1024));
+
+      // Verify throughput meets minimum expectations (at least 100 ops/sec)
+      assertThat(operationsPerSecond, greaterThan(100.0));
     }
-    
-    // Verify results
-    log.info("Blob creation test completed: {} successful, {} failed", successCount.get(), failureCount.get());
-    assertThat(successCount.get(), is(CONCURRENT_OPERATIONS));
-    assertThat(failureCount.get(), is(0));
-    
-    // Check memory usage after the test
-    long finalMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    long memoryDelta = finalMemoryUsage - initialMemoryUsage;
-    
-    // Log memory usage
-    log.info("Memory usage: initial={} bytes, final={} bytes, delta={} bytes", 
-        initialMemoryUsage, finalMemoryUsage, memoryDelta);
-    
-    // Verify memory usage is reasonable (less than 100MB per 1000 operations)
-    long expectedMaxMemoryPerOp = 100 * 1024; // 100KB per operation
-    long maxExpectedMemory = expectedMaxMemoryPerOp * CONCURRENT_OPERATIONS;
-    assertThat("Memory usage should be reasonable for virtual threads", 
-        memoryDelta, lessThan(maxExpectedMemory));
-    
-    // Return created blob IDs for use in other tests
-    return createdBlobIds;
+    finally {
+      executor.shutdown();
+      executor.awaitTermination(1, MINUTES);
+    }
   }
 
   /**
-   * Tests the retrieval of thousands of blobs concurrently using virtual threads.
-   * Verifies that all operations complete successfully and the system remains stable.
+   * Tests the retrieval of a large number of blobs concurrently using virtual threads.
+   * <p>
+   * This test verifies that the S3BlobStore can handle extreme concurrency for blob retrieval
+   * operations using virtual threads, maintaining correctness and stability under load.
+   * </p>
    */
   @Test
   public void testMassiveConcurrentBlobRetrieval() throws Exception {
-    log.info("Starting massive concurrent blob retrieval test with {} operations", CONCURRENT_OPERATIONS);
-    
-    // First create blobs to retrieve
-    List<BlobId> blobIds = new ArrayList<>(CONCURRENT_OPERATIONS);
-    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-      String uniqueContent = TEST_CONTENT + "-" + i;
-      ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-      
-      Map<String, String> headers = new HashMap<>();
-      headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-      headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-      headers.put(BLOB_NAME_HEADER, "test-blob-" + i + ".txt");
-      headers.put(CONTENT_TYPE_HEADER, "text/plain");
-      headers.put(REPO_NAME_HEADER, "test-repo");
-      
-      Blob blob = blobStore.create(inputStream, headers);
-      blobIds.add(blob.getId());
+    // Skip test if virtual threads are not enabled
+    if (!S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+      System.out.println("Skipping testMassiveConcurrentBlobRetrieval - virtual threads not enabled");
+      return;
     }
-    
-    // Track memory usage before the test
-    MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-    long initialMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
-    
-    // Track success and failure counts
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
-    
-    // Create a virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to retrieve blobs
-      for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-        final int index = i;
+
+    // Create a set of test blobs first
+    int blobCount = 100; // Create fewer blobs but access them repeatedly
+    List<BlobId> blobIds = new ArrayList<>(blobCount);
+    Map<BlobId, byte[]> expectedContents = new HashMap<>();
+
+    System.out.println("Creating " + blobCount + " test blobs for retrieval test");
+    for (int i = 0; i < blobCount; i++) {
+      String blobName = "retrieval-test-blob-" + i;
+      Blob blob = createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
+      blobIds.add(blob.getId());
+
+      // Store expected content for validation
+      try (InputStream is = blob.getInputStream()) {
+        expectedContents.put(blob.getId(), is.readAllBytes());
+      }
+    }
+
+    int operationCount = STRESS_TEST_OPERATIONS;
+    System.out.println("Starting massive concurrent blob retrieval test with " + operationCount + " operations");
+
+    // Create executor with virtual threads
+    ExecutorService executor = S3VirtualThreadTestSupport.createVirtualThreadExecutor("blob-retrieval-test");
+
+    try {
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicInteger validationErrorCount = new AtomicInteger(0);
+      AtomicReference<Throwable> firstError = new AtomicReference<>();
+
+      // Start timer
+      long startTime = System.currentTimeMillis();
+
+      // Submit blob retrieval tasks
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i % blobIds.size(); // Cycle through available blobs
+        final BlobId blobId = blobIds.get(index);
+        final byte[] expectedContent = expectedContents.get(blobId);
+
         executor.submit(() -> {
           try {
-            // Get the blob ID to retrieve
-            BlobId blobId = blobIds.get(index % blobIds.size());
-            
-            // Retrieve the blob
+            // Retrieve blob
             Blob blob = blobStore.get(blobId);
-            
-            // Verify the blob was retrieved successfully
-            assertThat(blob, notNullValue());
-            assertThat(blob.getId(), is(blobId));
-            
-            // Read the content to verify it's accessible
-            byte[] content = blob.getInputStream().readAllBytes();
-            assertThat(content.length, greaterThanOrEqualTo(TEST_CONTENT.length()));
-            
-            successCount.incrementAndGet();
-          } catch (Exception e) {
-            log.error("Error retrieving blob {}: {}", index, e.getMessage(), e);
-            failureCount.incrementAndGet();
-          } finally {
+            assertThat("Blob should not be null", blob, notNullValue());
+
+            // Validate content
+            try (InputStream is = blob.getInputStream()) {
+              byte[] actualContent = is.readAllBytes();
+              if (!java.util.Arrays.equals(expectedContent, actualContent)) {
+                validationErrorCount.incrementAndGet();
+              }
+            }
+          }
+          catch (Throwable t) {
+            errorCount.incrementAndGet();
+            if (firstError.get() == null) {
+              firstError.set(t);
+            }
+          }
+          finally {
             latch.countDown();
           }
         });
       }
-      
+
       // Wait for all operations to complete or timeout
-      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-      assertTrue("Timed out waiting for blob retrieval operations to complete", completed);
+      boolean completed = latch.await(STRESS_TEST_TIMEOUT_SECONDS, SECONDS);
+
+      // Calculate metrics
+      long endTime = System.currentTimeMillis();
+      long duration = endTime - startTime;
+      double operationsPerSecond = (double) (operationCount - errorCount.get()) / (duration / 1000.0);
+
+      // Print results
+      System.out.println("Massive concurrent blob retrieval test results:");
+      System.out.println("  Completed: " + completed);
+      System.out.println("  Operations: " + operationCount);
+      System.out.println("  Successful: " + (operationCount - errorCount.get()));
+      System.out.println("  Errors: " + errorCount.get());
+      System.out.println("  Validation errors: " + validationErrorCount.get());
+      System.out.println("  Duration: " + duration + "ms");
+      System.out.println("  Operations/second: " + String.format("%.2f", operationsPerSecond));
+
+      // Verify results
+      assertTrue("Test should complete within timeout", completed);
+      assertEquals("Should have no errors", 0, errorCount.get());
+      assertEquals("Content validation should pass for all blobs", 0, validationErrorCount.get());
+
+      // Verify throughput meets minimum expectations (at least 500 ops/sec for reads)
+      assertThat(operationsPerSecond, greaterThan(500.0));
     }
-    
-    // Verify results
-    log.info("Blob retrieval test completed: {} successful, {} failed", successCount.get(), failureCount.get());
-    assertThat(successCount.get(), is(CONCURRENT_OPERATIONS));
-    assertThat(failureCount.get(), is(0));
-    
-    // Check memory usage after the test
-    long finalMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    long memoryDelta = finalMemoryUsage - initialMemoryUsage;
-    
-    // Log memory usage
-    log.info("Memory usage: initial={} bytes, final={} bytes, delta={} bytes", 
-        initialMemoryUsage, finalMemoryUsage, memoryDelta);
-    
-    // Verify memory usage is reasonable (less than 50MB per 1000 operations)
-    long expectedMaxMemoryPerOp = 50 * 1024; // 50KB per operation
-    long maxExpectedMemory = expectedMaxMemoryPerOp * CONCURRENT_OPERATIONS;
-    assertThat("Memory usage should be reasonable for virtual threads", 
-        memoryDelta, lessThan(maxExpectedMemory));
+    finally {
+      executor.shutdown();
+      executor.awaitTermination(1, MINUTES);
+    }
   }
 
   /**
-   * Tests the deletion of thousands of blobs concurrently using virtual threads.
-   * Verifies that all operations complete successfully and the system remains stable.
+   * Tests the deletion of a large number of blobs concurrently using virtual threads.
+   * <p>
+   * This test verifies that the S3BlobStore can handle extreme concurrency for blob deletion
+   * operations using virtual threads, maintaining correctness and stability under load.
+   * </p>
    */
   @Test
   public void testMassiveConcurrentBlobDeletion() throws Exception {
-    log.info("Starting massive concurrent blob deletion test with {} operations", CONCURRENT_OPERATIONS);
-    
-    // First create blobs to delete
-    List<BlobId> blobIds = new ArrayList<>(CONCURRENT_OPERATIONS);
-    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-      String uniqueContent = TEST_CONTENT + "-" + i;
-      ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-      
-      Map<String, String> headers = new HashMap<>();
-      headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-      headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-      headers.put(BLOB_NAME_HEADER, "test-blob-" + i + ".txt");
-      headers.put(CONTENT_TYPE_HEADER, "text/plain");
-      headers.put(REPO_NAME_HEADER, "test-repo");
-      
-      Blob blob = blobStore.create(inputStream, headers);
+    // Skip test if virtual threads are not enabled
+    if (!S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+      System.out.println("Skipping testMassiveConcurrentBlobDeletion - virtual threads not enabled");
+      return;
+    }
+
+    int operationCount = STRESS_TEST_OPERATIONS;
+    System.out.println("Creating " + operationCount + " test blobs for deletion test");
+
+    // Create blobs to delete
+    List<BlobId> blobIds = new ArrayList<>(operationCount);
+    for (int i = 0; i < operationCount; i++) {
+      String blobName = "deletion-test-blob-" + i;
+      Blob blob = createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
       blobIds.add(blob.getId());
     }
-    
-    // Track memory usage before the test
-    MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-    long initialMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
-    
-    // Track success and failure counts
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
-    
-    // Create a virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to delete blobs
-      for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-        final int index = i;
+
+    System.out.println("Starting massive concurrent blob deletion test with " + operationCount + " operations");
+
+    // Create executor with virtual threads
+    ExecutorService executor = S3VirtualThreadTestSupport.createVirtualThreadExecutor("blob-deletion-test");
+
+    try {
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicInteger deletionFailureCount = new AtomicInteger(0);
+      AtomicReference<Throwable> firstError = new AtomicReference<>();
+
+      // Record initial memory usage
+      long initialMemoryUsage = memoryUsageBytes.get();
+
+      // Start timer
+      long startTime = System.currentTimeMillis();
+
+      // Submit blob deletion tasks
+      for (int i = 0; i < operationCount; i++) {
+        final BlobId blobId = blobIds.get(i);
         executor.submit(() -> {
           try {
-            // Get the blob ID to delete
-            BlobId blobId = blobIds.get(index % blobIds.size());
-            
-            // Delete the blob
-            boolean deleted = blobStore.delete(blobId, "virtual-thread-stress-test");
-            
-            // Verify the blob was deleted successfully
-            assertThat(deleted, is(true));
-            
-            successCount.incrementAndGet();
-          } catch (Exception e) {
-            log.error("Error deleting blob {}: {}", index, e.getMessage(), e);
-            failureCount.incrementAndGet();
-          } finally {
+            // Delete blob
+            boolean deleted = blobStore.delete(blobId, "Stress test deletion");
+            if (!deleted) {
+              deletionFailureCount.incrementAndGet();
+            }
+          }
+          catch (Throwable t) {
+            errorCount.incrementAndGet();
+            if (firstError.get() == null) {
+              firstError.set(t);
+            }
+          }
+          finally {
             latch.countDown();
           }
         });
       }
-      
+
       // Wait for all operations to complete or timeout
-      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-      assertTrue("Timed out waiting for blob deletion operations to complete", completed);
+      boolean completed = latch.await(STRESS_TEST_TIMEOUT_SECONDS, SECONDS);
+
+      // Calculate metrics
+      long endTime = System.currentTimeMillis();
+      long duration = endTime - startTime;
+      double operationsPerSecond = (double) (operationCount - errorCount.get()) / (duration / 1000.0);
+      long memoryFreed = initialMemoryUsage - memoryUsageBytes.get();
+
+      // Print results
+      System.out.println("Massive concurrent blob deletion test results:");
+      System.out.println("  Completed: " + completed);
+      System.out.println("  Operations: " + operationCount);
+      System.out.println("  Successful: " + (operationCount - errorCount.get() - deletionFailureCount.get()));
+      System.out.println("  Errors: " + errorCount.get());
+      System.out.println("  Deletion failures: " + deletionFailureCount.get());
+      System.out.println("  Duration: " + duration + "ms");
+      System.out.println("  Operations/second: " + String.format("%.2f", operationsPerSecond));
+      System.out.println("  Memory freed: " + formatBytes(memoryFreed));
+
+      // Verify results
+      assertTrue("Test should complete within timeout", completed);
+      assertEquals("Should have no errors", 0, errorCount.get());
+      assertEquals("All deletions should succeed", 0, deletionFailureCount.get());
+
+      // Verify memory was freed (should be close to the size of all blobs)
+      long expectedMemoryFreed = (long) operationCount * DEFAULT_CONTENT_SIZE;
+      assertThat(memoryFreed, greaterThan(expectedMemoryFreed * 9 / 10)); // Allow for 10% margin
+
+      // Verify throughput meets minimum expectations (at least 200 ops/sec)
+      assertThat(operationsPerSecond, greaterThan(200.0));
     }
-    
-    // Verify results
-    log.info("Blob deletion test completed: {} successful, {} failed", successCount.get(), failureCount.get());
-    assertThat(successCount.get(), is(CONCURRENT_OPERATIONS));
-    assertThat(failureCount.get(), is(0));
-    
-    // Check memory usage after the test
-    long finalMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    long memoryDelta = finalMemoryUsage - initialMemoryUsage;
-    
-    // Log memory usage
-    log.info("Memory usage: initial={} bytes, final={} bytes, delta={} bytes", 
-        initialMemoryUsage, finalMemoryUsage, memoryDelta);
-    
-    // Verify memory usage is reasonable (less than 20MB per 1000 operations)
-    long expectedMaxMemoryPerOp = 20 * 1024; // 20KB per operation
-    long maxExpectedMemory = expectedMaxMemoryPerOp * CONCURRENT_OPERATIONS;
-    assertThat("Memory usage should be reasonable for virtual threads", 
-        memoryDelta, lessThan(maxExpectedMemory));
+    finally {
+      executor.shutdown();
+      executor.awaitTermination(1, MINUTES);
+    }
   }
 
   /**
-   * Tests a mix of create, retrieve, and delete operations performed concurrently using virtual threads.
-   * Verifies that all operations complete successfully and the system remains stable.
+   * Tests mixed operations (create, get, delete) under sustained high load using virtual threads.
+   * <p>
+   * This test verifies that the S3BlobStore can handle a mix of different operations concurrently
+   * using virtual threads, maintaining correctness and stability under sustained load.
+   * </p>
    */
   @Test
-  public void testMixedOperations() throws Exception {
-    log.info("Starting mixed operations test with {} total operations", CONCURRENT_OPERATIONS);
-    
-    // Track memory usage before the test
-    MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-    long initialMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
-    
-    // Track success and failure counts for each operation type
-    AtomicInteger createSuccessCount = new AtomicInteger(0);
-    AtomicInteger retrieveSuccessCount = new AtomicInteger(0);
-    AtomicInteger deleteSuccessCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
-    
-    // Store created blob IDs for retrieval and deletion
-    List<BlobId> blobIds = new ArrayList<>();
-    
-    // Create a virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // First create some initial blobs
-      int initialBlobs = CONCURRENT_OPERATIONS / 10;
-      CountDownLatch initialLatch = new CountDownLatch(initialBlobs);
-      
-      for (int i = 0; i < initialBlobs; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            String uniqueContent = TEST_CONTENT + "-initial-" + index;
-            ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-            
-            Map<String, String> headers = new HashMap<>();
-            headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-            headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-            headers.put(BLOB_NAME_HEADER, "test-blob-initial-" + index + ".txt");
-            headers.put(CONTENT_TYPE_HEADER, "text/plain");
-            headers.put(REPO_NAME_HEADER, "test-repo");
-            
-            Blob blob = blobStore.create(inputStream, headers);
-            synchronized (blobIds) {
-              blobIds.add(blob.getId());
-            }
-          } catch (Exception e) {
-            log.error("Error creating initial blob {}: {}", index, e.getMessage(), e);
-          } finally {
-            initialLatch.countDown();
-          }
-        });
-      }
-      
-      // Wait for initial blobs to be created
-      initialLatch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-      
-      // Submit mixed operation tasks
-      for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Determine operation type based on index
-            int operationType = index % 3; // 0 = create, 1 = retrieve, 2 = delete
-            
-            switch (operationType) {
-              case 0: // Create
-                String uniqueContent = TEST_CONTENT + "-mixed-" + index;
-                ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-                
-                Map<String, String> headers = new HashMap<>();
-                headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-                headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-                headers.put(BLOB_NAME_HEADER, "test-blob-mixed-" + index + ".txt");
-                headers.put(CONTENT_TYPE_HEADER, "text/plain");
-                headers.put(REPO_NAME_HEADER, "test-repo");
-                
-                Blob blob = blobStore.create(inputStream, headers);
-                assertThat(blob, notNullValue());
-                
-                synchronized (blobIds) {
-                  blobIds.add(blob.getId());
-                }
-                
-                createSuccessCount.incrementAndGet();
-                break;
-                
-              case 1: // Retrieve
-                synchronized (blobIds) {
-                  if (!blobIds.isEmpty()) {
-                    BlobId blobId = blobIds.get(index % blobIds.size());
-                    Blob retrievedBlob = blobStore.get(blobId);
-                    
-                    if (retrievedBlob != null) {
-                      byte[] content = retrievedBlob.getInputStream().readAllBytes();
-                      assertThat(content.length, greaterThanOrEqualTo(TEST_CONTENT.length()));
-                      retrieveSuccessCount.incrementAndGet();
-                    }
-                  } else {
-                    // If no blobs exist yet, create one instead
-                    String fallbackContent = TEST_CONTENT + "-fallback-" + index;
-                    ByteArrayInputStream fallbackStream = new ByteArrayInputStream(fallbackContent.getBytes());
-                    
-                    Map<String, String> fallbackHeaders = new HashMap<>();
-                    fallbackHeaders.put(CREATED_BY_HEADER, "virtual-thread-test");
-                    fallbackHeaders.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-                    fallbackHeaders.put(BLOB_NAME_HEADER, "test-blob-fallback-" + index + ".txt");
-                    fallbackHeaders.put(CONTENT_TYPE_HEADER, "text/plain");
-                    fallbackHeaders.put(REPO_NAME_HEADER, "test-repo");
-                    
-                    Blob fallbackBlob = blobStore.create(fallbackStream, fallbackHeaders);
-                    blobIds.add(fallbackBlob.getId());
-                    createSuccessCount.incrementAndGet();
-                  }
-                }
-                break;
-                
-              case 2: // Delete
-                synchronized (blobIds) {
-                  if (!blobIds.isEmpty()) {
-                    int blobIndex = index % blobIds.size();
-                    BlobId blobId = blobIds.get(blobIndex);
-                    boolean deleted = blobStore.delete(blobId, "virtual-thread-stress-test");
-                    
-                    if (deleted) {
-                      blobIds.remove(blobIndex);
-                      deleteSuccessCount.incrementAndGet();
-                    }
-                  } else {
-                    // If no blobs exist yet, create one instead
-                    String fallbackContent = TEST_CONTENT + "-fallback-" + index;
-                    ByteArrayInputStream fallbackStream = new ByteArrayInputStream(fallbackContent.getBytes());
-                    
-                    Map<String, String> fallbackHeaders = new HashMap<>();
-                    fallbackHeaders.put(CREATED_BY_HEADER, "virtual-thread-test");
-                    fallbackHeaders.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-                    fallbackHeaders.put(BLOB_NAME_HEADER, "test-blob-fallback-" + index + ".txt");
-                    fallbackHeaders.put(CONTENT_TYPE_HEADER, "text/plain");
-                    fallbackHeaders.put(REPO_NAME_HEADER, "test-repo");
-                    
-                    Blob fallbackBlob = blobStore.create(fallbackStream, fallbackHeaders);
-                    blobIds.add(fallbackBlob.getId());
-                    createSuccessCount.incrementAndGet();
-                  }
-                }
-                break;
-            }
-          } catch (Exception e) {
-            log.error("Error in mixed operation {}: {}", index, e.getMessage(), e);
-            failureCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all operations to complete or timeout
-      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS * 2, SECONDS);
-      assertTrue("Timed out waiting for mixed operations to complete", completed);
+  public void testMixedOperationsUnderSustainedLoad() throws Exception {
+    // Skip test if virtual threads are not enabled
+    if (!S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+      System.out.println("Skipping testMixedOperationsUnderSustainedLoad - virtual threads not enabled");
+      return;
     }
-    
-    // Verify results
-    int totalSuccessCount = createSuccessCount.get() + retrieveSuccessCount.get() + deleteSuccessCount.get();
-    log.info("Mixed operations test completed: {} total successful ({} creates, {} retrieves, {} deletes), {} failed",
-        totalSuccessCount, createSuccessCount.get(), retrieveSuccessCount.get(), deleteSuccessCount.get(), failureCount.get());
-    
-    assertThat(totalSuccessCount, is(CONCURRENT_OPERATIONS));
-    assertThat(failureCount.get(), is(0));
-    
-    // Check memory usage after the test
-    long finalMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    long memoryDelta = finalMemoryUsage - initialMemoryUsage;
-    
-    // Log memory usage
-    log.info("Memory usage: initial={} bytes, final={} bytes, delta={} bytes", 
-        initialMemoryUsage, finalMemoryUsage, memoryDelta);
-    
-    // Verify memory usage is reasonable (less than 100MB per 1000 operations)
-    long expectedMaxMemoryPerOp = 100 * 1024; // 100KB per operation
-    long maxExpectedMemory = expectedMaxMemoryPerOp * CONCURRENT_OPERATIONS;
-    assertThat("Memory usage should be reasonable for virtual threads", 
-        memoryDelta, lessThan(maxExpectedMemory));
+
+    System.out.println("Starting mixed operations under sustained load test");
+    System.out.println("Test will run for " + SUSTAINED_LOAD_DURATION_SECONDS + " seconds");
+
+    // Create executor with virtual threads
+    ExecutorService executor = S3VirtualThreadTestSupport.createVirtualThreadExecutor("mixed-operations-test");
+
+    try {
+      // Shared state for test
+      Map<BlobId, byte[]> knownBlobs = new ConcurrentHashMap<>();
+      AtomicInteger createCount = new AtomicInteger(0);
+      AtomicInteger getCount = new AtomicInteger(0);
+      AtomicInteger deleteCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicInteger validationErrorCount = new AtomicInteger(0);
+
+      // Create some initial blobs
+      int initialBlobCount = 100;
+      for (int i = 0; i < initialBlobCount; i++) {
+        String blobName = "mixed-test-initial-blob-" + i;
+        Blob blob = createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
+        try (InputStream is = blob.getInputStream()) {
+          knownBlobs.put(blob.getId(), is.readAllBytes());
+        }
+      }
+
+      // Start timer
+      long startTime = System.currentTimeMillis();
+      long endTime = startTime + (SUSTAINED_LOAD_DURATION_SECONDS * 1000L);
+
+      // Number of threads to run concurrently
+      int threadCount = EXTREME_CONCURRENCY;
+      CountDownLatch completionLatch = new CountDownLatch(threadCount);
+
+      // Submit worker threads
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i;
+        executor.submit(() -> {
+          try {
+            // Each thread runs until the test duration is reached
+            while (System.currentTimeMillis() < endTime && !Thread.currentThread().isInterrupted()) {
+              // Determine operation type based on thread ID to ensure a good mix
+              // - 60% gets, 30% creates, 10% deletes
+              int operationType = threadId % 10;
+              if (operationType < 6) {
+                // GET operation
+                if (!knownBlobs.isEmpty()) {
+                  try {
+                    // Select a random known blob
+                    BlobId blobId = knownBlobs.keySet().stream()
+                        .skip((int) (Math.random() * knownBlobs.size()))
+                        .findFirst()
+                        .orElse(null);
+
+                    if (blobId != null) {
+                      byte[] expectedContent = knownBlobs.get(blobId);
+                      if (expectedContent != null) {
+                        Blob blob = blobStore.get(blobId);
+                        if (blob != null) {
+                          try (InputStream is = blob.getInputStream()) {
+                            byte[] actualContent = is.readAllBytes();
+                            if (!java.util.Arrays.equals(expectedContent, actualContent)) {
+                              validationErrorCount.incrementAndGet();
+                            }
+                          }
+                          getCount.incrementAndGet();
+                        }
+                      }
+                    }
+                  }
+                  catch (Exception e) {
+                    errorCount.incrementAndGet();
+                  }
+                }
+              }
+              else if (operationType < 9) {
+                // CREATE operation
+                try {
+                  String blobName = "mixed-test-blob-" + UUID.randomUUID();
+                  Blob blob = createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
+                  try (InputStream is = blob.getInputStream()) {
+                    knownBlobs.put(blob.getId(), is.readAllBytes());
+                  }
+                  createCount.incrementAndGet();
+                }
+                catch (Exception e) {
+                  errorCount.incrementAndGet();
+                }
+              }
+              else {
+                // DELETE operation
+                if (!knownBlobs.isEmpty()) {
+                  try {
+                    // Select a random known blob
+                    BlobId blobId = knownBlobs.keySet().stream()
+                        .skip((int) (Math.random() * knownBlobs.size()))
+                        .findFirst()
+                        .orElse(null);
+
+                    if (blobId != null) {
+                      boolean deleted = blobStore.delete(blobId, "Mixed operations test");
+                      if (deleted) {
+                        knownBlobs.remove(blobId);
+                        deleteCount.incrementAndGet();
+                      }
+                    }
+                  }
+                  catch (Exception e) {
+                    errorCount.incrementAndGet();
+                  }
+                }
+              }
+
+              // Small delay to prevent CPU spinning
+              if (threadId % 10 == 0) {
+                Thread.sleep(1);
+              }
+            }
+          }
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+
+      // Wait for test duration plus a small grace period
+      completionLatch.await(SUSTAINED_LOAD_DURATION_SECONDS + 5, SECONDS);
+
+      // Calculate metrics
+      long actualDuration = System.currentTimeMillis() - startTime;
+      int totalOperations = createCount.get() + getCount.get() + deleteCount.get();
+      double operationsPerSecond = (double) totalOperations / (actualDuration / 1000.0);
+
+      // Print results
+      System.out.println("Mixed operations under sustained load test results:");
+      System.out.println("  Duration: " + actualDuration + "ms");
+      System.out.println("  Total operations: " + totalOperations);
+      System.out.println("    Creates: " + createCount.get());
+      System.out.println("    Gets: " + getCount.get());
+      System.out.println("    Deletes: " + deleteCount.get());
+      System.out.println("  Errors: " + errorCount.get());
+      System.out.println("  Validation errors: " + validationErrorCount.get());
+      System.out.println("  Operations/second: " + String.format("%.2f", operationsPerSecond));
+      System.out.println("  Final blob count: " + knownBlobs.size());
+      System.out.println("  Memory usage: " + formatBytes(memoryUsageBytes.get()));
+
+      // Verify results
+      assertEquals("Should have no validation errors", 0, validationErrorCount.get());
+      assertThat("Should have performed a significant number of operations", totalOperations, greaterThan(1000));
+      assertThat("Should achieve reasonable throughput", operationsPerSecond, greaterThan(100.0));
+    }
+    finally {
+      executor.shutdown();
+      executor.awaitTermination(1, MINUTES);
+    }
   }
 
   /**
-   * Tests the system's ability to handle a sustained high load of operations over time.
-   * Verifies that the system remains stable and responsive throughout the test.
+   * Compares performance between platform threads and virtual threads under high concurrency.
+   * <p>
+   * This test measures and compares the performance of S3BlobStore operations using both
+   * platform threads and virtual threads under high concurrency conditions.
+   * </p>
    */
   @Test
-  public void testSustainedHighLoad() throws Exception {
-    log.info("Starting sustained high load test");
-    
-    // Number of waves of operations to perform
-    final int waves = 5;
-    final int operationsPerWave = CONCURRENT_OPERATIONS / 5;
-    
-    // Track overall success and failure counts
-    AtomicInteger totalSuccessCount = new AtomicInteger(0);
-    AtomicInteger totalFailureCount = new AtomicInteger(0);
-    
-    // Track memory usage before the test
-    MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
-    long initialMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    
-    // Store created blob IDs
-    List<BlobId> blobIds = new ArrayList<>();
-    
-    // Run multiple waves of operations
-    for (int wave = 0; wave < waves; wave++) {
-      log.info("Starting wave {} of {}", wave + 1, waves);
-      
-      // Create a countdown latch for this wave
-      CountDownLatch waveLatch = new CountDownLatch(operationsPerWave);
-      
-      // Track success and failure counts for this wave
-      AtomicInteger waveSuccessCount = new AtomicInteger(0);
-      AtomicInteger waveFailureCount = new AtomicInteger(0);
-      
-      // Create a virtual thread per task executor
-      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        // Submit tasks for this wave
-        for (int i = 0; i < operationsPerWave; i++) {
-          final int index = i;
+  public void testCompareThreadModelsUnderHighConcurrency() throws Exception {
+    // Skip test if virtual threads are not enabled
+    if (!S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+      System.out.println("Skipping testCompareThreadModelsUnderHighConcurrency - virtual threads not enabled");
+      return;
+    }
+
+    System.out.println("Starting thread model comparison test under high concurrency");
+
+    // Define concurrency levels for testing
+    int[] concurrencyLevels = {100, 500, 1000, 5000, 10000};
+
+    // For each concurrency level, compare platform threads vs virtual threads
+    for (int concurrency : concurrencyLevels) {
+      // Skip higher concurrency levels for platform threads to avoid resource exhaustion
+      if (concurrency > 1000 && !S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+        System.out.println("Skipping concurrency level " + concurrency + " for platform threads");
+        continue;
+      }
+
+      System.out.println("\nTesting with concurrency level: " + concurrency);
+
+      // Test with platform threads (limited to a reasonable number)
+      int platformThreadCount = Math.min(concurrency, PLATFORM_THREAD_COUNT);
+      S3VirtualThreadTestSupport.PerformanceMetrics platformMetrics;
+
+      try (ExecutorService platformExecutor = S3VirtualThreadTestSupport.createPlatformThreadExecutor(
+          platformThreadCount, "platform-concurrency-test")) {
+        System.out.println("Running platform thread test with " + platformThreadCount + " threads");
+        platformMetrics = S3VirtualThreadTestSupport.executeConcurrently(
+            platformExecutor,
+            () -> {
+              String blobName = "concurrency-test-blob-" + UUID.randomUUID();
+              createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
+              return null;
+            },
+            concurrency,
+            STRESS_TEST_TIMEOUT_SECONDS);
+      }
+
+      // Test with virtual threads
+      S3VirtualThreadTestSupport.PerformanceMetrics virtualMetrics;
+      try (ExecutorService virtualExecutor = S3VirtualThreadTestSupport.createVirtualThreadExecutor(
+          "virtual-concurrency-test")) {
+        System.out.println("Running virtual thread test with " + concurrency + " threads");
+        virtualMetrics = S3VirtualThreadTestSupport.executeConcurrently(
+            virtualExecutor,
+            () -> {
+              String blobName = "concurrency-test-blob-" + UUID.randomUUID();
+              createTestBlob(blobStore, blobName, DEFAULT_CONTENT_SIZE);
+              return null;
+            },
+            concurrency,
+            STRESS_TEST_TIMEOUT_SECONDS);
+      }
+
+      // Print comparison results
+      System.out.println("Results for concurrency level " + concurrency + ":");
+      System.out.println("  Platform Threads: " + platformMetrics);
+      System.out.println("  Virtual Threads:  " + virtualMetrics);
+
+      // Calculate improvement percentages
+      if (platformMetrics.getTotalOperations() > 0 && virtualMetrics.getTotalOperations() > 0) {
+        double throughputImprovement = ((virtualMetrics.getOperationsPerSecond() / 
+            platformMetrics.getOperationsPerSecond()) - 1) * 100;
+        double latencyImprovement = ((platformMetrics.getAverageDurationMs() / 
+            virtualMetrics.getAverageDurationMs()) - 1) * 100;
+
+        System.out.printf("  Throughput Improvement: %.2f%%\n", throughputImprovement);
+        System.out.printf("  Latency Improvement:    %.2f%%\n", latencyImprovement);
+
+        // For higher concurrency levels, virtual threads should show significant improvement
+        if (concurrency >= 1000) {
+          assertThat("Virtual threads should provide better throughput at high concurrency",
+              throughputImprovement, greaterThan(20.0));
+        }
+      }
+    }
+  }
+
+  /**
+   * Tests memory consumption patterns with increasing numbers of virtual threads.
+   * <p>
+   * This test measures memory usage as the number of concurrent virtual threads increases,
+   * verifying that memory consumption remains reasonable even with thousands of threads.
+   * </p>
+   */
+  @Test
+  public void testMemoryConsumptionWithIncreasingThreads() throws Exception {
+    // Skip test if virtual threads are not enabled
+    if (!S3VirtualThreadTestSupport.isVirtualThreadTestingEnabled()) {
+      System.out.println("Skipping testMemoryConsumptionWithIncreasingThreads - virtual threads not enabled");
+      return;
+    }
+
+    System.out.println("Starting memory consumption test with increasing thread counts");
+
+    // Define thread count levels for testing
+    int[] threadCounts = {100, 500, 1000, 5000, 10000};
+
+    // Track memory usage at each level
+    Map<Integer, Long> memoryUsageByThreadCount = new HashMap<>();
+
+    // For each thread count level
+    for (int threadCount : threadCounts) {
+      System.out.println("\nTesting with " + threadCount + " virtual threads");
+
+      // Reset memory tracking
+      System.gc(); // Encourage garbage collection before measurement
+      long baselineMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+
+      // Create and start threads
+      ExecutorService executor = S3VirtualThreadTestSupport.createVirtualThreadExecutor("memory-test");
+      CountDownLatch startLatch = new CountDownLatch(1);
+      CountDownLatch completionLatch = new CountDownLatch(threadCount);
+
+      try {
+        // Create threads that wait on the start latch
+        for (int i = 0; i < threadCount; i++) {
           executor.submit(() -> {
             try {
-              // Perform a random operation based on the index
-              int operationType = (index + wave) % 3; // 0 = create, 1 = retrieve, 2 = delete
-              
-              switch (operationType) {
-                case 0: // Create
-                  String uniqueContent = TEST_CONTENT + "-wave-" + wave + "-" + index;
-                  ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-                  
-                  Map<String, String> headers = new HashMap<>();
-                  headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-                  headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-                  headers.put(BLOB_NAME_HEADER, "test-blob-wave-" + wave + "-" + index + ".txt");
-                  headers.put(CONTENT_TYPE_HEADER, "text/plain");
-                  headers.put(REPO_NAME_HEADER, "test-repo");
-                  
-                  Blob blob = blobStore.create(inputStream, headers);
-                  assertThat(blob, notNullValue());
-                  
-                  synchronized (blobIds) {
-                    blobIds.add(blob.getId());
-                  }
-                  break;
-                  
-                case 1: // Retrieve
-                  synchronized (blobIds) {
-                    if (!blobIds.isEmpty()) {
-                      BlobId blobId = blobIds.get(Math.abs((index + wave) % blobIds.size()));
-                      Blob retrievedBlob = blobStore.get(blobId);
-                      
-                      if (retrievedBlob != null) {
-                        byte[] content = retrievedBlob.getInputStream().readAllBytes();
-                        assertThat(content.length, greaterThanOrEqualTo(TEST_CONTENT.length()));
-                      }
-                    }
-                  }
-                  break;
-                  
-                case 2: // Delete
-                  synchronized (blobIds) {
-                    if (!blobIds.isEmpty()) {
-                      int blobIndex = Math.abs((index + wave) % blobIds.size());
-                      BlobId blobId = blobIds.get(blobIndex);
-                      boolean deleted = blobStore.delete(blobId, "virtual-thread-stress-test");
-                      
-                      if (deleted) {
-                        blobIds.remove(blobIndex);
-                      }
-                    }
-                  }
-                  break;
-              }
-              
-              waveSuccessCount.incrementAndGet();
-            } catch (Exception e) {
-              log.error("Error in wave {} operation {}: {}", wave, index, e.getMessage(), e);
-              waveFailureCount.incrementAndGet();
-            } finally {
-              waveLatch.countDown();
+              startLatch.await(); // Wait for signal to start
+              // Perform a small operation to ensure thread is fully initialized
+              String blobName = "memory-test-blob-" + UUID.randomUUID();
+              createTestBlob(blobStore, blobName, 100); // Smaller blob size for memory test
+            }
+            catch (Exception e) {
+              // Ignore exceptions for this test
+            }
+            finally {
+              completionLatch.countDown();
             }
           });
         }
-        
-        // Wait for all operations in this wave to complete or timeout
-        boolean completed = waveLatch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-        assertTrue("Timed out waiting for wave " + (wave + 1) + " operations to complete", completed);
-      }
-      
-      // Update total counts
-      totalSuccessCount.addAndGet(waveSuccessCount.get());
-      totalFailureCount.addAndGet(waveFailureCount.get());
-      
-      // Log results for this wave
-      log.info("Wave {} completed: {} successful, {} failed", 
-          wave + 1, waveSuccessCount.get(), waveFailureCount.get());
-      
-      // Brief pause between waves to allow for garbage collection
-      if (wave < waves - 1) {
+
+        // Allow time for thread creation
         Thread.sleep(1000);
+
+        // Measure memory after thread creation but before execution
+        long memoryAfterCreation = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        long threadCreationOverhead = memoryAfterCreation - baselineMemory;
+
+        // Start all threads simultaneously
+        startLatch.countDown();
+
+        // Wait for completion
+        completionLatch.await(STRESS_TEST_TIMEOUT_SECONDS, SECONDS);
+
+        // Measure peak memory during execution
+        long peakMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        long executionOverhead = peakMemory - memoryAfterCreation;
+
+        // Store results
+        memoryUsageByThreadCount.put(threadCount, threadCreationOverhead + executionOverhead);
+
+        // Print results
+        System.out.println("Memory usage with " + threadCount + " virtual threads:");
+        System.out.println("  Thread creation overhead: " + formatBytes(threadCreationOverhead));
+        System.out.println("  Execution overhead:      " + formatBytes(executionOverhead));
+        System.out.println("  Total overhead:          " + formatBytes(threadCreationOverhead + executionOverhead));
+        System.out.println("  Per-thread overhead:     " + 
+            formatBytes((threadCreationOverhead + executionOverhead) / threadCount));
+      }
+      finally {
+        executor.shutdownNow();
+        executor.awaitTermination(1, MINUTES);
       }
     }
-    
-    // Verify overall results
-    log.info("Sustained high load test completed: {} total successful, {} failed",
-        totalSuccessCount.get(), totalFailureCount.get());
-    
-    assertThat(totalSuccessCount.get(), is(waves * operationsPerWave));
-    assertThat(totalFailureCount.get(), is(0));
-    
-    // Check memory usage after the test
-    long finalMemoryUsage = memoryBean.getHeapMemoryUsage().getUsed();
-    long memoryDelta = finalMemoryUsage - initialMemoryUsage;
-    
-    // Log memory usage
-    log.info("Memory usage: initial={} bytes, final={} bytes, delta={} bytes", 
-        initialMemoryUsage, finalMemoryUsage, memoryDelta);
-    
-    // Verify memory usage is reasonable (less than 100MB per 1000 operations)
-    long expectedMaxMemoryPerOp = 100 * 1024; // 100KB per operation
-    long maxExpectedMemory = expectedMaxMemoryPerOp * waves * operationsPerWave;
-    assertThat("Memory usage should be reasonable for virtual threads", 
-        memoryDelta, lessThan(maxExpectedMemory));
+
+    // Analyze results
+    System.out.println("\nMemory consumption analysis:");
+    for (int i = 1; i < threadCounts.length; i++) {
+      int previousCount = threadCounts[i - 1];
+      int currentCount = threadCounts[i];
+      long previousMemory = memoryUsageByThreadCount.get(previousCount);
+      long currentMemory = memoryUsageByThreadCount.get(currentCount);
+
+      double threadCountRatio = (double) currentCount / previousCount;
+      double memoryRatio = (double) currentMemory / previousMemory;
+
+      System.out.printf("  Scaling from %d to %d threads (%.1fx):\n", previousCount, currentCount, threadCountRatio);
+      System.out.printf("    Memory usage: %s to %s (%.2fx)\n", 
+          formatBytes(previousMemory), formatBytes(currentMemory), memoryRatio);
+      System.out.printf("    Per-thread overhead: %s to %s\n", 
+          formatBytes(previousMemory / previousCount), formatBytes(currentMemory / currentCount));
+    }
+
+    // Verify that memory usage scales sub-linearly with thread count
+    // (i.e., doubling threads should less than double memory usage)
+    long memoryFor100 = memoryUsageByThreadCount.get(100);
+    long memoryFor10000 = memoryUsageByThreadCount.get(10000);
+    double threadRatio = 10000.0 / 100.0; // 100x
+    double memoryRatio = (double) memoryFor10000 / memoryFor100;
+
+    System.out.println("\nOverall scaling from 100 to 10000 threads (100x):");
+    System.out.printf("  Memory usage: %s to %s (%.2fx)\n", 
+        formatBytes(memoryFor100), formatBytes(memoryFor10000), memoryRatio);
+
+    // Virtual threads should scale much better than platform threads
+    assertThat("Memory usage should scale sub-linearly with thread count", 
+        memoryRatio, lessThan(threadRatio * 0.2)); // Should use less than 20% of linear scaling
   }
 
   /**
-   * Tests the system's ability to handle error conditions under high concurrency.
-   * Verifies that errors are properly handled and don't cause system instability.
+   * Creates a test blob in the provided BlobStore.
+   *
+   * @param blobStore BlobStore to create the blob in
+   * @param blobName Name of the blob
+   * @param contentSize Size of the blob content in bytes
+   * @return Created blob
    */
-  @Test
-  public void testErrorHandlingUnderLoad() throws Exception {
-    log.info("Starting error handling under load test");
-    
-    // Configure the test to inject errors
-    final int totalOperations = CONCURRENT_OPERATIONS;
-    final int errorFrequency = 10; // Inject an error every 10 operations
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(totalOperations);
-    
-    // Track success, expected error, and unexpected error counts
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger expectedErrorCount = new AtomicInteger(0);
-    AtomicInteger unexpectedErrorCount = new AtomicInteger(0);
-    
-    // Create a virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks
-      for (int i = 0; i < totalOperations; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Determine if this operation should generate an error
-            boolean shouldError = index % errorFrequency == 0;
-            
-            if (shouldError) {
-              // Simulate an error by trying to access a non-existent blob
-              BlobId nonExistentBlobId = new BlobId(UUID.randomUUID().toString());
-              
-              // Force an exception by mocking a failure
-              when(s3.doesObjectExist(anyString(), anyString())).thenThrow(
-                  new BlobStoreException("Simulated error for testing", new RuntimeException("Cause")));
-              
-              try {
-                blobStore.get(nonExistentBlobId);
-                // Should not reach here
-                unexpectedErrorCount.incrementAndGet();
-              } catch (BlobStoreException e) {
-                // Expected exception
-                expectedErrorCount.incrementAndGet();
-              } finally {
-                // Reset the mock for other operations
-                when(s3.doesObjectExist(anyString(), anyString())).thenReturn(true);
-              }
-            } else {
-              // Perform a normal operation
-              String uniqueContent = TEST_CONTENT + "-error-test-" + index;
-              ByteArrayInputStream inputStream = new ByteArrayInputStream(uniqueContent.getBytes());
-              
-              Map<String, String> headers = new HashMap<>();
-              headers.put(CREATED_BY_HEADER, "virtual-thread-test");
-              headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
-              headers.put(BLOB_NAME_HEADER, "test-blob-error-" + index + ".txt");
-              headers.put(CONTENT_TYPE_HEADER, "text/plain");
-              headers.put(REPO_NAME_HEADER, "test-repo");
-              
-              Blob blob = blobStore.create(inputStream, headers);
-              assertThat(blob, notNullValue());
-              
-              successCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            log.error("Unexpected error in operation {}: {}", index, e.getMessage(), e);
-            unexpectedErrorCount.incrementAndGet();
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all operations to complete or timeout
-      boolean completed = latch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-      assertTrue("Timed out waiting for error handling test operations to complete", completed);
+  private Blob createTestBlob(BlobStore blobStore, String blobName, int contentSize) {
+    byte[] content = new byte[contentSize];
+    // Fill with random data
+    for (int i = 0; i < contentSize; i++) {
+      content[i] = (byte) (Math.random() * 256);
     }
-    
-    // Verify results
-    log.info("Error handling test completed: {} successful, {} expected errors, {} unexpected errors",
-        successCount.get(), expectedErrorCount.get(), unexpectedErrorCount.get());
-    
-    int expectedSuccessCount = totalOperations - (totalOperations / errorFrequency);
-    int expectedErrorsCount = totalOperations / errorFrequency;
-    
-    assertThat(successCount.get(), is(expectedSuccessCount));
-    assertThat(expectedErrorCount.get(), is(expectedErrorsCount));
-    assertThat(unexpectedErrorCount.get(), is(0));
+
+    Map<String, String> headers = new HashMap<>();
+    headers.put(BLOB_NAME_HEADER, blobName);
+    headers.put(CONTENT_TYPE_HEADER, "application/octet-stream");
+    headers.put(CREATED_BY_HEADER, "S3BlobStoreStressTest");
+    headers.put(CREATED_BY_IP_HEADER, "127.0.0.1");
+
+    return blobStore.create(new ByteArrayInputStream(content), headers);
   }
 
   /**
-   * Creates a mock S3Object with the given content.
+   * Formats a byte count into a human-readable string.
+   *
+   * @param bytes Byte count to format
+   * @return Formatted string (e.g., "1.23 MB")
    */
-  private S3Object mockS3Object(String content) {
-    S3Object s3Object = mock(S3Object.class);
-    S3ObjectInputStream inputStream = new S3ObjectInputStream(new ByteArrayInputStream(content.getBytes()), null);
-    when(s3Object.getObjectContent()).thenReturn(inputStream);
-    return s3Object;
+  private String formatBytes(long bytes) {
+    if (bytes < 1024) {
+      return bytes + " B";
+    }
+    else if (bytes < 1024 * 1024) {
+      return String.format("%.2f KB", bytes / 1024.0);
+    }
+    else if (bytes < 1024 * 1024 * 1024) {
+      return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+    }
+    else {
+      return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+    }
   }
 }

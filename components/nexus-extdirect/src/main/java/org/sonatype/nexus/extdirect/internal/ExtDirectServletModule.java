@@ -21,11 +21,9 @@ import com.softwarementors.extjs.djn.servlet.DirectJNgineServlet.GlobalParameter
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-// Import for Java 21 String Templates
-import static java.lang.StringTemplate.STR;
-
 /**
  * Servlet module for Ext.Direct Guice module.
+ * Updated for Java 21 with virtual threads support and String Templates.
  *
  * @since 3.38
  */
@@ -42,20 +40,22 @@ public abstract class ExtDirectServletModule
 
   @Override
   protected void configureServlets() {
+    // Configure for Java 21 virtual threads support
     Map<String, String> config = Maps.newHashMap();
-    // Use String Template for string concatenation
-    config.put(GlobalParameters.PROVIDERS_URL, STR."{mountPoint.substring(1)}");
+    config.put(GlobalParameters.PROVIDERS_URL, mountPoint.substring(1));
     config.put("minify", Boolean.FALSE.toString());
     config.put(GlobalParameters.DEBUG, Boolean.toString(log.isDebugEnabled()));
     config.put(GlobalParameters.JSON_REQUEST_PROCESSOR_THREAD_CLASS,
         ExtDirectJsonRequestProcessorThread.class.getName());
     config.put(GlobalParameters.GSON_BUILDER_CONFIGURATOR_CLASS,
         ExtDirectGsonBuilderConfigurator.class.getName());
-    // Configure for virtual thread compatibility
+    
+    // Configure for virtual threads in Java 21
     config.put("useVirtualThreads", Boolean.TRUE.toString());
+    config.put("executorFactory", "java.util.concurrent.Executors::newVirtualThreadPerTaskExecutor");
 
-    // Use String Template for path pattern
-    serve(STR."{mountPoint}*").with(ExtDirectServlet.class, config);
+    // Using Java 21 String Templates instead of string concatenation
+    serve(STR."\{mountPoint}*").with(ExtDirectServlet.class, config);
     bindSecurityFilter();
   }
 

@@ -1,274 +1,249 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  This configuration file defines matcher configurations for testing repository view matchers with Virtual Threads.
-  It includes various configurations to test content negotiation, thread safety, and performance with Virtual Threads.
+Sonatype Nexus (TM) Open Source Version
+Copyright (c) 2008-present Sonatype, Inc.
+All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+Eclipse Foundation, Inc. All other trademarks are the property of their respective owners.
+-->
+
+<!-- 
+Matcher configuration for testing repository view matchers with Virtual Threads.
+This file defines various matcher configurations used to validate that the repository view's
+content negotiation and request matching logic functions correctly when executed via Virtual Threads in Java 21.
 -->
 <matcher-configs>
   <!-- 
-    Basic matcher configuration for testing simple path matching with Virtual Threads.
-    Tests the fundamental path matching with literal and regex matchers.
+  Basic matcher configurations for testing simple pattern matching with Virtual Threads.
+  Tests the fundamental matcher types with minimal complexity.
   -->
-  <config id="basic-virtual-thread-matchers">
-    <description>Basic matcher configuration for testing simple path matching with Virtual Threads</description>
-    <matchers>
-      <matcher name="literalMatcher" class="org.sonatype.nexus.repository.view.matchers.LiteralMatcher">
-        <property name="path" value="/content/repo/path/to/asset"/>
-      </matcher>
-      <matcher name="regexMatcher" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value="/content/repo/.*"/>
-      </matcher>
-      <matcher name="suffixMatcher" class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
-        <property name="suffix" value=".jar"/>
-      </matcher>
-    </matchers>
-  </config>
-
+  <matcher-config id="basic-literal-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.LiteralMatcher">
+      <description>Tests exact path matching with Virtual Threads</description>
+      <property name="literal" value="/content/maven-central/org/apache/maven/maven-core/3.9.5/maven-core-3.9.5.jar"/>
+      <property name="ignoreCase" value="false"/>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="basic-regex-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
+      <description>Tests regular expression path matching with Virtual Threads</description>
+      <property name="regex" value="/content/maven-central/org/apache/maven/maven-core/\d+\.\d+\.\d+/maven-core-\d+\.\d+\.\d+\.jar"/>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="basic-suffix-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+      <description>Tests suffix-based path matching with Virtual Threads</description>
+      <property name="suffix" value=".jar"/>
+      <property name="ignoreCase" value="true"/>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="basic-prefix-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.PrefixMatcher">
+      <description>Tests prefix-based path matching with Virtual Threads</description>
+      <property name="prefix" value="/content/maven-central"/>
+      <property name="ignoreCase" value="false"/>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="basic-action-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.ActionMatcher">
+      <description>Tests HTTP action matching with Virtual Threads</description>
+      <property name="actions" value="GET,HEAD"/>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="basic-token-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
+      <description>Tests token-based path template matching with Virtual Threads</description>
+      <property name="pattern" value="/content/{repository}/{group:.+}/{name}/{version}/{name}-{version}.{extension}"/>
+    </matcher>
+  </matcher-config>
+  
   <!-- 
-    Content negotiation matcher configuration for testing with Virtual Threads.
-    Tests content type and format-specific matching under concurrent access.
+  Composite matcher configurations for testing boolean logic combinations with Virtual Threads.
+  Tests how matchers behave when combined with AND, OR, NOT operators under Virtual Threads.
   -->
-  <config id="content-negotiation-virtual-thread-matchers">
-    <description>Content negotiation matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="contentTypeMatcher" class="org.sonatype.nexus.repository.view.matchers.ContentTypeMatcher">
-        <property name="contentType" value="application/json"/>
+  <matcher-config id="and-matcher-combination">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
+      <description>Tests AND combination of matchers with Virtual Threads</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.ActionMatcher">
+          <property name="actions" value="GET"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+          <property name="suffix" value=".jar"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.PrefixMatcher">
+          <property name="prefix" value="/content/maven-central"/>
+        </matcher>
+      </matchers>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="or-matcher-combination">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.OrMatcher">
+      <description>Tests OR combination of matchers with Virtual Threads</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+          <property name="suffix" value=".jar"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+          <property name="suffix" value=".pom"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+          <property name="suffix" value=".war"/>
+        </matcher>
+      </matchers>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="not-matcher-combination">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.NotMatcher">
+      <description>Tests NOT combination of matchers with Virtual Threads</description>
+      <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+        <property name="suffix" value=".md5"/>
       </matcher>
-      <matcher name="acceptHeaderMatcher" class="org.sonatype.nexus.repository.view.matchers.AcceptHeaderMatcher">
-        <property name="acceptedTypes" value="application/json,application/xml"/>
-      </matcher>
-      <matcher name="formatSpecificMatcher" class="org.sonatype.nexus.repository.view.matchers.FormatSpecificMatcher">
-        <property name="format" value="maven2"/>
-        <property name="versionPattern" value="\d+\.\d+\.\d+"/>
-      </matcher>
-    </matchers>
-  </config>
-
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="complex-nested-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
+      <description>Tests complex nested matcher combinations with Virtual Threads</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.ActionMatcher">
+          <property name="actions" value="GET"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.logic.OrMatcher">
+          <matchers>
+            <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+              <property name="suffix" value=".jar"/>
+            </matcher>
+            <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+              <property name="suffix" value=".pom"/>
+            </matcher>
+          </matchers>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.logic.NotMatcher">
+          <matcher class="org.sonatype.nexus.repository.view.matchers.PrefixMatcher">
+            <property name="prefix" value="/content/snapshots"/>
+          </matcher>
+        </matcher>
+      </matchers>
+    </matcher>
+  </matcher-config>
+  
   <!-- 
-    Logical matcher chain configuration for testing with Virtual Threads.
-    Tests boolean logic combinations of matchers under concurrent access.
+  Performance-focused matcher configurations for testing Virtual Thread efficiency.
+  Tests how matchers perform under high concurrency with Virtual Threads.
   -->
-  <config id="logical-matcher-chain-virtual-thread">
-    <description>Logical matcher chain configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="andMatcher" class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
-        <property name="delegates">
-          <list>
-            <ref>regexMatcher1</ref>
-            <ref>regexMatcher2</ref>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="regexMatcher1" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value="/content/repo/.*"/>
-      </matcher>
-      <matcher name="regexMatcher2" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value=".*\.jar"/>
-      </matcher>
-      <matcher name="orMatcher" class="org.sonatype.nexus.repository.view.matchers.logic.OrMatcher">
-        <property name="delegates">
-          <list>
-            <ref>literalMatcher1</ref>
-            <ref>literalMatcher2</ref>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="literalMatcher1" class="org.sonatype.nexus.repository.view.matchers.LiteralMatcher">
-        <property name="path" value="/content/repo/path1"/>
-      </matcher>
-      <matcher name="literalMatcher2" class="org.sonatype.nexus.repository.view.matchers.LiteralMatcher">
-        <property name="path" value="/content/repo/path2"/>
-      </matcher>
-      <matcher name="notMatcher" class="org.sonatype.nexus.repository.view.matchers.logic.NotMatcher">
-        <property name="delegate" ref="suffixMatcher1"/>
-      </matcher>
-      <matcher name="suffixMatcher1" class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
-        <property name="suffix" value=".tmp"/>
-      </matcher>
-    </matchers>
-  </config>
-
+  <matcher-config id="high-concurrency-token-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
+      <description>Tests token matcher performance with many variables under Virtual Threads</description>
+      <property name="pattern" value="/content/{repository}/{group1}/{group2}/{group3}/{group4}/{group5}/{name}/{version}/{name}-{version}.{extension}"/>
+    </matcher>
+  </matcher-config>
+  
+  <matcher-config id="complex-regex-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
+      <description>Tests complex regex matcher performance with Virtual Threads</description>
+      <property name="regex" value="/content/maven-(central|public|releases|snapshots)/([^/]+/){2,8}[^/]+-\d+\.\d+\.\d+(-SNAPSHOT)?\.(jar|pom|war|ear|zip)"/>
+    </matcher>
+  </matcher-config>
+  
   <!-- 
-    Token-based matcher configuration for testing with Virtual Threads.
-    Tests pattern parsing and tokenization under concurrent access.
+  Content negotiation matcher configurations for testing with Virtual Threads.
+  Tests matchers used for content negotiation under Virtual Threads.
   -->
-  <config id="token-based-virtual-thread-matchers">
-    <description>Token-based matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="tokenMatcher1" class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
-        <property name="pattern" value="/content/{repoName}/{path:.+}"/>
-      </matcher>
-      <matcher name="tokenMatcher2" class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
-        <property name="pattern" value="/content/{groupId:.+}/{artifactId}/{version}/{fileName:.+}"/>
-      </matcher>
-      <matcher name="tokenMatcher3" class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
-        <property name="pattern" value="/content/maven/{action:(?:index|locate)}/{type}/{terms:.+}"/>
-      </matcher>
-    </matchers>
-  </config>
-
+  <matcher-config id="content-negotiation-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
+      <description>Tests content negotiation matching with Virtual Threads</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.ActionMatcher">
+          <property name="actions" value="GET"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
+          <property name="pattern" value="/content/{repository}/{path:.+}"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.logic.OrMatcher">
+          <matchers>
+            <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+              <property name="suffix" value=".jar"/>
+            </matcher>
+            <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+              <property name="suffix" value=".pom"/>
+            </matcher>
+            <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+              <property name="suffix" value=".war"/>
+            </matcher>
+            <matcher class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
+              <property name="suffix" value=".ear"/>
+            </matcher>
+          </matchers>
+        </matcher>
+      </matchers>
+    </matcher>
+  </matcher-config>
+  
   <!-- 
-    Performance-intensive matcher configuration for testing with Virtual Threads.
-    Tests complex matching patterns that benefit from Virtual Thread performance.
+  Thread safety test matcher configurations for Virtual Threads.
+  Tests matchers that might have thread safety issues when used with Virtual Threads.
   -->
-  <config id="performance-intensive-virtual-thread-matchers">
-    <description>Performance-intensive matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="complexRegexMatcher" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value="/content/repo/([a-zA-Z0-9_\-\.]+)/([a-zA-Z0-9_\-\.]+)/([0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9_\-\.]+)?)/([a-zA-Z0-9_\-\.]+(?:\.[a-zA-Z0-9]+))"/>
-      </matcher>
-      <matcher name="nestedLogicMatcher" class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
-        <property name="delegates">
-          <list>
-            <ref>outerOrMatcher</ref>
-            <ref>notTempMatcher</ref>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="outerOrMatcher" class="org.sonatype.nexus.repository.view.matchers.logic.OrMatcher">
-        <property name="delegates">
-          <list>
-            <ref>innerAndMatcher1</ref>
-            <ref>innerAndMatcher2</ref>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="innerAndMatcher1" class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
-        <property name="delegates">
-          <list>
-            <ref>regexMatcher3</ref>
-            <ref>suffixMatcher2</ref>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="innerAndMatcher2" class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
-        <property name="delegates">
-          <list>
-            <ref>regexMatcher4</ref>
-            <ref>suffixMatcher3</ref>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="regexMatcher3" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value="/content/repo1/.*"/>
-      </matcher>
-      <matcher name="regexMatcher4" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value="/content/repo2/.*"/>
-      </matcher>
-      <matcher name="suffixMatcher2" class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
-        <property name="suffix" value=".jar"/>
-      </matcher>
-      <matcher name="suffixMatcher3" class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
-        <property name="suffix" value=".war"/>
-      </matcher>
-      <matcher name="notTempMatcher" class="org.sonatype.nexus.repository.view.matchers.logic.NotMatcher">
-        <property name="delegate" ref="tempFileMatcher"/>
-      </matcher>
-      <matcher name="tempFileMatcher" class="org.sonatype.nexus.repository.view.matchers.SuffixMatcher">
-        <property name="suffix" value=".tmp"/>
-      </matcher>
-    </matchers>
-  </config>
-
+  <matcher-config id="thread-safety-test-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
+      <description>Tests thread safety of matchers with Virtual Threads</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
+          <property name="pattern" value="/content/{repository}/{group:.+}/{name}/{version}/{name}-{version}.{extension}"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
+          <property name="regex" value=".*-\d+\.\d+\.\d+.*"/>
+        </matcher>
+      </matchers>
+    </matcher>
+  </matcher-config>
+  
   <!-- 
-    Thread safety test matcher configuration for testing with Virtual Threads.
-    Tests for potential thread pinning and synchronization issues with matchers.
+  Pattern matching test configurations for Java 21 features.
+  Tests matchers that could benefit from Java 21 Pattern Matching improvements.
   -->
-  <config id="thread-safety-virtual-thread-matchers">
-    <description>Thread safety test matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="synchronizedMatcher" class="org.sonatype.nexus.repository.view.matchers.SynchronizedMatcher">
-        <property name="delegate" ref="regexMatcher5"/>
-        <property name="synchronizationDurationMs" value="50"/>
-      </matcher>
-      <matcher name="regexMatcher5" class="org.sonatype.nexus.repository.view.matchers.RegexMatcher">
-        <property name="pattern" value="/content/repo/.*"/>
-      </matcher>
-      <matcher name="threadInfoMatcher" class="org.sonatype.nexus.repository.view.matchers.ThreadInfoMatcher">
-        <property name="captureThreadInfo" value="true"/>
-        <property name="detectPinning" value="true"/>
-      </matcher>
-    </matchers>
-  </config>
-
+  <matcher-config id="pattern-matching-optimized-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
+      <description>Tests matchers optimized with Java 21 Pattern Matching</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.ActionMatcher">
+          <property name="actions" value="GET,HEAD,PUT,DELETE"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
+          <property name="pattern" value="/content/{repository}/{format}/{path:.+}"/>
+        </matcher>
+      </matchers>
+    </matcher>
+  </matcher-config>
+  
   <!-- 
-    Pattern matching test configuration for testing with Virtual Threads.
-    Tests the new Java 21 Pattern Matching features with matchers.
+  Virtual Thread specific test configurations.
+  Tests matchers with configurations specific to Virtual Thread behavior.
   -->
-  <config id="pattern-matching-virtual-thread-matchers">
-    <description>Pattern matching test configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="patternMatchingMatcher" class="org.sonatype.nexus.repository.view.matchers.PatternMatchingMatcher">
-        <property name="patterns">
-          <list>
-            <value>/content/maven/{groupId}/{artifactId}/{version}/{fileName}</value>
-            <value>/content/npm/{scope}/{packageName}/{version}/{fileName}</value>
-            <value>/content/raw/{path}</value>
-          </list>
-        </property>
-      </matcher>
-      <matcher name="recordPatternMatcher" class="org.sonatype.nexus.repository.view.matchers.RecordPatternMatcher">
-        <property name="recordType" value="org.sonatype.nexus.repository.view.matchers.PathRecord"/>
-      </matcher>
-    </matchers>
-  </config>
-
-  <!-- 
-    Mixed workload matcher configuration for testing with Virtual Threads.
-    Tests the behavior of matchers under a mix of CPU-bound and I/O-bound operations.
-  -->
-  <config id="mixed-workload-virtual-thread-matchers">
-    <description>Mixed workload matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="cpuIntensiveMatcher" class="org.sonatype.nexus.repository.view.matchers.CpuIntensiveMatcher">
-        <property name="pattern" value="/content/repo/([a-zA-Z0-9_\-\.]+)/([a-zA-Z0-9_\-\.]+)/([0-9]+\.[0-9]+\.[0-9]+(?:-[a-zA-Z0-9_\-\.]+)?)/([a-zA-Z0-9_\-\.]+(?:\.[a-zA-Z0-9]+))"/>
-        <property name="computationIterations" value="1000"/>
-      </matcher>
-      <matcher name="ioSimulationMatcher" class="org.sonatype.nexus.repository.view.matchers.IoSimulationMatcher">
-        <property name="pattern" value="/content/repo/.*"/>
-        <property name="simulatedIoDelayMs" value="50"/>
-        <property name="simulatedIoOperations" value="3"/>
-      </matcher>
-    </matchers>
-  </config>
-
-  <!-- 
-    Error handling matcher configuration for testing with Virtual Threads.
-    Tests how errors propagate through matcher chains with Virtual Threads.
-  -->
-  <config id="error-handling-virtual-thread-matchers">
-    <description>Error handling matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="errorInjectionMatcher" class="org.sonatype.nexus.repository.view.matchers.ErrorInjectionMatcher">
-        <property name="pattern" value="/content/repo/.*"/>
-        <property name="errorProbability" value="0.5"/>
-        <property name="errorType" value="IOException"/>
-      </matcher>
-      <matcher name="fallbackMatcher" class="org.sonatype.nexus.repository.view.matchers.FallbackMatcher">
-        <property name="primaryMatcher" ref="errorInjectionMatcher"/>
-        <property name="fallbackMatcher" ref="literalMatcher3"/>
-      </matcher>
-      <matcher name="literalMatcher3" class="org.sonatype.nexus.repository.view.matchers.LiteralMatcher">
-        <property name="path" value="/content/repo/fallback"/>
-      </matcher>
-    </matchers>
-  </config>
-
-  <!-- 
-    String template matcher configuration for testing with Virtual Threads.
-    Tests the new Java 21 String Template features with matchers.
-  -->
-  <config id="string-template-virtual-thread-matchers">
-    <description>String template matcher configuration for testing with Virtual Threads</description>
-    <matchers>
-      <matcher name="stringTemplateMatcher" class="org.sonatype.nexus.repository.view.matchers.StringTemplateMatcher">
-        <property name="templatePattern" value="/content/{repo}/{path}"/>
-        <property name="variables">
-          <map>
-            <entry key="repo" value="maven-central"/>
-            <entry key="path" value="org/example/project"/>
-          </map>
-        </property>
-      </matcher>
-    </matchers>
-  </config>
+  <matcher-config id="virtual-thread-specific-matcher">
+    <matcher class="org.sonatype.nexus.repository.view.matchers.logic.AndMatcher">
+      <description>Tests Virtual Thread specific matcher behavior</description>
+      <matchers>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.token.TokenMatcher">
+          <property name="pattern" value="/content/{repository}/{path:.+}"/>
+        </matcher>
+        <matcher class="org.sonatype.nexus.repository.view.matchers.ActionMatcher">
+          <property name="actions" value="GET"/>
+        </matcher>
+        <property name="virtualThreadOptimized" value="true"/>
+      </matchers>
+    </matcher>
+  </matcher-config>
 </matcher-configs>

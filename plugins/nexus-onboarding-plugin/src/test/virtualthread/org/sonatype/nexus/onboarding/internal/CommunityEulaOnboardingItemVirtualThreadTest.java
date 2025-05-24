@@ -18,11 +18,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationVersion;
-import org.sonatype.nexus.java21.Java21TestGroup;
 import org.sonatype.nexus.kv.GlobalKeyValueStore;
 import org.sonatype.nexus.kv.NexusKeyValue;
-import org.sonatype.nexus.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,11 +37,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link CommunityEulaOnboardingItem} running in virtual threads.
+ * Tests {@link CommunityEulaOnboardingItem} in a virtual thread environment.
  */
 @ExtendWith(MockitoExtension.class)
 @Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
-public class CommunityEulaOnboardingItemVirtualThreadTest
+class CommunityEulaOnboardingItemVirtualThreadTest
     extends TestSupport
 {
   @Mock
@@ -54,81 +54,102 @@ public class CommunityEulaOnboardingItemVirtualThreadTest
   private CommunityEulaOnboardingItem underTest;
 
   @BeforeEach
-  public void setUp() {
+  void setUp() {
     when(mockApplicationVersion.getEdition()).thenReturn("COMMUNITY");
   }
 
+  /**
+   * Tests that applies() returns true when running in COMMUNITY edition with EULA not accepted,
+   * executed within a virtual thread.
+   */
   @Test
-  public void testAppliesWhenCommunityAndEulaNotAccepted() throws Exception {
+  void testAppliesWhenCommunityAndEulaNotAccepted() throws Exception {
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.empty());
     
-    // Create a CountDownLatch to wait for the test to complete in the virtual thread
+    // Execute test in a virtual thread
     CountDownLatch latch = new CountDownLatch(1);
+    final boolean[] result = new boolean[1];
     
-    // Run the test in a virtual thread
-    Thread.ofVirtual().start(() -> {
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
       try {
         // Verify we're running in a virtual thread
         assertTrue(Thread.currentThread().isVirtual(), "Test should be running in a virtual thread");
         
-        // Test the actual functionality
-        assertTrue(underTest.applies());
+        // Execute the actual test
+        result[0] = underTest.applies();
       } finally {
         latch.countDown();
       }
     });
     
-    // Wait for the virtual thread to complete
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Test did not complete within timeout");
+    // Wait for virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    
+    // Verify the result
+    assertTrue(result[0], "applies() should return true for COMMUNITY edition with EULA not accepted");
   }
 
+  /**
+   * Tests that applies() returns false when running in COMMUNITY edition with EULA accepted,
+   * executed within a virtual thread.
+   */
   @Test
-  public void testAppliesWhenCommunityAndEulaAccepted() throws Exception {
+  void testAppliesWhenCommunityAndEulaAccepted() throws Exception {
     NexusKeyValue eulaStatus = new NexusKeyValue();
     eulaStatus.setValue(Map.of("accepted", true));
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.of(eulaStatus));
     
-    // Create a CountDownLatch to wait for the test to complete in the virtual thread
+    // Execute test in a virtual thread
     CountDownLatch latch = new CountDownLatch(1);
+    final boolean[] result = new boolean[1];
     
-    // Run the test in a virtual thread
-    Thread.ofVirtual().start(() -> {
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
       try {
         // Verify we're running in a virtual thread
         assertTrue(Thread.currentThread().isVirtual(), "Test should be running in a virtual thread");
         
-        // Test the actual functionality
-        assertFalse(underTest.applies());
+        // Execute the actual test
+        result[0] = underTest.applies();
       } finally {
         latch.countDown();
       }
     });
     
-    // Wait for the virtual thread to complete
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Test did not complete within timeout");
+    // Wait for virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    
+    // Verify the result
+    assertFalse(result[0], "applies() should return false for COMMUNITY edition with EULA accepted");
   }
 
+  /**
+   * Tests that applies() returns false when running in a non-COMMUNITY edition,
+   * executed within a virtual thread.
+   */
   @Test
-  public void testAppliesWhenNotCommunity() throws Exception {
+  void testAppliesWhenNotCommunity() throws Exception {
     when(mockApplicationVersion.getEdition()).thenReturn("PRO");
     
-    // Create a CountDownLatch to wait for the test to complete in the virtual thread
+    // Execute test in a virtual thread
     CountDownLatch latch = new CountDownLatch(1);
+    final boolean[] result = new boolean[1];
     
-    // Run the test in a virtual thread
-    Thread.ofVirtual().start(() -> {
+    Thread virtualThread = Thread.ofVirtual().start(() -> {
       try {
         // Verify we're running in a virtual thread
         assertTrue(Thread.currentThread().isVirtual(), "Test should be running in a virtual thread");
         
-        // Test the actual functionality
-        assertFalse(underTest.applies());
+        // Execute the actual test
+        result[0] = underTest.applies();
       } finally {
         latch.countDown();
       }
     });
     
-    // Wait for the virtual thread to complete
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Test did not complete within timeout");
+    // Wait for virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread execution timed out");
+    
+    // Verify the result
+    assertFalse(result[0], "applies() should return false for non-COMMUNITY edition");
   }
 }

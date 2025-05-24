@@ -10,13 +10,15 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.repository.maven.stringtemplates;
+package org.sonatype.nexus.repository.maven.internal.stringtemplates;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.repository.InvalidContentException;
 import org.sonatype.nexus.repository.maven.MavenPath;
-import org.sonatype.nexus.repository.maven.internal.Maven2Format;
-import org.sonatype.nexus.repository.maven.stringtemplates.MavenErrorMessages;
-import org.sonatype.nexus.repository.maven.stringtemplates.Java21TestGroup;
+import org.sonatype.nexus.repository.maven.internal.Maven2MavenPathParser;
+
+import java.lang.StringTemplate;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -24,163 +26,185 @@ import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
 /**
- * Tests for {@link MavenErrorMessages} using Java 21 String Templates.
+ * Tests for Maven error message formatting using Java 21 String Templates.
  * 
  * This test class validates that error messages related to Maven repository operations
- * are correctly formatted using Java 21's String Templates feature. It ensures that
- * error messages contain all necessary information and are properly formatted for
- * user consumption across various error scenarios.
+ * are correctly formatted using Java 21's String Templates feature.
  */
 @Category(Java21TestGroup.class)
 public class MavenErrorMessageTemplateTest
     extends TestSupport
 {
-  private static final String REPO_NAME = "maven-central";
-  private static final String GROUP_ID = "org.example";
-  private static final String ARTIFACT_ID = "test-artifact";
-  private static final String VERSION = "1.0.0";
-  private static final String CLASSIFIER = "sources";
-  private static final String EXTENSION = "jar";
-
-  private MavenPath.Coordinates coordinates;
-  private MavenPath mavenPath;
+  private Maven2MavenPathParser pathParser;
+  private MavenErrorMessageFormatter errorFormatter;
 
   @Before
-  public void setUp() {
-    coordinates = new MavenPath.Coordinates(
-        GROUP_ID,
-        ARTIFACT_ID,
-        VERSION,
-        CLASSIFIER,
-        EXTENSION,
-        null);
-    
-    mavenPath = new MavenPath("org/example/test-artifact/1.0.0/test-artifact-1.0.0-sources.jar", coordinates);
+  public void setup() {
+    pathParser = new Maven2MavenPathParser();
+    errorFormatter = new MavenErrorMessageFormatter();
   }
 
+  /**
+   * Tests error message formatting for invalid Maven coordinates.
+   */
   @Test
   public void testInvalidCoordinatesErrorMessage() {
-    String errorMessage = MavenErrorMessages.invalidCoordinatesError(GROUP_ID, ARTIFACT_ID, "invalid-version");
+    String repositoryName = "maven-central";
+    String path = "org/example/invalid/1.0/invalid-1.0.jar";
+    String reason = "Missing required fields";
+    
+    String errorMessage = errorFormatter.formatInvalidCoordinatesError(repositoryName, path, reason);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(GROUP_ID));
-    assertThat(errorMessage, containsString(ARTIFACT_ID));
-    assertThat(errorMessage, containsString("invalid-version"));
-    assertThat(errorMessage, containsString("Invalid Maven coordinates"));
+    assertThat(errorMessage, containsString(repositoryName));
+    assertThat(errorMessage, containsString(path));
+    assertThat(errorMessage, containsString(reason));
   }
 
+  /**
+   * Tests error message formatting for missing artifacts.
+   */
   @Test
   public void testMissingArtifactErrorMessage() {
-    String errorMessage = MavenErrorMessages.missingArtifactError(REPO_NAME, mavenPath);
+    String repositoryName = "maven-central";
+    MavenPath mavenPath = pathParser.parsePath("/org/example/artifact/1.0/artifact-1.0.jar");
+    
+    String errorMessage = errorFormatter.formatMissingArtifactError(repositoryName, mavenPath);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(REPO_NAME));
-    assertThat(errorMessage, containsString(GROUP_ID));
-    assertThat(errorMessage, containsString(ARTIFACT_ID));
-    assertThat(errorMessage, containsString(VERSION));
-    assertThat(errorMessage, containsString(CLASSIFIER));
-    assertThat(errorMessage, containsString(EXTENSION));
-    assertThat(errorMessage, containsString("not found"));
+    assertThat(errorMessage, containsString(repositoryName));
+    assertThat(errorMessage, containsString(mavenPath.getPath()));
+    assertThat(errorMessage, containsString("org.example"));
+    assertThat(errorMessage, containsString("artifact"));
+    assertThat(errorMessage, containsString("1.0"));
   }
 
+  /**
+   * Tests error message formatting for repository access errors.
+   */
   @Test
   public void testRepositoryAccessErrorMessage() {
-    String errorMessage = MavenErrorMessages.repositoryAccessError(REPO_NAME, "Connection timeout");
+    String repositoryName = "maven-central";
+    String operation = "download";
+    String reason = "Connection timeout";
+    
+    String errorMessage = errorFormatter.formatRepositoryAccessError(repositoryName, operation, reason);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(REPO_NAME));
-    assertThat(errorMessage, containsString("Connection timeout"));
-    assertThat(errorMessage, containsString("Error accessing repository"));
+    assertThat(errorMessage, containsString(repositoryName));
+    assertThat(errorMessage, containsString(operation));
+    assertThat(errorMessage, containsString(reason));
   }
 
+  /**
+   * Tests error message formatting for invalid metadata content.
+   */
   @Test
   public void testInvalidMetadataErrorMessage() {
-    String errorMessage = MavenErrorMessages.invalidMetadataError(mavenPath.getPath(), "Missing required elements");
+    String path = "org/example/artifact/maven-metadata.xml";
+    String reason = "XML parsing error";
+    
+    String errorMessage = errorFormatter.formatInvalidMetadataError(path, reason);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(mavenPath.getPath()));
-    assertThat(errorMessage, containsString("Missing required elements"));
-    assertThat(errorMessage, containsString("Invalid Maven metadata"));
+    assertThat(errorMessage, containsString(path));
+    assertThat(errorMessage, containsString(reason));
   }
 
-  @Test
-  public void testChecksumMismatchErrorMessage() {
-    String errorMessage = MavenErrorMessages.checksumMismatchError(
-        mavenPath.getPath(), 
-        "abc123", 
-        "def456", 
-        Maven2Format.NAME);
-    
-    assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(mavenPath.getPath()));
-    assertThat(errorMessage, containsString("abc123"));
-    assertThat(errorMessage, containsString("def456"));
-    assertThat(errorMessage, containsString(Maven2Format.NAME));
-    assertThat(errorMessage, containsString("Checksum mismatch"));
-  }
-
+  /**
+   * Tests error message formatting for version policy violations.
+   */
   @Test
   public void testVersionPolicyViolationErrorMessage() {
-    String errorMessage = MavenErrorMessages.versionPolicyViolationError(
-        "RELEASE", 
-        mavenPath.getPath(), 
-        REPO_NAME);
+    String repositoryName = "maven-releases";
+    MavenPath mavenPath = pathParser.parsePath("/org/example/snapshot/1.0-SNAPSHOT/snapshot-1.0-SNAPSHOT.jar");
+    String policy = "RELEASE";
+    
+    String errorMessage = errorFormatter.formatVersionPolicyViolationError(repositoryName, mavenPath, policy);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString("RELEASE"));
+    assertThat(errorMessage, containsString(repositoryName));
     assertThat(errorMessage, containsString(mavenPath.getPath()));
-    assertThat(errorMessage, containsString(REPO_NAME));
-    assertThat(errorMessage, containsString("Version policy violation"));
+    assertThat(errorMessage, containsString(policy));
+    assertThat(errorMessage, containsString("1.0-SNAPSHOT"));
   }
 
+  /**
+   * Tests error message formatting for checksum validation failures.
+   */
   @Test
-  public void testDuplicateArtifactErrorMessage() {
-    String errorMessage = MavenErrorMessages.duplicateArtifactError(mavenPath, REPO_NAME);
+  public void testChecksumValidationErrorMessage() {
+    String repositoryName = "maven-central";
+    MavenPath mavenPath = pathParser.parsePath("/org/example/artifact/1.0/artifact-1.0.jar");
+    String expectedChecksum = "abc123";
+    String actualChecksum = "def456";
+    
+    String errorMessage = errorFormatter.formatChecksumValidationError(
+        repositoryName, mavenPath, expectedChecksum, actualChecksum);
     
     assertThat(errorMessage, notNullValue());
+    assertThat(errorMessage, containsString(repositoryName));
     assertThat(errorMessage, containsString(mavenPath.getPath()));
-    assertThat(errorMessage, containsString(REPO_NAME));
-    assertThat(errorMessage, containsString(GROUP_ID));
-    assertThat(errorMessage, containsString(ARTIFACT_ID));
-    assertThat(errorMessage, containsString(VERSION));
-    assertThat(errorMessage, containsString("Duplicate artifact"));
+    assertThat(errorMessage, containsString(expectedChecksum));
+    assertThat(errorMessage, containsString(actualChecksum));
   }
 
+  /**
+   * Tests error message formatting for upload validation failures.
+   */
   @Test
-  public void testInvalidChecksumErrorMessage() {
-    String errorMessage = MavenErrorMessages.invalidChecksumError(
-        mavenPath.getPath(), 
-        "SHA-1", 
-        "invalid-checksum-format");
+  public void testUploadValidationErrorMessage() {
+    String repositoryName = "maven-releases";
+    String path = "org/example/artifact/1.0/artifact-1.0.jar";
+    String reason = "Invalid POM file";
+    
+    String errorMessage = errorFormatter.formatUploadValidationError(repositoryName, path, reason);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(mavenPath.getPath()));
-    assertThat(errorMessage, containsString("SHA-1"));
-    assertThat(errorMessage, containsString("invalid-checksum-format"));
-    assertThat(errorMessage, containsString("Invalid checksum format"));
+    assertThat(errorMessage, containsString(repositoryName));
+    assertThat(errorMessage, containsString(path));
+    assertThat(errorMessage, containsString(reason));
   }
 
+  /**
+   * Tests error message formatting for invalid content exceptions.
+   */
   @Test
-  public void testStorageErrorMessage() {
-    String errorMessage = MavenErrorMessages.storageError(mavenPath.getPath(), "Disk full");
+  public void testInvalidContentExceptionMessage() {
+    String path = "org/example/artifact/maven-metadata.xml";
+    String reason = "XML parsing error";
+    
+    InvalidContentException exception = new InvalidContentException(path, reason);
+    String errorMessage = errorFormatter.formatInvalidContentExceptionMessage(exception);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(mavenPath.getPath()));
-    assertThat(errorMessage, containsString("Disk full"));
-    assertThat(errorMessage, containsString("Storage error"));
+    assertThat(errorMessage, containsString(path));
+    assertThat(errorMessage, containsString(reason));
   }
 
+  /**
+   * Tests error message formatting for complex error scenarios with multiple variables.
+   */
   @Test
-  public void testPermissionDeniedErrorMessage() {
-    String errorMessage = MavenErrorMessages.permissionDeniedError(REPO_NAME, "user123", "write");
+  public void testComplexErrorMessage() {
+    String repositoryName = "maven-central";
+    MavenPath mavenPath = pathParser.parsePath("/org/example/artifact/1.0/artifact-1.0.jar");
+    String operation = "download";
+    String reason = "Network error";
+    int statusCode = 404;
+    
+    String errorMessage = errorFormatter.formatComplexError(
+        repositoryName, mavenPath, operation, reason, statusCode);
     
     assertThat(errorMessage, notNullValue());
-    assertThat(errorMessage, containsString(REPO_NAME));
-    assertThat(errorMessage, containsString("user123"));
-    assertThat(errorMessage, containsString("write"));
-    assertThat(errorMessage, containsString("Permission denied"));
+    assertThat(errorMessage, containsString(repositoryName));
+    assertThat(errorMessage, containsString(mavenPath.getPath()));
+    assertThat(errorMessage, containsString(operation));
+    assertThat(errorMessage, containsString(reason));
+    assertThat(errorMessage, containsString(String.valueOf(statusCode)));
   }
 }

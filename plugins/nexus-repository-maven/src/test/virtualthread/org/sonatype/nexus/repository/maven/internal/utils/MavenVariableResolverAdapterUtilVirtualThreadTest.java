@@ -18,6 +18,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -27,22 +28,26 @@ import org.junit.jupiter.api.Test;
 
 import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.collection.IsMapContaining.hasEntry;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.sonatype.nexus.repository.maven.MavenPath.SignatureType.GPG;
 import static org.sonatype.nexus.repository.maven.internal.utils.MavenVariableResolverAdapterUtil.createCoordinateMap;
 
 /**
- * Tests for {@link MavenVariableResolverAdapterUtil} running in Java 21 Virtual Threads.
+ * Tests for {@link MavenVariableResolverAdapterUtil#createCoordinateMap} when executed in a Virtual Thread.
+ * This test validates that coordinate mapping functionality remains reliable in a highly concurrent
+ * Virtual Thread environment.
  */
 public class MavenVariableResolverAdapterUtilVirtualThreadTest
     extends TestSupport
 {
+  /**
+   * Tests that coordinate mapping works correctly when executed in a Virtual Thread.
+   */
   @Test
   void shouldCopyCoordinatesToMapInVirtualThread() throws Exception {
     AtomicReference<Map<String, String>> resultMap = new AtomicReference<>();
-    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+    AtomicBoolean isVirtualThread = new AtomicBoolean(false);
     
     // Create and start a virtual thread to run the test
     Thread virtualThread = Thread.ofVirtual().start(() -> {
@@ -60,8 +65,8 @@ public class MavenVariableResolverAdapterUtilVirtualThreadTest
     // Wait for the virtual thread to complete
     virtualThread.join();
     
-    // Verify the thread was actually a virtual thread
-    assertTrue(isVirtualThread.get(), "Test should run in a virtual thread");
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
     
     // Verify the results
     Map<String, String> map = resultMap.get();
@@ -72,10 +77,13 @@ public class MavenVariableResolverAdapterUtilVirtualThreadTest
     assertThat(map, hasEntry("classifier", "test"));
   }
 
+  /**
+   * Tests that classifier normalization works correctly when executed in a Virtual Thread.
+   */
   @Test
   void classifierShouldBeEmptyStringWhenNotSetInVirtualThread() throws Exception {
     AtomicReference<Map<String, String>> resultMap = new AtomicReference<>();
-    AtomicReference<Boolean> isVirtualThread = new AtomicReference<>();
+    AtomicBoolean isVirtualThread = new AtomicBoolean(false);
     
     // Create and start a virtual thread to run the test
     Thread virtualThread = Thread.ofVirtual().start(() -> {
@@ -93,103 +101,91 @@ public class MavenVariableResolverAdapterUtilVirtualThreadTest
     // Wait for the virtual thread to complete
     virtualThread.join();
     
-    // Verify the thread was actually a virtual thread
-    assertTrue(isVirtualThread.get(), "Test should run in a virtual thread");
+    // Verify the test ran in a virtual thread
+    assertThat("Test should run in a virtual thread", isVirtualThread.get(), is(true));
     
     // Verify the results
     Map<String, String> map = resultMap.get();
     assertThat(map, hasEntry("classifier", EMPTY));
   }
-  
+
+  /**
+   * Tests that coordinate mapping works correctly when executed concurrently in multiple Virtual Threads.
+   * This validates thread safety of the createCoordinateMap method in a highly concurrent environment.
+   */
   @Test
-  void shouldHandleConcurrentCoordinateMapCreationInVirtualThreads() throws Exception {
-    // Number of concurrent threads to run
+  void shouldHandleConcurrentCoordinateMappingInVirtualThreads() throws Exception {
     final int threadCount = 100;
-    final CountDownLatch latch = new CountDownLatch(1);
-    final AtomicReference<Exception> testException = new AtomicReference<>();
+    final CountDownLatch latch = new CountDownLatch(threadCount);
+    final AtomicBoolean allVirtualThreads = new AtomicBoolean(true);
+    final AtomicBoolean allMappingsCorrect = new AtomicBoolean(true);
     
     // Create a virtual thread per task executor
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Submit tasks to create coordinate maps concurrently
+    // Submit tasks to the executor
     Future<?>[] futures = new Future<?>[threadCount];
+    
     for (int i = 0; i < threadCount; i++) {
-      final int index = i;
+      final String suffix = String.valueOf(i);
+      
       futures[i] = executor.submit(() -> {
         try {
-          // Wait for all threads to be ready
-          latch.await();
+          // Verify we're running in a virtual thread
+          if (!Thread.currentThread().isVirtual()) {
+            allVirtualThreads.set(false);
+          }
           
-          // Create unique coordinates for each thread
+          // Create test coordinates with unique values
           Coordinates coordinates = new Coordinates(
-              false, 
-              "org.test" + index, 
-              "artifact" + index,
-              "1.0." + index, 
-              3600L, 
-              100, 
-              "1.0." + index, 
-              (index % 2 == 0) ? "test" + index : null, 
-              ".jar", 
+              false,
+              "org.mockito" + suffix,
+              "mockito-core" + suffix,
+              "3.24" + suffix,
+              3600L,
+              100,
+              "3.24" + suffix,
+              "test" + suffix,
+              ".jar",
               GPG);
 
-          // Create the coordinate map
+          // Execute the method under test
           Map<String, String> map = createCoordinateMap(coordinates);
           
-          // Verify the map contains the expected values
-          if (!map.containsKey("groupId") || !map.get("groupId").equals("org.test" + index)) {
-            throw new AssertionError("groupId mismatch for thread " + index);
+          // Verify the mapping is correct
+          boolean mappingCorrect = 
+              "org.mockito" + suffix.equals(map.get("groupId")) &&
+              "mockito-core" + suffix.equals(map.get("artifactId")) &&
+              "3.24" + suffix.equals(map.get("version")) &&
+              ".jar".equals(map.get("extension")) &&
+              "test" + suffix.equals(map.get("classifier"));
+              
+          if (!mappingCorrect) {
+            allMappingsCorrect.set(false);
           }
-          if (!map.containsKey("artifactId") || !map.get("artifactId").equals("artifact" + index)) {
-            throw new AssertionError("artifactId mismatch for thread " + index);
-          }
-          if (!map.containsKey("version") || !map.get("version").equals("1.0." + index)) {
-            throw new AssertionError("version mismatch for thread " + index);
-          }
-          if (!map.containsKey("extension") || !map.get("extension").equals(".jar")) {
-            throw new AssertionError("extension mismatch for thread " + index);
-          }
-          
-          // Verify classifier handling
-          String expectedClassifier = (index % 2 == 0) ? "test" + index : EMPTY;
-          if (!map.containsKey("classifier") || !map.get("classifier").equals(expectedClassifier)) {
-            throw new AssertionError("classifier mismatch for thread " + index + 
-                ", expected: '" + expectedClassifier + "', actual: '" + map.get("classifier") + "'");
-          }
-        }
-        catch (Exception e) {
-          testException.set(e);
+        } finally {
+          latch.countDown();
         }
       });
     }
     
-    // Start all threads simultaneously
-    latch.countDown();
-    
     // Wait for all threads to complete
-    for (Future<?> future : futures) {
-      future.get();
-    }
-    
-    // Shutdown the executor
+    latch.await();
     executor.shutdown();
     
-    // Check if any exceptions occurred
-    if (testException.get() != null) {
-      throw new AssertionError("Test failed with exception", testException.get());
-    }
-  }
-  
-  @Test
-  void shouldVerifyThreadIsVirtual() throws ExecutionException, InterruptedException {
-    // Use the virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit a task that checks if it's running in a virtual thread
-      Future<Boolean> future = executor.submit(() -> Thread.currentThread().isVirtual());
-      
-      // Verify the thread was a virtual thread
-      boolean isVirtual = future.get();
-      assertThat("Task should run in a virtual thread", isVirtual, is(true));
+    // Verify all tests ran in virtual threads
+    assertThat("All tests should run in virtual threads", allVirtualThreads.get(), is(true));
+    
+    // Verify all mappings were correct
+    assertThat("All coordinate mappings should be correct", allMappingsCorrect.get(), is(true));
+    
+    // Check for any exceptions
+    for (Future<?> future : futures) {
+      try {
+        future.get(); // Will throw an exception if the task failed
+      } catch (ExecutionException e) {
+        throw new AssertionError("Task failed with exception", e.getCause());
+      }
     }
   }
 }

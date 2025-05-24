@@ -14,24 +14,19 @@ package org.sonatype.nexus.repository.maven.internal.validation;
 
 import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.InvalidContentException;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.apache.commons.io.IOUtils.toInputStream;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests for {@link MavenMetadataContentValidator} using Virtual Threads.
- * 
- * @since 3.60
- */
+@DisplayName("MavenMetadataContentValidator with Virtual Threads")
 public class MavenMetadataContentValidatorTest
     extends TestSupport
 {
@@ -50,358 +45,211 @@ public class MavenMetadataContentValidatorTest
     underTest = new MavenMetadataContentValidator();
   }
 
-  @Test
-  public void throwInvalidContentWhenMetadataEmpty() throws Exception {
+  /**
+   * Helper method to run a test in a Virtual Thread
+   */
+  private void runInVirtualThread(Runnable test) throws InterruptedException {
     CountDownLatch latch = new CountDownLatch(1);
-    final InvalidContentException[] exception = new InvalidContentException[1];
-    
     Thread.ofVirtual().start(() -> {
       try {
-        InputStream mavenMetadata = toInputStream("");
-        underTest.validate(VALID_PATH, mavenMetadata);
-      }
-      catch (InvalidContentException e) {
-        exception[0] = e;
-      }
-      finally {
+        test.run();
+      } finally {
         latch.countDown();
       }
     });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertThrows(InvalidContentException.class, () -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+    latch.await(); // Wait for the virtual thread to complete
+  }
+
+  @Test
+  @DisplayName("Should throw InvalidContentException when metadata is empty")
+  public void throwInvalidContentWhenMetadataEmpty() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("");
+      assertThrows(InvalidContentException.class, () -> 
+          underTest.validate(VALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void throwInvalidContentWhenMetadataNotMetadata() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final InvalidContentException[] exception = new InvalidContentException[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("This is not metadata");
-        underTest.validate(VALID_PATH, mavenMetadata);
-      }
-      catch (InvalidContentException e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertThrows(InvalidContentException.class, () -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should throw InvalidContentException when content is not metadata")
+  public void throwInvalidContentWhenMetadataNotMetadata() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("This is not metadata");
+      assertThrows(InvalidContentException.class, () -> 
+          underTest.validate(VALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void throwInvalidContentWhenMetadataDoesNotMatchPath() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final InvalidContentException[] exception = new InvalidContentException[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "  <artifactId>artifact</artifactId>\n" +
-            "</metadata>\n");
-        underTest.validate(INVALID_PATH, mavenMetadata);
-      }
-      catch (InvalidContentException e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertThrows(InvalidContentException.class, () -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should throw InvalidContentException when metadata does not match path")
+  public void throwInvalidContentWhenMetadataDoesNotMatchPath() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "  <artifactId>artifact</artifactId>\n" +
+          "</metadata>\n");
+      assertThrows(InvalidContentException.class, () -> 
+          underTest.validate(INVALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void doNotValidateWhenGroupNotFound() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final Exception[] exception = new Exception[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <artifactId>artifact</artifactId>\n" +
-            "</metadata>\n");
-        underTest.validate(INVALID_PATH, mavenMetadata);
-      }
-      catch (Exception e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertDoesNotThrow(() -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should not validate when group not found")
+  public void doNotValidateWhenGroupNotFound() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <artifactId>artifact</artifactId>\n" +
+          "</metadata>\n");
+      assertDoesNotThrow(() -> 
+          underTest.validate(INVALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void doNotValidateWhenGroupEmpty() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final Exception[] exception = new Exception[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId></groupId>\n" +
-            "  <artifactId>artifact</artifactId>\n" +
-            "</metadata>\n");
-        underTest.validate(INVALID_PATH, mavenMetadata);
-      }
-      catch (Exception e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertDoesNotThrow(() -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should not validate when group is empty")
+  public void doNotValidateWhenGroupEmpty() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId></groupId>\n" +
+          "  <artifactId>artifact</artifactId>\n" +
+          "</metadata>\n");
+      assertDoesNotThrow(() -> 
+          underTest.validate(INVALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void throwInvalidContentWhenArtifactNotFound() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final InvalidContentException[] exception = new InvalidContentException[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "</metadata>\n");
-        underTest.validate(VALID_PATH, mavenMetadata);
-      }
-      catch (InvalidContentException e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertThrows(InvalidContentException.class, () -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should throw InvalidContentException when artifact not found")
+  public void throwInvalidContentWhenArtifactNotFound() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "</metadata>\n");
+      assertThrows(InvalidContentException.class, () -> 
+          underTest.validate(VALID_PATH, mavenMetadata));
     });
   }
   
   @Test
-  public void throwInvalidContentWhenArtifactEmpty() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final InvalidContentException[] exception = new InvalidContentException[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "  <artifactId></artifactId>\n" +
-            "</metadata>\n");
-        underTest.validate(VALID_PATH, mavenMetadata);
-      }
-      catch (InvalidContentException e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertThrows(InvalidContentException.class, () -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should throw InvalidContentException when artifact is empty")
+  public void throwInvalidContentWhenArtifactEmpty() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "  <artifactId></artifactId>\n" +
+          "</metadata>\n");
+      assertThrows(InvalidContentException.class, () -> 
+          underTest.validate(VALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void noExceptionWhenValidContentAndMatchesPath() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final Exception[] exception = new Exception[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "  <artifactId>artifact</artifactId>\n" +
-            "</metadata>\n");
-        underTest.validate(VALID_PATH, mavenMetadata);
-      }
-      catch (Exception e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertDoesNotThrow(() -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should not throw exception when content is valid and matches path")
+  public void noExceptionWhenValidContentAndMatchesPath() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "  <artifactId>artifact</artifactId>\n" +
+          "</metadata>\n");
+      assertDoesNotThrow(() -> 
+          underTest.validate(VALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void noExceptionWhenValidContentAndMatchesPathForSnapshotMetadata() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final Exception[] exception = new Exception[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "  <artifactId>artifact</artifactId>\n" +
-            "  <version>1.0-SNAPSHOT</version>\n" +
-            "</metadata>\n");
-        underTest.validate(VALID_SNAPSHOT_PATH, mavenMetadata);
-      }
-      catch (Exception e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertDoesNotThrow(() -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should not throw exception when content is valid and matches path for snapshot metadata")
+  public void noExceptionWhenValidContentAndMatchesPathForSnapshotMetadata() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "  <artifactId>artifact</artifactId>\n" +
+          "  <version>1.0-SNAPSHOT</version>\n" +
+          "</metadata>\n");
+      assertDoesNotThrow(() -> 
+          underTest.validate(VALID_SNAPSHOT_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void noExceptionWhenValidContentAndMatchesPathWithReleasedVersion() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final Exception[] exception = new Exception[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "  <artifactId>artifact</artifactId>\n" +
-            "  <version>1.0</version>\n" +
-            "</metadata>\n");
-        underTest.validate(VALID_PATH, mavenMetadata);
-      }
-      catch (Exception e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertDoesNotThrow(() -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should not throw exception when content is valid and matches path with released version")
+  public void noExceptionWhenValidContentAndMatchesPathWithReleasedVersion() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "  <artifactId>artifact</artifactId>\n" +
+          "  <version>1.0</version>\n" +
+          "</metadata>\n");
+      assertDoesNotThrow(() -> 
+          underTest.validate(VALID_PATH, mavenMetadata));
     });
   }
 
   @Test
-  public void noExceptionWhenGroupOnlyWithCorrectPath() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    final Exception[] exception = new Exception[1];
-    
-    Thread.ofVirtual().start(() -> {
-      try {
-        InputStream mavenMetadata = toInputStream("<metadata>\n" +
-            "  <groupId>group</groupId>\n" +
-            "</metadata>\n");
-        underTest.validate(VALID_PATH_GROUP_ONLY, mavenMetadata);
-      }
-      catch (Exception e) {
-        exception[0] = e;
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    assertTrue(latch.await(5, TimeUnit.SECONDS));
-    assertDoesNotThrow(() -> {
-      if (exception[0] != null) {
-        throw exception[0];
-      }
+  @DisplayName("Should not throw exception when group only with correct path")
+  public void noExceptionWhenGroupOnlyWithCorrectPath() throws InterruptedException {
+    runInVirtualThread(() -> {
+      InputStream mavenMetadata = toInputStream("<metadata>\n" +
+          "  <groupId>group</groupId>\n" +
+          "</metadata>\n");
+      assertDoesNotThrow(() -> 
+          underTest.validate(VALID_PATH_GROUP_ONLY, mavenMetadata));
     });
   }
-  
+
   @Test
-  public void concurrentValidationWithMultipleVirtualThreads() throws Exception {
-    int threadCount = 10;
-    CountDownLatch latch = new CountDownLatch(threadCount);
-    final Exception[] exceptions = new Exception[threadCount];
+  @DisplayName("Should handle concurrent validation with multiple virtual threads")
+  public void concurrentValidationWithMultipleVirtualThreads() throws InterruptedException {
+    final int threadCount = 10;
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
     
-    // Create valid metadata content
-    String validMetadata = "<metadata>\n" +
-        "  <groupId>group</groupId>\n" +
-        "  <artifactId>artifact</artifactId>\n" +
-        "</metadata>\n";
-    
-    // Start multiple virtual threads to validate the same content concurrently
+    // Create multiple virtual threads that will all start validation simultaneously
     for (int i = 0; i < threadCount; i++) {
-      final int index = i;
-      Thread.ofVirtual().start(() -> {
+      final int threadId = i;
+      Thread.ofVirtual().name("validation-thread-" + threadId).start(() -> {
         try {
-          InputStream mavenMetadata = toInputStream(validMetadata);
-          underTest.validate(VALID_PATH, mavenMetadata);
-        }
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Perform validation based on thread ID to test different scenarios
+          if (threadId % 3 == 0) {
+            // Valid metadata test
+            InputStream mavenMetadata = toInputStream("<metadata>\n" +
+                "  <groupId>group</groupId>\n" +
+                "  <artifactId>artifact</artifactId>\n" +
+                "</metadata>\n");
+            assertDoesNotThrow(() -> 
+                underTest.validate(VALID_PATH, mavenMetadata));
+          } 
+          else if (threadId % 3 == 1) {
+            // Invalid metadata test
+            InputStream mavenMetadata = toInputStream("This is not metadata");
+            assertThrows(InvalidContentException.class, () -> 
+                underTest.validate(VALID_PATH, mavenMetadata));
+          }
+          else {
+            // Mismatched path test
+            InputStream mavenMetadata = toInputStream("<metadata>\n" +
+                "  <groupId>group</groupId>\n" +
+                "  <artifactId>artifact</artifactId>\n" +
+                "</metadata>\n");
+            assertThrows(InvalidContentException.class, () -> 
+                underTest.validate(INVALID_PATH, mavenMetadata));
+          }
+        } 
         catch (Exception e) {
-          exceptions[index] = e;
+          log.error("Error in virtual thread {}", threadId, e);
         }
         finally {
-          latch.countDown();
+          completionLatch.countDown();
         }
       });
     }
     
-    // Wait for all threads to complete
-    assertTrue(latch.await(10, TimeUnit.SECONDS));
+    // Start all threads simultaneously
+    startLatch.countDown();
     
-    // Verify no exceptions were thrown in any thread
-    for (int i = 0; i < threadCount; i++) {
-      final int index = i;
-      assertDoesNotThrow(() -> {
-        if (exceptions[index] != null) {
-          throw exceptions[index];
-        }
-      }, "Exception in virtual thread " + i);
-    }
+    // Wait for all threads to complete
+    completionLatch.await();
   }
 }

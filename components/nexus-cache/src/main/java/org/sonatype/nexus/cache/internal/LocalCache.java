@@ -13,19 +13,26 @@
 package org.sonatype.nexus.cache.internal;
 
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import javax.cache.Cache;
+import javax.cache.CacheException;
+import javax.cache.integration.CacheLoaderException;
+import javax.cache.integration.CacheWriterException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.nexus.cache.NexusCache;
 
-import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.StringTemplate.STR;
+import static java.util.Objects.requireNonNull;
 
 /**
  * The implementation of the {@link NexusCache}.
- *
- * <p>This implementation is compatible with Java 21 and supports execution in Virtual Thread contexts.
- * It provides non-blocking operations to avoid Virtual Thread pinning and uses Pattern Matching
- * for improved error handling.</p>
+ * <p>
+ * This implementation is compatible with Java 21 and supports execution in Virtual Thread contexts.
+ * It uses pattern matching for error handling and String Templates for logging.
+ * </p>
  *
  * @param <K> the type of key
  * @param <V> the type of value
@@ -33,78 +40,75 @@ import static java.lang.StringTemplate.STR;
 public class LocalCache<K, V>
     implements NexusCache<K, V>
 {
+  private static final Logger log = LoggerFactory.getLogger(LocalCache.class);
+  
   private final Cache<K, V> cache;
 
   /**
-   * Creates a new LocalCache instance wrapping the provided JCache implementation.
+   * Constructs a new LocalCache wrapping the provided JCache implementation.
    * 
-   * @param cache the JCache implementation to wrap, must not be null
+   * @param cache the JCache implementation to wrap (must not be null)
    * @throws NullPointerException if cache is null
    */
   public LocalCache(final Cache<K, V> cache) {
-    this.cache = checkNotNull(cache, "Cache cannot be null");
+    this.cache = requireNonNull(cache, "Cache cannot be null");
+    log.debug(STR."Initialized LocalCache with JCache implementation: \{cache.getClass().getName()}");
   }
 
   @Override
   public Optional<V> get(final K key) {
     try {
-      return Optional.ofNullable(cache.get(key));
-    } 
-    catch (Exception e) {
-      // Using Pattern Matching for switch to handle different exception types
-      return switch (e) {
-        case IllegalStateException ise -> {
-          // Cache is closed or disposed
-          logError("Cache access error: cache is closed or disposed", ise);
-          yield Optional.empty();
-        }
-        case javax.cache.CacheException ce -> {
-          // General cache exception
-          logError("Cache operation failed for key", ce);
-          yield Optional.empty();
-        }
-        default -> {
-          // Any other exception
-          logError("Unexpected error accessing cache", e);
-          yield Optional.empty();
-        }
-      };
+      if (key == null) {
+        log.debug("Attempted to get value with null key");
+        return Optional.empty();
+      }
+      
+      V value = cache.get(key);
+      if (value != null) {
+        log.trace(STR."Cache hit for key: \{key}");
+      } else {
+        log.trace(STR."Cache miss for key: \{key}");
+      }
+      
+      return Optional.ofNullable(value);
+    } catch (Exception e) {
+      handleException(e, STR."Error retrieving value for key: \{key}");
+      return Optional.empty();
     }
   }
 
   @Override
   public void put(final K key, final V value) {
     try {
-      cache.put(key, value);
-    }
-    catch (Exception e) {
-      // Using Pattern Matching for switch to handle different exception types
-      switch (e) {
-        case IllegalStateException ise -> 
-          logError(STR."Cache put error: cache is closed or disposed for key \{key}", ise);
-        case javax.cache.CacheException ce -> 
-          logError(STR."Cache put operation failed for key \{key}", ce);
-        default -> 
-          logError(STR."Unexpected error during cache put operation for key \{key}", e);
+      if (key == null) {
+        log.debug("Attempted to put value with null key");
+        return;
       }
+      
+      if (value == null) {
+        log.debug(STR."Attempted to put null value for key: \{key}");
+        return;
+      }
+      
+      cache.put(key, value);
+      log.trace(STR."Cached value for key: \{key}");
+    } catch (Exception e) {
+      handleException(e, STR."Error putting value for key: \{key}");
     }
   }
 
   @Override
   public void remove(final K key) {
     try {
-      cache.remove(key);
-    }
-    catch (Exception e) {
-      // Using Pattern Matching for switch to handle different exception types
-      switch (e) {
-        case IllegalStateException ise -> 
-          logError(STR."Cache remove error: cache is closed or disposed for key \{key}", ise);
-        case javax.cache.CacheException ce -> 
-          logError(STR."Cache remove operation failed for key \{key}", ce);
-        default -> 
-          logError(STR."Unexpected error during cache remove operation for key \{key}", e);
+      if (key == null) {
+        log.debug("Attempted to remove value with null key");
+        return;
       }
+      
+      cache.remove(key);
+      log.trace(STR."Removed value for key: \{key}");
+    } catch (Exception e) {
+      handleException(e, STR."Error removing value for key: \{key}");
     }
   }
 
@@ -112,32 +116,27 @@ public class LocalCache<K, V>
   public void removeAll() {
     try {
       cache.removeAll();
-    }
-    catch (Exception e) {
-      // Using Pattern Matching for switch to handle different exception types
-      switch (e) {
-        case IllegalStateException ise -> 
-          logError("Cache removeAll error: cache is closed or disposed", ise);
-        case javax.cache.CacheException ce -> 
-          logError("Cache removeAll operation failed", ce);
-        case UnsupportedOperationException uoe -> 
-          logError("Cache removeAll operation is not supported by this implementation", uoe);
-        default -> 
-          logError("Unexpected error during cache removeAll operation", e);
-      }
+      log.debug("Removed all values from cache");
+    } catch (Exception e) {
+      handleException(e, "Error removing all values from cache");
     }
   }
   
   /**
-   * Logs an error message with the associated exception.
-   * This is a placeholder method that would be replaced with actual logging in a real implementation.
+   * Handles exceptions from cache operations using pattern matching for switch.
    * 
-   * @param message the error message
-   * @param e the exception that occurred
+   * @param exception the exception to handle
+   * @param message the error message context
    */
-  private void logError(String message, Exception e) {
-    // In a real implementation, this would log to a proper logging framework
-    // For now, we'll just print to stderr for demonstration purposes
-    System.err.println(STR."\{message}: \{e.getMessage()}");
+  private void handleException(Exception exception, String message) {
+    switch (exception) {
+      case CacheLoaderException e -> log.error(STR."\{message}: Cache loader error", e);
+      case CacheWriterException e -> log.error(STR."\{message}: Cache writer error", e);
+      case IllegalStateException e -> log.error(STR."\{message}: Cache is in illegal state", e);
+      case ExecutionException e -> log.error(STR."\{message}: Execution error", e);
+      case CacheException e -> log.error(STR."\{message}: General cache error", e);
+      case null -> log.error(STR."\{message}: Unknown error (null exception)");
+      default -> log.error(STR."\{message}: Unexpected error", exception);
+    }
   }
 }

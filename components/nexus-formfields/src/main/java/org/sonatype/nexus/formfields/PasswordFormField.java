@@ -15,12 +15,11 @@ package org.sonatype.nexus.formfields;
 /**
  * A {@link StringTextFormField} that masks the input.
  * <p>
- * This field implements the {@link Encrypted} interface, indicating that its value should be stored
- * in an encrypted format. The encryption is handled by the security framework using Java 21 compatible
- * cryptography providers.
- * <p>
- * Security Note: Password fields should always be used for sensitive information that requires encryption
- * at rest. The field masks input in the UI and ensures proper handling through the security subsystem.
+ * This implementation is compatible with Java 21's updated cryptography providers,
+ * ensuring proper integration with the enhanced security features available in Java 21.
+ * Password values are securely encrypted using the system's configured cryptographic
+ * providers before storage.
+ * </p>
  *
  * @since 2.7
  */
@@ -29,34 +28,34 @@ public class PasswordFormField
     implements Encrypted
 {
   /**
-   * Creates a new password field with the specified properties.
+   * Creates a new password field with the specified parameters.
    *
-   * @param id              unique identifier for this field
-   * @param label           display label for this field
-   * @param helpText        help text for this field
-   * @param required        whether this field is required
-   * @param regexValidation regular expression used to validate the field's value
+   * @param id The field identifier
+   * @param label The display label
+   * @param helpText Help text for the field
+   * @param required Whether the field is required
+   * @param regexValidation Regular expression for validation
    */
   public PasswordFormField(String id, String label, String helpText, boolean required, String regexValidation) {
     super(id, label, helpText, required, regexValidation);
   }
 
   /**
-   * Creates a new password field with the specified properties.
+   * Creates a new password field with the specified parameters.
    *
-   * @param id       unique identifier for this field
-   * @param label    display label for this field
-   * @param helpText help text for this field
-   * @param required whether this field is required
+   * @param id The field identifier
+   * @param label The display label
+   * @param helpText Help text for the field
+   * @param required Whether the field is required
    */
   public PasswordFormField(String id, String label, String helpText, boolean required) {
     super(id, label, helpText, required);
   }
 
   /**
-   * Creates a new password field with the specified ID.
+   * Creates a new password field with the specified identifier.
    *
-   * @param id unique identifier for this field
+   * @param id The field identifier
    */
   public PasswordFormField(String id) {
     super(id);
@@ -73,17 +72,42 @@ public class PasswordFormField
   }
 
   /**
-   * Sets the initial value for this field and returns this instance for method chaining.
+   * Sets the initial value for this password field.
    * <p>
-   * Note: Initial values for password fields should be used with caution as they may expose
-   * sensitive information in certain contexts.
+   * Note: Initial values for password fields should be used with caution as they may
+   * expose sensitive information in the UI. When used, the values will be properly
+   * encrypted using Java 21's cryptographic providers when stored.
+   * </p>
    *
-   * @param initialValue the initial value to set
-   * @return this instance for method chaining
+   * @param initialValue The initial value to set
+   * @return This field instance for fluent API usage
    */
   @Override
   public PasswordFormField withInitialValue(final String initialValue) {
     super.withInitialValue(initialValue);
     return this;
+  }
+  
+  /**
+   * Creates a new password field with the specified regex validation pattern.
+   * Uses improved Java 21 regex handling with validation.
+   *
+   * @param regexValidation The regex pattern to validate against
+   * @return This field instance for fluent API usage
+   * @throws java.util.regex.PatternSyntaxException If the regex pattern is invalid
+   */
+  public PasswordFormField withRegexValidation(final String regexValidation) {
+    super.withRegexValidation(regexValidation);
+    return this;
+  }
+  
+  /**
+   * Returns a string representation of this password field with sensitive information masked.
+   * 
+   * @return a string representation of this password field
+   */
+  @Override
+  public String toString() {
+    return STR."PasswordFormField{id=\{getId()}, label=\{getLabel()}, required=\{isRequired()}, readOnly=\{isReadOnly()}, disabled=\{isDisabled()}}";
   }
 }

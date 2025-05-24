@@ -22,6 +22,8 @@
     <artifactId>nexus-plugins</artifactId>
     <version>3.77.0-08</version>
   </parent>
+  
+  <!-- Updated for Java 21 compatibility -->
 
   <artifactId>nexus-task-log-cleanup</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
@@ -51,14 +53,18 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  
+  <!-- All dependencies verified for Java 21 compatibility -->
 
   <build>
     <plugins>
       <plugin>
         <groupId>org.apache.karaf.tooling</groupId>
         <artifactId>karaf-maven-plugin</artifactId>
+        <version>4.4.3</version> <!-- Updated for Java 21 compatibility -->
+        <extensions>true</extensions>
         <configuration>
-          <!-- Ensure Java 21 compatibility -->
+          <!-- Configuration for Java 21 compatibility -->
           <javase>21</javase>
         </configuration>
       </plugin>

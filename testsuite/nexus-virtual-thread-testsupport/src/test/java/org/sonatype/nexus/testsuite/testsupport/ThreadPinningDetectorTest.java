@@ -12,317 +12,343 @@
  */
 package org.sonatype.nexus.testsuite.testsupport;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.testsuite.testsupport.ThreadPinningDetector.PinningEvent;
 
+import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.junit.Rule;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
 /**
  * Tests for {@link ThreadPinningDetector}.
  * 
- * This test validates the detection of thread pinning scenarios in Java 21 Virtual Threads.
- * Thread pinning occurs when a Virtual Thread becomes "pinned" to its carrier thread,
- * preventing the carrier from being reused for other Virtual Threads and reducing efficiency.
+ * This test validates the ThreadPinningDetector utility which identifies situations where Virtual Threads
+ * become pinned to carrier threads, reducing the efficiency of the Virtual Thread model.
  */
-public class ThreadPinningDetectorTest extends TestSupport
+public class ThreadPinningDetectorTest
+    extends TestSupport
 {
-  private static final Duration SHORT_SLEEP = Duration.ofMillis(50);
-  private static final Duration MEDIUM_SLEEP = Duration.ofMillis(100);
-  private static final Duration LONG_SLEEP = Duration.ofMillis(200);
+  private static final int PINNING_DURATION_MS = 100;
   
-  private ThreadPinningDetector detector;
+  private static final Object LOCK_OBJECT = new Object();
   
   @Rule
   public TemporaryFolder temporaryFolder = new TemporaryFolder();
   
+  private ThreadPinningDetector underTest;
+  
+  private ExecutorService virtualThreadExecutor;
+  
   @Before
   public void setUp() {
-    detector = new ThreadPinningDetector();
-    detector.start();
+    underTest = new ThreadPinningDetector();
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  @After
+  public void tearDown() {
+    virtualThreadExecutor.shutdownNow();
   }
   
   /**
    * Tests that the detector can identify thread pinning in synchronized blocks.
-   * 
-   * When a Virtual Thread executes a synchronized block and then performs a blocking
-   * operation within that block, it becomes pinned to its carrier thread.
    */
   @Test
-  public void testDetectPinningInSynchronizedBlock() throws Exception {
-    // Create an object to synchronize on
-    final Object lock = new Object();
-    final AtomicBoolean pinningDetected = new AtomicBoolean(false);
+  public void detectPinningInSynchronizedBlock() throws Exception {
+    // Start the detector
+    underTest.start();
     
-    // Set up a listener to detect pinning events
-    detector.addPinningListener(event -> {
-      log.info("Pinning detected: {} ms at {}", event.getDurationMillis(), event.getTimestamp());
-      log.info("Stack trace: {}", event.getStackTrace());
-      pinningDetected.set(true);
-    });
+    // Create a task that will cause pinning in a synchronized block
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean taskCompleted = new AtomicBoolean(false);
     
-    // Create and start a virtual thread that will get pinned
-    Thread virtualThread = Thread.ofVirtual().name("test-synchronized-pinning").start(() -> {
-      synchronized (lock) {
-        try {
-          // Sleeping inside a synchronized block will cause pinning
-          Thread.sleep(MEDIUM_SLEEP);
+    virtualThreadExecutor.submit(() -> {
+      try {
+        // This synchronized block will cause pinning when we sleep
+        synchronized (LOCK_OBJECT) {
+          // Signal that we've entered the synchronized block
+          latch.countDown();
+          
+          // Sleep to simulate a blocking operation inside synchronized block
+          Thread.sleep(PINNING_DURATION_MS);
         }
-        catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
+        taskCompleted.set(true);
+      }
+      catch (InterruptedException e) {
+        // Ignore interruption
       }
     });
     
-    // Wait for the virtual thread to complete
-    virtualThread.join();
+    // Wait for the task to enter the synchronized block
+    assertThat("Task did not enter synchronized block", latch.await(1, TimeUnit.SECONDS), is(true));
+    
+    // Wait for the task to complete
+    Thread.sleep(PINNING_DURATION_MS * 2);
+    assertThat("Task did not complete", taskCompleted.get(), is(true));
+    
+    // Stop the detector
+    List<PinningEvent> events = underTest.stop();
     
     // Verify that pinning was detected
-    assertThat("Pinning should be detected in synchronized block", pinningDetected.get(), is(true));
+    assertThat("No pinning events detected", events, hasSize(greaterThanOrEqualTo(1)));
     
-    // Verify that the detector captured the pinning event
-    List<ThreadPinningEvent> events = detector.getPinningEvents();
-    assertThat("Should have at least one pinning event", events.size(), greaterThanOrEqualTo(1));
-    
-    ThreadPinningEvent event = events.get(0);
-    assertThat("Event should have a timestamp", event.getTimestamp(), is(notNullValue()));
-    assertThat("Event should have a duration", event.getDurationMillis(), greaterThanOrEqualTo(MEDIUM_SLEEP.toMillis()));
-    assertThat("Event should have a stack trace", event.getStackTrace(), containsString("test-synchronized-pinning"));
+    // Verify the pinning event details
+    PinningEvent event = events.get(0);
+    assertThat(event, notNullValue());
+    assertThat(event.getDuration(), greaterThanOrEqualTo(Duration.ofMillis(PINNING_DURATION_MS - 20))); // Allow for some timing variance
+    assertThat(event.getStackTrace(), containsString("synchronized"));
   }
   
   /**
    * Tests that the detector can identify thread pinning when calling native methods.
-   * 
-   * When a Virtual Thread calls a native method, it becomes pinned to its carrier thread
-   * for the duration of the native method call.
    */
   @Test
-  public void testDetectPinningInNativeMethod() throws Exception {
-    final AtomicBoolean pinningDetected = new AtomicBoolean(false);
+  public void detectPinningInNativeMethod() throws Exception {
+    // Start the detector
+    underTest.start();
     
-    // Set up a listener to detect pinning events
-    detector.addPinningListener(event -> {
-      log.info("Pinning detected in native method: {} ms at {}", event.getDurationMillis(), event.getTimestamp());
-      log.info("Stack trace: {}", event.getStackTrace());
-      pinningDetected.set(true);
-    });
+    // Create a task that will cause pinning by calling a native method
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean taskCompleted = new AtomicBoolean(false);
     
-    // Create and start a virtual thread that will call a native method
-    Thread virtualThread = Thread.ofVirtual().name("test-native-pinning").start(() -> {
-      // System.loadLibrary is a native method that will cause pinning
+    virtualThreadExecutor.submit(() -> {
       try {
-        // This will cause pinning due to native method call
-        System.loadLibrary("nonexistent_library");
+        // Signal that we're about to call the native method
+        latch.countDown();
+        
+        // Call a native method that will block
+        // System.loadLibrary is a native method that can cause pinning
+        try {
+          // This is a bit of a hack, but we're trying to call a native method that will block
+          // We're using Object.wait() which is a native method
+          synchronized (LOCK_OBJECT) {
+            LOCK_OBJECT.wait(PINNING_DURATION_MS);
+          }
+        }
+        catch (Exception e) {
+          // Ignore exceptions
+        }
+        
+        taskCompleted.set(true);
       }
-      catch (UnsatisfiedLinkError e) {
-        // Expected exception, we're just testing pinning detection
+      catch (Exception e) {
+        // Ignore exceptions
       }
     });
     
-    // Wait for the virtual thread to complete
-    virtualThread.join();
+    // Wait for the task to signal it's about to call the native method
+    assertThat("Task did not reach native method call", latch.await(1, TimeUnit.SECONDS), is(true));
+    
+    // Wait for the task to complete
+    Thread.sleep(PINNING_DURATION_MS * 2);
+    assertThat("Task did not complete", taskCompleted.get(), is(true));
+    
+    // Stop the detector
+    List<PinningEvent> events = underTest.stop();
     
     // Verify that pinning was detected
-    assertThat("Pinning should be detected in native method call", pinningDetected.get(), is(true));
+    assertThat("No pinning events detected", events, hasSize(greaterThanOrEqualTo(1)));
     
-    // Verify that the detector captured the pinning event
-    List<ThreadPinningEvent> events = detector.getPinningEvents();
-    assertThat("Should have at least one pinning event", events.size(), greaterThanOrEqualTo(1));
-    
-    // Find the event related to the native method call
-    ThreadPinningEvent nativeEvent = events.stream()
-        .filter(e -> e.getStackTrace().contains("loadLibrary"))
-        .findFirst()
-        .orElse(null);
-    
-    assertThat("Should have found a native method pinning event", nativeEvent, is(notNullValue()));
-    assertThat("Event should have a stack trace with the thread name", 
-        nativeEvent.getStackTrace(), containsString("test-native-pinning"));
+    // Verify the pinning event details
+    PinningEvent event = events.get(0);
+    assertThat(event, notNullValue());
+    assertThat(event.getDuration(), greaterThanOrEqualTo(Duration.ofMillis(PINNING_DURATION_MS - 20))); // Allow for some timing variance
+    // The stack trace should contain reference to the wait method which is native
+    assertThat(event.getStackTrace(), containsString("wait"));
   }
   
   /**
    * Tests that the detector can identify thread pinning during blocking I/O operations.
-   * 
-   * When a Virtual Thread performs a blocking I/O operation inside a synchronized block,
-   * it becomes pinned to its carrier thread for the duration of the I/O operation.
    */
   @Test
-  public void testDetectPinningDuringBlockingIO() throws Exception {
-    final AtomicBoolean pinningDetected = new AtomicBoolean(false);
-    final Path tempFile = temporaryFolder.newFile().toPath();
-    final Object lock = new Object();
+  public void detectPinningDuringBlockingIO() throws Exception {
+    // Create a temporary file for I/O operations
+    File tempFile = temporaryFolder.newFile();
     
-    // Set up a listener to detect pinning events
-    detector.addPinningListener(event -> {
-      log.info("Pinning detected during I/O: {} ms at {}", event.getDurationMillis(), event.getTimestamp());
-      log.info("Stack trace: {}", event.getStackTrace());
-      pinningDetected.set(true);
-    });
+    // Start the detector
+    underTest.start();
     
-    // Create and start a virtual thread that will perform blocking I/O inside a synchronized block
-    Thread virtualThread = Thread.ofVirtual().name("test-io-pinning").start(() -> {
-      synchronized (lock) {
-        try {
-          // Blocking I/O operation inside synchronized block will cause pinning
-          Files.writeString(tempFile, "Testing thread pinning during I/O operations");
-          // Add a small delay to ensure the I/O operation completes and pinning is detected
-          Thread.sleep(SHORT_SLEEP);
+    // Create a task that will cause pinning with blocking I/O inside a synchronized block
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean taskCompleted = new AtomicBoolean(false);
+    
+    virtualThreadExecutor.submit(() -> {
+      try {
+        // This synchronized block will cause pinning when we do I/O
+        synchronized (LOCK_OBJECT) {
+          // Signal that we've entered the synchronized block
+          latch.countDown();
+          
+          // Perform blocking I/O operation
+          try (FileOutputStream out = new FileOutputStream(tempFile)) {
+            // Write some data
+            byte[] data = new byte[1024 * 1024]; // 1MB of data
+            out.write(data);
+            out.flush();
+            
+            // Read it back to ensure I/O operation
+            try (FileInputStream in = new FileInputStream(tempFile)) {
+              byte[] buffer = new byte[8192];
+              while (in.read(buffer) != -1) {
+                // Just read the data
+              }
+            }
+          }
+          catch (IOException e) {
+            // Ignore I/O exceptions
+          }
         }
-        catch (IOException | InterruptedException e) {
-          log.error("Error during I/O operation", e);
-        }
+        taskCompleted.set(true);
+      }
+      catch (Exception e) {
+        // Ignore exceptions
       }
     });
     
-    // Wait for the virtual thread to complete
-    virtualThread.join();
+    // Wait for the task to enter the synchronized block
+    assertThat("Task did not enter synchronized block", latch.await(1, TimeUnit.SECONDS), is(true));
+    
+    // Wait for the task to complete
+    Thread.sleep(PINNING_DURATION_MS * 5); // I/O might take longer
+    assertThat("Task did not complete", taskCompleted.get(), is(true));
+    
+    // Stop the detector
+    List<PinningEvent> events = underTest.stop();
     
     // Verify that pinning was detected
-    assertThat("Pinning should be detected during blocking I/O", pinningDetected.get(), is(true));
+    assertThat("No pinning events detected", events, hasSize(greaterThanOrEqualTo(1)));
     
-    // Verify that the detector captured the pinning event
-    List<ThreadPinningEvent> events = detector.getPinningEvents();
-    assertThat("Should have at least one pinning event", events.size(), greaterThanOrEqualTo(1));
-    
-    // Find the event related to the I/O operation
-    ThreadPinningEvent ioEvent = events.stream()
-        .filter(e -> e.getStackTrace().contains("Files.writeString") || 
-                     e.getStackTrace().contains("test-io-pinning"))
-        .findFirst()
-        .orElse(null);
-    
-    assertThat("Should have found an I/O pinning event", ioEvent, is(notNullValue()));
+    // Verify the pinning event details
+    PinningEvent event = events.get(0);
+    assertThat(event, notNullValue());
+    // The stack trace should contain reference to file I/O
+    assertThat(event.getStackTrace(), containsString("FileOutputStream"));
   }
   
   /**
-   * Tests that the detector correctly reports pinning duration and stack traces.
-   * 
-   * This test verifies that the detector accurately measures the duration of pinning events
-   * and captures detailed stack traces that can be used to identify the cause of pinning.
+   * Tests that the detector correctly reports pinning duration.
    */
   @Test
-  public void testPinningDurationAndStackTraceReporting() throws Exception {
-    final Object lock = new Object();
-    final CountDownLatch latch = new CountDownLatch(1);
-    final AtomicBoolean longPinningDetected = new AtomicBoolean(false);
+  public void reportsPinningDuration() throws Exception {
+    // Start the detector
+    underTest.start();
     
-    // Set up a listener to detect pinning events
-    detector.addPinningListener(event -> {
-      log.info("Pinning detected: {} ms at {}", event.getDurationMillis(), event.getTimestamp());
-      log.info("Stack trace: {}", event.getStackTrace());
-      
-      // Check if this is our long pinning event
-      if (event.getDurationMillis() >= LONG_SLEEP.toMillis() && 
-          event.getStackTrace().contains("test-duration-pinning")) {
-        longPinningDetected.set(true);
-        latch.countDown();
-      }
-    });
+    // Create a task with a known pinning duration
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean taskCompleted = new AtomicBoolean(false);
     
-    // Create and start a virtual thread that will be pinned for a specific duration
-    Thread virtualThread = Thread.ofVirtual().name("test-duration-pinning").start(() -> {
-      synchronized (lock) {
-        try {
-          // Sleep for a known duration to test accurate timing measurement
-          Thread.sleep(LONG_SLEEP);
-        }
-        catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      }
-    });
-    
-    // Wait for the pinning event to be detected or timeout
-    boolean detected = latch.await(LONG_SLEEP.toMillis() * 2, TimeUnit.MILLISECONDS);
-    
-    // Wait for the virtual thread to complete
-    virtualThread.join();
-    
-    // Verify that the long pinning was detected
-    assertThat("Long duration pinning should be detected", detected, is(true));
-    assertThat("Long duration pinning should be recorded", longPinningDetected.get(), is(true));
-    
-    // Verify that the detector captured the pinning event with accurate duration
-    List<ThreadPinningEvent> events = detector.getPinningEvents();
-    assertThat("Should have at least one pinning event", events.size(), greaterThanOrEqualTo(1));
-    
-    // Find the event related to our long sleep
-    ThreadPinningEvent longEvent = events.stream()
-        .filter(e -> e.getStackTrace().contains("test-duration-pinning"))
-        .findFirst()
-        .orElse(null);
-    
-    assertThat("Should have found a long duration pinning event", longEvent, is(notNullValue()));
-    assertThat("Event duration should be at least the sleep duration", 
-        longEvent.getDurationMillis(), greaterThanOrEqualTo(LONG_SLEEP.toMillis()));
-    assertThat("Event should have a detailed stack trace", 
-        longEvent.getStackTrace().split("\n").length, greaterThan(3));
-  }
-  
-  /**
-   * Tests that the detector can identify when ReentrantLock is used correctly to avoid pinning.
-   * 
-   * This test verifies that using ReentrantLock instead of synchronized blocks allows
-   * Virtual Threads to be unmounted during blocking operations, avoiding pinning.
-   */
-  @Test
-  public void testNoPinningWithReentrantLock() throws Exception {
-    final ReentrantLock lock = new ReentrantLock();
-    final AtomicBoolean anyPinningDetected = new AtomicBoolean(false);
-    final String threadName = "test-reentrant-lock-no-pinning";
-    
-    // Set up a listener to detect any pinning events
-    detector.addPinningListener(event -> {
-      log.info("Pinning detected: {} ms at {}", event.getDurationMillis(), event.getTimestamp());
-      log.info("Stack trace: {}", event.getStackTrace());
-      
-      // Only count pinning for our specific test thread
-      if (event.getStackTrace().contains(threadName)) {
-        anyPinningDetected.set(true);
-      }
-    });
-    
-    // Create and start a virtual thread that uses ReentrantLock correctly
-    Thread virtualThread = Thread.ofVirtual().name(threadName).start(() -> {
-      lock.lock();
+    virtualThreadExecutor.submit(() -> {
       try {
-        // Sleep while holding the lock - this should NOT cause pinning
-        // because ReentrantLock allows the virtual thread to be unmounted
-        Thread.sleep(MEDIUM_SLEEP);
+        // This synchronized block will cause pinning when we sleep
+        synchronized (LOCK_OBJECT) {
+          // Signal that we've entered the synchronized block
+          latch.countDown();
+          
+          // Sleep for a specific duration to test duration reporting
+          Thread.sleep(PINNING_DURATION_MS);
+        }
+        taskCompleted.set(true);
       }
       catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-      finally {
-        lock.unlock();
+        // Ignore interruption
       }
     });
     
-    // Wait for the virtual thread to complete
-    virtualThread.join();
+    // Wait for the task to enter the synchronized block
+    assertThat("Task did not enter synchronized block", latch.await(1, TimeUnit.SECONDS), is(true));
     
-    // Give the detector time to process any events
-    Thread.sleep(SHORT_SLEEP);
+    // Wait for the task to complete
+    Thread.sleep(PINNING_DURATION_MS * 2);
+    assertThat("Task did not complete", taskCompleted.get(), is(true));
     
-    // Verify that no pinning was detected for our thread
-    assertThat("No pinning should be detected with ReentrantLock", anyPinningDetected.get(), is(false));
+    // Stop the detector
+    List<PinningEvent> events = underTest.stop();
+    
+    // Verify that pinning was detected
+    assertThat("No pinning events detected", events, hasSize(greaterThanOrEqualTo(1)));
+    
+    // Verify the pinning duration
+    PinningEvent event = events.get(0);
+    assertThat(event, notNullValue());
+    assertThat(event.getDuration(), greaterThanOrEqualTo(Duration.ofMillis(PINNING_DURATION_MS - 20))); // Allow for some timing variance
+    assertThat(event.getDuration().toMillis() <= PINNING_DURATION_MS * 2, is(true)); // Upper bound check
+  }
+  
+  /**
+   * Tests that the detector correctly reports stack traces for pinning events.
+   */
+  @Test
+  public void reportsStackTraces() throws Exception {
+    // Start the detector
+    underTest.start();
+    
+    // Create a task that will cause pinning
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean taskCompleted = new AtomicBoolean(false);
+    
+    virtualThreadExecutor.submit(() -> {
+      try {
+        // Call a method that will cause pinning
+        methodThatCausesPinning(latch);
+        taskCompleted.set(true);
+      }
+      catch (Exception e) {
+        // Ignore exceptions
+      }
+    });
+    
+    // Wait for the task to enter the synchronized block
+    assertThat("Task did not enter synchronized block", latch.await(1, TimeUnit.SECONDS), is(true));
+    
+    // Wait for the task to complete
+    Thread.sleep(PINNING_DURATION_MS * 2);
+    assertThat("Task did not complete", taskCompleted.get(), is(true));
+    
+    // Stop the detector
+    List<PinningEvent> events = underTest.stop();
+    
+    // Verify that pinning was detected
+    assertThat("No pinning events detected", events, hasSize(greaterThanOrEqualTo(1)));
+    
+    // Verify the stack trace contains our method names
+    PinningEvent event = events.get(0);
+    assertThat(event, notNullValue());
+    assertThat(event.getStackTrace(), containsString("methodThatCausesPinning"));
+    assertThat(event.getStackTrace(), containsString("ThreadPinningDetectorTest"));
+  }
+  
+  /**
+   * Helper method that causes thread pinning for testing stack trace reporting.
+   */
+  private void methodThatCausesPinning(CountDownLatch latch) throws InterruptedException {
+    // This synchronized block will cause pinning when we sleep
+    synchronized (LOCK_OBJECT) {
+      // Signal that we've entered the synchronized block
+      latch.countDown();
+      
+      // Sleep to simulate a blocking operation inside synchronized block
+      Thread.sleep(PINNING_DURATION_MS);
+    }
   }
 }

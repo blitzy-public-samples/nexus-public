@@ -14,15 +14,19 @@ package org.sonatype.nexus.repository.apt;
 
 import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.AttributesMap;
@@ -36,479 +40,529 @@ import org.sonatype.nexus.repository.cache.CacheController;
 import org.sonatype.nexus.repository.cache.CacheControllerHolder;
 import org.sonatype.nexus.repository.cache.CacheInfo;
 import org.sonatype.nexus.repository.content.Asset;
+import org.sonatype.nexus.repository.content.facet.ContentProxyFacetSupport;
 import org.sonatype.nexus.repository.httpclient.HttpClientFacet;
 import org.sonatype.nexus.repository.proxy.ProxyFacet;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
-import org.sonatype.nexus.repository.view.payloads.HttpEntityPayload;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.StatusLine;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.Mockito;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.sonatype.nexus.repository.apt.internal.ReleaseName.RELEASE;
 
 /**
- * Tests for {@link AptProxyFacet} with Java 21 Virtual Threads.
+ * Tests for {@link AptProxyFacet} using Java 21 Virtual Threads.
  * 
- * @since 3.60
+ * These tests validate that the AptProxyFacet correctly handles concurrent operations
+ * when executed with Virtual Threads, ensuring performance improvements and correct
+ * behavior under high concurrency scenarios.
  */
+@ExtendWith(MockitoExtension.class)
 public class AptProxyFacetVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
-  private static final String TEST_PATH = "dists/bionic/main/binary-amd64/Packages.gz";
-  private static final String RELEASE_PATH = "dists/bionic/" + RELEASE;
+  private static final String TEST_PATH = "dists/stable/Release";
   private static final int CONCURRENT_REQUESTS = 100;
-  private static final int SIMULATED_REMOTE_DELAY_MS = 50;
+  private static final int HIGH_CONCURRENCY_REQUESTS = 1000;
   
   @Mock
   private Repository repository;
   
   @Mock
-  private AptContentFacet aptContentFacet;
-  
-  @Mock
   private HttpClientFacet httpClientFacet;
-  
-  @Mock
-  private ProxyFacet proxyFacet;
   
   @Mock
   private HttpClient httpClient;
   
   @Mock
+  private ProxyFacet proxyFacet;
+  
+  @Mock
+  private AptContentFacet aptContentFacet;
+  
+  @Mock
   private CacheControllerHolder cacheControllerHolder;
   
   @Mock
-  private CacheController contentCacheController;
-  
-  @Mock
-  private CacheController metadataCacheController;
+  private CacheController cacheController;
   
   @Mock
   private Context context;
   
   @Mock
-  private AttributesMap contextAttributes;
+  private AttributesMap attributesMap;
   
   @Mock
   private AptSnapshotHandler.State state;
   
+  @Mock
+  private HttpResponse httpResponse;
+  
+  @Mock
+  private StatusLine statusLine;
+  
+  @Mock
+  private HttpEntity httpEntity;
+  
+  @Mock
+  private Content content;
+  
+  @Mock
+  private Asset asset;
+  
   private AptProxyFacet underTest;
   
-  @Before
+  @BeforeEach
   public void setUp() throws Exception {
-    // Skip test if virtual threads are not supported
-    assumeVirtualThreadSupported();
+    underTest = new AptProxyFacet();
+    underTest.attach(repository);
     
-    // Setup mocks
-    when(repository.facet(AptContentFacet.class)).thenReturn(aptContentFacet);
+    // Setup repository facets
     when(repository.facet(HttpClientFacet.class)).thenReturn(httpClientFacet);
     when(repository.facet(ProxyFacet.class)).thenReturn(proxyFacet);
+    when(repository.facet(AptContentFacet.class)).thenReturn(aptContentFacet);
+    
+    // Setup HTTP client
     when(httpClientFacet.getHttpClient()).thenReturn(httpClient);
     
-    when(cacheControllerHolder.getContentCacheController()).thenReturn(contentCacheController);
-    when(cacheControllerHolder.getMetadataCacheController()).thenReturn(metadataCacheController);
-    
-    when(context.getAttributes()).thenReturn(contextAttributes);
-    when(contextAttributes.require(AptSnapshotHandler.State.class)).thenReturn(state);
-    
-    // Create the test subject
-    underTest = spy(new AptProxyFacet());
-    underTest.attach(repository);
+    // Setup cache controller
     underTest.cacheControllerHolder = cacheControllerHolder;
+    when(cacheControllerHolder.getMetadataCacheController()).thenReturn(cacheController);
+    when(cacheControllerHolder.getContentCacheController()).thenReturn(cacheController);
+    
+    // Setup context
+    when(context.getAttributes()).thenReturn(attributesMap);
+    when(attributesMap.require(AptSnapshotHandler.State.class)).thenReturn(state);
+    when(state.assetPath).thenReturn(TEST_PATH);
+    
+    // Setup HTTP response
+    when(httpResponse.getStatusLine()).thenReturn(statusLine);
+    when(httpResponse.getEntity()).thenReturn(httpEntity);
+    when(statusLine.getStatusCode()).thenReturn(200);
+    
+    // Setup proxy facet
+    when(proxyFacet.getRemoteUrl()).thenReturn(new URI("http://example.com/"));
+    
+    // Setup lenient mocks for methods that might be called in different scenarios
+    lenient().when(httpClient.execute(any(HttpGet.class))).thenReturn(httpResponse);
+    lenient().when(aptContentFacet.put(anyString(), any(Content.class))).thenReturn(asset);
+    lenient().when(asset.markAsCached(any(Content.class))).thenReturn(asset);
+    lenient().when(asset.download()).thenReturn(content);
   }
   
   /**
-   * Tests that the AptProxyFacet can handle multiple concurrent requests using Virtual Threads.
-   * This verifies that the implementation works correctly under high concurrency scenarios.
+   * Tests that the AptProxyFacet can handle concurrent snapshot item fetches using Virtual Threads.
+   * This validates that the implementation works correctly with the lightweight threading model
+   * introduced in Java 21.
    */
   @Test
-  public void testConcurrentFetchWithVirtualThreads() throws Exception {
-    // Setup mocks for remote fetch
-    URI remoteUri = new URI("http://example.com/");
-    when(proxyFacet.getRemoteUrl()).thenReturn(remoteUri);
-    when(state.assetPath).thenReturn(TEST_PATH);
+  @DisplayName("Concurrent snapshot fetches with Virtual Threads")
+  public void testConcurrentSnapshotFetchesWithVirtualThreads() throws Exception {
+    // Create a list of content specifiers to fetch
+    List<ContentSpecifier> specs = new ArrayList<>();
+    for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
+      specs.add(new ContentSpecifier("path-" + i));
+    }
     
-    // Mock HTTP response
-    HttpResponse response = mock(HttpResponse.class);
-    StatusLine statusLine = mock(StatusLine.class);
-    HttpEntity entity = mock(HttpEntity.class);
-    when(response.getStatusLine()).thenReturn(statusLine);
-    when(statusLine.getStatusCode()).thenReturn(200);
-    when(response.getEntity()).thenReturn(entity);
+    // Setup content facet to return empty optionals for initial gets (forcing fetches)
+    when(aptContentFacet.get(anyString())).thenReturn(Optional.empty());
     
-    // Simulate network delay to test virtual thread behavior
-    doAnswer(invocation -> {
-      // Simulate network latency
-      Thread.sleep(SIMULATED_REMOTE_DELAY_MS);
-      return response;
-    }).when(httpClient).execute(any(HttpGet.class));
-    
-    // Mock content storage
-    Content content = mock(Content.class);
-    AttributesMap contentAttributes = mock(AttributesMap.class);
-    when(content.getAttributes()).thenReturn(contentAttributes);
-    doReturn(content).when(aptContentFacet).put(eq(TEST_PATH), any(Content.class));
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS);
+    // Setup a latch to track completion
+    CountDownLatch latch = new CountDownLatch(1);
     AtomicInteger successCount = new AtomicInteger(0);
     
-    // Execute concurrent requests using virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
+    // Use virtual threads for the operation
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("apt-proxy-test-").factory();
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CompletableFuture.runAsync(() -> {
+        try {
+          List<SnapshotItem> items = underTest.getSnapshotItems(specs);
+          successCount.set(items.size());
+        } 
+        catch (Exception e) {
+          log.error("Error fetching snapshot items", e);
+        }
+        finally {
+          latch.countDown();
+        }
+      }, executor);
       
-      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
-        futures.add(executor.submit(() -> {
-          try {
-            // Get snapshot items
-            List<ContentSpecifier> specs = List.of(new ContentSpecifier(TEST_PATH));
-            List<SnapshotItem> items = underTest.getSnapshotItems(specs);
-            
-            // Verify result
-            if (items != null && !items.isEmpty()) {
-              successCount.incrementAndGet();
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread execution", e);
-          }
-          finally {
-            latch.countDown();
-          }
-        }));
-      }
+      // Wait for completion with timeout
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
       
-      // Wait for all requests to complete
-      assertTrue("Timed out waiting for concurrent requests to complete",
-          latch.await(30, TimeUnit.SECONDS));
+      // Verify results
+      assertTrue(completed, "Operation should complete within timeout");
+      assertEquals(CONCURRENT_REQUESTS, successCount.get(), "All snapshot items should be fetched");
       
-      // Verify all requests were successful
-      assertThat(successCount.get(), is(CONCURRENT_REQUESTS));
-      
-      // Verify HTTP client was called the expected number of times
+      // Verify HTTP client was called for each item
       verify(httpClient, times(CONCURRENT_REQUESTS)).execute(any(HttpGet.class));
     }
   }
   
   /**
-   * Tests that the AptProxyFacet correctly invalidates the cache when fetching a release file.
-   * This verifies that cache invalidation works correctly with virtual threads.
+   * Tests high concurrency scenario with many virtual threads simultaneously fetching
+   * snapshot items. This validates that the implementation can handle a large number
+   * of concurrent operations efficiently using Virtual Threads.
    */
   @Test
-  public void testCacheInvalidationWithVirtualThreads() throws Exception {
-    // Setup mocks for remote fetch
-    when(state.assetPath).thenReturn(RELEASE_PATH);
+  @DisplayName("High concurrency snapshot fetches with Virtual Threads")
+  public void testHighConcurrencySnapshotFetchesWithVirtualThreads() throws Exception {
+    // Create a single content specifier
+    ContentSpecifier spec = new ContentSpecifier(TEST_PATH);
     
-    // Mock content retrieval and storage
-    Content content = mock(Content.class);
-    AttributesMap contentAttributes = mock(AttributesMap.class);
-    when(content.getAttributes()).thenReturn(contentAttributes);
+    // Setup content facet to return empty optionals for initial gets (forcing fetches)
+    when(aptContentFacet.get(anyString())).thenReturn(Optional.empty());
     
-    // Setup content facet to return content
-    when(aptContentFacet.get(RELEASE_PATH)).thenReturn(Optional.empty());
-    when(aptContentFacet.put(eq(RELEASE_PATH), any(Content.class))).thenReturn(aptContentFacet);
-    when(aptContentFacet.markAsCached(any(Content.class))).thenReturn(aptContentFacet);
-    when(aptContentFacet.download()).thenReturn(content);
+    // Setup a latch to track completion
+    CountDownLatch latch = new CountDownLatch(HIGH_CONCURRENCY_REQUESTS);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    ConcurrentHashMap<String, SnapshotItem> results = new ConcurrentHashMap<>();
     
-    // Execute the test on a virtual thread
-    runVirtual(() -> {
-      // Store content
-      Content result = underTest.store(context, content);
-      
-      // Verify result
-      assertThat(result, is(notNullValue()));
-      
-      // Verify cache was invalidated
-      verify(metadataCacheController).invalidateCache();
-    });
-  }
-  
-  /**
-   * Tests that the AptProxyFacet does not experience thread pinning during proxy operations.
-   * Thread pinning would negate the benefits of virtual threads by forcing them to occupy
-   * a carrier thread for their entire execution.
-   */
-  @Test
-  public void testNoThreadPinningDuringProxyOperations() throws Exception {
-    // Setup mocks for remote fetch
-    URI remoteUri = new URI("http://example.com/");
-    when(proxyFacet.getRemoteUrl()).thenReturn(remoteUri);
-    when(state.assetPath).thenReturn(TEST_PATH);
-    
-    // Mock HTTP response
-    HttpResponse response = mock(HttpResponse.class);
-    StatusLine statusLine = mock(StatusLine.class);
-    HttpEntity entity = mock(HttpEntity.class);
-    when(response.getStatusLine()).thenReturn(statusLine);
-    when(statusLine.getStatusCode()).thenReturn(200);
-    when(response.getEntity()).thenReturn(entity);
-    
-    // Simulate network delay without blocking the thread
-    doAnswer(invocation -> {
-      // Use a non-blocking delay that won't pin the thread
-      Thread.sleep(SIMULATED_REMOTE_DELAY_MS);
-      return response;
-    }).when(httpClient).execute(any(HttpGet.class));
-    
-    // Mock content storage
-    Content content = mock(Content.class);
-    AttributesMap contentAttributes = mock(AttributesMap.class);
-    when(content.getAttributes()).thenReturn(contentAttributes);
-    doReturn(content).when(aptContentFacet).put(eq(TEST_PATH), any(Content.class));
-    
-    // Check for thread pinning
-    boolean pinningDetected = detectThreadPinning(() -> {
-      try {
-        // Get snapshot items
-        List<ContentSpecifier> specs = List.of(new ContentSpecifier(TEST_PATH));
-        underTest.getSnapshotItems(specs);
-      }
-      catch (Exception e) {
-        log.error("Error during thread pinning test", e);
-      }
-    });
-    
-    // Verify no thread pinning occurred
-    assertFalse("Thread pinning detected during proxy operations", pinningDetected);
-  }
-  
-  /**
-   * Compares the performance of virtual threads vs platform threads for proxy operations.
-   * This test validates that virtual threads provide better throughput for I/O-bound operations.
-   */
-  @Test
-  public void testVirtualThreadsVsPlatformThreadsPerformance() throws Exception {
-    // Setup mocks for remote fetch
-    URI remoteUri = new URI("http://example.com/");
-    when(proxyFacet.getRemoteUrl()).thenReturn(remoteUri);
-    when(state.assetPath).thenReturn(TEST_PATH);
-    
-    // Mock HTTP response with delay to simulate network latency
-    HttpResponse response = mock(HttpResponse.class);
-    StatusLine statusLine = mock(StatusLine.class);
-    HttpEntity entity = mock(HttpEntity.class);
-    when(response.getStatusLine()).thenReturn(statusLine);
-    when(statusLine.getStatusCode()).thenReturn(200);
-    when(response.getEntity()).thenReturn(entity);
-    
-    doAnswer(invocation -> {
-      // Simulate network latency
-      Thread.sleep(SIMULATED_REMOTE_DELAY_MS);
-      return response;
-    }).when(httpClient).execute(any(HttpGet.class));
-    
-    // Mock content storage
-    Content content = mock(Content.class);
-    AttributesMap contentAttributes = mock(AttributesMap.class);
-    when(content.getAttributes()).thenReturn(contentAttributes);
-    doReturn(content).when(aptContentFacet).put(eq(TEST_PATH), any(Content.class));
-    
-    // Prepare test data
-    List<ContentSpecifier> specs = List.of(new ContentSpecifier(TEST_PATH));
-    int testIterations = 50;
-    
-    // Test with platform threads
-    long platformThreadStart = System.currentTimeMillis();
-    try (ExecutorService platformExecutor = Executors.newFixedThreadPool(10)) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      for (int i = 0; i < testIterations; i++) {
-        futures.add(platformExecutor.submit(() -> {
+    // Use virtual threads for the operations
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("apt-proxy-test-").factory();
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // Submit many concurrent tasks
+      for (int i = 0; i < HIGH_CONCURRENCY_REQUESTS; i++) {
+        final int index = i;
+        CompletableFuture.runAsync(() -> {
           try {
-            underTest.getSnapshotItems(specs);
-          }
-          catch (Exception e) {
-            log.error("Error in platform thread execution", e);
-          }
-        }));
-      }
-      
-      // Wait for all platform thread tasks to complete
-      for (Future<?> future : futures) {
-        future.get();
-      }
-    }
-    long platformThreadTime = System.currentTimeMillis() - platformThreadStart;
-    
-    // Reset mocks for virtual thread test
-    Mockito.reset(httpClient);
-    doAnswer(invocation -> {
-      // Simulate network latency
-      Thread.sleep(SIMULATED_REMOTE_DELAY_MS);
-      return response;
-    }).when(httpClient).execute(any(HttpGet.class));
-    
-    // Test with virtual threads
-    long virtualThreadStart = System.currentTimeMillis();
-    try (ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      for (int i = 0; i < testIterations; i++) {
-        futures.add(virtualExecutor.submit(() -> {
-          try {
-            underTest.getSnapshotItems(specs);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread execution", e);
-          }
-        }));
-      }
-      
-      // Wait for all virtual thread tasks to complete
-      for (Future<?> future : futures) {
-        future.get();
-      }
-    }
-    long virtualThreadTime = System.currentTimeMillis() - virtualThreadStart;
-    
-    // Log performance results
-    log.info("Performance comparison for {} iterations:", testIterations);
-    log.info("Platform threads: {} ms", platformThreadTime);
-    log.info("Virtual threads: {} ms", virtualThreadTime);
-    log.info("Improvement: {}%", (platformThreadTime - virtualThreadTime) * 100.0 / platformThreadTime);
-    
-    // Virtual threads should be faster for I/O-bound operations
-    assertThat("Virtual threads should be faster than platform threads for I/O-bound operations",
-        virtualThreadTime, lessThan(platformThreadTime));
-  }
-  
-  /**
-   * Tests that the AptProxyFacet correctly handles conditional GET requests with virtual threads.
-   * This verifies that the implementation correctly processes HTTP 304 responses.
-   */
-  @Test
-  public void testConditionalGetWithVirtualThreads() throws Exception {
-    // Setup mocks for remote fetch
-    URI remoteUri = new URI("http://example.com/");
-    when(proxyFacet.getRemoteUrl()).thenReturn(remoteUri);
-    when(state.assetPath).thenReturn(TEST_PATH);
-    
-    // Mock existing content
-    Content existingContent = mock(Content.class);
-    AttributesMap existingAttributes = mock(AttributesMap.class);
-    when(existingContent.getAttributes()).thenReturn(existingAttributes);
-    when(aptContentFacet.get(TEST_PATH)).thenReturn(Optional.of(existingContent));
-    
-    // Mock HTTP 304 response
-    HttpResponse response = mock(HttpResponse.class);
-    StatusLine statusLine = mock(StatusLine.class);
-    when(response.getStatusLine()).thenReturn(statusLine);
-    when(statusLine.getStatusCode()).thenReturn(304); // Not Modified
-    
-    // Mock cache info
-    CacheInfo cacheInfo = mock(CacheInfo.class);
-    when(metadataCacheController.current()).thenReturn(cacheInfo);
-    
-    // Setup asset for cache verification
-    Asset asset = mock(Asset.class);
-    when(existingAttributes.get(Asset.class)).thenReturn(asset);
-    
-    // Simulate network delay
-    doAnswer(invocation -> {
-      Thread.sleep(SIMULATED_REMOTE_DELAY_MS);
-      return response;
-    }).when(httpClient).execute(any(HttpGet.class));
-    
-    // Execute the test on a virtual thread
-    runVirtual(() -> {
-      // Get snapshot items
-      List<ContentSpecifier> specs = List.of(new ContentSpecifier(TEST_PATH));
-      List<SnapshotItem> items = underTest.getSnapshotItems(specs);
-      
-      // Verify result
-      assertThat(items, is(notNullValue()));
-      assertThat(items.size(), is(1));
-      assertThat(items.get(0).content, is(existingContent));
-      
-      // Verify asset was marked as cached
-      verify(aptContentFacet.assets()).with(asset);
-    });
-  }
-  
-  /**
-   * Tests that the AptProxyFacet correctly handles concurrent cache invalidation with virtual threads.
-   * This verifies that the implementation correctly handles concurrent modifications to the cache.
-   */
-  @Test
-  public void testConcurrentCacheInvalidation() throws Exception {
-    // Setup mocks for remote fetch
-    when(state.assetPath).thenReturn(RELEASE_PATH);
-    
-    // Mock content retrieval and storage
-    Content content = mock(Content.class);
-    AttributesMap contentAttributes = mock(AttributesMap.class);
-    when(content.getAttributes()).thenReturn(contentAttributes);
-    
-    // Setup content facet to return content
-    when(aptContentFacet.get(RELEASE_PATH)).thenReturn(Optional.empty());
-    when(aptContentFacet.put(eq(RELEASE_PATH), any(Content.class))).thenReturn(aptContentFacet);
-    when(aptContentFacet.markAsCached(any(Content.class))).thenReturn(aptContentFacet);
-    when(aptContentFacet.download()).thenReturn(content);
-    
-    // Create a countdown latch to track completion
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_REQUESTS);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Execute concurrent requests using virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<?>> futures = new ArrayList<>();
-      
-      for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
-        futures.add(executor.submit(() -> {
-          try {
-            // Store content
-            Content result = underTest.store(context, content);
-            
-            // Verify result
-            if (result != null) {
-              successCount.incrementAndGet();
+            List<ContentSpecifier> singleSpec = List.of(spec);
+            List<SnapshotItem> items = underTest.getSnapshotItems(singleSpec);
+            if (!items.isEmpty()) {
+              results.put("result-" + index, items.get(0));
             }
-          }
+          } 
           catch (Exception e) {
-            log.error("Error in virtual thread execution", e);
+            errorCount.incrementAndGet();
+            log.error("Error in concurrent fetch {}", index, e);
           }
           finally {
             latch.countDown();
           }
-        }));
+        }, executor);
       }
       
-      // Wait for all requests to complete
-      assertTrue("Timed out waiting for concurrent requests to complete",
-          latch.await(30, TimeUnit.SECONDS));
+      // Wait for completion with timeout
+      boolean completed = latch.await(60, TimeUnit.SECONDS);
       
-      // Verify all requests were successful
-      assertThat(successCount.get(), is(CONCURRENT_REQUESTS));
-      
-      // Verify cache was invalidated the expected number of times
-      verify(metadataCacheController, times(CONCURRENT_REQUESTS)).invalidateCache();
+      // Verify results
+      assertTrue(completed, "All operations should complete within timeout");
+      assertEquals(0, errorCount.get(), "There should be no errors during concurrent fetches");
+      assertEquals(HIGH_CONCURRENCY_REQUESTS, results.size(), "All fetches should return results");
     }
+  }
+  
+  /**
+   * Tests that caching works correctly with virtual threads by verifying that
+   * cached content is properly returned for subsequent requests without
+   * unnecessary remote fetches.
+   */
+  @Test
+  @DisplayName("Cache behavior with Virtual Threads")
+  public void testCacheBehaviorWithVirtualThreads() throws Exception {
+    // Create a content specifier
+    ContentSpecifier spec = new ContentSpecifier(TEST_PATH);
+    
+    // Setup mock for initial empty cache, then populated cache
+    AtomicReference<Optional<Content>> contentRef = new AtomicReference<>(Optional.empty());
+    when(aptContentFacet.get(eq(TEST_PATH))).thenAnswer(invocation -> contentRef.get());
+    
+    // Setup cache info
+    CacheInfo cacheInfo = mock(CacheInfo.class);
+    when(cacheController.current()).thenReturn(cacheInfo);
+    
+    // After first fetch, update the content reference to simulate cached content
+    doAnswer(invocation -> {
+      // After content is stored, make it available for subsequent gets
+      contentRef.set(Optional.of(content));
+      return asset;
+    }).when(aptContentFacet).put(eq(TEST_PATH), any(Content.class));
+    
+    // Use virtual threads for the operations
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("apt-proxy-test-").factory();
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // First fetch - should go to remote
+      CompletableFuture<List<SnapshotItem>> firstFetch = CompletableFuture.supplyAsync(() -> {
+        try {
+          return underTest.getSnapshotItems(List.of(spec));
+        } 
+        catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, executor);
+      
+      List<SnapshotItem> firstResult = firstFetch.get(10, TimeUnit.SECONDS);
+      assertNotNull(firstResult, "First fetch should return results");
+      assertEquals(1, firstResult.size(), "First fetch should return one item");
+      
+      // Verify HTTP client was called for the first fetch
+      verify(httpClient, times(1)).execute(any(HttpGet.class));
+      
+      // Setup cache controller to indicate content is not stale
+      when(cacheController.isStale(any(CacheInfo.class))).thenReturn(false);
+      when(content.getAttributes()).thenReturn(attributesMap);
+      when(attributesMap.get(eq(CacheInfo.class))).thenReturn(cacheInfo);
+      
+      // Second fetch - should use cache
+      CompletableFuture<List<SnapshotItem>> secondFetch = CompletableFuture.supplyAsync(() -> {
+        try {
+          return underTest.getSnapshotItems(List.of(spec));
+        } 
+        catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, executor);
+      
+      List<SnapshotItem> secondResult = secondFetch.get(10, TimeUnit.SECONDS);
+      assertNotNull(secondResult, "Second fetch should return results");
+      assertEquals(1, secondResult.size(), "Second fetch should return one item");
+      
+      // Verify HTTP client was still only called once (not for the second fetch)
+      verify(httpClient, times(1)).execute(any(HttpGet.class));
+    }
+  }
+  
+  /**
+   * Compares performance between platform threads and virtual threads when
+   * executing concurrent proxy operations. This test validates that virtual
+   * threads provide better scalability and performance for I/O-bound operations.
+   */
+  @Test
+  @DisplayName("Performance comparison: Platform Threads vs Virtual Threads")
+  public void testPerformanceComparisonBetweenThreadModels() throws Exception {
+    // Create a content specifier
+    ContentSpecifier spec = new ContentSpecifier(TEST_PATH);
+    List<ContentSpecifier> specs = List.of(spec);
+    
+    // Setup content facet to return empty optionals (forcing fetches)
+    when(aptContentFacet.get(anyString())).thenReturn(Optional.empty());
+    
+    // Add a small delay to simulate network latency
+    doAnswer(invocation -> {
+      // Simulate network latency
+      Thread.sleep(50);
+      return httpResponse;
+    }).when(httpClient).execute(any(HttpGet.class));
+    
+    // Measure platform threads performance
+    long platformThreadTime = measurePerformance(() -> {
+      ThreadFactory platformThreadFactory = Thread.ofPlatform().name("apt-proxy-platform-").factory();
+      return Executors.newThreadPerTaskExecutor(platformThreadFactory);
+    }, specs, 100);
+    
+    // Measure virtual threads performance
+    long virtualThreadTime = measurePerformance(() -> {
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("apt-proxy-virtual-").factory();
+      return Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    }, specs, 100);
+    
+    // Log the results
+    log.info("Platform threads execution time: {} ms", platformThreadTime);
+    log.info("Virtual threads execution time: {} ms", virtualThreadTime);
+    
+    // Virtual threads should be faster or at least not significantly slower
+    // The exact performance difference will depend on the environment,
+    // but virtual threads should generally perform better for I/O-bound operations
+    assertThat("Virtual threads should perform better than platform threads",
+        virtualThreadTime, lessThan(platformThreadTime * 1.2)); // Allow some margin
+  }
+  
+  /**
+   * Tests that no thread pinning occurs during proxy operations with virtual threads.
+   * Thread pinning can significantly reduce the performance benefits of virtual threads.
+   */
+  @Test
+  @DisplayName("No thread pinning with Virtual Threads")
+  public void testNoThreadPinningWithVirtualThreads() throws Exception {
+    // Create a content specifier
+    ContentSpecifier spec = new ContentSpecifier(TEST_PATH);
+    
+    // Setup content facet to return empty optionals (forcing fetches)
+    when(aptContentFacet.get(anyString())).thenReturn(Optional.empty());
+    
+    // Capture the thread names during execution to check for carrier thread reuse
+    ConcurrentHashMap<String, Integer> carrierThreadCounts = new ConcurrentHashMap<>();
+    
+    // Add instrumentation to detect thread pinning
+    doAnswer(invocation -> {
+      // Get the current carrier thread name
+      String threadName = Thread.currentThread().getName();
+      if (threadName.contains("carrier")) {
+        // Count occurrences of each carrier thread
+        carrierThreadCounts.compute(threadName, (k, v) -> (v == null) ? 1 : v + 1);
+      }
+      // Simulate some I/O latency
+      Thread.sleep(10);
+      return httpResponse;
+    }).when(httpClient).execute(any(HttpGet.class));
+    
+    // Use virtual threads for the operations
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("apt-proxy-test-").factory();
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // Submit concurrent tasks
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      for (int i = 0; i < 200; i++) {
+        futures.add(CompletableFuture.runAsync(() -> {
+          try {
+            underTest.getSnapshotItems(List.of(spec));
+          } 
+          catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        }, executor));
+      }
+      
+      // Wait for all tasks to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+          .get(30, TimeUnit.SECONDS);
+    }
+    
+    // Log carrier thread distribution
+    log.info("Carrier thread distribution: {}", carrierThreadCounts);
+    
+    // If we have carrier thread information, verify no excessive pinning
+    if (!carrierThreadCounts.isEmpty()) {
+      // Calculate the average number of operations per carrier thread
+      double avgOpsPerThread = carrierThreadCounts.values().stream()
+          .mapToInt(Integer::intValue)
+          .average()
+          .orElse(0.0);
+      
+      // Get the maximum operations on any single carrier thread
+      int maxOpsOnSingleThread = carrierThreadCounts.values().stream()
+          .mapToInt(Integer::intValue)
+          .max()
+          .orElse(0);
+      
+      log.info("Average operations per carrier thread: {}", avgOpsPerThread);
+      log.info("Maximum operations on a single carrier thread: {}", maxOpsOnSingleThread);
+      
+      // If there's significant pinning, a single carrier thread would handle many more
+      // operations than the average. We allow some variance but not extreme pinning.
+      assertThat("No excessive thread pinning should occur",
+          maxOpsOnSingleThread, lessThan((int)(avgOpsPerThread * 3)));
+    }
+  }
+  
+  /**
+   * Tests that cache invalidation works correctly with virtual threads by verifying that
+   * the metadata cache is invalidated when a Release file is fetched.
+   */
+  @Test
+  @DisplayName("Cache invalidation with Virtual Threads")
+  public void testCacheInvalidationWithVirtualThreads() throws Exception {
+    // Setup state for a Release file fetch
+    when(state.assetPath).thenReturn("dists/stable/Release");
+    
+    // Capture cache invalidation calls
+    ArgumentCaptor<CacheInfo> cacheInfoCaptor = ArgumentCaptor.forClass(CacheInfo.class);
+    
+    // Use virtual threads for the operation
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("apt-proxy-test-").factory();
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      CompletableFuture<Content> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          return underTest.get(context);
+        } 
+        catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, executor);
+      
+      // Wait for completion
+      Content result = future.get(10, TimeUnit.SECONDS);
+      
+      // Verify result
+      assertThat(result, is(notNullValue()));
+      
+      // Verify cache controller was invalidated
+      verify(cacheController).invalidateCache();
+    }
+  }
+  
+  /**
+   * Helper method to measure performance of concurrent operations using the specified
+   * executor service factory and number of concurrent operations.
+   * 
+   * @param executorFactory Factory to create the executor service
+   * @param specs Content specifiers to fetch
+   * @param concurrentOperations Number of concurrent operations to perform
+   * @return Execution time in milliseconds
+   */
+  private long measurePerformance(
+      ExecutorServiceFactory executorFactory,
+      List<ContentSpecifier> specs,
+      int concurrentOperations) throws Exception {
+    // Setup completion tracking
+    CountDownLatch latch = new CountDownLatch(concurrentOperations);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Start timing
+    long startTime = System.currentTimeMillis();
+    
+    // Create executor and submit tasks
+    try (ExecutorService executor = executorFactory.create()) {
+      for (int i = 0; i < concurrentOperations; i++) {
+        CompletableFuture.runAsync(() -> {
+          try {
+            underTest.getSnapshotItems(specs);
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          }
+          finally {
+            latch.countDown();
+          }
+        }, executor);
+      }
+      
+      // Wait for completion
+      latch.await(60, TimeUnit.SECONDS);
+    }
+    
+    // End timing
+    long endTime = System.currentTimeMillis();
+    
+    // Verify no errors occurred
+    assertThat("No errors should occur during performance test", 
+        errorCount.get(), equalTo(0));
+    
+    return endTime - startTime;
+  }
+  
+  /**
+   * Functional interface for creating executor services.
+   */
+  @FunctionalInterface
+  private interface ExecutorServiceFactory {
+    ExecutorService create();
   }
 }

@@ -13,40 +13,31 @@
 package org.sonatype;
 
 /**
- * Marker interface used to categorize tests that specifically validate Java 21 features.
+ * Marker interface used to categorize and selectively execute tests that specifically validate Java 21 features.
  * <p>
- * This interface enables the Maven build system to identify and run Java 21-specific tests
- * through the java21-tests profile, ensuring that tests requiring Java 21 features are only
- * executed in compatible environments.
+ * This interface enables the Maven build system to identify and run Java 21-specific tests through the
+ * java21-tests profile, ensuring that tests requiring Java 21 features are only executed in compatible environments.
  * <p>
  * Usage example:
  * <pre>
  * {@code
  * @Category(Java21TestGroup.class)
- * public class MyJava21SpecificTest {
+ * public class VirtualThreadTest {
  *   @Test
- *   public void testVirtualThreads() {
- *     // Test code that uses Java 21 features
+ *   public void testVirtualThreadExecution() {
+ *     // Test code that validates Java 21 Virtual Threads
  *   }
  * }
  * }
  * </pre>
  * <p>
- * In Maven, these tests can be selectively executed using:
+ * These tests can be selectively executed using the Maven profile:
  * <pre>
- * {@code
- * <plugin>
- *   <groupId>org.apache.maven.plugins</groupId>
- *   <artifactId>maven-surefire-plugin</artifactId>
- *   <configuration>
- *     <groups>org.sonatype.Java21TestGroup</groups>
- *   </configuration>
- * </plugin>
- * }
+ * mvn test -Djava21-tests=true
  * </pre>
  *
  * @since 3.60
  */
 public interface Java21TestGroup {
-  // Marker interface - no methods required
+  // Marker interface - intentionally empty
 }

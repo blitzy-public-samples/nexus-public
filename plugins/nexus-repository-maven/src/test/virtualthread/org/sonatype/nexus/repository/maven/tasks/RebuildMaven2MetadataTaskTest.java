@@ -13,11 +13,11 @@
 package org.sonatype.nexus.repository.maven.tasks;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.RepositoryTaskSupport;
@@ -27,8 +27,8 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -47,10 +47,10 @@ import static org.sonatype.nexus.repository.maven.tasks.RebuildMaven2MetadataTas
 /**
  * Tests for {@link RebuildMaven2MetadataTask}.
  * 
- * Includes virtual thread testing to verify thread safety when executed concurrently.
+ * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("VirtualThreadTestGroup")
+@Category(VirtualThreadTestGroup.class)
 public class RebuildMaven2MetadataTaskTest
     extends TestSupport
 {
@@ -101,40 +101,53 @@ public class RebuildMaven2MetadataTaskTest
   }
   
   /**
-   * Tests concurrent execution of the task using virtual threads to verify thread safety.
-   * This ensures that the task can be safely executed from multiple virtual threads simultaneously.
+   * Tests that the task can be executed concurrently from multiple virtual threads without issues.
+   * This verifies thread safety of the task implementation when used with Java 21 Virtual Threads.
    */
   @Test
   public void testConcurrentExecutionWithVirtualThreads() throws Exception {
     // Number of virtual threads to create for concurrent testing
-    final int threadCount = 100;
-    final CountDownLatch latch = new CountDownLatch(threadCount);
+    int threadCount = 100;
     
-    // Create a virtual thread factory
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Create a virtual thread factory using Java 21 API
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    try {
-      // Launch multiple virtual threads to execute the task concurrently
-      for (int i = 0; i < threadCount; i++) {
-        executor.submit(() -> {
-          try {
-            underTest.execute(repository);
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
+    // Use CountDownLatch to wait for all threads to complete
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    
+    // Track any errors that occur during concurrent execution
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Create and start virtual threads to execute the task concurrently
+    for (int i = 0; i < threadCount; i++) {
+      Thread virtualThread = virtualThreadFactory.newThread(() -> {
+        try {
+          // Execute the task on this virtual thread
+          underTest.execute(repository);
+        } catch (Exception e) {
+          // Count any errors that occur
+          errorCount.incrementAndGet();
+          log.error("Error executing task on virtual thread", e);
+        } finally {
+          // Signal that this thread has completed
+          latch.countDown();
+        }
+      });
       
-      // Wait for all threads to complete (with timeout)
-      if (!latch.await(30, TimeUnit.SECONDS)) {
-        throw new AssertionError("Timed out waiting for virtual threads to complete");
-      }
-      
-      // Verify that the rebuildMetadata method was called exactly threadCount times
-      verify(rebuildFacet, times(threadCount)).rebuildMetadata(
-          GROUP_ID_VALUE, ARTIFACT_ID_VALUE, BASE_VERSION_VALUE, false, true, false);
-    } finally {
-      executor.shutdown();
+      // Start the virtual thread
+      virtualThread.start();
+    }
+    
+    // Wait for all virtual threads to complete
+    latch.await();
+    
+    // Verify that the task was executed the expected number of times
+    verify(rebuildFacet, times(threadCount)).rebuildMetadata(
+        GROUP_ID_VALUE, ARTIFACT_ID_VALUE, BASE_VERSION_VALUE, false, true, false);
+    
+    // Verify that no errors occurred during concurrent execution
+    if (errorCount.get() > 0) {
+      throw new AssertionError("Errors occurred during concurrent execution: " + errorCount.get());
     }
   }
 }

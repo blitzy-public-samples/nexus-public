@@ -12,428 +12,346 @@
  */
 package com.sonatype.nexus;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 import com.sonatype.nexus.docker.testsupport.framework.DockerContainerConfig;
 
 /**
- * Factory for creation of Java 21-compatible Docker container configurations for integration testing.
- * <p>
- * This factory provides standardized configurations for Docker containers with Java 21 runtime
- * environments, appropriate JVM arguments, and base images for different testing scenarios.
- * <p>
- * Key features supported:
+ * Factory for creation of Docker container configurations with Java 21 compatibility.
+ * This class centralizes the creation of Docker containers with appropriate Java 21 JVM arguments,
+ * environment variables, and image references for integration testing.
+ * 
+ * <p>The factory provides methods for creating various types of Java 21 containers:</p>
  * <ul>
- *   <li>Java 21 JDK and JRE base images (Eclipse Temurin)</li>
- *   <li>Generational ZGC garbage collector configuration</li>
- *   <li>Virtual Threads optimization and configuration</li>
- *   <li>Preview features enablement for Pattern Matching and String Templates</li>
- *   <li>Specialized configurations for different testing scenarios</li>
+ *   <li>Standard Java 21 containers with full JDK</li>
+ *   <li>Runtime-only containers with JRE</li>
+ *   <li>Maven-based containers for build testing</li>
+ *   <li>Memory-optimized containers for constrained environments</li>
+ *   <li>Virtual Thread-optimized containers for concurrency testing</li>
+ *   <li>Nginx containers for proxy/web testing</li>
  * </ul>
+ * 
+ * <p>All Java 21 containers are configured with appropriate JVM arguments to enable
+ * and optimize Java 21 features, particularly Virtual Threads.</p>
  */
 public class Java21DockerClientITConfigFactory
 {
-  // Base Docker images for Java 21
-  private static final String IMAGE_JAVA21_JDK = "eclipse-temurin:21-jdk";
-  private static final String IMAGE_JAVA21_JRE = "eclipse-temurin:21-jre";
-  private static final String IMAGE_MAVEN_JAVA21 = "maven:3.9.6-eclipse-temurin-21";
+  // Base Docker image references for Java 21
+  private static final String IMAGE_JAVA21_BASE = "eclipse-temurin:21-jdk";
+  private static final String IMAGE_JAVA21_MAVEN = "maven:3.9.6-eclipse-temurin-21";
+  private static final String IMAGE_JAVA21_RUNTIME = "eclipse-temurin:21-jre";
   private static final String IMAGE_NGINX = "docker-all.repo.sonatype.com/nginx";
   
-  // Image tags for specific Java 21 versions if needed
-  private static final String IMAGE_JAVA21_0_1_JDK = "eclipse-temurin:21.0.1_12-jdk";
-  private static final String IMAGE_JAVA21_0_1_JRE = "eclipse-temurin:21.0.1_12-jre";
-
-  // Java 21 specific JVM arguments
-  private static final String DEFAULT_JAVA21_OPTS = "-XX:+UseZGC -XX:+ZGenerational";
-  private static final String VIRTUAL_THREADS_OPTS = "-Djdk.virtualThreadScheduler.parallelism=16 -Djdk.virtualThreadScheduler.maxPoolSize=256";
-  private static final String VIRTUAL_THREADS_DEBUG_OPTS = "-Djdk.tracePinnedThreads=full";
-  private static final String PREVIEW_FEATURES_OPTS = "--enable-preview";
-  private static final String GC_LOGGING_OPTS = "-Xlog:gc*=info:file=/tmp/gc.log:time,uptime,level,tags";
+  // Java 21 JVM arguments for optimal container performance
+  private static final String[] JAVA21_DEFAULT_JVM_ARGS = {
+      "-XX:+UseZGC",                           // Use ZGC garbage collector
+      "-XX:+ZGenerational",                    // Enable generational ZGC
+      "-Djdk.virtualThreadScheduler.parallelism=16",  // Optimize virtual thread scheduling
+      "-Djdk.virtualThreadScheduler.maxPoolSize=256", // Set maximum carrier thread pool size
+      "-Djdk.tracePinnedThreads=full",         // Enable thread pinning detection for debugging
+      "-XX:+EnableDynamicAgentLoading",        // Enable dynamic agent loading for testing tools
+      "-XX:+UnlockExperimentalVMOptions"       // Unlock experimental options for advanced features
+  };
+  
+  // Memory-optimized JVM arguments for constrained environments
+  private static final String[] JAVA21_MEMORY_OPTIMIZED_ARGS = {
+      "-XX:+UseZGC",                           // Use ZGC garbage collector
+      "-XX:+ZGenerational",                    // Enable generational ZGC
+      "-Xmx512m",                              // Limit max heap size
+      "-XX:MaxRAMPercentage=75.0",             // Use at most 75% of available RAM
+      "-XX:MinHeapFreeRatio=10",               // Minimum heap free percentage
+      "-XX:MaxHeapFreeRatio=20"                // Maximum heap free percentage
+  };
+  
+  // Environment variables for enabling Virtual Threads
+  private static final Map<String, String> VIRTUAL_THREAD_ENV_VARS = new HashMap<String, String>() {{
+      put("JAVA_TOOL_OPTIONS", "-Djdk.virtualThreadScheduler.parallelism=16 -Djdk.virtualThreadScheduler.maxPoolSize=256");
+      put("TEST_VIRTUAL_THREADS", "true");
+  }};
 
   private Java21DockerClientITConfigFactory() {
-    // Prevent instantiation
+    // Private constructor to prevent instantiation
   }
 
   /**
-   * Creates a Docker container configuration with Java 21 JDK.
+   * Creates a Docker container configuration for a Java 21 application.
    *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @param enableGCLogging Whether to enable detailed GC logging
-   * @return Docker container configuration
+   * @param imageName the Docker image name
+   * @param jvmArgs additional JVM arguments (will be combined with default Java 21 JVM args)
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @param environmentVars additional environment variables
+   * @return a Docker container configuration
    */
-  public static DockerContainerConfig createJava21JdkConfig(
+  public static DockerContainerConfig createJava21Config(
+      final String imageName,
+      final String[] jvmArgs,
       final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures,
-      final boolean enableGCLogging)
+      final List<String> portMappingPorts,
+      final Map<String, String> environmentVars)
   {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
-    
-    if (enableVirtualThreads) {
-      javaOpts.append(" ").append(VIRTUAL_THREADS_OPTS);
+    // Combine default Java 21 JVM args with provided args
+    List<String> allJvmArgs = new ArrayList<>();
+    for (String arg : JAVA21_DEFAULT_JVM_ARGS) {
+      allJvmArgs.add(arg);
+    }
+    if (jvmArgs != null) {
+      for (String arg : jvmArgs) {
+        allJvmArgs.add(arg);
+      }
     }
     
-    if (enablePreviewFeatures) {
-      javaOpts.append(" ").append(PREVIEW_FEATURES_OPTS);
+    // Combine environment variables
+    Map<String, String> allEnvVars = new HashMap<>(VIRTUAL_THREAD_ENV_VARS);
+    if (environmentVars != null) {
+      allEnvVars.putAll(environmentVars);
     }
     
-    if (enableGCLogging) {
-      javaOpts.append(" ").append(GC_LOGGING_OPTS);
-    }
-    
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-
-    return DockerContainerConfig.builder(IMAGE_JAVA21_JDK)
+    // Build and return the container configuration
+    return DockerContainerConfig.builder(imageName)
         .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
+        .withExposedPorts(portMappingPorts)
+        .withEnvironmentVariables(allEnvVars)
+        .withCommandLineArguments(allJvmArgs)
         .build();
   }
   
   /**
-   * Creates a Docker container configuration with Java 21 JDK.
-   * This is a convenience method that defaults GC logging to false.
+   * Creates a Docker container configuration for a Java 21 application with default base image.
    *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @return Docker container configuration
+   * @param jvmArgs additional JVM arguments (will be combined with default Java 21 JVM args)
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @param environmentVars additional environment variables
+   * @return a Docker container configuration
    */
-  public static DockerContainerConfig createJava21JdkConfig(
+  public static DockerContainerConfig createDefaultJava21Config(
+      final String[] jvmArgs,
       final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures)
+      final List<String> portMappingPorts,
+      final Map<String, String> environmentVars)
   {
-    return createJava21JdkConfig(pathBinds, exposedPorts, enableVirtualThreads, enablePreviewFeatures, false);
-  }
-
-  /**
-   * Creates a Docker container configuration with Java 21 JRE.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @param enableGCLogging Whether to enable detailed GC logging
-   * @return Docker container configuration
-   */
-  public static DockerContainerConfig createJava21JreConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures,
-      final boolean enableGCLogging)
-  {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
-    
-    if (enableVirtualThreads) {
-      javaOpts.append(" ").append(VIRTUAL_THREADS_OPTS);
-    }
-    
-    if (enablePreviewFeatures) {
-      javaOpts.append(" ").append(PREVIEW_FEATURES_OPTS);
-    }
-    
-    if (enableGCLogging) {
-      javaOpts.append(" ").append(GC_LOGGING_OPTS);
-    }
-    
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-
-    return DockerContainerConfig.builder(IMAGE_JAVA21_JRE)
-        .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
-        .build();
+    return createJava21Config(
+        IMAGE_JAVA21_BASE,
+        jvmArgs,
+        pathBinds,
+        portMappingPorts,
+        environmentVars);
   }
   
   /**
-   * Creates a Docker container configuration with Java 21 JRE.
-   * This is a convenience method that defaults GC logging to false.
+   * Creates a Docker container configuration for a Java 21 Maven application.
+   * This is useful for running Maven-based tests in a Java 21 environment.
    *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @return Docker container configuration
-   */
-  public static DockerContainerConfig createJava21JreConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures)
-  {
-    return createJava21JreConfig(pathBinds, exposedPorts, enableVirtualThreads, enablePreviewFeatures, false);
-  }
-
-  /**
-   * Creates a Docker container configuration with Maven and Java 21.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param mavenArgs Additional Maven arguments
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @param enableGCLogging Whether to enable detailed GC logging
-   * @return Docker container configuration
+   * @param jvmArgs additional JVM arguments (will be combined with default Java 21 JVM args)
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @param environmentVars additional environment variables
+   * @param mavenArgs additional Maven arguments
+   * @return a Docker container configuration
    */
   public static DockerContainerConfig createMavenJava21Config(
+      final String[] jvmArgs,
       final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final String mavenArgs,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures,
-      final boolean enableGCLogging)
+      final List<String> portMappingPorts,
+      final Map<String, String> environmentVars,
+      final String[] mavenArgs)
   {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
+    // Combine environment variables with Maven-specific ones
+    Map<String, String> mavenEnvVars = new HashMap<>();
+    if (environmentVars != null) {
+      mavenEnvVars.putAll(environmentVars);
+    }
+    mavenEnvVars.put("MAVEN_OPTS", "-Xmx1024m");
     
-    if (enableVirtualThreads) {
-      javaOpts.append(" ").append(VIRTUAL_THREADS_OPTS);
+    // Create the base configuration
+    DockerContainerConfig config = createJava21Config(
+        IMAGE_JAVA21_MAVEN,
+        jvmArgs,
+        pathBinds,
+        portMappingPorts,
+        mavenEnvVars);
+    
+    // Add Maven arguments if provided
+    if (mavenArgs != null && mavenArgs.length > 0) {
+      List<String> mvnCommand = new ArrayList<>();
+      mvnCommand.add("mvn");
+      for (String arg : mavenArgs) {
+        mvnCommand.add(arg);
+      }
+      config = config.withCommand(mvnCommand);
     }
     
-    if (enablePreviewFeatures) {
-      javaOpts.append(" ").append(PREVIEW_FEATURES_OPTS);
-    }
-    
-    if (enableGCLogging) {
-      javaOpts.append(" ").append(GC_LOGGING_OPTS);
-    }
-    
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-    env.put("MAVEN_OPTS", javaOpts.toString());
-    
-    if (mavenArgs != null && !mavenArgs.isEmpty()) {
-      env.put("MAVEN_CONFIG", mavenArgs);
-    }
-
-    return DockerContainerConfig.builder(IMAGE_MAVEN_JAVA21)
-        .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
-        .build();
+    return config;
   }
   
   /**
-   * Creates a Docker container configuration with Maven and Java 21.
-   * This is a convenience method that defaults GC logging to false.
+   * Creates a Docker container configuration for a Java 21 runtime application (JRE only).
+   * This is useful for running lightweight Java applications that don't need the full JDK.
    *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param mavenArgs Additional Maven arguments
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @return Docker container configuration
+   * @param jvmArgs additional JVM arguments (will be combined with default Java 21 JVM args)
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @param environmentVars additional environment variables
+   * @return a Docker container configuration
    */
-  public static DockerContainerConfig createMavenJava21Config(
+  public static DockerContainerConfig createJava21RuntimeConfig(
+      final String[] jvmArgs,
       final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final String mavenArgs,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures)
+      final List<String> portMappingPorts,
+      final Map<String, String> environmentVars)
   {
-    return createMavenJava21Config(pathBinds, exposedPorts, mavenArgs, enableVirtualThreads, enablePreviewFeatures, false);
+    return createJava21Config(
+        IMAGE_JAVA21_RUNTIME,
+        jvmArgs,
+        pathBinds,
+        portMappingPorts,
+        environmentVars);
   }
-
+  
   /**
-   * Creates a Docker container configuration with Nginx for testing Java 21 applications.
+   * Creates a Docker container configuration for an Nginx server.
+   * This method is similar to the one in DockerClientITConfigFactory but ensures
+   * compatibility with Java 21 testing environments.
    *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @return Docker container configuration
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @return a Docker container configuration
    */
   public static DockerContainerConfig createNginxConfig(
       final Map<String, String> pathBinds,
-      final List<String> exposedPorts)
+      final List<String> portMappingPorts)
   {
     return DockerContainerConfig.builder(IMAGE_NGINX)
         .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
+        .withExposedPorts(portMappingPorts)
         .build();
   }
   
   /**
-   * Creates a Docker container configuration with Java 21 JDK using a specific version.
+   * Creates a Docker container configuration for a Java 21 application with memory-optimized settings.
+   * This is useful for running in constrained environments or when memory efficiency is critical.
    *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableVirtualThreads Whether to enable Virtual Threads optimizations
-   * @param enablePreviewFeatures Whether to enable preview features
-   * @return Docker container configuration
+   * @param imageName the Docker image name
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @param environmentVars additional environment variables
+   * @return a Docker container configuration
    */
-  public static DockerContainerConfig createJava21_0_1_JdkConfig(
+  public static DockerContainerConfig createMemoryOptimizedJava21Config(
+      final String imageName,
       final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableVirtualThreads,
-      final boolean enablePreviewFeatures)
+      final List<String> portMappingPorts,
+      final Map<String, String> environmentVars)
   {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
+    // Combine environment variables
+    Map<String, String> allEnvVars = new HashMap<>();
+    if (environmentVars != null) {
+      allEnvVars.putAll(environmentVars);
+    }
+    allEnvVars.put("JAVA_TOOL_OPTIONS", "-XX:MaxRAMPercentage=75.0");
+    
+    // Build and return the container configuration
+    return DockerContainerConfig.builder(imageName)
+        .withPathBinds(pathBinds)
+        .withExposedPorts(portMappingPorts)
+        .withEnvironmentVariables(allEnvVars)
+        .withCommandLineArguments(JAVA21_MEMORY_OPTIMIZED_ARGS)
+        .build();
+  }
+  
+  /**
+   * Creates a Docker container configuration for a Java 21 application with Virtual Threads enabled.
+   * This configuration is specifically optimized for testing Virtual Thread capabilities.
+   *
+   * @param imageName the Docker image name
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose
+   * @param mainClass the main class to execute
+   * @param appArgs application arguments
+   * @return a Docker container configuration
+   */
+  public static DockerContainerConfig createVirtualThreadConfig(
+      final String imageName,
+      final Map<String, String> pathBinds,
+      final List<String> portMappingPorts,
+      final String mainClass,
+      final String[] appArgs)
+  {
+    // Virtual Thread specific JVM arguments
+    String[] vtJvmArgs = {
+        "-Djdk.virtualThreadScheduler.parallelism=16",
+        "-Djdk.virtualThreadScheduler.maxPoolSize=256",
+        "-Djdk.tracePinnedThreads=full"
+    };
+    
+    // Environment variables for Virtual Thread testing
+    Map<String, String> vtEnvVars = new HashMap<>();
+    vtEnvVars.put("TEST_VIRTUAL_THREADS", "true");
+    vtEnvVars.put("JAVA_TOOL_OPTIONS", String.join(" ", vtJvmArgs));
+    
+    // Create the base configuration
+    DockerContainerConfig config = createJava21Config(
+        imageName,
+        vtJvmArgs,
+        pathBinds,
+        portMappingPorts,
+        vtEnvVars);
+    
+    // Add command to run the main class if provided
+    if (mainClass != null && !mainClass.isEmpty()) {
+      List<String> command = new ArrayList<>();
+      command.add("java");
+      command.addAll(Arrays.asList(vtJvmArgs));
+      command.add(mainClass);
+      
+      if (appArgs != null) {
+        command.addAll(Arrays.asList(appArgs));
+      }
+      
+      config = config.withCommand(command);
+    }
+    
+    return config;
+  }
+  
+  /**
+   * Creates a Docker container configuration for a Nexus Repository instance with Java 21.
+   * This is specifically designed for testing Nexus Repository with Java 21 features.
+   *
+   * @param pathBinds map of path bindings (host path -> container path)
+   * @param portMappingPorts list of ports to expose (should include 8081 for Nexus web UI)
+   * @param enableVirtualThreads whether to enable Virtual Threads for the Nexus instance
+   * @return a Docker container configuration
+   */
+  public static DockerContainerConfig createNexusJava21Config(
+      final Map<String, String> pathBinds,
+      final List<String> portMappingPorts,
+      final boolean enableVirtualThreads)
+  {
+    // Environment variables for Nexus
+    Map<String, String> nexusEnvVars = new HashMap<>();
+    nexusEnvVars.put("INSTALL4J_ADD_VM_PARAMS", String.join(" ", JAVA21_DEFAULT_JVM_ARGS));
     
     if (enableVirtualThreads) {
-      javaOpts.append(" ").append(VIRTUAL_THREADS_OPTS);
+      nexusEnvVars.put("NEXUS_VIRTUAL_THREADS_ENABLED", "true");
+      nexusEnvVars.put("INSTALL4J_ADD_VM_PARAMS", nexusEnvVars.get("INSTALL4J_ADD_VM_PARAMS") + 
+          " -Djdk.virtualThreadScheduler.parallelism=16" +
+          " -Djdk.virtualThreadScheduler.maxPoolSize=256" +
+          " -Djdk.tracePinnedThreads=full");
     }
     
-    if (enablePreviewFeatures) {
-      javaOpts.append(" ").append(PREVIEW_FEATURES_OPTS);
-    }
+    // Use a custom Nexus image with Java 21
+    // Note: This assumes a custom Nexus image with Java 21 is available
+    String nexusJava21Image = "sonatype/nexus3:java21";
     
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-
-    return DockerContainerConfig.builder(IMAGE_JAVA21_0_1_JDK)
+    return DockerContainerConfig.builder(nexusJava21Image)
         .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
+        .withExposedPorts(portMappingPorts)
+        .withEnvironmentVariables(nexusEnvVars)
         .build();
   }
-
-  /**
-   * Creates a Docker container configuration with Java 21 JDK optimized for Virtual Thread testing.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableDebugMode Whether to enable additional debugging for virtual threads
-   * @return Docker container configuration with Virtual Threads enabled
-   */
-  public static DockerContainerConfig createVirtualThreadTestConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableDebugMode)
-  {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
-    javaOpts.append(" ").append(VIRTUAL_THREADS_OPTS);
-    
-    // Additional settings optimized for Virtual Thread testing
-    if (enableDebugMode) {
-      javaOpts.append(" ").append(VIRTUAL_THREADS_DEBUG_OPTS);
-      javaOpts.append(" -Djdk.virtualThreadScheduler.showStacks=true");
-    }
-    
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-    env.put("SONATYPE_NEXUS_VIRTUAL_THREADS_ENABLED", "true");
-
-    return DockerContainerConfig.builder(IMAGE_JAVA21_JDK)
-        .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
-        .build();
-  }
-  
-  /**
-   * Creates a Docker container configuration with Java 21 JDK optimized for Virtual Thread testing.
-   * This is a convenience method that defaults debug mode to false.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @return Docker container configuration with Virtual Threads enabled
-   */
-  public static DockerContainerConfig createVirtualThreadTestConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts)
-  {
-    return createVirtualThreadTestConfig(pathBinds, exposedPorts, false);
-  }
-
-  /**
-   * Creates a Docker container configuration with Java 21 JDK optimized for pattern matching and record pattern testing.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableGCLogging Whether to enable detailed GC logging
-   * @return Docker container configuration with preview features enabled
-   */
-  public static DockerContainerConfig createPatternMatchingTestConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableGCLogging)
-  {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
-    javaOpts.append(" ").append(PREVIEW_FEATURES_OPTS);
-    
-    if (enableGCLogging) {
-      javaOpts.append(" ").append(GC_LOGGING_OPTS);
-    }
-    
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-    env.put("SONATYPE_NEXUS_PATTERN_MATCHING_ENABLED", "true");
-
-    return DockerContainerConfig.builder(IMAGE_JAVA21_JDK)
-        .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
-        .build();
-  }
-  
-  /**
-   * Creates a Docker container configuration with Java 21 JDK optimized for pattern matching and record pattern testing.
-   * This is a convenience method that defaults GC logging to false.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @return Docker container configuration with preview features enabled
-   */
-  public static DockerContainerConfig createPatternMatchingTestConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts)
-  {
-    return createPatternMatchingTestConfig(pathBinds, exposedPorts, false);
-  }
-
-  /**
-   * Creates a Docker container configuration with Java 21 JDK optimized for string template testing.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @param enableGCLogging Whether to enable detailed GC logging
-   * @return Docker container configuration with preview features enabled
-   */
-  public static DockerContainerConfig createStringTemplateTestConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts,
-      final boolean enableGCLogging)
-  {
-    Map<String, String> env = new HashMap<>();
-    StringBuilder javaOpts = new StringBuilder(DEFAULT_JAVA21_OPTS);
-    javaOpts.append(" ").append(PREVIEW_FEATURES_OPTS);
-    
-    if (enableGCLogging) {
-      javaOpts.append(" ").append(GC_LOGGING_OPTS);
-    }
-    
-    env.put("JAVA_TOOL_OPTIONS", javaOpts.toString());
-    env.put("SONATYPE_NEXUS_STRING_TEMPLATE_ENABLED", "true");
-
-    return DockerContainerConfig.builder(IMAGE_JAVA21_JDK)
-        .withPathBinds(pathBinds)
-        .withExposedPorts(exposedPorts)
-        .withEnv(env)
-        .build();
-  }
-  
-  /**
-   * Creates a Docker container configuration with Java 21 JDK optimized for string template testing.
-   * This is a convenience method that defaults GC logging to false.
-   *
-   * @param pathBinds Map of host paths to container paths
-   * @param exposedPorts List of ports to expose
-   * @return Docker container configuration with preview features enabled
-   */
-  public static DockerContainerConfig createStringTemplateTestConfig(
-      final Map<String, String> pathBinds,
-      final List<String> exposedPorts)
-  {
-    return createStringTemplateTestConfig(pathBinds, exposedPorts, false);
-  }
-}

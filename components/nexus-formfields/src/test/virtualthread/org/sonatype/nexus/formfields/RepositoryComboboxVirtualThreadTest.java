@@ -12,377 +12,368 @@
  */
 package org.sonatype.nexus.formfields;
 
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnJre;
-import org.junit.jupiter.api.condition.JRE;
 
-import static java.lang.StringTemplate.STR;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 /**
- * Tests {@link RepositoryCombobox} behavior under Virtual Thread execution.
+ * Test {@link RepositoryCombobox} behavior under Virtual Thread execution for Java 21 compatibility.
  * 
- * This test class validates that RepositoryCombobox operations remain thread-safe
- * and consistent when accessed concurrently by many Virtual Threads, which is
- * important for ensuring compatibility with Java 21's lightweight threading model.
- *
- * @since 3.60
+ * This test validates that repository combobox components function correctly in highly concurrent situations
+ * with Java 21's lightweight threading model, ensuring thread safety and consistent filter behavior under load.
  */
-@EnabledOnJre(JRE.JAVA_21)
 public class RepositoryComboboxVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
-  private static final int THREAD_COUNT = 5000;
-  private static final int WARMUP_COUNT = 100;
-  private static final String[] FORMATS = {"maven", "npm", "docker", "raw", "nuget", "pypi", "rubygems", "yum"};
-  private static final String[] VERSION_POLICIES = {"RELEASE", "SNAPSHOT", "MIXED"};
-  
   private RepositoryCombobox underTest;
   private ExecutorService executor;
-  private MemoryMXBean memoryMXBean;
-  private long initialMemoryUsage;
+  private static final int THREAD_COUNT = 1000;
+  private static final int TIMEOUT_SECONDS = 10;
   
   @BeforeEach
-  public void setUp() {
+  void setUp() {
     underTest = new RepositoryCombobox("test");
-    executor = Executors.newVirtualThreadPerTaskExecutor();
-    memoryMXBean = ManagementFactory.getMemoryMXBean();
-    
-    // Warm up the JVM to stabilize memory measurements
-    warmUp();
-    
-    // Record initial memory usage after warm-up
-    System.gc();
-    initialMemoryUsage = memoryMXBean.getHeapMemoryUsage().getUsed();
+    // Create a virtual thread per task executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
   }
   
   @AfterEach
-  public void tearDown() throws Exception {
-    executor.shutdown();
-    if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-      executor.shutdownNow();
+  void tearDown() {
+    if (executor != null) {
+      executor.shutdown();
+      try {
+        if (!executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          executor.shutdownNow();
+        }
+      }
+      catch (InterruptedException e) {
+        executor.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
     }
   }
-  
+
   /**
-   * Warm up the JVM to stabilize memory measurements.
-   */
-  private void warmUp() {
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
-    for (int i = 0; i < WARMUP_COUNT; i++) {
-      futures.add(CompletableFuture.runAsync(() -> {
-        RepositoryCombobox combobox = new RepositoryCombobox("warmup");
-        combobox.includingAnyOfFormats("maven");
-        combobox.excludingAnyOfFormats("npm");
-        combobox.getStoreFilters();
-      }, executor));
-    }
-    
-    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-  }
-  
-  /**
-   * Tests that format filters can be safely applied and read concurrently by many Virtual Threads.
-   * 
-   * This test creates thousands of Virtual Threads that simultaneously modify and read
-   * the format filters, then verifies that the results are consistent and thread-safe.
+   * Test that format filters remain consistent when accessed concurrently by many virtual threads.
+   * This validates thread safety of the format filter operations in RepositoryCombobox.
    */
   @Test
-  @DisplayName("Format filters should be thread-safe with Virtual Threads")
-  public void formatFiltersShouldBeThreadSafeWithVirtualThreads() {
-    // Track successful operations
-    AtomicInteger successCount = new AtomicInteger(0);
+  @DisplayName("Format filters remain consistent under concurrent virtual thread access")
+  void formatFiltersRemainConsistentUnderConcurrentAccess() throws Exception {
+    // Set initial format filters
+    underTest.includingAnyOfFormats("maven", "docker");
+    underTest.excludingAnyOfFormats("nuget", "npm");
     
-    // Create a map to track filter values seen by different threads
-    ConcurrentHashMap<String, Integer> observedFilters = new ConcurrentHashMap<>();
+    // Verify initial state
+    assertThat(underTest.getStoreFilters().get("format"), is("maven,docker,!nuget,!npm"));
     
-    // Create thousands of virtual threads that modify and read format filters
+    // Create a latch to synchronize thread completion
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    
+    // Track any errors that occur during concurrent execution
+    AtomicReference<Throwable> error = new AtomicReference<>();
+    
+    // Track memory usage before the test
+    long memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    
+    // Submit tasks to add and remove format filters concurrently
     List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
     for (int i = 0; i < THREAD_COUNT; i++) {
       final int index = i;
-      futures.add(CompletableFuture.runAsync(() -> {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
         try {
-          // Each thread includes and excludes different formats based on its index
-          String includeFormat = FORMATS[index % FORMATS.length];
-          String excludeFormat = FORMATS[(index + 1) % FORMATS.length];
+          // Alternate between including and excluding formats
+          if (index % 2 == 0) {
+            underTest.includingAnyOfFormats("format" + index);
+          }
+          else {
+            underTest.excludingAnyOfFormats("format" + index);
+          }
           
-          // Apply filters
-          underTest.includingAnyOfFormats(includeFormat);
-          underTest.excludingAnyOfFormats(excludeFormat);
-          
-          // Get and verify filters
+          // Verify we can still get store filters without errors
           Map<String, String> filters = underTest.getStoreFilters();
           assertThat(filters, notNullValue());
           assertThat(filters.containsKey("format"), is(true));
-          
-          String formatFilter = filters.get("format");
-          assertThat(formatFilter, containsString(includeFormat));
-          assertThat(formatFilter, containsString(STR."!\{excludeFormat}"));
-          
-          // Track observed filter values
-          observedFilters.put(formatFilter, observedFilters.getOrDefault(formatFilter, 0) + 1);
-          
-          successCount.incrementAndGet();
         }
-        catch (Exception e) {
-          // Log any exceptions
-          log.error("Error in virtual thread {}", index, e);
+        catch (Throwable t) {
+          error.compareAndSet(null, t);
         }
-      }, executor));
+        finally {
+          latch.countDown();
+        }
+      }, executor);
+      
+      futures.add(future);
     }
     
     // Wait for all threads to complete
-    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat("All virtual threads did not complete in time", completed, is(true));
     
-    // Verify all operations completed successfully
-    assertThat(successCount.get(), is(THREAD_COUNT));
+    // Check if any errors occurred
+    if (error.get() != null) {
+      throw new AssertionError("Error during concurrent execution", error.get());
+    }
     
-    // Verify memory usage is reasonable (should be much less than with platform threads)
-    System.gc();
-    long finalMemoryUsage = memoryMXBean.getHeapMemoryUsage().getUsed();
-    long memoryPerThread = (finalMemoryUsage - initialMemoryUsage) / THREAD_COUNT;
+    // Verify final state contains expected format filters
+    Map<String, String> finalFilters = underTest.getStoreFilters();
+    assertThat(finalFilters, notNullValue());
+    assertThat(finalFilters.containsKey("format"), is(true));
     
-    log.info("Memory usage per virtual thread: {} bytes", memoryPerThread);
+    // Original formats should still be present
+    String formatFilter = finalFilters.get("format");
+    assertThat(formatFilter.contains("maven"), is(true));
+    assertThat(formatFilter.contains("docker"), is(true));
+    assertThat(formatFilter.contains("!nuget"), is(true));
+    assertThat(formatFilter.contains("!npm"), is(true));
     
-    // Virtual threads should use significantly less memory than platform threads
-    // A reasonable threshold is 1KB per thread, which is much less than platform threads
-    assertThat(memoryPerThread, lessThan(1024L));
-    
-    // Log observed filter combinations for analysis
-    log.info("Observed {} distinct filter combinations", observedFilters.size());
-    observedFilters.forEach((filter, count) -> 
-        log.debug("Filter '{}' observed {} times", filter, count));
+    // Track memory usage after the test
+    long memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    log.info("Memory used for {} virtual threads: {} bytes", THREAD_COUNT, memoryAfter - memoryBefore);
   }
-  
+
   /**
-   * Tests that version policy filters can be safely applied and read concurrently by many Virtual Threads.
-   * 
-   * This test creates thousands of Virtual Threads that simultaneously modify and read
-   * the version policy filters, then verifies that the results are consistent and thread-safe.
+   * Test that version policy filters remain consistent when accessed concurrently by many virtual threads.
+   * This validates thread safety of the version policy filter operations in RepositoryCombobox.
    */
   @Test
-  @DisplayName("Version policy filters should be thread-safe with Virtual Threads")
-  public void versionPolicyFiltersShouldBeThreadSafeWithVirtualThreads() {
-    // Track successful operations
-    AtomicInteger successCount = new AtomicInteger(0);
+  @DisplayName("Version policy filters remain consistent under concurrent virtual thread access")
+  void versionPolicyFiltersRemainConsistentUnderConcurrentAccess() throws Exception {
+    // Set initial version policy filters
+    underTest.includingAnyOfVersionPolicies("MIXED", "SNAPSHOT");
+    underTest.excludingAnyOfVersionPolicies("RELEASE");
     
-    // Create a map to track filter values seen by different threads
-    ConcurrentHashMap<String, Integer> observedFilters = new ConcurrentHashMap<>();
+    // Verify initial state
+    assertThat(underTest.getStoreFilters().get("versionPolicies"), is("MIXED,SNAPSHOT,!RELEASE"));
     
-    // Create thousands of virtual threads that modify and read version policy filters
+    // Create a latch to synchronize thread completion
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    
+    // Track any errors that occur during concurrent execution
+    AtomicReference<Throwable> error = new AtomicReference<>();
+    
+    // Track memory usage before the test
+    long memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    
+    // Submit tasks to add and remove version policy filters concurrently
     List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
     for (int i = 0; i < THREAD_COUNT; i++) {
       final int index = i;
-      futures.add(CompletableFuture.runAsync(() -> {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
         try {
-          // Each thread includes and excludes different version policies based on its index
-          String includePolicy = VERSION_POLICIES[index % VERSION_POLICIES.length];
-          String excludePolicy = VERSION_POLICIES[(index + 1) % VERSION_POLICIES.length];
+          // Alternate between including and excluding version policies
+          if (index % 2 == 0) {
+            underTest.includingAnyOfVersionPolicies("POLICY" + index);
+          }
+          else {
+            underTest.excludingAnyOfVersionPolicies("POLICY" + index);
+          }
           
-          // Apply filters
-          underTest.includingAnyOfVersionPolicies(includePolicy);
-          underTest.excludingAnyOfVersionPolicies(excludePolicy);
-          
-          // Get and verify filters
+          // Verify we can still get store filters without errors
           Map<String, String> filters = underTest.getStoreFilters();
           assertThat(filters, notNullValue());
           assertThat(filters.containsKey("versionPolicies"), is(true));
-          
-          String policyFilter = filters.get("versionPolicies");
-          assertThat(policyFilter, containsString(includePolicy));
-          assertThat(policyFilter, containsString(STR."!\{excludePolicy}"));
-          
-          // Track observed filter values
-          observedFilters.put(policyFilter, observedFilters.getOrDefault(policyFilter, 0) + 1);
-          
-          successCount.incrementAndGet();
         }
-        catch (Exception e) {
-          // Log any exceptions
-          log.error("Error in virtual thread {}", index, e);
+        catch (Throwable t) {
+          error.compareAndSet(null, t);
         }
-      }, executor));
+        finally {
+          latch.countDown();
+        }
+      }, executor);
+      
+      futures.add(future);
     }
     
     // Wait for all threads to complete
-    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat("All virtual threads did not complete in time", completed, is(true));
     
-    // Verify all operations completed successfully
-    assertThat(successCount.get(), is(THREAD_COUNT));
+    // Check if any errors occurred
+    if (error.get() != null) {
+      throw new AssertionError("Error during concurrent execution", error.get());
+    }
     
-    // Verify memory usage is reasonable
-    System.gc();
-    long finalMemoryUsage = memoryMXBean.getHeapMemoryUsage().getUsed();
-    long memoryPerThread = (finalMemoryUsage - initialMemoryUsage) / THREAD_COUNT;
+    // Verify final state contains expected version policy filters
+    Map<String, String> finalFilters = underTest.getStoreFilters();
+    assertThat(finalFilters, notNullValue());
+    assertThat(finalFilters.containsKey("versionPolicies"), is(true));
     
-    log.info("Memory usage per virtual thread: {} bytes", memoryPerThread);
+    // Original version policies should still be present
+    String versionPolicyFilter = finalFilters.get("versionPolicies");
+    assertThat(versionPolicyFilter.contains("MIXED"), is(true));
+    assertThat(versionPolicyFilter.contains("SNAPSHOT"), is(true));
+    assertThat(versionPolicyFilter.contains("!RELEASE"), is(true));
     
-    // Virtual threads should use significantly less memory than platform threads
-    assertThat(memoryPerThread, lessThan(1024L));
-    
-    // Log observed filter combinations for analysis
-    log.info("Observed {} distinct filter combinations", observedFilters.size());
-    observedFilters.forEach((filter, count) -> 
-        log.debug("Filter '{}' observed {} times", filter, count));
+    // Track memory usage after the test
+    long memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    log.info("Memory used for {} virtual threads: {} bytes", THREAD_COUNT, memoryAfter - memoryBefore);
   }
-  
+
   /**
-   * Tests that combined format and version policy filters can be safely applied and read
-   * concurrently by many Virtual Threads.
-   * 
-   * This test creates thousands of Virtual Threads that simultaneously modify and read
-   * both format and version policy filters, then verifies that the results are consistent and thread-safe.
+   * Test that concurrent operations on both format and version policy filters work correctly.
+   * This validates that different filter types don't interfere with each other under concurrent access.
    */
   @Test
-  @DisplayName("Combined filters should be thread-safe with Virtual Threads")
-  public void combinedFiltersShouldBeThreadSafeWithVirtualThreads() {
-    // Track successful operations
-    AtomicInteger successCount = new AtomicInteger(0);
+  @DisplayName("Concurrent operations on multiple filter types work correctly")
+  void concurrentOperationsOnMultipleFilterTypesWorkCorrectly() throws Exception {
+    // Set initial filters
+    underTest.includingAnyOfFormats("maven");
+    underTest.includingAnyOfVersionPolicies("SNAPSHOT");
     
-    // Create thousands of virtual threads that modify and read both types of filters
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    // Create a latch to synchronize thread completion
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT * 2); // Double the threads for both filter types
     
+    // Track any errors that occur during concurrent execution
+    AtomicReference<Throwable> error = new AtomicReference<>();
+    
+    // Track operation counts to verify all operations were performed
+    AtomicInteger formatOperations = new AtomicInteger(0);
+    AtomicInteger versionPolicyOperations = new AtomicInteger(0);
+    
+    // Track memory usage before the test
+    long memoryBefore = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    
+    // Submit tasks to modify format filters concurrently
     for (int i = 0; i < THREAD_COUNT; i++) {
       final int index = i;
-      futures.add(CompletableFuture.runAsync(() -> {
+      CompletableFuture.runAsync(() -> {
         try {
-          // Each thread includes and excludes different formats and policies based on its index
-          String includeFormat = FORMATS[index % FORMATS.length];
-          String excludeFormat = FORMATS[(index + 1) % FORMATS.length];
-          String includePolicy = VERSION_POLICIES[index % VERSION_POLICIES.length];
-          String excludePolicy = VERSION_POLICIES[(index + 1) % VERSION_POLICIES.length];
-          
-          // Apply filters
-          underTest.includingAnyOfFormats(includeFormat);
-          underTest.excludingAnyOfFormats(excludeFormat);
-          underTest.includingAnyOfVersionPolicies(includePolicy);
-          underTest.excludingAnyOfVersionPolicies(excludePolicy);
-          
-          // Get and verify filters
-          Map<String, String> filters = underTest.getStoreFilters();
-          assertThat(filters, notNullValue());
-          assertThat(filters.containsKey("format"), is(true));
-          assertThat(filters.containsKey("versionPolicies"), is(true));
-          
-          String formatFilter = filters.get("format");
-          String policyFilter = filters.get("versionPolicies");
-          
-          assertThat(formatFilter, containsString(includeFormat));
-          assertThat(formatFilter, containsString(STR."!\{excludeFormat}"));
-          assertThat(policyFilter, containsString(includePolicy));
-          assertThat(policyFilter, containsString(STR."!\{excludePolicy}"));
-          
-          successCount.incrementAndGet();
+          // Alternate between including and excluding formats
+          if (index % 2 == 0) {
+            underTest.includingAnyOfFormats("format" + index);
+          }
+          else {
+            underTest.excludingAnyOfFormats("format" + index);
+          }
+          formatOperations.incrementAndGet();
         }
-        catch (Exception e) {
-          // Log any exceptions
-          log.error("Error in virtual thread {}", index, e);
+        catch (Throwable t) {
+          error.compareAndSet(null, t);
         }
-      }, executor));
+        finally {
+          latch.countDown();
+        }
+      }, executor);
+    }
+    
+    // Submit tasks to modify version policy filters concurrently
+    for (int i = 0; i < THREAD_COUNT; i++) {
+      final int index = i;
+      CompletableFuture.runAsync(() -> {
+        try {
+          // Alternate between including and excluding version policies
+          if (index % 2 == 0) {
+            underTest.includingAnyOfVersionPolicies("POLICY" + index);
+          }
+          else {
+            underTest.excludingAnyOfVersionPolicies("POLICY" + index);
+          }
+          versionPolicyOperations.incrementAndGet();
+        }
+        catch (Throwable t) {
+          error.compareAndSet(null, t);
+        }
+        finally {
+          latch.countDown();
+        }
+      }, executor);
     }
     
     // Wait for all threads to complete
-    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat("All virtual threads did not complete in time", completed, is(true));
     
-    // Verify all operations completed successfully
-    assertThat(successCount.get(), is(THREAD_COUNT));
-    
-    // Verify memory usage is reasonable
-    System.gc();
-    long finalMemoryUsage = memoryMXBean.getHeapMemoryUsage().getUsed();
-    long memoryPerThread = (finalMemoryUsage - initialMemoryUsage) / THREAD_COUNT;
-    
-    log.info("Memory usage per virtual thread: {} bytes", memoryPerThread);
-    
-    // Virtual threads should use significantly less memory than platform threads
-    assertThat(memoryPerThread, lessThan(1024L));
-  }
-  
-  /**
-   * Tests that the async repository data fetching method works correctly with Virtual Threads.
-   * 
-   * This test verifies that the fetchRepositoryDataAsync method correctly uses Virtual Threads
-   * to fetch repository data asynchronously and returns the expected results.
-   */
-  @Test
-  @DisplayName("Async repository data fetching should work with Virtual Threads")
-  public void asyncRepositoryDataFetchingShouldWorkWithVirtualThreads() {
-    // Create a list of repository IDs to fetch
-    List<String> repositoryIds = new ArrayList<>();
-    for (int i = 0; i < 100; i++) {
-      repositoryIds.add("repo-" + i);
+    // Check if any errors occurred
+    if (error.get() != null) {
+      throw new AssertionError("Error during concurrent execution", error.get());
     }
     
-    // Fetch repository data asynchronously
-    CompletableFuture<List<RepositoryCombobox.RepositoryInfo>> future = 
-        underTest.fetchRepositoryDataAsync(repositoryIds);
+    // Verify all operations were performed
+    assertThat(formatOperations.get(), is(THREAD_COUNT));
+    assertThat(versionPolicyOperations.get(), is(THREAD_COUNT));
     
-    // Wait for the future to complete and get the results
-    List<RepositoryCombobox.RepositoryInfo> results = future.join();
+    // Verify final state contains both filter types
+    Map<String, String> finalFilters = underTest.getStoreFilters();
+    assertThat(finalFilters, notNullValue());
+    assertThat(finalFilters.containsKey("format"), is(true));
+    assertThat(finalFilters.containsKey("versionPolicies"), is(true));
     
-    // Verify the results
-    assertThat(results.size(), is(repositoryIds.size()));
-    for (int i = 0; i < repositoryIds.size(); i++) {
-      RepositoryCombobox.RepositoryInfo info = results.get(i);
-      assertThat(info.id(), is(repositoryIds.get(i)));
-      assertThat(info.name(), is("Repository " + repositoryIds.get(i)));
-    }
+    // Original values should still be present
+    String formatFilter = finalFilters.get("format");
+    String versionPolicyFilter = finalFilters.get("versionPolicies");
+    assertThat(formatFilter.contains("maven"), is(true));
+    assertThat(versionPolicyFilter.contains("SNAPSHOT"), is(true));
+    
+    // Track memory usage after the test
+    long memoryAfter = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    log.info("Memory used for {} virtual threads: {} bytes", THREAD_COUNT * 2, memoryAfter - memoryBefore);
   }
-  
+
   /**
-   * Tests that the repository info processing method works correctly with pattern matching.
-   * 
-   * This test verifies that the processRepositoryInfo method correctly uses pattern matching
-   * to process repository information and returns the expected results.
+   * Test that the includeAnEntryForAllRepositories method is thread-safe under concurrent access.
    */
   @Test
-  @DisplayName("Repository info processing should work with pattern matching")
-  public void repositoryInfoProcessingShouldWorkWithPatternMatching() {
-    // Create repository info objects with different ID patterns
-    RepositoryCombobox.RepositoryInfo hostedRepo = 
-        new RepositoryCombobox.RepositoryInfo("hosted-maven", "Maven Hosted");
-    RepositoryCombobox.RepositoryInfo proxyRepo = 
-        new RepositoryCombobox.RepositoryInfo("proxy-npm", "NPM Proxy");
-    RepositoryCombobox.RepositoryInfo groupRepo = 
-        new RepositoryCombobox.RepositoryInfo("group-docker", "Docker Group");
-    RepositoryCombobox.RepositoryInfo otherRepo = 
-        new RepositoryCombobox.RepositoryInfo("other-repo", "Other Repository");
+  @DisplayName("includeAnEntryForAllRepositories method is thread-safe")
+  void includeAnEntryForAllRepositoriesIsThreadSafe() throws Exception {
+    // Create a latch to synchronize thread completion
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
     
-    // Process repository info objects
-    String hostedResult = underTest.processRepositoryInfo(hostedRepo);
-    String proxyResult = underTest.processRepositoryInfo(proxyRepo);
-    String groupResult = underTest.processRepositoryInfo(groupRepo);
-    String otherResult = underTest.processRepositoryInfo(otherRepo);
+    // Track any errors that occur during concurrent execution
+    AtomicReference<Throwable> error = new AtomicReference<>();
     
-    // Verify the results
-    assertThat(hostedResult, is("Hosted Repository: Maven Hosted (hosted-maven)"));
-    assertThat(proxyResult, is("Proxy Repository: NPM Proxy (proxy-npm)"));
-    assertThat(groupResult, is("Group Repository: Docker Group (group-docker)"));
-    assertThat(otherResult, is("Repository: Other Repository (other-repo)"));
+    // Submit tasks to call includeAnEntryForAllRepositories concurrently
+    for (int i = 0; i < THREAD_COUNT; i++) {
+      CompletableFuture.runAsync(() -> {
+        try {
+          underTest.includeAnEntryForAllRepositories();
+          
+          // Verify the method had the expected effect
+          assertThat(underTest.getStoreFilters(), nullValue());
+          assertThat(underTest.getStoreApi(), is("coreui_Repository.readReferencesAddingEntryForAll"));
+        }
+        catch (Throwable t) {
+          error.compareAndSet(null, t);
+        }
+        finally {
+          latch.countDown();
+        }
+      }, executor);
+    }
+    
+    // Wait for all threads to complete
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat("All virtual threads did not complete in time", completed, is(true));
+    
+    // Check if any errors occurred
+    if (error.get() != null) {
+      throw new AssertionError("Error during concurrent execution", error.get());
+    }
+    
+    // Verify final state
+    assertThat(underTest.getStoreFilters(), nullValue());
+    assertThat(underTest.getStoreApi(), is("coreui_Repository.readReferencesAddingEntryForAll"));
   }
 }

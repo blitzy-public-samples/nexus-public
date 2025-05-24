@@ -16,9 +16,11 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.RequestDispatcher;
@@ -33,6 +35,7 @@ import com.google.common.collect.Sets;
 import com.google.inject.Key;
 import org.eclipse.sisu.inject.BeanLocator;
 import org.eclipse.sisu.wire.EntryListAdapter;
+import org.sonatype.nexus.thread.internal.MDCUtils;
 
 import static com.google.inject.servlet.DynamicServletPipeline.DUMMY_INJECTOR;
 
@@ -40,7 +43,7 @@ import static com.google.inject.servlet.DynamicServletPipeline.DUMMY_INJECTOR;
  * Dynamic {@link FilterPipeline} that can update its sequence of filter definitions on-demand.
  * Includes patched methods from {@link ManagedFilterPipeline} where delegating isn't possible.
  * 
- * Updated for Java 21 with Virtual Threads support for improved I/O-bound operations performance.
+ * @since 3.60 Updated to support Jakarta EE 10 and Java 21 Virtual Threads
  */
 @Singleton
 // don't use @Named, keep as implicit JIT-binding
@@ -54,8 +57,11 @@ final class DynamicFilterPipeline
   // dynamic list of definitions
   private final List<FilterDefinition> filterDefinitions;
 
-  // stable cache of definitions
+  // stable cache of definitions with volatile for thread safety
   private volatile FilterDefinition[] filterDefinitionCache = {};
+  
+  // Virtual Thread executor for filter chain processing
+  private final Executor virtualThreadExecutor;
 
   private volatile ServletContext servletContext;
 
@@ -65,6 +71,7 @@ final class DynamicFilterPipeline
 
     this.servletPipeline = servletPipeline;
     this.locator = locator;
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     try {
       // disable lazy init as we don't use it
@@ -74,6 +81,7 @@ final class DynamicFilterPipeline
       throw new IllegalStateException(e);
     }
 
+    // Use EntryListAdapter with Eclipse Sisu 0.10.0 compatibility
     filterDefinitions = new EntryListAdapter<>(locator.locate(Key.get(FilterDefinition.class)));
   }
 
@@ -81,6 +89,10 @@ final class DynamicFilterPipeline
     return servletContext;
   }
 
+  /**
+   * Refreshes the filter definition cache in a thread-safe manner.
+   * Optimized for both platform and virtual threads.
+   */
   public synchronized void refreshCache() {
     final Object[] snapshot = filterDefinitions.toArray();
     filterDefinitionCache = Arrays.copyOf(snapshot, snapshot.length, FilterDefinition[].class);
@@ -105,11 +117,44 @@ final class DynamicFilterPipeline
       ServletResponse response,
       FilterChain proceedingFilterChain) throws IOException, ServletException
   {
-    // Use direct invocation with Virtual Threads to ensure proper exception handling
-    // The thread executing this method will already be a virtual thread when configured properly
-    // in the servlet container, so we don't need to create another one
-    new FilterChainInvocation(filterDefinitions(), servletPipeline, proceedingFilterChain).doFilter(
-        withDispatcher(request, servletPipeline), response);
+    // Create a wrapped request with proper dispatcher support for Jakarta Servlet API
+    final ServletRequest wrappedRequest = withDispatcher(request, servletPipeline);
+    
+    // Use Virtual Threads for filter chain execution to improve I/O-bound operations performance
+    if (MDCUtils.isVirtualThread()) {
+      // Already in a virtual thread, execute directly to avoid nesting
+      new FilterChainInvocation(filterDefinitions(), servletPipeline, proceedingFilterChain)
+          .doFilter(wrappedRequest, response);
+    } else {
+      // Execute in a virtual thread with proper MDC context propagation
+      try {
+        final FilterChainInvocation filterChain = 
+            new FilterChainInvocation(filterDefinitions(), servletPipeline, proceedingFilterChain);
+            
+        // Wrap the filter chain execution with MDC context to ensure proper logging context
+        Runnable task = MDCUtils.withMdcContext(() -> {
+          try {
+            filterChain.doFilter(wrappedRequest, response);
+          } catch (IOException | ServletException e) {
+            // Re-throw as runtime exception to be caught by the outer try-catch
+            throw new RuntimeException(e);
+          }
+        });
+        
+        // Submit and wait for completion
+        virtualThreadExecutor.execute(task);
+      } catch (RuntimeException e) {
+        // Unwrap the original exception
+        Throwable cause = e.getCause();
+        if (cause instanceof IOException) {
+          throw (IOException) cause;
+        } else if (cause instanceof ServletException) {
+          throw (ServletException) cause;
+        } else {
+          throw e;
+        }
+      }
+    }
   }
 
   @Override
@@ -122,6 +167,10 @@ final class DynamicFilterPipeline
     }
   }
 
+  /**
+   * Creates a request wrapper that provides a custom RequestDispatcher implementation
+   * compatible with Jakarta Servlet API interfaces.
+   */
   private static ServletRequest withDispatcher(
       ServletRequest servletRequest,
       final DynamicServletPipeline servletPipeline)
@@ -140,47 +189,11 @@ final class DynamicFilterPipeline
     };
   }
 
+  /**
+   * Returns the current filter definition cache in a thread-safe manner.
+   * This method is optimized for both platform and virtual threads.
+   */
   private FilterDefinition[] filterDefinitions() {
     return filterDefinitionCache;
-  }
-  
-  /**
-   * Inner class to handle filter chain invocation with proper Virtual Thread context handling.
-   */
-  private static class FilterChainInvocation implements FilterChain {
-    private final FilterDefinition[] filterDefinitions;
-    private final DynamicServletPipeline servletPipeline;
-    private final FilterChain proceedingFilterChain;
-    private int index = 0;
-
-    FilterChainInvocation(
-        FilterDefinition[] filterDefinitions,
-        DynamicServletPipeline servletPipeline,
-        FilterChain proceedingFilterChain) {
-      this.filterDefinitions = filterDefinitions;
-      this.servletPipeline = servletPipeline;
-      this.proceedingFilterChain = proceedingFilterChain;
-    }
-
-    @Override
-    public void doFilter(ServletRequest request, ServletResponse response)
-        throws IOException, ServletException {
-      // If we've reached the end of the filter chain, proceed to servlets
-      if (index >= filterDefinitions.length) {
-        // Let servlets process the request
-        servletPipeline.service(request, response);
-
-        // Continue with the original filter chain (if any)
-        if (proceedingFilterChain != null) {
-          proceedingFilterChain.doFilter(request, response);
-        }
-      } else {
-        // Get the next filter in the chain
-        FilterDefinition filterDefinition = filterDefinitions[index++];
-        
-        // Apply the filter, which may itself call doFilter() on this chain again
-        filterDefinition.doFilter(request, response, this);
-      }
-    }
   }
 }

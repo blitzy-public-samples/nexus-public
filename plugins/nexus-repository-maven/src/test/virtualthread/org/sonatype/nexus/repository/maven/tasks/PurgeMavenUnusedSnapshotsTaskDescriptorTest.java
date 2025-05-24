@@ -17,35 +17,28 @@ import java.util.List;
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.NumberTextFormField;
 import org.sonatype.nexus.scheduling.TaskDescriptor;
-// Using Tag annotation for Virtual Thread test categorization
+import org.sonatype.nexus.testsuite.virtualthread.VirtualThreadTestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.sonatype.nexus.repository.RepositoryTaskSupport.REPOSITORY_NAME_FIELD_ID;
 import static org.sonatype.nexus.repository.maven.tasks.PurgeMavenUnusedSnapshotsTaskDescriptor.LAST_USED_INIT_VALUE;
 import static org.sonatype.nexus.repository.maven.tasks.PurgeMavenUnusedSnapshotsTaskDescriptor.LAST_USED_MIN_VALUE;
 
-/**
- * Tests for {@link PurgeMavenUnusedSnapshotsTaskDescriptor}.
- * 
- * This test verifies that the task descriptor correctly defines form fields
- * for repository name and 'last used' snapshots threshold with proper configuration.
- * 
- * Converted to JUnit 5 and categorized for Virtual Thread testing as part of Java 21 migration.
- */
 @ExtendWith(MockitoExtension.class)
-@org.junit.jupiter.api.Tag("VirtualThread")
+@Category(VirtualThreadTestGroup.class)
 public class PurgeMavenUnusedSnapshotsTaskDescriptorTest
 {
   private TaskDescriptor purgeMavenUnusedSnapshotsTaskDescriptor;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     purgeMavenUnusedSnapshotsTaskDescriptor = new PurgeMavenUnusedSnapshotsTaskDescriptor();
   }
 
@@ -53,7 +46,7 @@ public class PurgeMavenUnusedSnapshotsTaskDescriptorTest
    * Ensures the construction of the descriptor has the appropriate/default values
    */
   @Test
-  void testDescriptorConfig() {
+  public void testDescriptorConfig() {
     List<FormField> formFields = purgeMavenUnusedSnapshotsTaskDescriptor.getFormFields();
 
     assertThat(formFields.size(), is(2));

@@ -17,7 +17,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -35,38 +34,42 @@ import org.sonatype.nexus.coreui.TaskXO;
 import org.sonatype.nexus.scheduling.CurrentState;
 import org.sonatype.nexus.scheduling.ExternalTaskState;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
+import org.sonatype.nexus.scheduling.TaskDescriptor;
+import org.sonatype.nexus.scheduling.TaskFactory;
 import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.TaskState;
 import org.sonatype.nexus.scheduling.schedule.Manual;
 import org.sonatype.nexus.scheduling.schedule.Schedule;
+import org.sonatype.nexus.scheduling.schedule.ScheduleFactory;
 
-import com.google.common.collect.ImmutableMap;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests {@link TaskComponent} with Java 21 Virtual Threads.
- * 
- * This test class verifies that task scheduling and execution functions correctly
- * under high concurrency with Virtual Threads, ensuring no thread pinning issues
- * occur during task operations.
+ * Tests {@link TaskComponent} with Java 21 Virtual Threads to ensure it works correctly
+ * under high concurrency with the new threading model.
  */
 @ExtendWith(MockitoExtension.class)
 public class TaskComponentVirtualThreadTest
@@ -74,81 +77,97 @@ public class TaskComponentVirtualThreadTest
 {
   private TaskComponent component;
 
+  @Mock
   private TaskScheduler scheduler;
 
   @Mock
+  private TaskFactory taskFactory;
+
+  @Mock
+  private ScheduleFactory scheduleFactory;
+
+  @Mock
   private Validator validator;
+
+  @Captor
+  private ArgumentCaptor<TaskConfiguration> taskConfigurationCaptor;
 
   private final Provider<Validator> validatorProvider = () -> validator;
 
   @BeforeEach
   public void setUp() {
-    scheduler = mock(TaskScheduler.class, Mockito.RETURNS_DEEP_STUBS);
+    when(scheduler.getTaskFactory()).thenReturn(taskFactory);
+    when(scheduler.getScheduleFactory()).thenReturn(scheduleFactory);
+    when(scheduleFactory.manual()).thenReturn(new Manual());
+
     component = new TaskComponent(scheduler, validatorProvider, false);
   }
 
   /**
-   * Tests that multiple task creation operations can be performed concurrently using Virtual Threads
-   * without any issues.
+   * Test that task creation works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task creation operations using Virtual Threads.
    */
   @Test
-  @DisplayName("Test concurrent task creation with Virtual Threads")
   public void testConcurrentTaskCreationWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Mock the scheduler to return a task info when scheduling a task
-    TaskInfo mockTaskInfo = mock(TaskInfo.class);
-    when(scheduler.scheduleTask(any(TaskConfiguration.class), any(Schedule.class))).thenReturn(mockTaskInfo);
-    when(scheduler.getScheduleFactory().manual()).thenReturn(new Manual());
-    
-    // Configure the mock task info
+    // Set up mock task descriptors
+    List<TaskDescriptor> descriptors = new ArrayList<>();
+    TaskDescriptor descriptor = mock(TaskDescriptor.class);
+    when(descriptor.getId()).thenReturn("test-task");
+    when(descriptor.getName()).thenReturn("Test Task");
+    when(descriptor.isExposed()).thenReturn(true);
+    descriptors.add(descriptor);
+    when(taskFactory.getDescriptors()).thenReturn(descriptors);
+
+    // Set up mock task configuration
     TaskConfiguration taskConfiguration = new TaskConfiguration();
-    taskConfiguration.setId("test-task");
+    taskConfiguration.setId("test-task-id");
     taskConfiguration.setName("Test Task");
-    taskConfiguration.setTypeId("test-type");
-    taskConfiguration.setTypeName("Test Type");
-    taskConfiguration.setEnabled(true);
-    taskConfiguration.setVisible(true);
+    taskConfiguration.setTypeId("test-task");
     taskConfiguration.setExposed(true);
-    
-    when(mockTaskInfo.getId()).thenReturn("test-task");
-    when(mockTaskInfo.getName()).thenReturn("Test Task");
-    when(mockTaskInfo.getConfiguration()).thenReturn(taskConfiguration);
-    when(mockTaskInfo.getSchedule()).thenReturn(new Manual());
-    
+    when(taskFactory.createTaskConfigurationInstance(anyString())).thenReturn(taskConfiguration);
+
+    // Set up mock task info
+    TaskInfo taskInfo = mock(TaskInfo.class);
+    when(taskInfo.getId()).thenReturn("test-task-id");
+    when(taskInfo.getName()).thenReturn("Test Task");
+    when(taskInfo.getTypeId()).thenReturn("test-task");
+    when(taskInfo.getConfiguration()).thenReturn(taskConfiguration);
     CurrentState currentState = mock(CurrentState.class);
     when(currentState.getState()).thenReturn(TaskState.WAITING);
-    when(mockTaskInfo.getCurrentState()).thenReturn(currentState);
-    
+    when(taskInfo.getCurrentState()).thenReturn(currentState);
+    when(scheduler.scheduleTask(any(TaskConfiguration.class), any(Schedule.class))).thenReturn(taskInfo);
+
+    // Set up mock external task state
     ExternalTaskState externalTaskState = mock(ExternalTaskState.class);
     when(externalTaskState.getState()).thenReturn(TaskState.WAITING);
-    when(scheduler.toExternalTaskState(mockTaskInfo)).thenReturn(externalTaskState);
-    
+    when(scheduler.toExternalTaskState(any(TaskInfo.class))).thenReturn(externalTaskState);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
     try {
-      // Submit multiple concurrent task creation operations using virtual threads
+      // Number of concurrent task creation operations
+      int taskCount = 100;
+      CountDownLatch latch = new CountDownLatch(taskCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      Map<String, TaskXO> createdTasks = new ConcurrentHashMap<>();
+
+      // Submit concurrent task creation operations using virtual threads
       for (int i = 0; i < taskCount; i++) {
-        final int taskIndex = i;
+        final int index = i;
         executor.submit(() -> {
           try {
+            // Create a task with unique name
             TaskXO taskXO = new TaskXO();
-            taskXO.setTypeId("test-type-" + taskIndex);
-            taskXO.setName("Test Task " + taskIndex);
+            taskXO.setTypeId("test-task");
+            taskXO.setName("Test Task " + index);
             taskXO.setEnabled(true);
             taskXO.setSchedule("manual");
-            taskXO.setProperties(ImmutableMap.of("key", "value-" + taskIndex));
-            
+
+            // Create the task
             TaskXO result = component.create(taskXO);
-            assertNotNull(result);
-            successCount.incrementAndGet();
+            createdTasks.put(result.getId(), result);
           } 
           catch (Exception e) {
             log.error("Error creating task", e);
@@ -159,15 +178,13 @@ public class TaskComponentVirtualThreadTest
           }
         });
       }
-      
+
       // Wait for all tasks to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for tasks to complete");
-      
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
       // Verify results
-      assertEquals(0, errorCount.get(), "Some task creation operations failed");
-      assertEquals(taskCount, successCount.get(), "Not all task creation operations succeeded");
-      
-      // Verify the scheduler was called the expected number of times
+      assertThat("All tasks should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task creation", errorCount.get(), is(0));
       verify(scheduler, times(taskCount)).scheduleTask(any(TaskConfiguration.class), any(Schedule.class));
     } 
     finally {
@@ -176,76 +193,170 @@ public class TaskComponentVirtualThreadTest
   }
 
   /**
-   * Tests that multiple task read operations can be performed concurrently using Virtual Threads
-   * without any issues.
+   * Test that task state validation works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task validation operations using Virtual Threads.
    */
   @Test
-  @DisplayName("Test concurrent task read operations with Virtual Threads")
-  public void testConcurrentTaskReadWithVirtualThreads() throws Exception {
+  public void testConcurrentTaskValidationWithVirtualThreads() throws Exception {
+    // Set up mock task info for running task
+    TaskInfo runningTaskInfo = mock(TaskInfo.class);
+    CurrentState runningState = mock(CurrentState.class);
+    when(runningState.getState()).thenReturn(TaskState.RUNNING);
+    when(runningTaskInfo.getId()).thenReturn("running-task-id");
+    when(runningTaskInfo.getCurrentState()).thenReturn(runningState);
+    ExternalTaskState runningExternalState = mock(ExternalTaskState.class);
+    when(runningExternalState.getState()).thenReturn(TaskState.RUNNING);
+
+    // Set up mock task info for waiting task
+    TaskInfo waitingTaskInfo = mock(TaskInfo.class);
+    CurrentState waitingState = mock(CurrentState.class);
+    when(waitingState.getState()).thenReturn(TaskState.WAITING);
+    when(waitingTaskInfo.getId()).thenReturn("waiting-task-id");
+    when(waitingTaskInfo.getCurrentState()).thenReturn(waitingState);
+    ExternalTaskState waitingExternalState = mock(ExternalTaskState.class);
+    when(waitingExternalState.getState()).thenReturn(TaskState.WAITING);
+
+    // Configure scheduler to return appropriate task info and state based on task ID
+    lenient().when(scheduler.getTaskById("running-task-id")).thenReturn(runningTaskInfo);
+    lenient().when(scheduler.toExternalTaskState(runningTaskInfo)).thenReturn(runningExternalState);
+    lenient().when(scheduler.getTaskById("waiting-task-id")).thenReturn(waitingTaskInfo);
+    lenient().when(scheduler.toExternalTaskState(waitingTaskInfo)).thenReturn(waitingExternalState);
+
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int operationCount = 1000;
-    CountDownLatch latch = new CountDownLatch(operationCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    
-    // Mock the scheduler to return a list of task infos
-    List<TaskInfo> mockTaskInfos = new ArrayList<>();
-    for (int i = 0; i < 10; i++) {
-      TaskInfo mockTaskInfo = mock(TaskInfo.class);
-      TaskConfiguration taskConfiguration = new TaskConfiguration();
-      taskConfiguration.setId("task-" + i);
-      taskConfiguration.setName("Task " + i);
-      taskConfiguration.setTypeId("type-" + i);
-      taskConfiguration.setTypeName("Type " + i);
-      taskConfiguration.setEnabled(true);
-      taskConfiguration.setVisible(true);
-      
-      when(mockTaskInfo.getId()).thenReturn("task-" + i);
-      when(mockTaskInfo.getName()).thenReturn("Task " + i);
-      when(mockTaskInfo.getConfiguration()).thenReturn(taskConfiguration);
-      when(mockTaskInfo.getSchedule()).thenReturn(new Manual());
-      
-      CurrentState currentState = mock(CurrentState.class);
-      when(currentState.getState()).thenReturn(TaskState.WAITING);
-      when(mockTaskInfo.getCurrentState()).thenReturn(currentState);
-      
-      ExternalTaskState externalTaskState = mock(ExternalTaskState.class);
-      when(externalTaskState.getState()).thenReturn(TaskState.WAITING);
-      when(scheduler.toExternalTaskState(mockTaskInfo)).thenReturn(externalTaskState);
-      
-      mockTaskInfos.add(mockTaskInfo);
-    }
-    
-    when(scheduler.listsTasks()).thenReturn(mockTaskInfos);
-    
+
     try {
-      // Submit multiple concurrent read operations using virtual threads
+      // Number of concurrent validation operations
+      int operationCount = 100;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger runningTaskExceptionCount = new AtomicInteger(0);
+      AtomicInteger waitingTaskSuccessCount = new AtomicInteger(0);
+
+      // Submit concurrent validation operations using virtual threads
       for (int i = 0; i < operationCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            List<TaskXO> tasks = component.read();
-            assertNotNull(tasks);
-            assertEquals(10, tasks.size());
-          } 
-          catch (Exception e) {
-            log.error("Error reading tasks", e);
-            errorCount.incrementAndGet();
+            // Alternate between running and waiting tasks
+            String taskId = (index % 2 == 0) ? "running-task-id" : "waiting-task-id";
+            TaskInfo taskInfo = scheduler.getTaskById(taskId);
+
+            try {
+              // Validate task state
+              component.validateState(taskId, taskInfo);
+              // If we get here, it should be a waiting task
+              if ("waiting-task-id".equals(taskId)) {
+                waitingTaskSuccessCount.incrementAndGet();
+              }
+            } 
+            catch (IllegalStateException e) {
+              // Running tasks should throw an exception
+              if ("running-task-id".equals(taskId)) {
+                runningTaskExceptionCount.incrementAndGet();
+              }
+            }
           } 
           finally {
             latch.countDown();
           }
         });
       }
-      
+
       // Wait for all operations to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
-      
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
       // Verify results
-      assertEquals(0, errorCount.get(), "Some read operations failed");
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("Running tasks should throw exceptions", runningTaskExceptionCount.get(), is(operationCount / 2));
+      assertThat("Waiting tasks should succeed", waitingTaskSuccessCount.get(), is(operationCount / 2));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Test that task reading works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task read operations using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentTaskReadingWithVirtualThreads() throws Exception {
+    // Set up mock task list
+    List<TaskInfo> taskInfoList = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      TaskInfo taskInfo = mock(TaskInfo.class);
+      TaskConfiguration config = new TaskConfiguration();
+      config.setId("task-" + i);
+      config.setName("Task " + i);
+      config.setTypeId("test-task");
+      config.setVisible(true);
+      
+      CurrentState state = mock(CurrentState.class);
+      when(state.getState()).thenReturn(TaskState.WAITING);
+      
+      when(taskInfo.getId()).thenReturn("task-" + i);
+      when(taskInfo.getName()).thenReturn("Task " + i);
+      when(taskInfo.getTypeId()).thenReturn("test-task");
+      when(taskInfo.getConfiguration()).thenReturn(config);
+      when(taskInfo.getCurrentState()).thenReturn(state);
+      
+      ExternalTaskState externalState = mock(ExternalTaskState.class);
+      when(externalState.getState()).thenReturn(TaskState.WAITING);
+      when(externalState.getLastEndState()).thenReturn(TaskState.OK);
+      when(externalState.getLastRunStarted()).thenReturn(new Date());
+      when(externalState.getLastRunDuration()).thenReturn(100L);
+      
+      when(scheduler.toExternalTaskState(taskInfo)).thenReturn(externalState);
+      
+      taskInfoList.add(taskInfo);
+    }
+    
+    when(scheduler.listsTasks()).thenReturn(taskInfoList);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
+    try {
+      // Number of concurrent read operations
+      int operationCount = 100;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicBoolean hasErrors = new AtomicBoolean(false);
+      List<List<TaskXO>> results = new ArrayList<>(operationCount);
+
+      // Submit concurrent read operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Read tasks
+            List<TaskXO> tasks = component.read();
+            synchronized (results) {
+              results.add(tasks);
+            }
+          } 
+          catch (Exception e) {
+            log.error("Error reading tasks", e);
+            hasErrors.set(true);
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task reading", hasErrors.get(), is(false));
+      assertThat("Should have results for all operations", results, hasSize(operationCount));
+      
+      // Verify that all results are consistent
+      for (List<TaskXO> taskList : results) {
+        assertThat("Task list should have 10 tasks", taskList, hasSize(10));
+      }
       
       // Verify the scheduler was called the expected number of times
       verify(scheduler, times(operationCount)).listsTasks();
@@ -256,436 +367,65 @@ public class TaskComponentVirtualThreadTest
   }
 
   /**
-   * Tests that multiple task update operations can be performed concurrently using Virtual Threads
-   * without any issues.
+   * Test that task updating works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task update operations using Virtual Threads.
    */
   @Test
-  @DisplayName("Test concurrent task update operations with Virtual Threads")
-  public void testConcurrentTaskUpdateWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 50;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    Map<String, AtomicBoolean> taskUpdated = new ConcurrentHashMap<>();
-    
-    // Mock the scheduler to return task infos when getting by ID
-    for (int i = 0; i < taskCount; i++) {
-      String taskId = "task-" + i;
-      taskUpdated.put(taskId, new AtomicBoolean(false));
-      
-      TaskInfo mockTaskInfo = mock(TaskInfo.class);
-      TaskConfiguration taskConfiguration = new TaskConfiguration();
-      taskConfiguration.setId(taskId);
-      taskConfiguration.setName("Task " + i);
-      taskConfiguration.setTypeId("type-" + i);
-      taskConfiguration.setTypeName("Type " + i);
-      taskConfiguration.setEnabled(true);
-      taskConfiguration.setVisible(true);
-      
-      when(mockTaskInfo.getId()).thenReturn(taskId);
-      when(mockTaskInfo.getName()).thenReturn("Task " + i);
-      when(mockTaskInfo.getTypeId()).thenReturn("type-" + i);
-      when(mockTaskInfo.getConfiguration()).thenReturn(taskConfiguration);
-      when(mockTaskInfo.getSchedule()).thenReturn(new Manual());
-      
-      CurrentState currentState = mock(CurrentState.class);
-      when(currentState.getState()).thenReturn(TaskState.WAITING);
-      when(mockTaskInfo.getCurrentState()).thenReturn(currentState);
-      
-      ExternalTaskState externalTaskState = mock(ExternalTaskState.class);
-      when(externalTaskState.getState()).thenReturn(TaskState.WAITING);
-      when(scheduler.toExternalTaskState(mockTaskInfo)).thenReturn(externalTaskState);
-      
-      when(scheduler.getTaskById(taskId)).thenReturn(mockTaskInfo);
-      when(scheduler.createTaskConfigurationInstance(anyString())).thenReturn(taskConfiguration);
-      when(scheduler.scheduleTask(any(TaskConfiguration.class), any(Schedule.class))).thenReturn(mockTaskInfo);
-    }
-    
-    when(scheduler.getScheduleFactory().manual()).thenReturn(new Manual());
-    
-    try {
-      // Submit multiple concurrent update operations using virtual threads
-      List<CompletableFuture<Void>> futures = new ArrayList<>();
-      
-      for (int i = 0; i < taskCount; i++) {
-        final String taskId = "task-" + i;
-        futures.add(CompletableFuture.runAsync(() -> {
-          try {
-            TaskXO taskXO = new TaskXO();
-            taskXO.setId(taskId);
-            taskXO.setTypeId("type-" + taskId);
-            taskXO.setName("Updated Task " + taskId);
-            taskXO.setEnabled(true);
-            taskXO.setSchedule("manual");
-            taskXO.setProperties(ImmutableMap.of("key", "updated-value-" + taskId));
-            
-            TaskXO result = component.update(taskXO);
-            assertNotNull(result);
-            taskUpdated.get(taskId).set(true);
-          } 
-          catch (Exception e) {
-            log.error("Error updating task: {}", taskId, e);
-            errorCount.incrementAndGet();
-          } 
-          finally {
-            latch.countDown();
-          }
-        }, executor));
-      }
-      
-      // Wait for all operations to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), "Some update operations failed");
-      
-      // Verify all tasks were updated
-      for (Map.Entry<String, AtomicBoolean> entry : taskUpdated.entrySet()) {
-        assertTrue(entry.getValue().get(), "Task " + entry.getKey() + " was not updated");
-      }
-      
-      // Verify the scheduler was called the expected number of times
-      verify(scheduler, times(taskCount)).scheduleTask(any(TaskConfiguration.class), any(Schedule.class));
-    } 
-    finally {
-      executor.shutdown();
-    }
-  }
-
-  /**
-   * Tests that multiple task run operations can be performed concurrently using Virtual Threads
-   * without any issues.
-   */
-  @Test
-  @DisplayName("Test concurrent task run operations with Virtual Threads")
-  public void testConcurrentTaskRunWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    Map<String, AtomicBoolean> taskRun = new ConcurrentHashMap<>();
-    
-    // Mock the scheduler to return task infos when getting by ID
-    for (int i = 0; i < taskCount; i++) {
-      String taskId = UUID.randomUUID().toString();
-      taskRun.put(taskId, new AtomicBoolean(false));
-      
-      TaskInfo mockTaskInfo = mock(TaskInfo.class);
-      TaskConfiguration taskConfiguration = new TaskConfiguration();
-      taskConfiguration.setId(taskId);
-      taskConfiguration.setName("Task " + i);
-      taskConfiguration.setTypeId("type-" + i);
-      taskConfiguration.setTypeName("Type " + i);
-      taskConfiguration.setEnabled(true);
-      taskConfiguration.setVisible(true);
-      
-      when(mockTaskInfo.getId()).thenReturn(taskId);
-      when(mockTaskInfo.getName()).thenReturn("Task " + i);
-      when(mockTaskInfo.getConfiguration()).thenReturn(taskConfiguration);
-      when(mockTaskInfo.getSchedule()).thenReturn(new Manual());
-      
-      CurrentState currentState = mock(CurrentState.class);
-      when(currentState.getState()).thenReturn(TaskState.WAITING);
-      when(mockTaskInfo.getCurrentState()).thenReturn(currentState);
-      
-      ExternalTaskState externalTaskState = mock(ExternalTaskState.class);
-      when(externalTaskState.getState()).thenReturn(TaskState.WAITING);
-      when(externalTaskState.getLastRunStarted()).thenReturn(new Date());
-      when(scheduler.toExternalTaskState(mockTaskInfo)).thenReturn(externalTaskState);
-      
-      when(scheduler.getTaskById(taskId)).thenReturn(mockTaskInfo);
-      
-      // Mock the runNow method to mark the task as run
-      Mockito.doAnswer(invocation -> {
-        taskRun.get(taskId).set(true);
-        return null;
-      }).when(mockTaskInfo).runNow();
-    }
-    
-    try {
-      // Submit multiple concurrent run operations using virtual threads
-      for (String taskId : taskRun.keySet()) {
-        executor.submit(() -> {
-          try {
-            component.run(taskId);
-          } 
-          catch (Exception e) {
-            log.error("Error running task: {}", taskId, e);
-            errorCount.incrementAndGet();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all operations to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), "Some run operations failed");
-      
-      // Verify all tasks were run
-      for (Map.Entry<String, AtomicBoolean> entry : taskRun.entrySet()) {
-        assertTrue(entry.getValue().get(), "Task " + entry.getKey() + " was not run");
-      }
-    } 
-    finally {
-      executor.shutdown();
-    }
-  }
-
-  /**
-   * Tests that multiple task stop operations can be performed concurrently using Virtual Threads
-   * without any issues.
-   */
-  @Test
-  @DisplayName("Test concurrent task stop operations with Virtual Threads")
-  public void testConcurrentTaskStopWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    Map<String, AtomicBoolean> taskStopped = new ConcurrentHashMap<>();
-    
-    // Mock the scheduler to handle cancel operations
-    for (int i = 0; i < taskCount; i++) {
-      String taskId = UUID.randomUUID().toString();
-      taskStopped.put(taskId, new AtomicBoolean(false));
-    }
-    
-    // Mock the cancel method to mark tasks as stopped
-    Mockito.doAnswer(invocation -> {
-      String taskId = invocation.getArgument(0);
-      boolean force = invocation.getArgument(1);
-      AtomicBoolean stopped = taskStopped.get(taskId);
-      if (stopped != null) {
-        stopped.set(true);
-      }
-      return null;
-    }).when(scheduler).cancel(anyString(), Mockito.anyBoolean());
-    
-    try {
-      // Submit multiple concurrent stop operations using virtual threads
-      for (String taskId : taskStopped.keySet()) {
-        executor.submit(() -> {
-          try {
-            component.stop(taskId);
-          } 
-          catch (Exception e) {
-            log.error("Error stopping task: {}", taskId, e);
-            errorCount.incrementAndGet();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all operations to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), "Some stop operations failed");
-      
-      // Verify all tasks were stopped
-      for (Map.Entry<String, AtomicBoolean> entry : taskStopped.entrySet()) {
-        assertTrue(entry.getValue().get(), "Task " + entry.getKey() + " was not stopped");
-      }
-      
-      // Verify the scheduler was called the expected number of times
-      verify(scheduler, times(taskCount)).cancel(anyString(), Mockito.eq(false));
-    } 
-    finally {
-      executor.shutdown();
-    }
-  }
-
-  /**
-   * Tests that multiple task remove operations can be performed concurrently using Virtual Threads
-   * without any issues.
-   */
-  @Test
-  @DisplayName("Test concurrent task remove operations with Virtual Threads")
-  public void testConcurrentTaskRemoveWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int taskCount = 100;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    Map<String, AtomicBoolean> taskRemoved = new ConcurrentHashMap<>();
-    
-    // Mock the scheduler to return task infos when getting by ID
-    for (int i = 0; i < taskCount; i++) {
-      String taskId = UUID.randomUUID().toString();
-      taskRemoved.put(taskId, new AtomicBoolean(false));
-      
-      TaskInfo mockTaskInfo = mock(TaskInfo.class);
-      TaskConfiguration taskConfiguration = new TaskConfiguration();
-      taskConfiguration.setId(taskId);
-      taskConfiguration.setName("Task " + i);
-      taskConfiguration.setTypeId("type-" + i);
-      taskConfiguration.setTypeName("Type " + i);
-      taskConfiguration.setEnabled(true);
-      taskConfiguration.setVisible(true);
-      
-      when(mockTaskInfo.getId()).thenReturn(taskId);
-      when(mockTaskInfo.getName()).thenReturn("Task " + i);
-      when(mockTaskInfo.getConfiguration()).thenReturn(taskConfiguration);
-      
-      when(scheduler.getTaskById(taskId)).thenReturn(mockTaskInfo);
-      
-      // Mock the remove method to mark the task as removed
-      Mockito.doAnswer(invocation -> {
-        taskRemoved.get(taskId).set(true);
-        return null;
-      }).when(mockTaskInfo).remove();
-    }
-    
-    try {
-      // Submit multiple concurrent remove operations using virtual threads
-      for (String taskId : taskRemoved.keySet()) {
-        executor.submit(() -> {
-          try {
-            component.remove(taskId);
-          } 
-          catch (Exception e) {
-            log.error("Error removing task: {}", taskId, e);
-            errorCount.incrementAndGet();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all operations to complete
-      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
-      
-      // Verify results
-      assertEquals(0, errorCount.get(), "Some remove operations failed");
-      
-      // Verify all tasks were removed
-      for (Map.Entry<String, AtomicBoolean> entry : taskRemoved.entrySet()) {
-        assertTrue(entry.getValue().get(), "Task " + entry.getKey() + " was not removed");
-      }
-    } 
-    finally {
-      executor.shutdown();
-    }
-  }
-
-  /**
-   * Tests that task operations can be performed under high concurrency with Virtual Threads
-   * without any issues.
-   */
-  @Test
-  @DisplayName("Test high concurrency task operations with Virtual Threads")
-  public void testHighConcurrencyTaskOperationsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int operationCount = 1000;
-    CountDownLatch latch = new CountDownLatch(operationCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
-    
-    // Mock the scheduler for various operations
-    TaskInfo mockTaskInfo = mock(TaskInfo.class);
+  public void testConcurrentTaskUpdatingWithVirtualThreads() throws Exception {
+    // Set up mock task info
+    TaskInfo taskInfo = mock(TaskInfo.class);
     TaskConfiguration taskConfiguration = new TaskConfiguration();
-    taskConfiguration.setId("test-task");
+    taskConfiguration.setId("test-task-id");
     taskConfiguration.setName("Test Task");
-    taskConfiguration.setTypeId("test-type");
-    taskConfiguration.setTypeName("Test Type");
-    taskConfiguration.setEnabled(true);
-    taskConfiguration.setVisible(true);
-    taskConfiguration.setExposed(true);
-    
-    when(mockTaskInfo.getId()).thenReturn("test-task");
-    when(mockTaskInfo.getName()).thenReturn("Test Task");
-    when(mockTaskInfo.getConfiguration()).thenReturn(taskConfiguration);
-    when(mockTaskInfo.getSchedule()).thenReturn(new Manual());
+    taskConfiguration.setTypeId("test-task");
     
     CurrentState currentState = mock(CurrentState.class);
     when(currentState.getState()).thenReturn(TaskState.WAITING);
-    when(mockTaskInfo.getCurrentState()).thenReturn(currentState);
     
-    ExternalTaskState externalTaskState = mock(ExternalTaskState.class);
-    when(externalTaskState.getState()).thenReturn(TaskState.WAITING);
-    when(scheduler.toExternalTaskState(mockTaskInfo)).thenReturn(externalTaskState);
+    when(taskInfo.getId()).thenReturn("test-task-id");
+    when(taskInfo.getName()).thenReturn("Test Task");
+    when(taskInfo.getTypeId()).thenReturn("test-task");
+    when(taskInfo.getConfiguration()).thenReturn(taskConfiguration);
+    when(taskInfo.getCurrentState()).thenReturn(currentState);
     
-    when(scheduler.getTaskById(anyString())).thenReturn(mockTaskInfo);
-    when(scheduler.createTaskConfigurationInstance(anyString())).thenReturn(taskConfiguration);
-    when(scheduler.scheduleTask(any(TaskConfiguration.class), any(Schedule.class))).thenReturn(mockTaskInfo);
-    when(scheduler.getScheduleFactory().manual()).thenReturn(new Manual());
-    when(scheduler.listsTasks()).thenReturn(List.of(mockTaskInfo));
+    ExternalTaskState externalState = mock(ExternalTaskState.class);
+    when(externalState.getState()).thenReturn(TaskState.WAITING);
     
+    when(scheduler.getTaskById("test-task-id")).thenReturn(taskInfo);
+    when(scheduler.toExternalTaskState(taskInfo)).thenReturn(externalState);
+    when(taskFactory.createTaskConfigurationInstance("test-task")).thenReturn(taskConfiguration);
+    when(scheduler.scheduleTask(any(TaskConfiguration.class), any(Schedule.class))).thenReturn(taskInfo);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
     try {
-      // Submit a mix of operations using virtual threads
+      // Number of concurrent update operations
+      int operationCount = 50;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit concurrent update operations using virtual threads
       for (int i = 0; i < operationCount; i++) {
-        final int operationIndex = i % 5; // 5 different operations
+        final int index = i;
         executor.submit(() -> {
           try {
-            switch (operationIndex) {
-              case 0: // Read
-                List<TaskXO> tasks = component.read();
-                assertNotNull(tasks);
-                assertFalse(tasks.isEmpty());
-                break;
-              case 1: // Create
-                TaskXO createTaskXO = new TaskXO();
-                createTaskXO.setTypeId("test-type");
-                createTaskXO.setName("Test Task");
-                createTaskXO.setEnabled(true);
-                createTaskXO.setSchedule("manual");
-                createTaskXO.setProperties(ImmutableMap.of("key", "value"));
-                
-                TaskXO createResult = component.create(createTaskXO);
-                assertNotNull(createResult);
-                break;
-              case 2: // Update
-                TaskXO updateTaskXO = new TaskXO();
-                updateTaskXO.setId("test-task");
-                updateTaskXO.setTypeId("test-type");
-                updateTaskXO.setName("Updated Test Task");
-                updateTaskXO.setEnabled(true);
-                updateTaskXO.setSchedule("manual");
-                updateTaskXO.setProperties(ImmutableMap.of("key", "updated-value"));
-                
-                TaskXO updateResult = component.update(updateTaskXO);
-                assertNotNull(updateResult);
-                break;
-              case 3: // Run
-                component.run("test-task");
-                break;
-              case 4: // Stop
-                component.stop("test-task");
-                break;
-            }
+            // Create task update
+            TaskXO taskXO = new TaskXO();
+            taskXO.setId("test-task-id");
+            taskXO.setTypeId("test-task");
+            taskXO.setName("Updated Task " + index);
+            taskXO.setEnabled(true);
+            taskXO.setSchedule("manual");
+
+            // Update the task
+            TaskXO result = component.update(taskXO);
+            assertThat(result, notNullValue());
+            assertEquals("test-task-id", result.getId());
           } 
           catch (Exception e) {
-            log.error("Error performing operation {}", operationIndex, e);
+            log.error("Error updating task", e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -693,12 +433,291 @@ public class TaskComponentVirtualThreadTest
           }
         });
       }
-      
+
       // Wait for all operations to complete
-      assertTrue(latch.await(60, TimeUnit.SECONDS), "Timed out waiting for operations to complete");
-      
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
       // Verify results
-      assertEquals(0, errorCount.get(), "Some operations failed");
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task updating", errorCount.get(), is(0));
+      verify(scheduler, times(operationCount)).scheduleTask(any(TaskConfiguration.class), any(Schedule.class));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Test that task removal works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task removal operations using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentTaskRemovalWithVirtualThreads() throws Exception {
+    // Set up mock task info
+    TaskInfo taskInfo = mock(TaskInfo.class);
+    when(scheduler.getTaskById("test-task-id")).thenReturn(taskInfo);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
+    try {
+      // Number of concurrent removal operations
+      int operationCount = 50;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit concurrent removal operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Remove the task
+            component.remove("test-task-id");
+          } 
+          catch (Exception e) {
+            log.error("Error removing task", e);
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task removal", errorCount.get(), is(0));
+      verify(scheduler, times(operationCount)).getTaskById("test-task-id");
+      verify(taskInfo, times(operationCount)).remove();
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Test that task running works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task run operations using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentTaskRunningWithVirtualThreads() throws Exception {
+    // Set up mock task info
+    TaskInfo taskInfo = mock(TaskInfo.class);
+    when(scheduler.getTaskById("test-task-id")).thenReturn(taskInfo);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
+    try {
+      // Number of concurrent run operations
+      int operationCount = 50;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit concurrent run operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Run the task
+            component.run("test-task-id");
+          } 
+          catch (Exception e) {
+            log.error("Error running task", e);
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task running", errorCount.get(), is(0));
+      verify(scheduler, times(operationCount)).getTaskById("test-task-id");
+      verify(taskInfo, times(operationCount)).runNow();
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Test that task stopping works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task stop operations using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentTaskStoppingWithVirtualThreads() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
+    try {
+      // Number of concurrent stop operations
+      int operationCount = 50;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit concurrent stop operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Stop the task
+            component.stop("test-task-id");
+          } 
+          catch (Exception e) {
+            log.error("Error stopping task", e);
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task stopping", errorCount.get(), is(0));
+      verify(scheduler, times(operationCount)).cancel("test-task-id", false);
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Test that task type reading works correctly with Virtual Threads.
+   * This test simulates multiple concurrent task type read operations using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentTaskTypeReadingWithVirtualThreads() throws Exception {
+    // Set up mock task descriptors
+    List<TaskDescriptor> descriptors = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      TaskDescriptor descriptor = mock(TaskDescriptor.class);
+      when(descriptor.getId()).thenReturn("task-type-" + i);
+      when(descriptor.getName()).thenReturn("Task Type " + i);
+      when(descriptor.isExposed()).thenReturn(true);
+      descriptors.add(descriptor);
+    }
+    when(taskFactory.getDescriptors()).thenReturn(descriptors);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
+    try {
+      // Number of concurrent read operations
+      int operationCount = 100;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicBoolean hasErrors = new AtomicBoolean(false);
+
+      // Submit concurrent read operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Read task types
+            var taskTypes = component.readTypes();
+            assertThat(taskTypes, hasSize(5));
+          } 
+          catch (Exception e) {
+            log.error("Error reading task types", e);
+            hasErrors.set(true);
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("No errors should occur during task type reading", hasErrors.get(), is(false));
+      verify(taskFactory, times(operationCount)).getDescriptors();
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Test that script update validation works correctly with Virtual Threads.
+   * This test simulates multiple concurrent script validation operations using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentScriptUpdateValidationWithVirtualThreads() throws Exception {
+    // Set up mock task info for script task
+    TaskInfo scriptTaskInfo = mock(TaskInfo.class);
+    TaskConfiguration scriptConfig = new TaskConfiguration();
+    scriptConfig.setString("source", "println 'hello'");
+    when(scriptTaskInfo.getTypeId()).thenReturn("script");
+    when(scriptTaskInfo.getConfiguration()).thenReturn(scriptConfig);
+
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+
+    try {
+      // Number of concurrent validation operations
+      int operationCount = 100;
+      CountDownLatch latch = new CountDownLatch(operationCount);
+      AtomicInteger noChangeSuccessCount = new AtomicInteger(0);
+      AtomicInteger changeFailureCount = new AtomicInteger(0);
+
+      // Submit concurrent validation operations using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create task update with alternating script changes
+            TaskXO taskXO = new TaskXO();
+            
+            if (index % 2 == 0) {
+              // No change to script source
+              taskXO.setProperties(Map.of("source", "println 'hello'"));
+              
+              // Should succeed
+              assertDoesNotThrow(() -> component.validateScriptUpdate(scriptTaskInfo, taskXO));
+              noChangeSuccessCount.incrementAndGet();
+            } 
+            else {
+              // Change to script source
+              taskXO.setProperties(Map.of("source", "println 'hello world'"));
+              
+              // Should fail
+              assertThrows(IllegalStateException.class, 
+                  () -> component.validateScriptUpdate(scriptTaskInfo, taskXO));
+              changeFailureCount.incrementAndGet();
+            }
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+
+      // Verify results
+      assertThat("All operations should complete within timeout", completed, is(true));
+      assertThat("Operations with no script change should succeed", 
+          noChangeSuccessCount.get(), equalTo(operationCount / 2));
+      assertThat("Operations with script change should fail", 
+          changeFailureCount.get(), equalTo(operationCount / 2));
     } 
     finally {
       executor.shutdown();

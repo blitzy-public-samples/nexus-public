@@ -13,8 +13,11 @@
 package org.sonatype.nexus.onboarding.internal;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.app.Java21TestGroup;
+import org.sonatype.nexus.common.app.VirtualThreadTestGroup;
 import org.sonatype.nexus.onboarding.OnboardingItemPriority;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapability;
 import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
@@ -22,6 +25,7 @@ import org.sonatype.nexus.onboarding.capability.OnboardingCapabilityHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -31,15 +35,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests the {@link UploadLicensePageOnboardingItem} with Java 21 Virtual Threads.
+ * Tests {@link UploadLicensePageOnboardingItem} in a virtual thread environment.
  * 
- * Validates that the onboarding item correctly determines when the license upload page
- * should be shown based on instance status and registration completion, even in a
- * virtual thread execution environment.
+ * This test ensures that the onboarding item correctly determines when the license upload page
+ * should be shown based on instance status and registration completion, even when executed
+ * within Java 21 Virtual Threads.
  */
-// Add @Category annotations for Java21TestGroup and VirtualThreadTestGroup if they exist
 @ExtendWith(MockitoExtension.class)
-class UploadLicensePageOnboardingItemVirtualThreadTest
+@Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
+public class UploadLicensePageOnboardingItemVirtualThreadTest
     extends TestSupport
 {
   @Mock
@@ -54,178 +58,120 @@ class UploadLicensePageOnboardingItemVirtualThreadTest
   private UploadLicensePageOnboardingItem underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     when(onboardingCapabilityHelper.getOnboardingCapability()).thenReturn(onboardingCapability);
     underTest = new UploadLicensePageOnboardingItem(instanceStatus, onboardingCapabilityHelper);
   }
 
-  /**
-   * Verifies that applies() returns false for a new instance with registration completed
-   * when executed in a virtual thread.
-   */
   @Test
-  void testAppliesForNewInstanceAndRegistrationCompletedInVirtualThread() throws Exception {
-    // Use CountDownLatch to synchronize between the main thread and the virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
+  public void testAppliesForNewInstanceAndRegistrationCompleted() throws Exception {
+    // Set up test conditions
+    when(instanceStatus.isNew()).thenReturn(true);
+    when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
     
-    // Start a virtual thread to run the test
-    Thread.startVirtualThread(() -> {
-      try {
-        // Verify we're running in a virtual thread
-        assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-        
-        // Configure mocks
-        when(instanceStatus.isNew()).thenReturn(true);
-        when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
-
-        // Verify expected behavior
-        assertThat(underTest.applies(), is(false));
-      } finally {
-        latch.countDown();
-      }
+    // Run test in a virtual thread
+    runInVirtualThreadAndWait(() -> {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
+      
+      // Verify the applies() method returns the expected result
+      assertThat(underTest.applies(), is(false));
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await();
   }
 
-  /**
-   * Verifies that applies() returns true for a new instance with registration not completed
-   * when executed in a virtual thread.
-   */
   @Test
-  void testAppliesForNewInstanceAndRegistrationNotCompletedInVirtualThread() throws Exception {
-    // Use CountDownLatch to synchronize between the main thread and the virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
+  public void testAppliesForNewInstanceAndRegistrationNotCompleted() throws Exception {
+    // Set up test conditions
+    when(instanceStatus.isNew()).thenReturn(true);
+    when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
     
-    // Start a virtual thread to run the test
-    Thread.startVirtualThread(() -> {
-      try {
-        // Verify we're running in a virtual thread
-        assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-        
-        // Configure mocks
-        when(instanceStatus.isNew()).thenReturn(true);
-        when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
-
-        // Verify expected behavior
-        assertThat(underTest.applies(), is(true));
-      } finally {
-        latch.countDown();
-      }
+    // Run test in a virtual thread
+    runInVirtualThreadAndWait(() -> {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
+      
+      // Verify the applies() method returns the expected result
+      assertThat(underTest.applies(), is(true));
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await();
   }
 
-  /**
-   * Verifies that applies() returns false for a non-new instance with registration completed
-   * when executed in a virtual thread.
-   */
   @Test
-  void testAppliesForNotNewInstanceAndRegistrationCompletedInVirtualThread() throws Exception {
-    // Use CountDownLatch to synchronize between the main thread and the virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
+  public void testAppliesForNotNewInstanceAndRegistrationCompleted() throws Exception {
+    // Set up test conditions
+    when(instanceStatus.isNew()).thenReturn(false);
+    when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
     
-    // Start a virtual thread to run the test
-    Thread.startVirtualThread(() -> {
-      try {
-        // Verify we're running in a virtual thread
-        assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-        
-        // Configure mocks
-        when(instanceStatus.isNew()).thenReturn(false);
-        when(onboardingCapability.isRegistrationCompleted()).thenReturn(true);
-
-        // Verify expected behavior
-        assertThat(underTest.applies(), is(false));
-      } finally {
-        latch.countDown();
-      }
+    // Run test in a virtual thread
+    runInVirtualThreadAndWait(() -> {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
+      
+      // Verify the applies() method returns the expected result
+      assertThat(underTest.applies(), is(false));
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await();
   }
 
-  /**
-   * Verifies that applies() returns false for a non-new instance with registration not completed
-   * when executed in a virtual thread.
-   */
   @Test
-  void testAppliesForNotNewInstanceAndRegistrationNotCompletedInVirtualThread() throws Exception {
-    // Use CountDownLatch to synchronize between the main thread and the virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
+  public void testAppliesForNotNewInstanceAndRegistrationNotCompleted() throws Exception {
+    // Set up test conditions
+    when(instanceStatus.isNew()).thenReturn(false);
+    when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
     
-    // Start a virtual thread to run the test
-    Thread.startVirtualThread(() -> {
-      try {
-        // Verify we're running in a virtual thread
-        assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-        
-        // Configure mocks
-        when(instanceStatus.isNew()).thenReturn(false);
-        when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
-
-        // Verify expected behavior
-        assertThat(underTest.applies(), is(false));
-      } finally {
-        latch.countDown();
-      }
+    // Run test in a virtual thread
+    runInVirtualThreadAndWait(() -> {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
+      
+      // Verify the applies() method returns the expected result
+      assertThat(underTest.applies(), is(false));
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await();
   }
 
-  /**
-   * Verifies that getType() returns the expected type when executed in a virtual thread.
-   */
   @Test
-  void testGetTypeInVirtualThread() throws Exception {
-    // Use CountDownLatch to synchronize between the main thread and the virtual thread
-    CountDownLatch latch = new CountDownLatch(1);
-    
-    // Start a virtual thread to run the test
-    Thread.startVirtualThread(() -> {
-      try {
-        // Verify we're running in a virtual thread
-        assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-        
-        // Verify expected behavior
-        assertThat(underTest.getType(), is("UploadLicensePage"));
-      } finally {
-        latch.countDown();
-      }
+  public void testGetType() throws Exception {
+    // Run test in a virtual thread
+    runInVirtualThreadAndWait(() -> {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
+      
+      // Verify the getType() method returns the expected result
+      assertThat(underTest.getType(), is("UploadLicensePage"));
     });
-    
-    // Wait for the virtual thread to complete
-    latch.await();
   }
 
-  /**
-   * Verifies that getPriority() returns the expected priority when executed in a virtual thread.
-   */
   @Test
-  void testGetPriorityInVirtualThread() throws Exception {
-    // Use CountDownLatch to synchronize between the main thread and the virtual thread
+  public void testGetPriority() throws Exception {
+    // Run test in a virtual thread
+    runInVirtualThreadAndWait(() -> {
+      // Verify we're running in a virtual thread
+      assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
+      
+      // Verify the getPriority() method returns the expected result
+      assertThat(underTest.getPriority(), is(OnboardingItemPriority.UPLOAD_LICENSE));
+    });
+  }
+  
+  /**
+   * Helper method to run a test in a virtual thread and wait for its completion.
+   * 
+   * @param runnable the test code to execute in a virtual thread
+   * @throws Exception if the test fails or times out
+   */
+  private void runInVirtualThreadAndWait(Runnable runnable) throws Exception {
     CountDownLatch latch = new CountDownLatch(1);
     
-    // Start a virtual thread to run the test
-    Thread.startVirtualThread(() -> {
+    Thread.ofVirtual().start(() -> {
       try {
-        // Verify we're running in a virtual thread
-        assertTrue(Thread.currentThread().isVirtual(), "Test should run in a virtual thread");
-        
-        // Verify expected behavior
-        assertThat(underTest.getPriority(), is(OnboardingItemPriority.UPLOAD_LICENSE));
-      } finally {
+        runnable.run();
+      } 
+      finally {
         latch.countDown();
       }
     });
     
-    // Wait for the virtual thread to complete
-    latch.await();
+    // Wait for the virtual thread to complete, with a timeout to prevent test hangs
+    if (!latch.await(5, TimeUnit.SECONDS)) {
+      throw new AssertionError("Test in virtual thread did not complete within timeout");
+    }
   }
 }

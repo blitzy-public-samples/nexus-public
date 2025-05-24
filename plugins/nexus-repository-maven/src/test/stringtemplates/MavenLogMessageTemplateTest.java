@@ -10,21 +10,26 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.repository.maven.stringtemplates;
+package org.sonatype.nexus.repository.maven.internal;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.repository.maven.category.Java21TestGroup;
-import org.sonatype.nexus.repository.maven.internal.Maven2Format;
+import org.sonatype.nexus.common.log.LoggingMessage;
+import org.sonatype.nexus.repository.maven.MavenPath;
+import org.sonatype.nexus.repository.maven.MavenPath.Coordinates;
+import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * Tests for validating Java 21's String Templates feature for formatting log messages in the Maven repository plugin.
+ * Tests for validating Java 21 String Templates usage in Maven repository log messages.
  * 
  * @since 3.60
  */
@@ -37,264 +42,167 @@ public class MavenLogMessageTemplateTest
   private static final String ARTIFACT_ID = "nexus-repository-maven";
   private static final String VERSION = "3.60.0-SNAPSHOT";
   private static final String EXTENSION = "jar";
-  private static final String CLASSIFIER = "sources";
+  private static final String CLASSIFIER = "tests";
   
-  /**
-   * Test that artifact upload log messages are correctly formatted using String Templates.
-   */
+  private MavenPath mavenPath;
+  private Coordinates coordinates;
+  
+  @Before
+  public void setup() {
+    coordinates = mock(Coordinates.class);
+    when(coordinates.getGroupId()).thenReturn(GROUP_ID);
+    when(coordinates.getArtifactId()).thenReturn(ARTIFACT_ID);
+    when(coordinates.getVersion()).thenReturn(VERSION);
+    when(coordinates.getBaseVersion()).thenReturn(VERSION);
+    when(coordinates.getExtension()).thenReturn(EXTENSION);
+    when(coordinates.getClassifier()).thenReturn(CLASSIFIER);
+    
+    mavenPath = mock(MavenPath.class);
+    when(mavenPath.getPath()).thenReturn(
+        String.format("%s/%s/%s/%s-%s-%s.%s", 
+            GROUP_ID.replace('.', '/'), 
+            ARTIFACT_ID, 
+            VERSION, 
+            ARTIFACT_ID, 
+            VERSION, 
+            CLASSIFIER, 
+            EXTENSION));
+    when(mavenPath.getCoordinates()).thenReturn(coordinates);
+  }
+  
   @Test
   public void testArtifactUploadLogMessage() {
-    String message = formatArtifactUploadLogMessage(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION, EXTENSION, CLASSIFIER);
+    // Test the String Template format for artifact upload log messages
+    String logMessage = STR."Artifact \{ARTIFACT_ID} version \{VERSION} uploaded to repository \{REPOSITORY_NAME}";
     
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString(EXTENSION));
-    assertThat(message, containsString(CLASSIFIER));
-    assertThat(message, containsString("uploaded"));
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(ARTIFACT_ID));
+    assertThat(logMessage, containsString(VERSION));
+    assertThat(logMessage, containsString(REPOSITORY_NAME));
+    assertThat(logMessage, is("Artifact nexus-repository-maven version 3.60.0-SNAPSHOT uploaded to repository maven-central"));
   }
   
-  /**
-   * Test that artifact download log messages are correctly formatted using String Templates.
-   */
   @Test
   public void testArtifactDownloadLogMessage() {
-    String message = formatArtifactDownloadLogMessage(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION, EXTENSION, CLASSIFIER);
+    // Test the String Template format for artifact download log messages
+    String logMessage = STR."Artifact \{coordinates.getGroupId()}:\{coordinates.getArtifactId()}:\{coordinates.getVersion()} downloaded from repository \{REPOSITORY_NAME}";
     
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString(EXTENSION));
-    assertThat(message, containsString(CLASSIFIER));
-    assertThat(message, containsString("downloaded"));
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(GROUP_ID));
+    assertThat(logMessage, containsString(ARTIFACT_ID));
+    assertThat(logMessage, containsString(VERSION));
+    assertThat(logMessage, containsString(REPOSITORY_NAME));
+    assertThat(logMessage, is("Artifact org.sonatype.nexus:nexus-repository-maven:3.60.0-SNAPSHOT downloaded from repository maven-central"));
   }
   
-  /**
-   * Test that metadata update log messages are correctly formatted using String Templates.
-   */
   @Test
   public void testMetadataUpdateLogMessage() {
-    String message = formatMetadataUpdateLogMessage(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION);
+    // Test the String Template format for metadata update log messages
+    String groupMetadataPath = GROUP_ID.replace('.', '/') + "/maven-metadata.xml";
+    String logMessage = STR."Updated metadata at \{groupMetadataPath} in repository \{REPOSITORY_NAME}";
     
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString("metadata"));
-    assertThat(message, containsString("updated"));
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(groupMetadataPath));
+    assertThat(logMessage, containsString(REPOSITORY_NAME));
+    assertThat(logMessage, is("Updated metadata at org/sonatype/nexus/maven-metadata.xml in repository maven-central"));
   }
   
-  /**
-   * Test that repository operation log messages are correctly formatted using String Templates.
-   */
   @Test
-  public void testRepositoryOperationLogMessage() {
-    String operation = "rebuild-metadata";
-    String message = formatRepositoryOperationLogMessage(REPOSITORY_NAME, operation);
+  public void testArtifactDeleteLogMessage() {
+    // Test the String Template format for artifact deletion log messages
+    String logMessage = STR."Deleted artifact \{coordinates.getGroupId()}:\{coordinates.getArtifactId()}:\{coordinates.getVersion()} from repository \{REPOSITORY_NAME}";
     
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(operation));
-    assertThat(message, containsString("operation"));
-    assertThat(message, containsString("completed"));
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(GROUP_ID));
+    assertThat(logMessage, containsString(ARTIFACT_ID));
+    assertThat(logMessage, containsString(VERSION));
+    assertThat(logMessage, containsString(REPOSITORY_NAME));
+    assertThat(logMessage, is("Deleted artifact org.sonatype.nexus:nexus-repository-maven:3.60.0-SNAPSHOT from repository maven-central"));
   }
   
-  /**
-   * Test that log messages with null values are handled correctly using String Templates.
-   */
   @Test
-  public void testLogMessageWithNullValues() {
-    String message = formatArtifactUploadLogMessage(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION, EXTENSION, null);
+  public void testRepositoryRebuildLogMessage() {
+    // Test the String Template format for repository rebuild log messages
+    int artifactCount = 1250;
+    long duration = 45678; // milliseconds
+    String logMessage = STR."Repository \{REPOSITORY_NAME} rebuild completed: processed \{artifactCount} artifacts in \{duration}ms";
     
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString(EXTENSION));
-    assertThat(message, containsString("<no classifier>"));
-    assertThat(message, containsString("uploaded"));
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(REPOSITORY_NAME));
+    assertThat(logMessage, containsString(String.valueOf(artifactCount)));
+    assertThat(logMessage, containsString(String.valueOf(duration)));
+    assertThat(logMessage, is("Repository maven-central rebuild completed: processed 1250 artifacts in 45678ms"));
   }
   
-  /**
-   * Test that log messages with empty values are handled correctly using String Templates.
-   */
   @Test
-  public void testLogMessageWithEmptyValues() {
-    String message = formatArtifactUploadLogMessage(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION, "", "");
+  public void testComplexPathLogMessage() {
+    // Test the String Template format for complex path log messages
+    String logMessage = STR."Processing Maven artifact at path \{mavenPath.getPath()} with coordinates \{coordinates.getGroupId()}:\{coordinates.getArtifactId()}:\{coordinates.getVersion()}:\{coordinates.getClassifier()}:\{coordinates.getExtension()}";
     
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString("<no extension>"));
-    assertThat(message, containsString("<no classifier>"));
-    assertThat(message, containsString("uploaded"));
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(mavenPath.getPath()));
+    assertThat(logMessage, containsString(GROUP_ID));
+    assertThat(logMessage, containsString(ARTIFACT_ID));
+    assertThat(logMessage, containsString(VERSION));
+    assertThat(logMessage, containsString(CLASSIFIER));
+    assertThat(logMessage, containsString(EXTENSION));
+    assertThat(logMessage, is("Processing Maven artifact at path org/sonatype/nexus/nexus-repository-maven/3.60.0-SNAPSHOT/nexus-repository-maven-3.60.0-SNAPSHOT-tests.jar with coordinates org.sonatype.nexus:nexus-repository-maven:3.60.0-SNAPSHOT:tests:jar"));
   }
   
-  /**
-   * Test that log messages with special characters are handled correctly using String Templates.
-   */
   @Test
-  public void testLogMessageWithSpecialCharacters() {
-    String groupId = "org.example.special-chars";
-    String artifactId = "artifact_with.special-chars";
-    String version = "1.0.0-SNAPSHOT+build.123";
-    
-    String message = formatArtifactUploadLogMessage(REPOSITORY_NAME, groupId, artifactId, version, EXTENSION, CLASSIFIER);
-    
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(groupId));
-    assertThat(message, containsString(artifactId));
-    assertThat(message, containsString(version));
-    assertThat(message, containsString(EXTENSION));
-    assertThat(message, containsString(CLASSIFIER));
-    assertThat(message, containsString("uploaded"));
-  }
-  
-  /**
-   * Test that log messages with Maven coordinates are correctly formatted using String Templates.
-   */
-  @Test
-  public void testLogMessageWithMavenCoordinates() {
-    String coordinates = formatMavenCoordinates(GROUP_ID, ARTIFACT_ID, VERSION, EXTENSION, CLASSIFIER);
-    String message = formatCoordinatesLogMessage(REPOSITORY_NAME, coordinates, "processed");
-    
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString(EXTENSION));
-    assertThat(message, containsString(CLASSIFIER));
-    assertThat(message, containsString("processed"));
-  }
-  
-  /**
-   * Test that format specifiers in log messages are correctly handled using String Templates.
-   */
-  @Test
-  public void testLogMessageWithFormatSpecifiers() {
-    String message = formatLogMessageWithFormatSpecifiers(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION);
-    
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString("Repository name: " + REPOSITORY_NAME));
-    assertThat(message, containsString("GroupId: " + GROUP_ID));
-    assertThat(message, containsString("ArtifactId: " + ARTIFACT_ID));
-    assertThat(message, containsString("Version: " + VERSION));
-  }
-  
-  /**
-   * Test that multi-line log messages are correctly formatted using String Templates.
-   */
-  @Test
-  public void testMultiLineLogMessage() {
-    String message = formatMultiLineLogMessage(REPOSITORY_NAME, GROUP_ID, ARTIFACT_ID, VERSION, EXTENSION, CLASSIFIER);
-    
-    assertThat(message, notNullValue());
-    assertThat(message, containsString(REPOSITORY_NAME));
-    assertThat(message, containsString(GROUP_ID));
-    assertThat(message, containsString(ARTIFACT_ID));
-    assertThat(message, containsString(VERSION));
-    assertThat(message, containsString(EXTENSION));
-    assertThat(message, containsString(CLASSIFIER));
-    assertThat(message, containsString("Repository:"));
-    assertThat(message, containsString("Maven Coordinates:"));
-    assertThat(message, containsString("Status:"));
-  }
-  
-  /**
-   * Formats an artifact upload log message using String Templates.
-   */
-  private String formatArtifactUploadLogMessage(String repository, String groupId, String artifactId, String version,
-                                               String extension, String classifier) {
-    String classifierStr = classifier != null ? classifier : "<no classifier>";
-    String extensionStr = extension != null && !extension.isEmpty() ? extension : "<no extension>";
-    
-    return STR."Artifact \{groupId}:\{artifactId}:\{version}:\{classifierStr}:\{extensionStr} uploaded to repository \{repository}";
-  }
-  
-  /**
-   * Formats an artifact download log message using String Templates.
-   */
-  private String formatArtifactDownloadLogMessage(String repository, String groupId, String artifactId, String version,
-                                                String extension, String classifier) {
-    String classifierStr = classifier != null ? classifier : "<no classifier>";
-    String extensionStr = extension != null && !extension.isEmpty() ? extension : "<no extension>";
-    
-    return STR."Artifact \{groupId}:\{artifactId}:\{version}:\{classifierStr}:\{extensionStr} downloaded from repository \{repository}";
-  }
-  
-  /**
-   * Formats a metadata update log message using String Templates.
-   */
-  private String formatMetadataUpdateLogMessage(String repository, String groupId, String artifactId, String version) {
-    return STR."Maven metadata for \{groupId}:\{artifactId}:\{version} updated in repository \{repository}";
-  }
-  
-  /**
-   * Formats a repository operation log message using String Templates.
-   */
-  private String formatRepositoryOperationLogMessage(String repository, String operation) {
-    return STR."Repository operation '\{operation}' completed successfully on repository \{repository}";
-  }
-  
-  /**
-   * Formats Maven coordinates using String Templates.
-   */
-  private String formatMavenCoordinates(String groupId, String artifactId, String version, String extension, String classifier) {
-    if (classifier != null && !classifier.isEmpty()) {
-      return STR."\{groupId}:\{artifactId}:\{version}:\{classifier}:\{extension}";
-    } else {
-      return STR."\{groupId}:\{artifactId}:\{version}:\{extension}";
-    }
-  }
-  
-  /**
-   * Formats a log message with Maven coordinates using String Templates.
-   */
-  private String formatCoordinatesLogMessage(String repository, String coordinates, String action) {
-    return STR."Maven artifact \{coordinates} \{action} in repository \{repository}";
-  }
-  
-  /**
-   * Formats a log message with format specifiers using String Templates.
-   */
-  private String formatLogMessageWithFormatSpecifiers(String repository, String groupId, String artifactId, String version) {
-    return STR."""
-        Maven artifact details:
-        Repository name: \{repository}
-        GroupId: \{groupId}
-        ArtifactId: \{artifactId}
-        Version: \{version}
-        Format: \{Maven2Format.NAME}
+  public void testMultilineLogMessage() {
+    // Test the String Template format for multiline log messages
+    String logMessage = STR."""
+        Repository: \{REPOSITORY_NAME}
+        Artifact: \{coordinates.getGroupId()}:\{coordinates.getArtifactId()}:\{coordinates.getVersion()}
+        Path: \{mavenPath.getPath()}
+        Operation: DOWNLOAD
+        Timestamp: \{System.currentTimeMillis()}
         """;
+    
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(REPOSITORY_NAME));
+    assertThat(logMessage, containsString(GROUP_ID));
+    assertThat(logMessage, containsString(ARTIFACT_ID));
+    assertThat(logMessage, containsString(VERSION));
+    assertThat(logMessage, containsString(mavenPath.getPath()));
+    assertThat(logMessage, containsString("DOWNLOAD"));
+    assertThat(logMessage, containsString(String.valueOf(System.currentTimeMillis()).substring(0, 5)));
   }
   
-  /**
-   * Formats a multi-line log message using String Templates.
-   */
-  private String formatMultiLineLogMessage(String repository, String groupId, String artifactId, String version,
-                                         String extension, String classifier) {
-    String coordinates = formatMavenCoordinates(groupId, artifactId, version, extension, classifier);
+  @Test
+  public void testLogMessageWithConditionalExpression() {
+    // Test the String Template format with conditional expressions
+    boolean isSnapshot = VERSION.endsWith("-SNAPSHOT");
+    String logMessage = STR."Artifact \{ARTIFACT_ID} is a \{isSnapshot ? "SNAPSHOT" : "RELEASE"} version";
     
-    return STR."""
-        Maven Artifact Processing:
-        Repository: \{repository}
-        Maven Coordinates: \{coordinates}
-        Status: Successfully processed
-        Timestamp: \{java.time.LocalDateTime.now()}
-        """;
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(ARTIFACT_ID));
+    assertThat(logMessage, containsString("SNAPSHOT"));
+    assertThat(logMessage, is("Artifact nexus-repository-maven is a SNAPSHOT version"));
+  }
+  
+  @Test
+  public void testLogMessageWithMethodCall() {
+    // Test the String Template format with method calls
+    String logMessage = STR."Artifact path: \{mavenPath.getPath().toUpperCase()}";
+    
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(mavenPath.getPath().toUpperCase()));
+    assertThat(logMessage, is("Artifact path: ORG/SONATYPE/NEXUS/NEXUS-REPOSITORY-MAVEN/3.60.0-SNAPSHOT/NEXUS-REPOSITORY-MAVEN-3.60.0-SNAPSHOT-TESTS.JAR"));
+  }
+  
+  @Test
+  public void testLogMessageWithArithmeticExpression() {
+    // Test the String Template format with arithmetic expressions
+    int downloadCount = 42;
+    int totalCount = 100;
+    String logMessage = STR."Download statistics: \{downloadCount} of \{totalCount} (\{downloadCount * 100 / totalCount}%)";
+    
+    assertThat(logMessage, notNullValue());
+    assertThat(logMessage, containsString(String.valueOf(downloadCount)));
+    assertThat(logMessage, containsString(String.valueOf(totalCount)));
+    assertThat(logMessage, containsString("42"));
+    assertThat(logMessage, is("Download statistics: 42 of 100 (42%)"));
   }
 }

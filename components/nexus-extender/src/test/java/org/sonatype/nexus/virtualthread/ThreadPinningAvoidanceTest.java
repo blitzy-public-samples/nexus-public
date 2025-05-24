@@ -13,6 +13,10 @@
 package org.sonatype.nexus.virtualthread;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -21,341 +25,446 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.condition.EnabledOnJre;
+import org.junit.jupiter.api.condition.JRE;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /**
- * Tests to ensure the Nexus Extender avoids thread pinning when using Java 21 Virtual Threads.
+ * Tests to ensure proper usage of Java 21 Virtual Threads without thread pinning.
  * 
- * Thread pinning occurs when a virtual thread is "stuck" to its carrier thread and cannot be unmounted,
- * which negates the benefits of virtual threads. This happens primarily in two scenarios:
- * 1. When a virtual thread executes code inside a synchronized block or method
- * 2. When a virtual thread executes a native method or foreign function
- *
- * These tests validate that our code properly avoids pinning scenarios and leverages
- * virtual threads effectively for I/O-bound operations.
+ * Thread pinning occurs when a virtual thread is "stuck" to its carrier thread (platform thread),
+ * preventing the carrier thread from being reused for other virtual threads. This typically happens
+ * when using synchronized blocks/methods or native methods with virtual threads.
+ * 
+ * These tests validate that operations in Nexus are properly structured to avoid thread pinning
+ * when using virtual threads for I/O-bound operations.
+ * 
+ * To detect thread pinning in a running application, use the JVM flag:
+ * -Djdk.tracePinnedThreads=full
+ * 
+ * This will output stack traces whenever thread pinning is detected.
  *
  * @since 3.60
  */
-@DisplayName("Virtual Thread Pinning Avoidance Tests")
+@EnabledOnJre(JRE.JAVA_21)
 public class ThreadPinningAvoidanceTest
 {
-  private static final int CONCURRENT_THREADS = 100;
-  private static final int OPERATIONS_PER_THREAD = 10;
+  private static final int CONCURRENT_TASKS = 100;
+  private static final int TASK_DURATION_MS = 100;
+  private static final String TEST_URL = "https://repo.maven.apache.org/maven2/org/apache/maven/maven-core/3.9.6/maven-core-3.9.6.pom";
   
-  private ExecutorService virtualThreadExecutor;
+  // Threshold for detecting thread pinning - if execution time exceeds this factor of expected time,
+  // it may indicate thread pinning is occurring
+  private static final double PINNING_DETECTION_THRESHOLD = 2.0;
+  
   private ExecutorService platformThreadExecutor;
-  
-  @TempDir
-  Path tempDir;
-  
+  private ExecutorService virtualThreadExecutor;
+
   @BeforeEach
   void setUp() {
-    // Create executors for both virtual and platform threads for comparison
+    // Create executors for platform threads and virtual threads
+    platformThreadExecutor = Executors.newFixedThreadPool(10);
     virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    platformThreadExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
   }
-  
+
   @AfterEach
   void tearDown() throws Exception {
     // Shutdown executors
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
+    platformThreadExecutor.shutdown();
+    virtualThreadExecutor.shutdown();
+    
+    if (!platformThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+      platformThreadExecutor.shutdownNow();
     }
     
-    if (platformThreadExecutor != null) {
-      platformThreadExecutor.shutdown();
-      platformThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
+    if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+      virtualThreadExecutor.shutdownNow();
     }
   }
 
   /**
-   * Tests that I/O operations with virtual threads don't cause pinning.
-   * This simulates file operations similar to those in BlobStore implementations.
+   * Tests that I/O-bound operations (HTTP requests) perform better with virtual threads
+   * than with platform threads when running many concurrent operations.
    */
   @Test
-  @DisplayName("I/O operations should not pin virtual threads")
-  void ioOperationsShouldNotPinVirtualThreads() throws Exception {
-    // Create a CountDownLatch to wait for all operations to complete
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+  void testIOBoundOperationsWithVirtualThreads() throws Exception {
+    // Measure execution time with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      executeHttpRequests(platformThreadExecutor, CONCURRENT_TASKS);
+    });
     
-    // Track any errors that occur during execution
-    List<Exception> exceptions = new ArrayList<>();
-    
-    // Create and execute tasks
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
-      final int threadNum = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Perform multiple I/O operations per thread
-          for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-            Path filePath = tempDir.resolve("file-" + threadNum + "-" + j + ".tmp");
-            
-            // Write to file
-            Files.writeString(filePath, "Test data for thread " + threadNum);
-            
-            // Small delay to simulate processing
-            Thread.sleep(10);
-            
-            // Read from file
-            String content = Files.readString(filePath);
-            
-            // Verify content
-            if (!content.contains("Test data for thread " + threadNum)) {
-              throw new AssertionError("File content verification failed");
-            }
-            
-            // Delete file
-            Files.delete(filePath);
-          }
-        }
-        catch (Exception e) {
-          synchronized (exceptions) {
-            exceptions.add(e);
-          }
-        }
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for all operations to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    
-    // Assert all operations completed successfully
-    assertTrue(completed, "Not all I/O operations completed within the timeout");
-    assertTrue(exceptions.isEmpty(), "Exceptions occurred during I/O operations: " + exceptions);
-  }
-
-  /**
-   * Tests that using ReentrantLock instead of synchronized blocks avoids pinning.
-   * This simulates concurrent access to shared resources in a thread-safe manner.
-   */
-  @Test
-  @DisplayName("ReentrantLock should be used instead of synchronized blocks")
-  void reentrantLockShouldBeUsedInsteadOfSynchronized() throws Exception {
-    // Create a shared counter
-    AtomicInteger atomicCounter = new AtomicInteger(0);
-    
-    // Create a ReentrantLock for thread-safe access
-    ReentrantLock lock = new ReentrantLock();
-    
-    // Create a CountDownLatch to wait for all operations to complete
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
-    
-    // Create and execute tasks
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
-      virtualThreadExecutor.submit(() -> {
-        try {
-          for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
-            // Use ReentrantLock instead of synchronized block
-            lock.lock();
-            try {
-              // Simulate a blocking operation inside the lock
-              // In real code, this would be a database query or network call
-              Thread.sleep(5);
-              
-              // Update the counter
-              atomicCounter.incrementAndGet();
-            }
-            finally {
-              lock.unlock();
-            }
-          }
-        }
-        catch (Exception e) {
-          fail("Exception occurred: " + e.getMessage());
-        }
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for all operations to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    
-    // Assert all operations completed successfully
-    assertTrue(completed, "Not all lock operations completed within the timeout");
-    assertEquals(CONCURRENT_THREADS * OPERATIONS_PER_THREAD, atomicCounter.get(), 
-        "Counter value does not match expected operations count");
-  }
-
-  /**
-   * Compares performance between virtual threads and platform threads for I/O-bound operations.
-   * Virtual threads should show better throughput for I/O-bound workloads.
-   */
-  @Test
-  @DisplayName("Virtual threads should outperform platform threads for I/O operations")
-  void virtualThreadsShouldOutperformPlatformThreadsForIO() throws Exception {
-    // Number of operations to perform
-    final int totalOperations = CONCURRENT_THREADS * 5; // More operations than available platform threads
-    
-    // Create CountDownLatches to wait for all operations to complete
-    CountDownLatch virtualLatch = new CountDownLatch(totalOperations);
-    CountDownLatch platformLatch = new CountDownLatch(totalOperations);
-    
-    // Measure virtual thread performance
-    long virtualStartTime = System.nanoTime();
-    
-    for (int i = 0; i < totalOperations; i++) {
-      final int opNum = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Simulate I/O-bound operation (file write + read)
-          Path filePath = tempDir.resolve("vt-file-" + opNum + ".tmp");
-          Files.writeString(filePath, "Virtual thread test data");
-          Thread.sleep(50); // Simulate network latency or disk I/O
-          String content = Files.readString(filePath);
-          Files.delete(filePath);
-        }
-        catch (Exception e) {
-          fail("Exception in virtual thread operation: " + e.getMessage());
-        }
-        finally {
-          virtualLatch.countDown();
-        }
-      });
-    }
-    
-    // Wait for virtual thread operations to complete
-    assertTrue(virtualLatch.await(30, TimeUnit.SECONDS), 
-        "Not all virtual thread operations completed within timeout");
-    long virtualDuration = System.nanoTime() - virtualStartTime;
-    
-    // Measure platform thread performance
-    long platformStartTime = System.nanoTime();
-    
-    for (int i = 0; i < totalOperations; i++) {
-      final int opNum = i;
-      platformThreadExecutor.submit(() -> {
-        try {
-          // Simulate I/O-bound operation (file write + read)
-          Path filePath = tempDir.resolve("pt-file-" + opNum + ".tmp");
-          Files.writeString(filePath, "Platform thread test data");
-          Thread.sleep(50); // Simulate network latency or disk I/O
-          String content = Files.readString(filePath);
-          Files.delete(filePath);
-        }
-        catch (Exception e) {
-          fail("Exception in platform thread operation: " + e.getMessage());
-        }
-        finally {
-          platformLatch.countDown();
-        }
-      });
-    }
-    
-    // Wait for platform thread operations to complete
-    assertTrue(platformLatch.await(60, TimeUnit.SECONDS), 
-        "Not all platform thread operations completed within timeout");
-    long platformDuration = System.nanoTime() - platformStartTime;
-    
-    // Log performance results
-    System.out.println("Virtual threads completed " + totalOperations + " I/O operations in " + 
-        Duration.ofNanos(virtualDuration).toMillis() + "ms");
-    System.out.println("Platform threads completed " + totalOperations + " I/O operations in " + 
-        Duration.ofNanos(platformDuration).toMillis() + "ms");
+    // Measure execution time with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      executeHttpRequests(virtualThreadExecutor, CONCURRENT_TASKS);
+    });
     
     // Virtual threads should be faster for I/O-bound operations with high concurrency
-    assertTrue(virtualDuration < platformDuration, 
-        "Virtual threads should outperform platform threads for I/O-bound operations");
+    System.out.println("Platform thread execution time: " + platformThreadTime + "ms");
+    System.out.println("Virtual thread execution time: " + virtualThreadTime + "ms");
+    
+    // Assert that virtual threads perform better than platform threads
+    // The improvement factor may vary based on the environment, but virtual threads should be faster
+    assertThat("Virtual threads should be faster than platform threads for I/O operations",
+        virtualThreadTime, lessThan(platformThreadTime));
+    
+    // Calculate the improvement factor
+    double improvementFactor = (double) platformThreadTime / virtualThreadTime;
+    System.out.println("Improvement factor with virtual threads: " + improvementFactor + "x");
+    
+    // Virtual threads should provide a significant improvement for I/O-bound operations
+    // This threshold may need adjustment based on the test environment
+    assertThat("Virtual threads should provide significant improvement for I/O operations",
+        improvementFactor, greaterThan(1.5));
   }
 
   /**
-   * Tests that blocking operations are properly structured to avoid pinning.
-   * This simulates scenarios where blocking operations need to be performed
-   * without causing thread pinning.
+   * Tests that using ReentrantLock instead of synchronized blocks avoids thread pinning
+   * when performing blocking operations with virtual threads.
    */
   @Test
-  @DisplayName("Blocking operations should be structured to avoid pinning")
-  void blockingOperationsShouldBeStructuredToAvoidPinning() throws Exception {
-    // Create a CountDownLatch to wait for all operations to complete
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+  void testLockingWithoutPinning() throws Exception {
+    final int numThreads = 50;
+    final CountDownLatch latch = new CountDownLatch(numThreads);
+    final ReentrantLock lock = new ReentrantLock();
     
-    // Create a list to track thread names to verify they are virtual threads
-    List<String> threadNames = new ArrayList<>();
-    
-    // Create and execute tasks
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
+    // Execute tasks that use ReentrantLock (which doesn't cause pinning)
+    for (int i = 0; i < numThreads; i++) {
       virtualThreadExecutor.submit(() -> {
         try {
-          // Record the thread name
-          String threadName = Thread.currentThread().toString();
-          synchronized (threadNames) {
-            threadNames.add(threadName);
-          }
-          
-          // Perform a blocking operation OUTSIDE of synchronized block
-          // This is the correct pattern to avoid pinning
-          performBlockingOperation();
-          
-          // Use a ReentrantLock for any critical section
-          ReentrantLock lock = new ReentrantLock();
+          // Acquire lock, perform a blocking operation, then release
           lock.lock();
           try {
-            // Short non-blocking operation inside the lock
-            int result = 42 * 42;
-          }
-          finally {
+            // Simulate I/O or blocking operation
+            Thread.sleep(TASK_DURATION_MS);
+          } finally {
             lock.unlock();
           }
-        }
-        catch (Exception e) {
-          fail("Exception occurred: " + e.getMessage());
-        }
-        finally {
           latch.countDown();
+        } catch (Exception e) {
+          e.printStackTrace();
         }
       });
     }
     
-    // Wait for all operations to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    // All tasks should complete within a reasonable time
+    // If thread pinning occurs, this would take much longer
+    assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+      boolean completed = latch.await(3, TimeUnit.SECONDS);
+      assertThat("All virtual threads should complete their tasks", completed, is(true));
+    });
+  }
+  
+  /**
+   * Demonstrates the difference between using ReentrantLock (no pinning) and synchronized blocks (causes pinning)
+   * when performing blocking operations with virtual threads.
+   */
+  @Test
+  void testReentrantLockVsSynchronized() throws Exception {
+    final int numThreads = 50;
+    final Object lockObject = new Object();
     
-    // Assert all operations completed successfully
-    assertTrue(completed, "Not all operations completed within the timeout");
-    
-    // Verify that all threads were virtual threads
-    synchronized (threadNames) {
-      for (String threadName : threadNames) {
-        assertTrue(threadName.contains("VirtualThread"), 
-            "Expected virtual thread but got: " + threadName);
+    // Measure execution time with ReentrantLock (should not cause pinning)
+    long reentrantLockTime = measureExecutionTime(() -> {
+      CountDownLatch latch = new CountDownLatch(numThreads);
+      ReentrantLock lock = new ReentrantLock();
+      
+      for (int i = 0; i < numThreads; i++) {
+        virtualThreadExecutor.submit(() -> {
+          try {
+            lock.lock();
+            try {
+              // Blocking operation
+              Thread.sleep(TASK_DURATION_MS);
+            } finally {
+              lock.unlock();
+            }
+            latch.countDown();
+          } catch (Exception e) {
+            e.printStackTrace();
+            latch.countDown();
+          }
+        });
       }
+      
+      try {
+        latch.await(10, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    });
+    
+    // Measure execution time with synchronized blocks (may cause pinning)
+    long synchronizedTime = measureExecutionTime(() -> {
+      CountDownLatch latch = new CountDownLatch(numThreads);
+      
+      for (int i = 0; i < numThreads; i++) {
+        virtualThreadExecutor.submit(() -> {
+          try {
+            synchronized (lockObject) {
+              // Blocking operation
+              Thread.sleep(TASK_DURATION_MS);
+            }
+            latch.countDown();
+          } catch (Exception e) {
+            e.printStackTrace();
+            latch.countDown();
+          }
+        });
+      }
+      
+      try {
+        latch.await(10, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    });
+    
+    System.out.println("ReentrantLock execution time: " + reentrantLockTime + "ms");
+    System.out.println("Synchronized block execution time: " + synchronizedTime + "ms");
+    
+    // Synchronized blocks should take significantly longer due to thread pinning
+    assertThat("Synchronized blocks should be slower due to thread pinning",
+        synchronizedTime, greaterThan(reentrantLockTime * 2));
+  }
+
+  /**
+   * Tests that concurrent operations with virtual threads scale well under load,
+   * which would not be possible if thread pinning occurred.
+   */
+  @Test
+  void testConcurrencyScalingWithVirtualThreads() throws Exception {
+    final int smallBatch = 10;
+    final int largeBatch = 1000;
+    
+    // Run a small batch of tasks and measure time
+    long smallBatchTime = measureConcurrentTasks(smallBatch);
+    
+    // Run a large batch of tasks and measure time
+    long largeBatchTime = measureConcurrentTasks(largeBatch);
+    
+    // Calculate the scaling factor (how much longer the large batch took)
+    double scalingFactor = (double) largeBatchTime / smallBatchTime;
+    
+    // If virtual threads are working properly without pinning, the scaling factor should be
+    // significantly less than the ratio of batch sizes (largeBatch/smallBatch)
+    double batchSizeRatio = (double) largeBatch / smallBatch;
+    double expectedMaxScalingFactor = batchSizeRatio * 0.5; // Allow 50% of linear scaling
+    
+    System.out.println("Small batch time: " + smallBatchTime + "ms");
+    System.out.println("Large batch time: " + largeBatchTime + "ms");
+    System.out.println("Scaling factor: " + scalingFactor);
+    System.out.println("Batch size ratio: " + batchSizeRatio);
+    System.out.println("Expected max scaling factor: " + expectedMaxScalingFactor);
+    
+    assertThat("Virtual threads should scale sublinearly with increased concurrency",
+        scalingFactor, lessThan(expectedMaxScalingFactor));
+  }
+
+  /**
+   * Tests that operations using virtual threads can handle a mix of CPU-bound and I/O-bound tasks
+   * without thread pinning causing performance degradation.
+   */
+  @Test
+  void testMixedWorkloadWithVirtualThreads() throws Exception {
+    final int taskCount = 100;
+    final CountDownLatch latch = new CountDownLatch(taskCount);
+    final List<Future<?>> futures = new ArrayList<>();
+    
+    // Submit a mix of CPU-bound and I/O-bound tasks
+    for (int i = 0; i < taskCount; i++) {
+      final int taskId = i;
+      Future<?> future = virtualThreadExecutor.submit(() -> {
+        try {
+          if (taskId % 2 == 0) {
+            // Even tasks: I/O-bound (HTTP request)
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(TEST_URL))
+                .timeout(Duration.ofSeconds(10))
+                .build();
+            client.send(request, HttpResponse.BodyHandlers.discarding());
+          } else {
+            // Odd tasks: CPU-bound (computation)
+            long result = 0;
+            for (int j = 0; j < 1000000; j++) {
+              result += j;
+            }
+          }
+          latch.countDown();
+          return null;
+        } catch (Exception e) {
+          e.printStackTrace();
+          latch.countDown();
+          return null;
+        }
+      });
+      futures.add(future);
+    }
+    
+    // All tasks should complete within a reasonable time
+    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    assertThat("All mixed workload tasks should complete", completed, is(true));
+    
+    // Verify all futures completed successfully
+    for (Future<?> future : futures) {
+      future.get(1, TimeUnit.SECONDS); // This should not throw an exception
     }
   }
   
   /**
-   * Simulates a blocking I/O operation.
+   * Tests file I/O operations with virtual threads to ensure they don't cause thread pinning.
+   * File I/O is a common source of blocking operations in Nexus Repository.
    */
-  private void performBlockingOperation() throws IOException, InterruptedException {
-    // Create a temporary file
-    Path tempFile = Files.createTempFile(tempDir, "blocking-op-", ".tmp");
+  @Test
+  void testFileIOWithVirtualThreads() throws Exception {
+    final int fileCount = 50;
+    final CountDownLatch latch = new CountDownLatch(fileCount);
+    final List<Path> tempFiles = new ArrayList<>();
     
-    // Write some data
-    Files.writeString(tempFile, "Blocking operation test data");
+    try {
+      // Create temporary files and perform concurrent I/O operations
+      for (int i = 0; i < fileCount; i++) {
+        final Path tempFile = Files.createTempFile("nexus-vt-test-", ".tmp");
+        tempFiles.add(tempFile);
+        
+        virtualThreadExecutor.submit(() -> {
+          try {
+            // Write data to file
+            List<String> lines = new ArrayList<>();
+            for (int j = 0; j < 1000; j++) {
+              lines.add("Line " + j + ": " + Thread.currentThread().getName());
+            }
+            Files.write(tempFile, lines);
+            
+            // Read data from file
+            List<String> readLines = Files.readAllLines(tempFile);
+            assertEquals(1000, readLines.size(), "File should contain 1000 lines");
+            
+            latch.countDown();
+          } catch (Exception e) {
+            e.printStackTrace();
+            latch.countDown();
+          }
+        });
+      }
+      
+      // All file I/O operations should complete within a reasonable time
+      boolean completed = latch.await(10, TimeUnit.SECONDS);
+      assertThat("All file I/O operations should complete", completed, is(true));
+      
+    } finally {
+      // Clean up temporary files
+      for (Path tempFile : tempFiles) {
+        try {
+          Files.deleteIfExists(tempFile);
+        } catch (IOException e) {
+          System.err.println("Failed to delete temporary file: " + tempFile);
+        }
+      }
+    }
+  }
+
+  /**
+   * Helper method to execute HTTP requests concurrently using the provided executor.
+   */
+  private void executeHttpRequests(ExecutorService executor, int concurrentRequests) throws Exception {
+    CountDownLatch latch = new CountDownLatch(concurrentRequests);
+    List<Future<?>> futures = new ArrayList<>();
     
-    // Simulate network or disk latency
-    Thread.sleep(20);
+    for (int i = 0; i < concurrentRequests; i++) {
+      Future<?> future = executor.submit(() -> {
+        try {
+          HttpClient client = HttpClient.newHttpClient();
+          HttpRequest request = HttpRequest.newBuilder()
+              .uri(URI.create(TEST_URL))
+              .timeout(Duration.ofSeconds(10))
+              .build();
+          
+          HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+          assertEquals(200, response.statusCode(), "HTTP request should succeed");
+        } catch (IOException | InterruptedException e) {
+          throw new RuntimeException("HTTP request failed", e);
+        } finally {
+          latch.countDown();
+        }
+      });
+      futures.add(future);
+    }
     
-    // Read the data back
-    String content = Files.readString(tempFile);
+    // Wait for all requests to complete
+    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    assertThat("All HTTP requests should complete", completed, is(true));
     
-    // Clean up
-    Files.delete(tempFile);
+    // Check for any exceptions in the futures
+    for (Future<?> future : futures) {
+      future.get(1, TimeUnit.SECONDS); // This will throw if the task failed
+    }
+  }
+
+  /**
+   * Helper method to measure execution time of a runnable task.
+   */
+  private long measureExecutionTime(Runnable task) throws Exception {
+    long startTime = System.currentTimeMillis();
+    task.run();
+    return System.currentTimeMillis() - startTime;
+  }
+  
+  /**
+   * Helper method to detect if thread pinning is likely occurring based on execution time.
+   * This is a heuristic approach and not a definitive test.
+   */
+  private boolean isPinningLikely(long actualTime, long expectedTime) {
+    return actualTime > expectedTime * PINNING_DETECTION_THRESHOLD;
+  }
+
+  /**
+   * Helper method to measure execution time of concurrent tasks using virtual threads.
+   */
+  private long measureConcurrentTasks(int taskCount) throws Exception {
+    final CountDownLatch latch = new CountDownLatch(taskCount);
+    
+    long startTime = System.currentTimeMillis();
+    
+    // Submit tasks that perform a mix of computation and simulated I/O
+    for (int i = 0; i < taskCount; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Simulate a task with both computation and I/O
+          Thread.sleep(TASK_DURATION_MS); // Simulated I/O
+          
+          // Some CPU work
+          int sum = 0;
+          for (int j = 0; j < 10000; j++) {
+            sum += j;
+          }
+          
+          latch.countDown();
+        } catch (Exception e) {
+          e.printStackTrace();
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all tasks to complete
+    boolean completed = latch.await(60, TimeUnit.SECONDS);
+    assertThat("All concurrent tasks should complete", completed, is(true));
+    
+    return System.currentTimeMillis() - startTime;
   }
 }

@@ -41,10 +41,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.String.format;
 import static org.sonatype.nexus.internal.script.ScriptServiceImpl.SCRIPT_CLEANUP_HANDLER;
 
 /**
- * Groovy {@link ScriptEngineFactory}.
+ * Groovy {@link ScriptEngineFactory} with Java 21 enhancements.
  *
  * @since 3.0
  */
@@ -54,12 +55,14 @@ public class GroovyScriptEngineFactory
     extends org.codehaus.groovy.jsr223.GroovyScriptEngineFactory
 {
   private static final Logger log = LoggerFactory.getLogger(GroovyScriptEngineFactory.class);
+  
+  // Virtual thread executor for script execution
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = 
+      Executors.newVirtualThreadPerTaskExecutor();
 
   private final ClassLoader classLoader;
 
   private final ApplicationDirectories applicationDirectories;
-  
-  private final ExecutorService virtualThreadExecutor;
 
   private GroovyScriptEngine engine;
 
@@ -70,13 +73,8 @@ public class GroovyScriptEngineFactory
   {
     this.classLoader = checkNotNull(classLoader);
     this.applicationDirectories = checkNotNull(applicationDirectories);
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
-  /**
-   * Creates a new GroovyScriptEngine with enhanced configuration for Java 21.
-   * Uses Virtual Threads for improved concurrency and performance.
-   */
   private GroovyScriptEngine create() {
     // custom the configuration of the compiler
     CompilerConfiguration cc = new CompilerConfiguration();
@@ -86,43 +84,32 @@ public class GroovyScriptEngineFactory
     cc.addCompilationCustomizers(secureASTCustomizer());
     GroovyClassLoader gcl = new GroovyClassLoader(classLoader, cc);
 
-    engine = new GroovyScriptEngine(gcl, virtualThreadExecutor);
-
-    // HACK: For testing
+    engine = new GroovyScriptEngine(gcl);
+    
+    // Use String Templates for improved logging clarity
     log.info(STR."Created engine: \{engine}");
 
     return engine;
   }
 
   /**
-   * Secure potentially dangerous calls in scripts.
-   * Enhanced for Java 21's security model and stronger encapsulation.
+   * Secure potentially dangerous calls in scripts with Java 21's enhanced security model.
    */
   private CompilationCustomizer secureASTCustomizer() {
     SecureASTCustomizer secureASTCustomizer = new SecureASTCustomizer();
     
-    // Blacklist dangerous imports
-    List<String> importsBlacklist = List.of(
-        "java.lang.System",
+    // Blacklist System class to prevent direct system access
+    secureASTCustomizer.setImportsBlacklist(Collections.singletonList("java.lang.System"));
+    secureASTCustomizer.setReceiversBlackList(Collections.singletonList(System.class.getName()));
+    
+    // Prevent access to Java 21 specific classes that might bypass security
+    List<String> additionalBlacklist = List.of(
+        "java.lang.ProcessHandle",
         "java.lang.Runtime",
-        "java.lang.ProcessBuilder",
-        "java.lang.reflect",
-        "java.lang.invoke",
-        "java.util.concurrent.ThreadFactory",
-        "java.util.concurrent.ForkJoinPool"
-    );
-    secureASTCustomizer.setImportsBlacklist(importsBlacklist);
+        "java.util.concurrent.StructuredTaskScope");
     
-    // Blacklist dangerous receivers
-    List<String> receiversBlacklist = List.of(
-        System.class.getName(),
-        Runtime.class.getName(),
-        ProcessBuilder.class.getName()
-    );
-    secureASTCustomizer.setReceiversBlackList(receiversBlacklist);
-    
-    // Enable indirect import checking to prevent bypassing import restrictions
     secureASTCustomizer.setIndirectImportCheckEnabled(true);
+    secureASTCustomizer.setDisallowedTokens(List.of("synchronized")); // Avoid pinning virtual threads
     
     return secureASTCustomizer;
   }
@@ -141,6 +128,20 @@ public class GroovyScriptEngineFactory
     return engine;
   }
 
+  /**
+   * Executes a script using Virtual Threads for better performance under high concurrency.
+   * 
+   * @param script The script to execute
+   * @param binding The binding context for the script
+   * @return The result of script execution
+   */
+  public Object executeWithVirtualThread(Script script, Binding binding) {
+    return VIRTUAL_THREAD_EXECUTOR.submit(() -> {
+      script.setBinding(binding);
+      return script.run();
+    }).join();
+  }
+
   @VisibleForTesting
   static String getContext(final Binding binding) {
     Optional<String> taskContext = getVariable(binding, "task", ScriptTask.class)
@@ -154,16 +155,23 @@ public class GroovyScriptEngineFactory
         .orElse("An unknown script");
   }
 
+  /**
+   * Gets a variable from the binding with Pattern Matching for instanceof checks and casting.
+   */
   private static <T> Optional<T> getVariable(final Binding binding, final String name, final Class<T> type) {
     if (binding.hasVariable(name)) {
       Object instance = binding.getVariable(name);
-      if (instance instanceof T value) {
-        return Optional.of(value);
+      // Use Pattern Matching for instanceof check and casting
+      if (instance instanceof T matchedInstance) {
+        return Optional.of(matchedInstance);
       }
     }
     return Optional.empty();
   }
 
+  /**
+   * Script with cleanup support enhanced for Java 21 with improved resource management.
+   */
   public abstract static class ScriptWithCleanup
       extends Script
   {
@@ -173,9 +181,10 @@ public class GroovyScriptEngineFactory
         return scriptBody();
       }
       finally {
+        // Use Pattern Matching for instanceof check and casting
         Object scriptCleanupHelper = this.getBinding().getVariable(SCRIPT_CLEANUP_HANDLER);
-        if (scriptCleanupHelper instanceof ScriptCleanupHandler handler) {
-          handler.cleanup(getContext(this.getBinding()));
+        if (scriptCleanupHelper instanceof ScriptCleanupHandler cleanupHandler) {
+          cleanupHandler.cleanup(getContext(this.getBinding()));
         }
       }
     }

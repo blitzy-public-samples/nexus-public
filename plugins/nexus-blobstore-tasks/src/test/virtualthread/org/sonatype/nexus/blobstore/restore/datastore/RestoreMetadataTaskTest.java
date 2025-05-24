@@ -24,20 +24,16 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -57,31 +53,41 @@ import org.sonatype.nexus.repository.move.ChangeRepositoryBlobStoreStore;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskUtils;
+import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Resources;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singletonList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescriptor.BLOB_STORE_NAME_FIELD_ID;
@@ -94,21 +100,19 @@ import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescri
 import static org.sonatype.nexus.blobstore.restore.datastore.DefaultIntegrityCheckStrategy.DEFAULT_NAME;
 
 /**
- * Virtual Thread-specific test for the {@link RestoreMetadataTask} that verifies its blob restoration functionality
+ * Virtual Thread-specific test for the RestoreMetadataTask that verifies its blob restoration functionality
  * when executed with Java 21's Virtual Threads.
  */
-@Category(VirtualThreadTestGroup.class)
-public class RestoreMetadataTaskTest
-    extends TestSupport
+@ExtendWith(MockitoExtension.class)
+class RestoreMetadataTaskTest
+    extends VirtualThreadTestSupport
 {
   public static final String BLOBSTORE_NAME = "test";
 
   public static final String MAVEN_2 = "maven2";
 
   private static final int LARGE_BLOB_COUNT = 1000;
-  private static final int CONCURRENT_THREADS = 100;
-  private static final int TIMEOUT_SECONDS = 30;
-
+  
   @Mock
   BlobStoreManager blobStoreManager;
 
@@ -164,8 +168,8 @@ public class RestoreMetadataTaskTest
 
   TaskConfiguration configuration;
 
-  @Before
-  public void setup() throws Exception {
+  @BeforeEach
+  void setup() throws Exception {
     integrityCheckStrategies = spy(new HashMap<>());
     integrityCheckStrategies.put(MAVEN_2, testIntegrityCheckStrategy);
     integrityCheckStrategies.put(DEFAULT_NAME, defaultIntegrityCheckStrategy);
@@ -204,440 +208,52 @@ public class RestoreMetadataTaskTest
     when(dryRunPrefix.get()).thenReturn("");
   }
 
-  /**
-   * Test that the RestoreMetadataTask can be executed with Virtual Threads.
-   */
   @Test
-  public void testRestoreMetadataWithVirtualThreads() throws Exception {
-    configuration.setBoolean(RESTORE_BLOBS, true);
-    configuration.setBoolean(UNDELETE_BLOBS, true);
-    configuration.setBoolean(INTEGRITY_CHECK, false);
+  void checkForConflictsThrowsExceptionIfConflictingTaskIsRunning() {
     underTest.configure(configuration);
 
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Execute the task in a virtual thread
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          underTest.execute();
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, executor);
+    doThrow(new IllegalStateException("conflicting task"))
+        .when(taskUtils).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
+    when(changeBlobstoreStore.findByBlobStoreName(anyString())).thenReturn(Collections.emptyList());
 
-      // Wait for completion
-      future.join();
-    }
+    IllegalStateException exception = assertThrows(IllegalStateException.class, underTest::checkForConflicts);
 
-    // Verify the task executed correctly
-    ArgumentCaptor<Properties> propertiesArgumentCaptor = ArgumentCaptor.forClass(Properties.class);
-    verify(restoreBlobStrategy).restore(propertiesArgumentCaptor.capture(), eq(blob), eq(blobStore), eq(false));
-    verify(blobStore).undelete(blobstoreUsageChecker, blobId, blobAttributes, false);
-    Properties properties = propertiesArgumentCaptor.getValue();
-
-    assertThat(properties.getProperty("@BlobStore.blob-name"), is("org/codehaus/plexus/plexus/3.1/plexus-3.1.pom"));
+    assertEquals("conflicting task", exception.getMessage());
+    verify(taskUtils, times(1)).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
   }
 
-  /**
-   * Test that the RestoreMetadataTask can handle concurrent blob restoration with Virtual Threads.
-   */
   @Test
-  public void testConcurrentBlobRestorationWithVirtualThreads() throws Exception {
-    configuration.setBoolean(RESTORE_BLOBS, true);
-    configuration.setBoolean(UNDELETE_BLOBS, true);
-    configuration.setBoolean(INTEGRITY_CHECK, false);
+  void checkForConflictsThrowsExceptionIfMoveTaskIsUnfinished() {
+    ChangeRepositoryBlobStoreConfiguration record = getRecord("test" , BLOBSTORE_NAME, "target-blobstore");
+
     underTest.configure(configuration);
 
-    // Create a large number of blob IDs
-    List<BlobId> blobIds = IntStream.range(0, LARGE_BLOB_COUNT)
-        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
-        .collect(Collectors.toList());
+    doNothing()
+        .when(taskUtils).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
+    when(changeBlobstoreStore.findByBlobStoreName(anyString())).thenReturn(Collections.singletonList(record));
 
-    // Set up mock behavior for each blob
-    for (BlobId id : blobIds) {
-      BlobAttributes attrs = mock(BlobAttributes.class);
-      Properties props = new Properties();
-      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
-      when(attrs.getProperties()).thenReturn(props);
-      when(blobStore.getBlobAttributes(id)).thenReturn(attrs);
-      when(blobStore.get(id, true)).thenReturn(blob);
-    }
+    IllegalStateException exception = assertThrows(IllegalStateException.class, underTest::checkForConflicts);
 
-    // Return the stream of blob IDs
-    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
-
-    // Create a latch to track completion
-    CountDownLatch latch = new CountDownLatch(1);
-    AtomicInteger processedCount = new AtomicInteger(0);
-
-    // Mock the restore method to count processed blobs
-    doAnswer(invocation -> {
-      processedCount.incrementAndGet();
-      return null;
-    }).when(restoreBlobStrategy).restore(any(Properties.class), eq(blob), eq(blobStore), eq(false));
-
-    // Execute the task in a virtual thread
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          underTest.execute();
-          latch.countDown();
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, executor);
-
-      // Wait for completion with timeout
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("Task did not complete within timeout", completed);
-
-      // Verify all blobs were processed
-      assertThat(processedCount.get(), is(LARGE_BLOB_COUNT));
-    }
+    assertEquals(String.format("found unfinished move task using blobstore '%s', task can't be executed", BLOBSTORE_NAME), exception.getMessage());
+    verify(taskUtils, times(1)).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
+    verify(changeBlobstoreStore, times(1)).findByBlobStoreName(eq(BLOBSTORE_NAME));
   }
 
-  /**
-   * Test that the RestoreMetadataTask can be cancelled while running in a Virtual Thread.
-   */
   @Test
-  public void testCancellationWithVirtualThreads() throws Exception {
-    configuration.setBoolean(RESTORE_BLOBS, true);
-    configuration.setBoolean(UNDELETE_BLOBS, true);
-    configuration.setBoolean(INTEGRITY_CHECK, false);
-
-    // Create a task that can be cancelled
-    AtomicBoolean cancelled = new AtomicBoolean(false);
-    RestoreMetadataTask cancellableTask =
-        new RestoreMetadataTask(blobStoreManager, changeBlobstoreStore, repositoryManager,
-            ImmutableMap.of(MAVEN_2, restoreBlobStrategy),
-            blobstoreUsageChecker, dryRunPrefix, integrityCheckStrategies, maintenanceService, assetBlobRefFormatCheck,
-            taskUtils) {
-          @Override
-          public boolean isCanceled() {
-            return cancelled.get();
-          }
-        };
-
-    cancellableTask.configure(configuration);
-
-    // Create a large number of blob IDs to ensure the task runs long enough to be cancelled
-    List<BlobId> blobIds = IntStream.range(0, LARGE_BLOB_COUNT)
-        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
-        .collect(Collectors.toList());
-
-    // Set up mock behavior for each blob with a delay to simulate work
-    for (BlobId id : blobIds) {
-      BlobAttributes attrs = mock(BlobAttributes.class);
-      Properties props = new Properties();
-      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
-      when(attrs.getProperties()).thenReturn(props);
-      when(blobStore.getBlobAttributes(id)).thenReturn(attrs);
-      when(blobStore.get(id, true)).thenReturn(blob);
-    }
-
-    // Return the stream of blob IDs
-    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
-
-    // Add a delay to the restore method to simulate work
-    AtomicInteger processedCount = new AtomicInteger(0);
-    doAnswer(new Answer<Void>() {
-      @Override
-      public Void answer(InvocationOnMock invocation) throws Throwable {
-        // Process a few blobs before cancellation
-        if (processedCount.incrementAndGet() > 10) {
-          cancelled.set(true);
-        }
-        Thread.sleep(10); // Small delay to simulate work
-        return null;
-      }
-    }).when(restoreBlobStrategy).restore(any(Properties.class), eq(blob), eq(blobStore), eq(false));
-
-    // Execute the task in a virtual thread
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          cancellableTask.execute();
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, executor);
-
-      // Wait for completion
-      future.join();
-    }
-
-    // Verify the task was cancelled and only processed a subset of blobs
-    assertTrue("Task should have been cancelled", cancelled.get());
-    assertThat("Should have processed some blobs before cancellation", processedCount.get(), greaterThan(0));
-    assertThat("Should not have processed all blobs due to cancellation", processedCount.get(), lessThan(LARGE_BLOB_COUNT));
-
-    // Verify after() was not called due to cancellation
-    verify(restoreBlobStrategy, never()).after(anyBoolean(), any(Repository.class));
-  }
-
-  /**
-   * Test that compares performance between platform threads and virtual threads for blob restoration.
-   */
-  @Test
-  public void testPerformanceComparisonBetweenThreadTypes() throws Exception {
-    configuration.setBoolean(RESTORE_BLOBS, true);
-    configuration.setBoolean(UNDELETE_BLOBS, true);
-    configuration.setBoolean(INTEGRITY_CHECK, false);
+  void checkForConflictsRunsIfNoConflictingTasks() {
     underTest.configure(configuration);
 
-    // Create a large number of blob IDs
-    List<BlobId> blobIds = IntStream.range(0, LARGE_BLOB_COUNT)
-        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
-        .collect(Collectors.toList());
+    doNothing().when(taskUtils).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
+    when(changeBlobstoreStore.findByBlobStoreName(anyString())).thenReturn(Collections.emptyList());
 
-    // Set up mock behavior for each blob
-    Map<BlobId, BlobAttributes> blobAttributesMap = new ConcurrentHashMap<>();
-    for (BlobId id : blobIds) {
-      BlobAttributes attrs = mock(BlobAttributes.class);
-      Properties props = new Properties();
-      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
-      when(attrs.getProperties()).thenReturn(props);
-      blobAttributesMap.put(id, attrs);
-      when(blobStore.get(id, true)).thenReturn(blob);
-    }
+    underTest.checkForConflicts();
 
-    // Mock the getBlobAttributes method to return the appropriate attributes
-    when(blobStore.getBlobAttributes(any(BlobId.class))).thenAnswer(invocation -> {
-      BlobId id = invocation.getArgument(0);
-      return blobAttributesMap.get(id);
-    });
-
-    // Return the stream of blob IDs
-    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
-
-    // Create thread factories
-    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-
-    // Measure platform thread performance
-    long platformThreadTime = measureExecutionTime(() -> {
-      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(platformThreadFactory)) {
-        executeWithExecutor(executor);
-      }
-    });
-
-    // Reset mocks and counters
-    reset(restoreBlobStrategy);
-    when(restoreBlobStrategy.restore(any(Properties.class), eq(blob), eq(blobStore), eq(false))).thenReturn(true);
-
-    // Measure virtual thread performance
-    long virtualThreadTime = measureExecutionTime(() -> {
-      try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-        executeWithExecutor(executor);
-      }
-    });
-
-    // Log the results
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-
-    // Virtual threads should generally be more efficient for I/O-bound operations
-    // but in a test environment with mocks, the difference might not be significant
-    // This assertion is more for documentation than strict validation
-    assertTrue("Virtual threads should not be significantly slower than platform threads",
-        virtualThreadTime < platformThreadTime * 1.5);
+    verify(taskUtils, times(1)).checkForConflictingTasks(anyString(), anyString(), any(List.class), any(Map.class));
   }
 
-  /**
-   * Test that the RestoreMetadataTask can handle a large number of concurrent operations with Virtual Threads.
-   */
-  @Test
-  public void testLargeConcurrentOperationsWithVirtualThreads() throws Exception {
-    configuration.setBoolean(RESTORE_BLOBS, true);
-    configuration.setBoolean(UNDELETE_BLOBS, true);
-    configuration.setBoolean(INTEGRITY_CHECK, false);
-    underTest.configure(configuration);
-
-    // Create a very large number of blob IDs to test scalability
-    int veryLargeBlobCount = LARGE_BLOB_COUNT * 10;
-    List<BlobId> blobIds = IntStream.range(0, veryLargeBlobCount)
-        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
-        .collect(Collectors.toList());
-
-    // Set up mock behavior for each blob
-    for (BlobId id : blobIds) {
-      BlobAttributes attrs = mock(BlobAttributes.class);
-      Properties props = new Properties();
-      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
-      when(attrs.getProperties()).thenReturn(props);
-      when(blobStore.getBlobAttributes(id)).thenReturn(attrs);
-      when(blobStore.get(id, true)).thenReturn(blob);
-    }
-
-    // Return the stream of blob IDs
-    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
-
-    // Create a latch to track completion
-    CountDownLatch latch = new CountDownLatch(1);
-    AtomicInteger processedCount = new AtomicInteger(0);
-    AtomicInteger errorCount = new AtomicInteger(0);
-
-    // Mock the restore method to count processed blobs
-    doAnswer(invocation -> {
-      processedCount.incrementAndGet();
-      return null;
-    }).when(restoreBlobStrategy).restore(any(Properties.class), eq(blob), eq(blobStore), eq(false));
-
-    // Execute the task in a virtual thread
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          underTest.execute();
-          latch.countDown();
-        } catch (Exception e) {
-          errorCount.incrementAndGet();
-          throw new RuntimeException(e);
-        }
-      }, executor);
-
-      // Wait for completion with timeout
-      boolean completed = latch.await(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS);
-      assertTrue("Task did not complete within timeout", completed);
-
-      // Verify all blobs were processed without errors
-      assertThat(errorCount.get(), is(0));
-      assertThat(processedCount.get(), is(veryLargeBlobCount));
-    }
-  }
-
-  /**
-   * Test that thread pinning detection works correctly with Virtual Threads.
-   * This test simulates a scenario where thread pinning might occur and verifies
-   * that the task can still complete successfully.
-   */
-  @Test
-  public void testThreadPinningDetection() throws Exception {
-    configuration.setBoolean(RESTORE_BLOBS, true);
-    configuration.setBoolean(UNDELETE_BLOBS, true);
-    configuration.setBoolean(INTEGRITY_CHECK, false);
-    underTest.configure(configuration);
-
-    // Create blob IDs
-    List<BlobId> blobIds = IntStream.range(0, CONCURRENT_THREADS)
-        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
-        .collect(Collectors.toList());
-
-    // Set up mock behavior for each blob
-    for (BlobId id : blobIds) {
-      BlobAttributes attrs = mock(BlobAttributes.class);
-      Properties props = new Properties();
-      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
-      when(attrs.getProperties()).thenReturn(props);
-      when(blobStore.getBlobAttributes(id)).thenReturn(attrs);
-      when(blobStore.get(id, true)).thenReturn(blob);
-    }
-
-    // Return the stream of blob IDs
-    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
-
-    // Create a latch to coordinate threads
-    CountDownLatch startLatch = new CountDownLatch(CONCURRENT_THREADS);
-    CountDownLatch endLatch = new CountDownLatch(CONCURRENT_THREADS);
-    AtomicInteger activeThreads = new AtomicInteger(0);
-    AtomicInteger maxActiveThreads = new AtomicInteger(0);
-
-    // Mock the restore method to simulate potential thread pinning
-    doAnswer(invocation -> {
-      // Increment active threads and update max
-      int active = activeThreads.incrementAndGet();
-      int max;
-      do {
-        max = maxActiveThreads.get();
-        if (active <= max) break;
-      } while (!maxActiveThreads.compareAndSet(max, active));
-
-      // Signal thread has started
-      startLatch.countDown();
-
-      try {
-        // Simulate a synchronized block that could cause pinning
-        synchronized (RestoreMetadataTaskTest.this) {
-          // Small delay to increase chance of pinning
-          Thread.sleep(10);
-        }
-      } finally {
-        // Decrement active threads
-        activeThreads.decrementAndGet();
-        // Signal thread has completed
-        endLatch.countDown();
-      }
-      return null;
-    }).when(restoreBlobStrategy).restore(any(Properties.class), eq(blob), eq(blobStore), eq(false));
-
-    // Execute the task in a virtual thread
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          underTest.execute();
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }, executor);
-
-      // Wait for all threads to start and finish
-      boolean allStarted = startLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      boolean allFinished = endLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-      assertTrue("Not all threads started within timeout", allStarted);
-      assertTrue("Not all threads finished within timeout", allFinished);
-
-      // Wait for task completion
-      future.join();
-
-      // Log the maximum number of concurrent threads observed
-      log.info("Maximum concurrent threads: {}", maxActiveThreads.get());
-
-      // Verify that multiple threads were active concurrently
-      assertThat("Should have had multiple concurrent threads", maxActiveThreads.get(), greaterThan(1));
-    }
-  }
-
-  /**
-   * Helper method to execute the task with the given executor service.
-   */
-  private void executeWithExecutor(ExecutorService executor) throws Exception {
-    // Create a latch to track completion
-    CountDownLatch latch = new CountDownLatch(1);
-
-    // Execute the task
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        underTest.execute();
-        latch.countDown();
-      } catch (Exception e) {
-        throw new RuntimeException(e);
-      }
-    }, executor);
-
-    // Wait for completion with timeout
-    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    if (!completed) {
-      fail("Task did not complete within timeout");
-    }
-
-    // Wait for the future to complete
-    future.join();
-  }
-
-  /**
-   * Helper method to measure execution time of a runnable.
-   */
-  private long measureExecutionTime(Runnable runnable) {
-    long startTime = System.currentTimeMillis();
-    runnable.run();
-    return System.currentTimeMillis() - startTime;
-  }
-
-  /**
-   * Helper method to create a mock ChangeRepositoryBlobStoreConfiguration.
-   */
-  private ChangeRepositoryBlobStoreConfiguration getRecord(final String name, final String sourceBlobStoreName, final String targetBlobStoreName) {
-    return new ChangeRepositoryBlobStoreConfiguration() {
+  private ChangeRepositoryBlobStoreConfiguration getRecord(final String name , final String sourceBlobStoreName , final String targetBlobStoreName) {
+    return new ChangeRepositoryBlobStoreConfiguration()
+    {
       @Override
       public String getName() {
         return name;
@@ -645,6 +261,7 @@ public class RestoreMetadataTaskTest
 
       @Override
       public void setName(final String name) {
+
       }
 
       @Override
@@ -654,6 +271,7 @@ public class RestoreMetadataTaskTest
 
       @Override
       public void setTargetBlobStoreName(final String targetBlobStoreName) {
+
       }
 
       @Override
@@ -663,6 +281,7 @@ public class RestoreMetadataTaskTest
 
       @Override
       public void setSourceBlobStoreName(final String sourceBlobStoreName) {
+
       }
 
       @Override
@@ -672,7 +291,437 @@ public class RestoreMetadataTaskTest
 
       @Override
       public void setStarted(final OffsetDateTime processStartDate) {
+
       }
     };
+  }
+
+  @Test
+  void testRestoreMetadataWithVirtualThreads() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+
+    // Execute the task using a virtual thread
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(underTest::execute, executor).join();
+    }
+
+    ArgumentCaptor<Properties> propertiesArgumentCaptor = ArgumentCaptor.forClass(Properties.class);
+    verify(restoreBlobStrategy).restore(propertiesArgumentCaptor.capture(), eq(blob), eq(blobStore), eq(false));
+    verify(blobStore).undelete(blobstoreUsageChecker, blobId, blobAttributes, false);
+    Properties properties = propertiesArgumentCaptor.getValue();
+
+    assertThat(properties.getProperty("@BlobStore.blob-name"), is("org/codehaus/plexus/plexus/3.1/plexus-3.1.pom"));
+  }
+
+  @Test
+  void testConcurrentRestoreWithVirtualThreads() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+
+    // Create multiple blob IDs for concurrent restoration
+    List<BlobId> blobIds = new ArrayList<>();
+    List<Blob> blobs = new ArrayList<>();
+    List<BlobAttributes> attributes = new ArrayList<>();
+
+    for (int i = 0; i < 100; i++) {
+      BlobId id = new BlobId(UUID.randomUUID().toString());
+      blobIds.add(id);
+      
+      Blob mockBlob = mock(Blob.class);
+      blobs.add(mockBlob);
+      
+      BlobAttributes mockAttrs = mock(BlobAttributes.class);
+      Properties props = new Properties();
+      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
+      when(mockAttrs.getProperties()).thenReturn(props);
+      attributes.add(mockAttrs);
+      
+      when(blobStore.get(id, true)).thenReturn(mockBlob);
+      when(blobStore.getBlobAttributes(id)).thenReturn(mockAttrs);
+    }
+
+    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
+
+    // Use a CountDownLatch to track completion
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean completed = new AtomicBoolean(false);
+
+    // Execute with virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(() -> {
+        try {
+          underTest.execute();
+          completed.set(true);
+        } finally {
+          latch.countDown();
+        }
+      }, executor);
+
+      // Wait for completion with timeout
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Task execution timed out");
+      assertTrue(completed.get(), "Task did not complete successfully");
+    }
+
+    // Verify all blobs were processed
+    for (int i = 0; i < blobs.size(); i++) {
+      verify(restoreBlobStrategy).restore(any(Properties.class), eq(blobs.get(i)), eq(blobStore), eq(false));
+    }
+    
+    // Verify after() was called once for the repository
+    verify(restoreBlobStrategy).after(true, repository);
+  }
+
+  @Test
+  void testThreadPinningDetectionDuringRestore() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+
+    // Setup thread pinning detector
+    ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
+
+    // Execute with virtual threads and monitor for pinning
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        pinningDetector.startMonitoring();
+        try {
+          underTest.execute();
+        } finally {
+          pinningDetector.stopMonitoring();
+        }
+      }, executor);
+
+      future.join(); // Wait for completion
+    }
+
+    // Verify no thread pinning occurred during I/O operations
+    assertFalse(pinningDetector.wasPinningDetected(), 
+        "Thread pinning detected during blob restore operations: " + pinningDetector.getPinningEvents());
+  }
+
+  @Test
+  void testCancellationWithVirtualThreads() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+
+    // Create a task that can be cancelled
+    RestoreMetadataTask cancellableTask =
+        new RestoreMetadataTask(blobStoreManager, changeBlobstoreStore, repositoryManager,
+            ImmutableMap.of(MAVEN_2, restoreBlobStrategy),
+            blobstoreUsageChecker, dryRunPrefix, integrityCheckStrategies, maintenanceService, assetBlobRefFormatCheck,
+            taskUtils)
+        {
+          private final AtomicBoolean cancelled = new AtomicBoolean(false);
+          
+          @Override
+          public boolean isCanceled() {
+            return cancelled.get();
+          }
+          
+          // Simulate cancellation after processing a few blobs
+          @Override
+          protected void processBlob(BlobId blobId) {
+            super.processBlob(blobId);
+            cancelled.set(true); // Cancel after first blob
+          }
+        };
+    
+    cancellableTask.configure(configuration);
+
+    // Create multiple blob IDs
+    List<BlobId> blobIds = new ArrayList<>();
+    for (int i = 0; i < 100; i++) {
+      BlobId id = new BlobId(UUID.randomUUID().toString());
+      blobIds.add(id);
+      
+      Blob mockBlob = mock(Blob.class);
+      BlobAttributes mockAttrs = mock(BlobAttributes.class);
+      Properties props = new Properties();
+      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
+      when(mockAttrs.getProperties()).thenReturn(props);
+      
+      when(blobStore.get(id, true)).thenReturn(mockBlob);
+      when(blobStore.getBlobAttributes(id)).thenReturn(mockAttrs);
+    }
+
+    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
+
+    // Execute with virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(cancellableTask::execute, executor).join();
+    }
+
+    // Verify that after() was never called due to cancellation
+    verify(restoreBlobStrategy, never()).after(true, repository);
+  }
+
+  @Test
+  void testLargeBlobCountWithVirtualThreads() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+
+    // Create a large number of blob IDs
+    List<BlobId> blobIds = new ArrayList<>();
+    for (int i = 0; i < LARGE_BLOB_COUNT; i++) {
+      BlobId id = new BlobId(UUID.randomUUID().toString());
+      blobIds.add(id);
+      
+      Blob mockBlob = mock(Blob.class);
+      BlobAttributes mockAttrs = mock(BlobAttributes.class);
+      Properties props = new Properties();
+      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
+      when(mockAttrs.getProperties()).thenReturn(props);
+      
+      when(blobStore.get(id, true)).thenReturn(mockBlob);
+      when(blobStore.getBlobAttributes(id)).thenReturn(mockAttrs);
+    }
+
+    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
+
+    // Track processed blob count
+    AtomicInteger processedCount = new AtomicInteger(0);
+    
+    // Create a task that tracks processed blobs
+    RestoreMetadataTask countingTask =
+        new RestoreMetadataTask(blobStoreManager, changeBlobstoreStore, repositoryManager,
+            ImmutableMap.of(MAVEN_2, restoreBlobStrategy),
+            blobstoreUsageChecker, dryRunPrefix, integrityCheckStrategies, maintenanceService, assetBlobRefFormatCheck,
+            taskUtils)
+        {
+          @Override
+          protected void processBlob(BlobId blobId) {
+            super.processBlob(blobId);
+            processedCount.incrementAndGet();
+          }
+        };
+    
+    countingTask.configure(configuration);
+
+    // Measure execution time with virtual threads
+    long startTime = System.currentTimeMillis();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(countingTask::execute, executor).join();
+    }
+    long virtualThreadTime = System.currentTimeMillis() - startTime;
+
+    // Verify all blobs were processed
+    assertEquals(LARGE_BLOB_COUNT, processedCount.get(), "Not all blobs were processed");
+    
+    // Reset for platform thread test
+    processedCount.set(0);
+    
+    // Create a new task for platform thread test
+    RestoreMetadataTask platformTask =
+        new RestoreMetadataTask(blobStoreManager, changeBlobstoreStore, repositoryManager,
+            ImmutableMap.of(MAVEN_2, restoreBlobStrategy),
+            blobstoreUsageChecker, dryRunPrefix, integrityCheckStrategies, maintenanceService, assetBlobRefFormatCheck,
+            taskUtils)
+        {
+          @Override
+          protected void processBlob(BlobId blobId) {
+            super.processBlob(blobId);
+            processedCount.incrementAndGet();
+          }
+        };
+    
+    platformTask.configure(configuration);
+
+    // Measure execution time with platform threads
+    startTime = System.currentTimeMillis();
+    platformTask.execute(); // Direct execution on platform thread
+    long platformThreadTime = System.currentTimeMillis() - startTime;
+
+    // Verify all blobs were processed again
+    assertEquals(LARGE_BLOB_COUNT, processedCount.get(), "Not all blobs were processed with platform threads");
+    
+    // Log performance comparison
+    System.out.println("Virtual Thread execution time: " + virtualThreadTime + "ms");
+    System.out.println("Platform Thread execution time: " + platformThreadTime + "ms");
+    
+    // Virtual threads should generally be more efficient for I/O-bound operations
+    // This assertion might need adjustment based on actual performance characteristics
+    assertThat("Virtual threads should be more efficient for I/O-bound operations", 
+        virtualThreadTime, lessThan(platformThreadTime));
+  }
+
+  @Test
+  void testIntegrityCheckWithVirtualThreads() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, false);
+    configuration.setBoolean(UNDELETE_BLOBS, false);
+    configuration.setBoolean(INTEGRITY_CHECK, true);
+    underTest.configure(configuration);
+
+    when(repositoryManager.browseForBlobStore(any())).thenReturn(singletonList(repository));
+
+    // Execute with virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(underTest::execute, executor).join();
+    }
+
+    // Verify integrity check was performed
+    verify(testIntegrityCheckStrategy).check(eq(repository), eq(blobStore), any(), anyInt(), any());
+  }
+
+  @Test
+  void testConcurrentIntegrityCheckWithVirtualThreads() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, false);
+    configuration.setBoolean(UNDELETE_BLOBS, false);
+    configuration.setBoolean(INTEGRITY_CHECK, true);
+    underTest.configure(configuration);
+
+    // Create multiple repositories for concurrent integrity checks
+    List<Repository> repositories = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      Repository repo = mock(Repository.class);
+      when(repo.isStarted()).thenReturn(true);
+      when(repo.getFormat()).thenReturn(mavenFormat);
+      repositories.add(repo);
+    }
+
+    when(repositoryManager.browseForBlobStore(any())).thenReturn(repositories);
+
+    // Execute with virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(underTest::execute, executor).join();
+    }
+
+    // Verify integrity check was performed for each repository
+    for (Repository repo : repositories) {
+      verify(testIntegrityCheckStrategy).check(eq(repo), eq(blobStore), any(), anyInt(), any());
+    }
+  }
+
+  @Test
+  void testVirtualThreadPerformanceComparison() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+
+    // Create a large number of blob IDs
+    List<BlobId> blobIds = IntStream.range(0, LARGE_BLOB_COUNT)
+        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
+        .toList();
+
+    // Setup mocks for all blobs
+    for (BlobId id : blobIds) {
+      Blob mockBlob = mock(Blob.class);
+      BlobAttributes mockAttrs = mock(BlobAttributes.class);
+      Properties props = new Properties();
+      props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
+      when(mockAttrs.getProperties()).thenReturn(props);
+      
+      when(blobStore.get(id, true)).thenReturn(mockBlob);
+      when(blobStore.getBlobAttributes(id)).thenReturn(mockAttrs);
+    }
+
+    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
+
+    // Run with virtual threads and measure performance
+    long startTimeVirtual = System.currentTimeMillis();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(underTest::execute, executor).join();
+    }
+    long virtualThreadDuration = System.currentTimeMillis() - startTimeVirtual;
+
+    // Reset mocks for platform thread test
+    reset(restoreBlobStrategy);
+    when(restoreBlobStrategy.restore(any(), any(), any(), eq(false))).thenReturn(true);
+
+    // Run with platform threads and measure performance
+    long startTimePlatform = System.currentTimeMillis();
+    underTest.execute(); // Direct execution on platform thread
+    long platformThreadDuration = System.currentTimeMillis() - startTimePlatform;
+
+    // Log performance results
+    System.out.println("Performance comparison for processing " + LARGE_BLOB_COUNT + " blobs:");
+    System.out.println("Virtual Threads: " + virtualThreadDuration + "ms");
+    System.out.println("Platform Threads: " + platformThreadDuration + "ms");
+    System.out.println("Improvement: " + 
+        String.format("%.2f%%", (platformThreadDuration - virtualThreadDuration) * 100.0 / platformThreadDuration));
+
+    // Virtual threads should be more efficient for I/O-bound operations
+    assertThat("Virtual threads should be more efficient for I/O-bound operations", 
+        virtualThreadDuration, lessThan(platformThreadDuration));
+  }
+
+  @Test
+  void testVirtualThreadScalability() throws Exception {
+    configuration.setBoolean(RESTORE_BLOBS, true);
+    configuration.setBoolean(UNDELETE_BLOBS, true);
+    configuration.setBoolean(INTEGRITY_CHECK, false);
+    underTest.configure(configuration);
+
+    // Create an extremely large number of blob IDs to test scalability
+    final int SCALABILITY_TEST_SIZE = 10000;
+    List<BlobId> blobIds = IntStream.range(0, SCALABILITY_TEST_SIZE)
+        .mapToObj(i -> new BlobId(UUID.randomUUID().toString()))
+        .toList();
+
+    // Setup minimal mocks for all blobs to reduce memory overhead
+    Blob mockBlob = mock(Blob.class);
+    BlobAttributes mockAttrs = mock(BlobAttributes.class);
+    Properties props = new Properties();
+    props.setProperty(HEADER_PREFIX + REPO_NAME_HEADER, "maven-central");
+    when(mockAttrs.getProperties()).thenReturn(props);
+    
+    for (BlobId id : blobIds) {
+      when(blobStore.get(id, true)).thenReturn(mockBlob);
+      when(blobStore.getBlobAttributes(id)).thenReturn(mockAttrs);
+    }
+
+    when(blobStore.getBlobIdStream()).thenReturn(blobIds.stream());
+
+    // Track processed blob count
+    AtomicInteger processedCount = new AtomicInteger(0);
+    
+    // Create a task that tracks processed blobs
+    RestoreMetadataTask countingTask =
+        new RestoreMetadataTask(blobStoreManager, changeBlobstoreStore, repositoryManager,
+            ImmutableMap.of(MAVEN_2, restoreBlobStrategy),
+            blobstoreUsageChecker, dryRunPrefix, integrityCheckStrategies, maintenanceService, assetBlobRefFormatCheck,
+            taskUtils)
+        {
+          @Override
+          protected void processBlob(BlobId blobId) {
+            super.processBlob(blobId);
+            processedCount.incrementAndGet();
+          }
+        };
+    
+    countingTask.configure(configuration);
+
+    // Execute with virtual threads
+    long startTime = System.currentTimeMillis();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(countingTask::execute, executor).join();
+    }
+    long duration = System.currentTimeMillis() - startTime;
+
+    // Verify all blobs were processed
+    assertEquals(SCALABILITY_TEST_SIZE, processedCount.get(), 
+        "Not all blobs were processed in the scalability test");
+    
+    // Log performance metrics
+    System.out.println("Virtual Thread Scalability Test Results:");
+    System.out.println("Processed " + SCALABILITY_TEST_SIZE + " blobs in " + duration + "ms");
+    System.out.println("Average processing time per blob: " + 
+        String.format("%.2f", (double)duration / SCALABILITY_TEST_SIZE) + "ms");
+    System.out.println("Processing rate: " + 
+        String.format("%.2f", (double)SCALABILITY_TEST_SIZE * 1000 / duration) + " blobs/second");
+
+    // Verify the task can handle a large number of blobs efficiently
+    // This is a relative performance metric that may need adjustment based on the test environment
+    assertThat("Should process blobs at a reasonable rate", 
+        (double)SCALABILITY_TEST_SIZE * 1000 / duration, greaterThan(100.0));
   }
 }

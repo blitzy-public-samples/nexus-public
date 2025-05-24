@@ -13,9 +13,10 @@
 package org.sonatype.nexus.repository.maven.internal.matcher;
 
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.repository.maven.MavenPath;
 import org.sonatype.nexus.repository.maven.MavenPathParser;
@@ -24,8 +25,6 @@ import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -33,23 +32,24 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link MavenNx2MetaFilesMatcher} executed with Java 21 Virtual Threads.
+ * Tests {@link MavenNx2MetaFilesMatcher} with Java 21 Virtual Threads.
+ * 
+ * This test validates that the matcher functions correctly when executed concurrently
+ * across multiple Virtual Threads, ensuring thread safety and correct behavior in a
+ * highly concurrent environment.
  * 
  * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("VirtualThreadTestGroup")
-@DisplayName("MavenNx2MetaFilesMatcher with Virtual Threads")
+@VirtualThreadTestGroup
 public class MavenNx2MetaFilesMatcherVirtualThreadTest
     extends VirtualThreadTestSupport
 {
-  private static final int CONCURRENT_THREADS = 10;
-  private static final int TIMEOUT_SECONDS = 5;
-
   @Mock
   MavenPathParser mavenPathParser;
 
@@ -65,9 +65,7 @@ public class MavenNx2MetaFilesMatcherVirtualThreadTest
   MavenNx2MetaFilesMatcher underTest;
 
   @BeforeEach
-  void setup() {
-    assumeVirtualThreadSupported();
-    
+  public void setup() {
     when(mavenPathParser.parsePath(any())).thenReturn(mavenPath);
     when(context.getRequest()).thenReturn(request);
     when(context.getAttributes()).thenReturn(new AttributesMap());
@@ -75,104 +73,95 @@ public class MavenNx2MetaFilesMatcherVirtualThreadTest
     underTest = new MavenNx2MetaFilesMatcher(mavenPathParser);
   }
 
+  /**
+   * Tests that the matcher correctly identifies meta files when executed on a Virtual Thread.
+   */
   @Test
-  @DisplayName("Matches .meta paths correctly")
-  void testMatches() {
-    when(request.getPath()).thenReturn("/.meta/prefixes.txt");
-    assertThat(underTest.matches(context), is(true));
-    when(request.getPath()).thenReturn("/.meta/somethingelse.txt");
-    assertThat(underTest.matches(context), is(true));
+  public void testMatchesOnVirtualThread() throws Exception {
+    supplyFromVirtualThread(() -> {
+      // Verify we're running on a Virtual Thread
+      assertCurrentThreadIsVirtual();
+      
+      // Test matching paths
+      when(request.getPath()).thenReturn("/.meta/prefixes.txt");
+      assertThat(underTest.matches(context), is(true));
+      
+      when(request.getPath()).thenReturn("/.meta/somethingelse.txt");
+      assertThat(underTest.matches(context), is(true));
+      
+      return null;
+    });
   }
 
+  /**
+   * Tests that the matcher correctly rejects non-meta files when executed on a Virtual Thread.
+   */
   @Test
-  @DisplayName("Does not match non-meta paths")
-  void testNonMatches() {
-    when(request.getPath()).thenReturn("/real/content.txt");
-    assertThat(underTest.matches(context), is(false));
+  public void testNonMatchesOnVirtualThread() throws Exception {
+    supplyFromVirtualThread(() -> {
+      // Verify we're running on a Virtual Thread
+      assertCurrentThreadIsVirtual();
+      
+      // Test non-matching path
+      when(request.getPath()).thenReturn("/real/content.txt");
+      assertThat(underTest.matches(context), is(false));
+      
+      return null;
+    });
   }
 
+  /**
+   * Tests that the matcher behaves correctly when executed concurrently across multiple Virtual Threads.
+   * This validates thread safety and consistent behavior in a highly concurrent environment.
+   */
   @Test
-  @DisplayName("Handles concurrent matching requests with Virtual Threads")
-  void testConcurrentMatching() throws Exception {
-    // Setup a countdown latch to coordinate threads
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_THREADS);
-    AtomicBoolean allMatchesCorrect = new AtomicBoolean(true);
+  public void testConcurrentMatchingWithVirtualThreads() throws Exception {
+    // Number of concurrent threads to test with
+    int threadCount = 1000;
     
-    // Create multiple virtual threads to test concurrent matching
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
-      final int index = i;
-      Thread.ofVirtual().name("matcher-test-" + index).start(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          // Alternate between meta and non-meta paths
-          if (index % 2 == 0) {
-            when(request.getPath()).thenReturn("/.meta/file" + index + ".txt");
-            boolean result = underTest.matches(context);
-            if (!result) {
-              allMatchesCorrect.set(false);
+    // Counters for tracking results
+    AtomicInteger matchCount = new AtomicInteger(0);
+    AtomicInteger nonMatchCount = new AtomicInteger(0);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Latch for synchronizing thread completion
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    
+    // Create a Virtual Thread executor
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      // Submit tasks to test matching and non-matching paths concurrently
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Alternate between matching and non-matching paths
+            if (index % 2 == 0) {
+              when(request.getPath()).thenReturn("/.meta/prefixes.txt");
+              if (underTest.matches(context)) {
+                matchCount.incrementAndGet();
+              }
+            } else {
+              when(request.getPath()).thenReturn("/real/content.txt");
+              if (!underTest.matches(context)) {
+                nonMatchCount.incrementAndGet();
+              }
             }
-          } else {
-            when(request.getPath()).thenReturn("/content/file" + index + ".txt");
-            boolean result = underTest.matches(context);
-            if (result) {
-              allMatchesCorrect.set(false);
-            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+            log.error("Error in virtual thread test", e);
+          } finally {
+            latch.countDown();
           }
-        } 
-        catch (Exception e) {
-          allMatchesCorrect.set(false);
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      });
+        });
+      }
+      
+      // Wait for all threads to complete
+      latch.await();
     }
     
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete
-    boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All threads completed in time", completed, is(true));
-    assertThat("All matcher results were correct", allMatchesCorrect.get(), is(true));
-  }
-  
-  @Test
-  @DisplayName("Handles high concurrency with Virtual Threads")
-  void testHighConcurrencyMatching() throws Exception {
-    // Test with a higher number of threads to validate scalability
-    int highConcurrencyThreads = 100;
-    CountDownLatch completionLatch = new CountDownLatch(highConcurrencyThreads);
-    AtomicBoolean allMatchesCorrect = new AtomicBoolean(true);
-    
-    // Run a high number of concurrent matching operations
-    runConcurrently(highConcurrencyThreads, () -> {
-      try {
-        // Test both meta and non-meta paths
-        when(request.getPath()).thenReturn("/.meta/prefixes.txt");
-        boolean metaResult = underTest.matches(context);
-        
-        when(request.getPath()).thenReturn("/content/file.txt");
-        boolean nonMetaResult = underTest.matches(context);
-        
-        if (!metaResult || nonMetaResult) {
-          allMatchesCorrect.set(false);
-        }
-      }
-      catch (Exception e) {
-        allMatchesCorrect.set(false);
-      }
-      finally {
-        completionLatch.countDown();
-      }
-    });
-    
-    // Wait for all threads to complete
-    boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All high concurrency threads completed in time", completed, is(true));
-    assertThat("All high concurrency matcher results were correct", allMatchesCorrect.get(), is(true));
+    // Verify results
+    assertEquals(0, errorCount.get(), "No errors should occur during concurrent execution");
+    assertEquals(threadCount / 2, matchCount.get(), "Half of the paths should match");
+    assertEquals(threadCount / 2, nonMatchCount.get(), "Half of the paths should not match");
   }
 }

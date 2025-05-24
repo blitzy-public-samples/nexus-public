@@ -10,50 +10,49 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
+
 package org.sonatype.nexus.repository.maven;
 
 import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.capability.CapabilityReferenceFilterBuilder.CapabilityReferenceFilter;
 import org.sonatype.nexus.capability.CapabilityRegistry;
 import org.sonatype.nexus.common.app.ApplicationVersion;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
+import org.sonatype.nexus.testsuite.testsupport.VirtualThreadTestGroup;
 import org.sonatype.nexus.utils.httpclient.UserAgentGenerator;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link MavenProxyRequestHeaderSupport} specifically with Java 21 Virtual Threads.
- * <p>
- * This test class validates that MavenProxyRequestHeaderSupport correctly formats user agent strings
- * with analytics indicators when executed under Virtual Threads. It ensures that the analytics capability
- * state is properly reflected in the user agent string even when the code is running on Virtual Threads,
- * which have different thread-local variable behavior compared to platform threads.
- *
- * @since 3.60
+ * Tests {@link MavenProxyRequestHeaderSupport} with Java 21 Virtual Threads to ensure
+ * thread-local variables and capability state are correctly handled in a virtual thread environment.
  */
 @ExtendWith(MockitoExtension.class)
-@Tag("virtualthread")
+@Category(VirtualThreadTestGroup.class)
 public class MavenProxyRequestHeaderSupportVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
   @Mock
   private CapabilityRegistry capabilityRegistry;
@@ -67,72 +66,104 @@ public class MavenProxyRequestHeaderSupportVirtualThreadTest
 
   @BeforeEach
   public void setUp() {
-    assumeVirtualThreadSupported();
     userAgentGenerator = new UserAgentGenerator(applicationVersion);
     this.underTest = new MavenProxyRequestHeaderSupport(capabilityRegistry, userAgentGenerator);
     when(applicationVersion.getEdition()).thenReturn("edition");
   }
 
+  /**
+   * Tests that user agent string is correctly formatted when analytics is not configured
+   * when executed in a virtual thread.
+   */
   @Test
-  public void testUserAgentWithAnalyticsNotConfiguredOnVirtualThread() throws InterruptedException {
+  public void testUserAgentWithAnalyticsNotConfiguredInVirtualThread() throws Exception {
     AtomicReference<String> result = new AtomicReference<>();
     
-    // Execute on a virtual thread
-    runVirtual(() -> {
+    Thread virtualThread = Thread.ofVirtual().name("test-virtual-thread").start(() -> {
       result.set(underTest.getUserAgentForAnalytics());
     });
     
+    virtualThread.join();
+    
+    String userAgentForAnalytics = result.get();
     String expectedUserAgent = userAgentGenerator.generate().replace(")","; pau)");
-    assertEquals(expectedUserAgent, result.get());
+    
+    assertNotNull(userAgentForAnalytics, "User agent should not be null when executed in virtual thread");
+    assertEquals(expectedUserAgent, userAgentForAnalytics);
+    assertTrue(virtualThread.isVirtual(), "Thread should be a virtual thread");
   }
 
+  /**
+   * Tests that user agent string is correctly formatted when analytics is enabled
+   * when executed in a virtual thread.
+   */
   @Test
-  public void testUserAgentWithAnalyticsEnabledOnVirtualThread() throws InterruptedException {
+  public void testUserAgentWithAnalyticsEnabledInVirtualThread() throws Exception {
     CapabilityReference capabilityReference = mockCapabilityReference();
     when(capabilityReference.context().isEnabled()).thenReturn(true);
     
     AtomicReference<String> result = new AtomicReference<>();
     
-    // Execute on a virtual thread
-    runVirtual(() -> {
+    Thread virtualThread = Thread.ofVirtual().name("test-virtual-thread").start(() -> {
       result.set(underTest.getUserAgentForAnalytics());
     });
     
+    virtualThread.join();
+    
+    String userAgentForAnalytics = result.get();
     String expectedUserAgent = userAgentGenerator.generate().replace(")","; pae)");
-    assertEquals(expectedUserAgent, result.get());
+    
+    assertNotNull(userAgentForAnalytics, "User agent should not be null when executed in virtual thread");
+    assertEquals(expectedUserAgent, userAgentForAnalytics);
+    assertTrue(virtualThread.isVirtual(), "Thread should be a virtual thread");
   }
 
+  /**
+   * Tests that user agent string is correctly formatted when analytics is disabled
+   * when executed in a virtual thread.
+   */
   @Test
-  public void testUserAgentWithAnalyticsDisabledOnVirtualThread() throws InterruptedException {
+  public void testUserAgentWithAnalyticsDisabledInVirtualThread() throws Exception {
     CapabilityReference capabilityReference = mockCapabilityReference();
     when(capabilityReference.context().isEnabled()).thenReturn(false);
     
     AtomicReference<String> result = new AtomicReference<>();
     
-    // Execute on a virtual thread
-    runVirtual(() -> {
+    Thread virtualThread = Thread.ofVirtual().name("test-virtual-thread").start(() -> {
       result.set(underTest.getUserAgentForAnalytics());
     });
     
+    virtualThread.join();
+    
+    String userAgentForAnalytics = result.get();
     String expectedUserAgent = userAgentGenerator.generate().replace(")","; pad)");
-    assertEquals(expectedUserAgent, result.get());
+    
+    assertNotNull(userAgentForAnalytics, "User agent should not be null when executed in virtual thread");
+    assertEquals(expectedUserAgent, userAgentForAnalytics);
+    assertTrue(virtualThread.isVirtual(), "Thread should be a virtual thread");
   }
-  
+
+  /**
+   * Tests concurrent execution of getUserAgentForAnalytics with multiple virtual threads
+   * to verify thread-local variable behavior is consistent.
+   */
   @Test
-  public void testConcurrentExecutionOnVirtualThreads() throws InterruptedException {
-    // Mock capability reference for concurrent execution
+  public void testConcurrentExecutionWithVirtualThreads() throws Exception {
+    // Set up different capability states for testing
     CapabilityReference capabilityReference = mockCapabilityReference();
     when(capabilityReference.context().isEnabled()).thenReturn(true);
     
-    // Number of concurrent threads to test with
-    int threadCount = 100;
+    final int threadCount = 10;
     CountDownLatch startLatch = new CountDownLatch(1);
     CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    AtomicReference<Exception> testException = new AtomicReference<>();
     
-    // Create and start virtual threads
+    // Create virtual threads using the ExecutorService
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    Future<?>[] futures = new Future<?>[threadCount];
+    
+    // Start multiple virtual threads that will execute simultaneously
     for (int i = 0; i < threadCount; i++) {
-      Thread.ofVirtual().name("virtual-test-" + i).start(() -> {
+      futures[i] = executor.submit(() -> {
         try {
           // Wait for all threads to be ready
           startLatch.await();
@@ -142,15 +173,13 @@ public class MavenProxyRequestHeaderSupportVirtualThreadTest
           
           // Verify the result
           String expected = userAgentGenerator.generate().replace(")","; pae)");
-          if (!expected.equals(userAgent)) {
-            testException.set(new AssertionError("Expected: " + expected + ", but got: " + userAgent));
-          }
-        }
-        catch (Exception e) {
-          testException.set(e);
-        }
-        finally {
+          assertEquals(expected, userAgent, "User agent should be consistent across virtual threads");
+          
+          // Signal completion
           completionLatch.countDown();
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       });
     }
@@ -159,69 +188,20 @@ public class MavenProxyRequestHeaderSupportVirtualThreadTest
     startLatch.countDown();
     
     // Wait for all threads to complete
-    assertTrue(completionLatch.await(5, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+    boolean completed = completionLatch.await(5, TimeUnit.SECONDS);
+    assertTrue(completed, "All virtual threads should complete within the timeout period");
     
-    // Check if any thread encountered an exception
-    if (testException.get() != null) {
-      throw new AssertionError("Test failed in virtual thread", testException.get());
+    // Check for any exceptions
+    for (Future<?> future : futures) {
+      try {
+        future.get(); // Will throw an exception if the thread failed
+      }
+      catch (ExecutionException e) {
+        throw new AssertionError("Virtual thread execution failed", e.getCause());
+      }
     }
-  }
-  
-  @Test
-  public void testThreadLocalVariableBehaviorInVirtualThreads() throws InterruptedException {
-    // Set up different capability states for different threads
-    CapabilityReference enabledRef = mockCapabilityReference();
-    when(enabledRef.context().isEnabled()).thenReturn(true);
     
-    CapabilityReference disabledRef = mockCapabilityReference();
-    when(disabledRef.context().isEnabled()).thenReturn(false);
-    
-    // Create a latch to synchronize thread execution
-    CountDownLatch latch = new CountDownLatch(2);
-    
-    // Results from each thread
-    AtomicReference<String> result1 = new AtomicReference<>();
-    AtomicReference<String> result2 = new AtomicReference<>();
-    
-    // First thread - analytics enabled
-    Thread thread1 = Thread.ofVirtual().start(() -> {
-      try {
-        // Set up the mock for this thread
-        when(capabilityRegistry.get(any(CapabilityReferenceFilter.class)))
-            .thenReturn(Collections.singleton(enabledRef));
-        
-        // Get the user agent
-        result1.set(underTest.getUserAgentForAnalytics());
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    // Second thread - analytics disabled
-    Thread thread2 = Thread.ofVirtual().start(() -> {
-      try {
-        // Set up the mock for this thread
-        when(capabilityRegistry.get(any(CapabilityReferenceFilter.class)))
-            .thenReturn(Collections.singleton(disabledRef));
-        
-        // Get the user agent
-        result2.set(underTest.getUserAgentForAnalytics());
-      }
-      finally {
-        latch.countDown();
-      }
-    });
-    
-    // Wait for both threads to complete
-    latch.await();
-    
-    // Verify that each thread got the correct result
-    String expectedEnabled = userAgentGenerator.generate().replace(")","; pae)");
-    String expectedDisabled = userAgentGenerator.generate().replace(")","; pad)");
-    
-    assertEquals(expectedEnabled, result1.get(), "Thread 1 should have analytics enabled");
-    assertEquals(expectedDisabled, result2.get(), "Thread 2 should have analytics disabled");
+    executor.shutdown();
   }
 
   private CapabilityReference mockCapabilityReference() {

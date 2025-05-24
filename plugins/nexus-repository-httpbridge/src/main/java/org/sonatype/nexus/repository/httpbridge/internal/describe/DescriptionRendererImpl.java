@@ -16,7 +16,7 @@ import java.net.URL;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -45,8 +45,11 @@ public class DescriptionRendererImpl
 {
   private static final String TEMPLATE_RESOURCE = "describeHtml.vm";
   
-  // Threshold for description size to use virtual threads (number of items)
-  private static final int LARGE_DESCRIPTION_THRESHOLD = 100;
+  // Threshold size for using Virtual Threads (in number of items)
+  private static final int VIRTUAL_THREAD_THRESHOLD = 100;
+  
+  // Timeout for Virtual Thread execution (in seconds)
+  private static final int VIRTUAL_THREAD_TIMEOUT = 30;
 
   private final TemplateHelper templateHelper;
 
@@ -57,10 +60,12 @@ public class DescriptionRendererImpl
   @Inject
   public DescriptionRendererImpl(final TemplateHelper templateHelper) {
     this.templateHelper = checkNotNull(templateHelper);
-    // Use JsonMapper.builder() for Java 21 compatibility
+    
+    // Use JsonMapper.builder() instead of direct ObjectMapper instantiation for Java 21 compatibility
     objectMapper = JsonMapper.builder()
         .enable(SerializationFeature.INDENT_OUTPUT)
         .build();
+        
     template = getClass().getResource(TEMPLATE_RESOURCE);
     checkNotNull(template);
   }
@@ -76,64 +81,60 @@ public class DescriptionRendererImpl
 
   @Override
   public String renderJson(final Description description) {
-    // For large descriptions, use virtual threads to avoid blocking platform threads
-    if (description.getItems().size() > LARGE_DESCRIPTION_THRESHOLD) {
+    // For large descriptions, use Virtual Threads to avoid blocking platform threads
+    if (description.getItems().size() > VIRTUAL_THREAD_THRESHOLD) {
       return renderJsonWithVirtualThread(description);
     } else {
-      return renderJsonDirectly(description);
+      return renderJsonDirect(description);
     }
   }
   
   /**
-   * Renders JSON directly on the current thread for smaller descriptions.
+   * Renders JSON directly on the current thread.
    *
    * @param description the description to render
    * @return the JSON string representation
    */
-  private String renderJsonDirectly(final Description description) {
+  private String renderJsonDirect(final Description description) {
     try {
       return objectMapper.writeValueAsString(description);
     } catch (Exception e) {
-      // Using Java 21 pattern matching for exceptions
-      switch (e) {
-        case JsonProcessingException jpe -> {
+      // Use pattern matching for more elegant exception handling
+      return switch (e) {
+        case JsonProcessingException jpe -> 
           throw new RuntimeException("Error processing JSON: " + jpe.getMessage(), jpe);
-        }
-        case IllegalArgumentException iae -> {
+        case IllegalArgumentException iae -> 
           throw new RuntimeException("Invalid argument for JSON serialization: " + iae.getMessage(), iae);
-        }
-        default -> {
-          throw new RuntimeException("Unexpected error during JSON serialization", e);
-        }
-      }
+        default -> 
+          throw new RuntimeException("Unexpected error during JSON serialization: " + e.getMessage(), e);
+      };
     }
   }
   
   /**
-   * Renders JSON using a virtual thread for larger descriptions to avoid blocking platform threads.
-   * This is particularly useful for I/O-bound operations with large data structures.
+   * Renders JSON using a Virtual Thread for large descriptions to avoid blocking platform threads.
    *
    * @param description the description to render
    * @return the JSON string representation
    */
   private String renderJsonWithVirtualThread(final Description description) {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<String> future = executor.submit(() -> objectMapper.writeValueAsString(description));
-      return future.get();
+      Future<String> future = executor.submit(() -> renderJsonDirect(description));
+      return future.get(VIRTUAL_THREAD_TIMEOUT, TimeUnit.SECONDS);
     } catch (Exception e) {
-      // Using Java 21 pattern matching for exceptions
-      switch (e) {
-        case ExecutionException ee when ee.getCause() instanceof JsonProcessingException -> {
-          throw new RuntimeException("Error processing JSON in virtual thread: " + ee.getCause().getMessage(), ee.getCause());
+      // Use pattern matching for more elegant exception handling
+      return switch (e) {
+        case java.util.concurrent.TimeoutException te -> 
+          throw new RuntimeException("JSON rendering timed out after " + VIRTUAL_THREAD_TIMEOUT + " seconds", te);
+        case java.util.concurrent.ExecutionException ee -> 
+          throw new RuntimeException("Error during JSON rendering: " + ee.getCause().getMessage(), ee.getCause());
+        case java.lang.InterruptedException ie -> {
+          Thread.currentThread().interrupt(); // Restore interrupted status
+          yield "JSON rendering was interrupted";
         }
-        case InterruptedException ie -> {
-          Thread.currentThread().interrupt(); // Preserve interrupt status
-          throw new RuntimeException("JSON rendering interrupted", ie);
-        }
-        default -> {
-          throw new RuntimeException("Unexpected error during JSON serialization in virtual thread", e);
-        }
-      }
+        default -> 
+          throw new RuntimeException("Unexpected error during JSON rendering: " + e.getMessage(), e);
+      };
     }
   }
 }

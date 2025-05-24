@@ -21,22 +21,19 @@ import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.apache.ibatis.executor.Executor;
 import org.apache.ibatis.mapping.MappedStatement;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link EntityExecutor}.
- */
 @ExtendWith(MockitoExtension.class)
 @VirtualThreadTestGroup
 public class EntityExecutorTest
@@ -55,109 +52,90 @@ public class EntityExecutorTest
   }
 
   @Test
-  void shouldCommitSuccessfully() throws SQLException {
+  void commitShouldDelegateToExecutor() throws SQLException {
     underTest.commit(true);
     verify(delegate).commit(true);
 
     doThrow(duplicateKeyException(), serializedAccessException(), missingStateException()).when(delegate).commit(true);
-    assertThrows(DuplicateKeyException.class, () -> underTest.commit(true));
-    assertThrows(SerializedAccessException.class, () -> underTest.commit(true));
-    assertThrows(SQLException.class, () -> underTest.commit(true));
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.commit(true));
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.commit(true));
+    Assertions.assertThrows(SQLException.class, () -> underTest.commit(true));
   }
 
   @Test
-  void shouldFlushStatementsSuccessfully() throws SQLException {
+  void flushStatementsShouldDelegateToExecutor() throws SQLException {
     underTest.flushStatements();
     verify(delegate).flushStatements();
 
     when(delegate.flushStatements()).thenThrow(duplicateKeyException(), serializedAccessException(), missingStateException());
-    assertThrows(DuplicateKeyException.class, () -> underTest.flushStatements());
-    assertThrows(SerializedAccessException.class, () -> underTest.flushStatements());
-    assertThrows(SQLException.class, () -> underTest.flushStatements());
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.flushStatements());
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.flushStatements());
+    Assertions.assertThrows(SQLException.class, () -> underTest.flushStatements());
   }
 
   @Test
-  void shouldQueryWith4ArgsSuccessfully() throws SQLException {
+  void query4ArgShouldDelegateToExecutor() throws SQLException {
     underTest.query(null, null, null, null);
     verify(delegate).query(null, null, null, null);
 
     when(delegate.query(null, null, null, null)).thenThrow(duplicateKeyException(), serializedAccessException(), missingStateException());
-    assertThrows(DuplicateKeyException.class, () -> underTest.query(null,  null, null, null));
-    assertThrows(SerializedAccessException.class, () -> underTest.query(null,  null, null, null));
-    assertThrows(SQLException.class, () -> underTest.query(null,  null, null, null));
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.query(null,  null, null, null));
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.query(null,  null, null, null));
+    Assertions.assertThrows(SQLException.class, () -> underTest.query(null,  null, null, null));
   }
 
   @Test
-  void shouldQueryWith6ArgsSuccessfully() throws SQLException {
+  void query6ArgShouldDelegateToExecutor() throws SQLException {
     underTest.query(null, null, null, null, null, null);
     verify(delegate).query(null, null, null, null, null, null);
 
     when(delegate.query(null, null, null, null, null, null)).thenThrow(duplicateKeyException(), serializedAccessException(), missingStateException());
-    assertThrows(DuplicateKeyException.class, () -> underTest.query(null, null, null, null, null, null));
-    assertThrows(SerializedAccessException.class, () -> underTest.query(null, null, null, null, null, null));
-    assertThrows(SQLException.class, () -> underTest.query(null, null, null, null, null, null));
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.query(null, null, null, null, null, null));
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.query(null, null, null, null, null, null));
+    Assertions.assertThrows(SQLException.class, () -> underTest.query(null, null, null, null, null, null));
   }
 
   @Test
-  void shouldQueryCursorSuccessfully() throws SQLException {
+  void queryCursorShouldDelegateToExecutor() throws SQLException {
     underTest.queryCursor(null, null, null);
     verify(delegate).queryCursor(null, null, null);
 
     when(delegate.queryCursor(null, null, null)).thenThrow(duplicateKeyException(), serializedAccessException(), missingStateException());
-    assertThrows(DuplicateKeyException.class, () -> underTest.queryCursor(null, null, null));
-    assertThrows(SerializedAccessException.class, () -> underTest.queryCursor(null, null, null));
-    assertThrows(SQLException.class, () -> underTest.queryCursor(null, null, null));
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.queryCursor(null, null, null));
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.queryCursor(null, null, null));
+    Assertions.assertThrows(SQLException.class, () -> underTest.queryCursor(null, null, null));
   }
 
   @Test
-  void shouldRollbackSuccessfully() throws SQLException {
+  void rollbackShouldDelegateToExecutor() throws SQLException {
     underTest.rollback(true);
     verify(delegate).rollback(true);
 
     doThrow(duplicateKeyException(), serializedAccessException(), missingStateException()).when(delegate).rollback(true);
-    assertThrows(DuplicateKeyException.class, () -> underTest.rollback(true));
-    assertThrows(SerializedAccessException.class, () -> underTest.rollback(true));
-    assertThrows(SQLException.class, () -> underTest.rollback(true));
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.rollback(true));
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.rollback(true));
+    Assertions.assertThrows(SQLException.class, () -> underTest.rollback(true));
   }
 
   @Test
-  void shouldUpdateSuccessfully() throws SQLException {
+  void updateShouldDelegateToExecutor() throws SQLException {
     MappedStatement ms = mock(MappedStatement.class);
     underTest.update(ms, null);
     verify(delegate).update(ms, null);
 
     when(delegate.update(ms, null)).thenThrow(duplicateKeyException(), serializedAccessException(), missingStateException());
-    assertThrows(DuplicateKeyException.class, () -> underTest.update(ms, null));
-    assertThrows(SerializedAccessException.class, () -> underTest.update(ms, null));
-    assertThrows(SQLException.class, () -> underTest.update(ms, null));
+    Assertions.assertThrows(DuplicateKeyException.class, () -> underTest.update(ms, null));
+    Assertions.assertThrows(SerializedAccessException.class, () -> underTest.update(ms, null));
+    Assertions.assertThrows(SQLException.class, () -> underTest.update(ms, null));
   }
 
   @Test
-  void shouldNotUpdateWhenFrozen() throws SQLException {
+  void updateShouldThrowFrozenExceptionWhenSystemIsFrozen() throws SQLException {
     MappedStatement ms = mock(MappedStatement.class);
     doThrow(new FrozenException("Frozen")).when(frozenChecker).checkFrozen(ms);
 
-    assertThrows(FrozenException.class, () -> underTest.update(ms, null));
+    Assertions.assertThrows(FrozenException.class, () -> underTest.update(ms, null));
     verify(delegate, never()).update(ms, null);
-  }
-  
-  @Test
-  void shouldWorkWithVirtualThreads() throws SQLException {
-    // Create a virtual thread to test EntityExecutor behavior
-    Thread.ofVirtual().name("virtual-thread-test").start(() -> {
-      try {
-        // Verify that operations work correctly in a virtual thread
-        underTest.commit(true);
-        verify(delegate).commit(true);
-        
-        // Test exception handling in virtual threads
-        doThrow(duplicateKeyException()).when(delegate).commit(true);
-        assertThrows(DuplicateKeyException.class, () -> underTest.commit(true));
-      }
-      catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    }).join();
   }
 
   private static SQLException duplicateKeyException() {

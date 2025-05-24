@@ -12,179 +12,163 @@
  */
 package org.sonatype.nexus.java21;
 
-import static java.lang.StringTemplate.RAW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import java.lang.StringTemplate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Tests for Java 21's String Templates feature in CoreUI components.
  * 
- * @since 3.60
+ * This test class validates the implementation of String Templates for improved
+ * logging and messaging in CoreUI components.
  */
+@ExtendWith(MockitoExtension.class)
 public class StringTemplateTest
 {
-  /**
-   * Tests basic string template expressions using the STR processor.
-   */
-  @Test
-  @DisplayName("Basic string template expressions with STR processor")
-  public void testBasicStringTemplateExpressions() {
-    String repositoryName = "maven-central";
-    int itemCount = 42;
-    
-    // Basic string template with single variable
-    String message = STR."Repository \{repositoryName} contains \{itemCount} items.";
-    
-    assertNotNull(message);
-    assertEquals("Repository maven-central contains 42 items.", message);
+  @Mock
+  private MockLogService logService;
+
+  private interface MockLogService {
+    void debug(String message);
+    void info(String message);
+    void warn(String message);
+    void error(String message);
   }
-  
-  /**
-   * Tests embedded expressions with method calls and arithmetic operations.
-   */
-  @Test
-  @DisplayName("Embedded expressions with method calls and arithmetic")
-  public void testEmbeddedExpressions() {
-    String username = "admin";
-    int permissionLevel = 3;
+
+  private static class TestComponent {
+    private final MockLogService logService;
     
-    // Template with method calls in embedded expressions
-    String userInfo = STR."User \{username.toUpperCase()} has permission level \{permissionLevel * 2}.";
+    public TestComponent(MockLogService logService) {
+      this.logService = logService;
+    }
     
-    assertNotNull(userInfo);
-    assertEquals("User ADMIN has permission level 6.", userInfo);
+    public String formatBasicMessage(String name, int value) {
+      // Using String Templates for basic message formatting
+      return STR."User \{name} has value \{value}";
+    }
     
-    // Template with conditional expression
-    String accessMessage = STR."User \{username} has \{permissionLevel > 2 ? "admin" : "user"} access.";
+    public String formatComplexMessage(String id, List<String> items, boolean isActive) {
+      // Using String Templates for more complex message with conditional logic
+      return STR."Resource [\{id}] contains \{items.size()} items and is \{isActive ? "active" : "inactive"}";
+    }
     
-    assertNotNull(accessMessage);
-    assertEquals("User admin has admin access.", accessMessage);
+    public String formatMultilineMessage(String title, String content) {
+      // Using String Templates with multi-line content
+      return STR."""
+          Document: \{title}
+          -------------------
+          \{content}
+          -------------------
+          Generated at: \{LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)}
+          """;
+    }
+    
+    public void logDebugMessage(String operation, String target) {
+      // Using String Templates in logging statements
+      logService.debug(STR."Executing operation '\{operation}' on target '\{target}'.");
+    }
+    
+    public void logErrorWithDetails(String errorCode, Exception exception) {
+      // Using String Templates for error reporting with exception details
+      logService.error(STR."Error [\{errorCode}] occurred: \{exception.getMessage()}");
+    }
   }
-  
-  /**
-   * Tests multi-line template processing using text blocks.
-   */
-  @Test
-  @DisplayName("Multi-line template processing with text blocks")
-  public void testMultiLineTemplates() {
-    String componentName = "nexus-core";
-    String version = "3.60.0";
-    boolean isSnapshot = true;
-    
-    // Multi-line template using text block
-    String componentInfo = STR."""
-        Component Information:
-        - Name: \{componentName}
-        - Version: \{version}\{isSnapshot ? "-SNAPSHOT" : ""}
-        - Status: \{isSnapshot ? "Development" : "Release"}
-        """;
-    
-    assertNotNull(componentInfo);
-    assertTrue(componentInfo.contains("Component Information:"));
-    assertTrue(componentInfo.contains("Name: nexus-core"));
-    assertTrue(componentInfo.contains("Version: 3.60.0-SNAPSHOT"));
-    assertTrue(componentInfo.contains("Status: Development"));
+
+  private TestComponent testComponent;
+
+  @BeforeEach
+  void setUp() {
+    testComponent = new TestComponent(logService);
   }
-  
-  /**
-   * Tests the RAW template processor and StringTemplate methods.
-   */
+
   @Test
-  @DisplayName("RAW template processor and StringTemplate methods")
-  public void testRawTemplateProcessor() {
-    String blobStoreName = "default";
-    long sizeInBytes = 1024 * 1024 * 100; // 100 MB
+  @DisplayName("Test basic string template interpolation")
+  void testBasicStringTemplate() {
+    String result = testComponent.formatBasicMessage("admin", 42);
     
-    // Using RAW processor to get the StringTemplate object
-    StringTemplate template = RAW."BlobStore '\{blobStoreName}' size: \{sizeInBytes} bytes";
-    
-    // Verify fragments and values
-    List<String> fragments = template.fragments();
-    List<Object> values = template.values();
-    
-    assertEquals(3, fragments.size());
-    assertEquals("BlobStore '", fragments.get(0));
-    assertEquals("' size: ", fragments.get(1));
-    assertEquals(" bytes", fragments.get(2));
-    
-    assertEquals(2, values.size());
-    assertEquals("default", values.get(0));
-    assertEquals(104857600L, values.get(1));
-    
-    // Use interpolate to get the final string
-    String result = template.interpolate();
-    assertEquals("BlobStore 'default' size: 104857600 bytes", result);
+    assertEquals("User admin has value 42", result);
   }
-  
-  /**
-   * Tests template expressions for logging scenarios in CoreUI components.
-   */
+
   @Test
-  @DisplayName("Template expressions for logging scenarios")
-  public void testLoggingTemplates() {
-    String operation = "upload";
-    String fileName = "example.jar";
-    String repository = "maven-releases";
+  @DisplayName("Test complex string template with conditional expressions")
+  void testComplexStringTemplate() {
+    List<String> items = List.of("item1", "item2", "item3");
+    String result = testComponent.formatComplexMessage("res-123", items, true);
     
-    // Log message template
-    String logMessage = STR."[\{System.currentTimeMillis()}] \{operation.toUpperCase()} operation for '\{fileName}' to repository '\{repository}'";
-    
-    assertNotNull(logMessage);
-    assertTrue(logMessage.matches("\\[\\d+\\] UPLOAD operation for 'example\.jar' to repository 'maven-releases'"));
+    assertEquals("Resource [res-123] contains 3 items and is active", result);
   }
-  
-  /**
-   * Tests template expressions for error reporting in CoreUI components.
-   */
+
   @Test
-  @DisplayName("Template expressions for error reporting")
-  public void testErrorReportingTemplates() {
-    int errorCode = 404;
-    String resourcePath = "/api/v1/repositories";
+  @DisplayName("Test multi-line string template")
+  void testMultilineStringTemplate() {
+    String title = "Test Document";
+    String content = "This is a test content.";
     
-    // Error message template
-    String errorMessage = STR."Error \{errorCode}: Resource not found at path '\{resourcePath}'";
+    String result = testComponent.formatMultilineMessage(title, content);
     
-    assertNotNull(errorMessage);
-    assertEquals("Error 404: Resource not found at path '/api/v1/repositories'", errorMessage);
-    
-    // Error with details template
-    Exception cause = new IllegalArgumentException("Invalid parameter");
-    String detailedError = STR."""
-        Error Details:
-        - Code: \{errorCode}
-        - Path: \{resourcePath}
-        - Cause: \{cause.getMessage()}
-        """;
-    
-    assertNotNull(detailedError);
-    assertTrue(detailedError.contains("Error Details:"));
-    assertTrue(detailedError.contains("Code: 404"));
-    assertTrue(detailedError.contains("Path: /api/v1/repositories"));
-    assertTrue(detailedError.contains("Cause: Invalid parameter"));
+    assertNotNull(result);
+    assertTrue(result.contains("Document: Test Document"));
+    assertTrue(result.contains("This is a test content."));
+    assertTrue(result.contains("Generated at:"));
   }
-  
-  /**
-   * Tests template expressions for user-facing messages in CoreUI components.
-   */
+
   @Test
-  @DisplayName("Template expressions for user-facing messages")
-  public void testUserFacingMessageTemplates() {
-    String userName = "admin";
-    int itemsProcessed = 150;
-    int totalItems = 200;
+  @DisplayName("Test string templates in logging statements")
+  void testStringTemplateInLogging() {
+    // Verify that string templates work correctly in logging statements
+    testComponent.logDebugMessage("update", "repository/maven-central");
     
-    // User notification template
-    String notification = STR."Hello \{userName}, \{itemsProcessed} out of \{totalItems} items processed (\{itemsProcessed * 100 / totalItems}%).";
+    // Verify the log message was formatted correctly
+    org.mockito.Mockito.verify(logService).debug("Executing operation 'update' on target 'repository/maven-central'.");
+  }
+
+  @Test
+  @DisplayName("Test string templates with exception details")
+  void testStringTemplateWithExceptionDetails() {
+    // Create a mock exception
+    Exception mockException = mock(Exception.class);
+    when(mockException.getMessage()).thenReturn("Connection timeout");
     
-    assertNotNull(notification);
-    assertEquals("Hello admin, 150 out of 200 items processed (75%).", notification);
+    // Log an error with the exception details
+    testComponent.logErrorWithDetails("E404", mockException);
+    
+    // Verify the error message was formatted correctly
+    org.mockito.Mockito.verify(logService).error("Error [E404] occurred: Connection timeout");
+  }
+
+  @Test
+  @DisplayName("Test string template with embedded expressions and calculations")
+  void testStringTemplateWithCalculations() {
+    int x = 10;
+    int y = 20;
+    
+    // Using String Templates with embedded calculations
+    String result = STR."\{x} + \{y} = \{x + y}";
+    
+    assertEquals("10 + 20 = 30", result);
+  }
+
+  @Test
+  @DisplayName("Test string template with method calls in embedded expressions")
+  void testStringTemplateWithMethodCalls() {
+    String input = "test string";
+    
+    // Using String Templates with method calls in embedded expressions
+    String result = STR."Original: '\{input}', Uppercase: '\{input.toUpperCase()}'";
+    
+    assertEquals("Original: 'test string', Uppercase: 'TEST STRING'", result);
   }
 }

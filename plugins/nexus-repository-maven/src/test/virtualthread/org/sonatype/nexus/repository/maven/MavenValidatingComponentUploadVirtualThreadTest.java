@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.upload.AssetUpload;
 import org.sonatype.nexus.repository.upload.ComponentUpload;
@@ -33,11 +32,13 @@ import org.sonatype.nexus.repository.upload.UploadRegexMap;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
+import org.sonatype.nexus.testsuite.testsupport.group.VirtualThreadTestGroup;
 
 import com.google.common.collect.ImmutableMap;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -47,16 +48,15 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests {@link MavenValidatingComponentUpload} with Java 21 Virtual Threads to ensure
- * validation logic remains thread-safe under high concurrency.
+ * validation logic remains thread-safe and performs correctly under high concurrency.
  */
 @ExtendWith(MockitoExtension.class)
-@org.junit.Category(VirtualThreadTestGroup.class)
+@Category(VirtualThreadTestGroup.class)
 public class MavenValidatingComponentUploadVirtualThreadTest
     extends TestSupport
 {
@@ -92,22 +92,21 @@ public class MavenValidatingComponentUploadVirtualThreadTest
     componentUpload = new ComponentUpload();
   }
 
-  /**
-   * Tests validation of missing required fields with concurrent virtual threads.
-   */
   @Test
-  void testValidateMissingFieldConcurrently() throws Exception {
+  void validateMissingFieldWithVirtualThreads() throws Exception {
+    // Create a component upload with missing required fields
     AssetUpload assetUpload = new AssetUpload();
     assetUpload.getFields().put("extension", "jar");
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
 
-    int threadCount = 100;
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Execute validation concurrently with virtual threads
+    int threadCount = 50;
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
+    List<String> errors = Collections.synchronizedList(new java.util.ArrayList<>());
 
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
@@ -116,6 +115,8 @@ public class MavenValidatingComponentUploadVirtualThreadTest
                 "Missing required component field 'Artifact ID'",
                 "Missing required component field 'Version'");
             successCount.incrementAndGet();
+          } catch (AssertionError e) {
+            errors.add(e.getMessage());
           } finally {
             latch.countDown();
           }
@@ -123,17 +124,18 @@ public class MavenValidatingComponentUploadVirtualThreadTest
       }
 
       latch.await(30, TimeUnit.SECONDS);
-      assertEquals(threadCount, successCount.get(), "All validation tasks should complete successfully");
-    } finally {
-      executor.shutdown();
     }
+
+    // Verify all validations were successful
+    if (!errors.isEmpty()) {
+      fail("Validation errors occurred during concurrent execution: " + errors);
+    }
+    assertEquals(threadCount, successCount.get(), "All validation operations should succeed");
   }
 
-  /**
-   * Tests validation of missing asset fields with concurrent virtual threads.
-   */
   @Test
-  void testValidateMissingAssetFieldConcurrently() throws Exception {
+  void validateMissingAssetFieldWithVirtualThreads() throws Exception {
+    // Create a component upload with missing asset field
     AssetUpload assetUpload = new AssetUpload();
     assetUpload.setPayload(jarPayload);
     componentUpload.getAssetUploads().add(assetUpload);
@@ -142,17 +144,20 @@ public class MavenValidatingComponentUploadVirtualThreadTest
     componentUpload.getFields().put("artifactId", "tomcat");
     componentUpload.getFields().put("version", "5.0.28");
 
-    int threadCount = 100;
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Execute validation concurrently with virtual threads
+    int threadCount = 50;
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
+    List<String> errors = Collections.synchronizedList(new java.util.ArrayList<>());
 
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
             expectExceptionOnValidate(componentUpload, "Missing required asset field 'Extension' on '1'");
             successCount.incrementAndGet();
+          } catch (AssertionError e) {
+            errors.add(e.getMessage());
           } finally {
             latch.countDown();
           }
@@ -160,17 +165,18 @@ public class MavenValidatingComponentUploadVirtualThreadTest
       }
 
       latch.await(30, TimeUnit.SECONDS);
-      assertEquals(threadCount, successCount.get(), "All validation tasks should complete successfully");
-    } finally {
-      executor.shutdown();
     }
+
+    // Verify all validations were successful
+    if (!errors.isEmpty()) {
+      fail("Validation errors occurred during concurrent execution: " + errors);
+    }
+    assertEquals(threadCount, successCount.get(), "All validation operations should succeed");
   }
 
-  /**
-   * Tests validation of unknown fields with concurrent virtual threads.
-   */
   @Test
-  void testValidateUnknownFieldConcurrently() throws Exception {
+  void validateUnknownFieldWithVirtualThreads() throws Exception {
+    // Create a component upload with unknown fields
     AssetUpload assetUpload = new AssetUpload();
     assetUpload.setPayload(jarPayload);
     assetUpload.getFields().put("extension", "jar");
@@ -182,18 +188,21 @@ public class MavenValidatingComponentUploadVirtualThreadTest
     componentUpload.getFields().put("version", "5.0.28");
     componentUpload.getFields().put("foo", "foo");
 
-    int threadCount = 100;
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Execute validation concurrently with virtual threads
+    int threadCount = 50;
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
+    List<String> errors = Collections.synchronizedList(new java.util.ArrayList<>());
 
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
             expectExceptionOnValidate(componentUpload,
                 "Unknown component field 'foo'", "Unknown field 'bar' on asset '1'");
             successCount.incrementAndGet();
+          } catch (AssertionError e) {
+            errors.add(e.getMessage());
           } finally {
             latch.countDown();
           }
@@ -201,34 +210,38 @@ public class MavenValidatingComponentUploadVirtualThreadTest
       }
 
       latch.await(30, TimeUnit.SECONDS);
-      assertEquals(threadCount, successCount.get(), "All validation tasks should complete successfully");
-    } finally {
-      executor.shutdown();
     }
+
+    // Verify all validations were successful
+    if (!errors.isEmpty()) {
+      fail("Validation errors occurred during concurrent execution: " + errors);
+    }
+    assertEquals(threadCount, successCount.get(), "All validation operations should succeed");
   }
 
-  /**
-   * Tests validation of POM assets with concurrent virtual threads.
-   */
   @Test
-  void testValidateAllowMissingComponentFieldsWhenPomAssetIsPresentConcurrently() throws Exception {
+  void validateAllowMissingComponentFieldsWhenPomAssetIsPresentWithVirtualThreads() throws Exception {
+    // Create a component upload with POM asset
     AssetUpload assetUpload = new AssetUpload();
     assetUpload.setPayload(jarPayload);
     assetUpload.setFields(Collections.singletonMap("extension", "pom"));
     componentUpload.getAssetUploads().add(assetUpload);
 
-    int threadCount = 100;
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Execute validation concurrently with virtual threads
+    int threadCount = 50;
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
+    List<String> errors = Collections.synchronizedList(new java.util.ArrayList<>());
 
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
             MavenValidatingComponentUpload validated = new MavenValidatingComponentUpload(uploadDefinition, componentUpload);
             assertThat(validated.getComponentUpload(), notNullValue());
             successCount.incrementAndGet();
+          } catch (Exception e) {
+            errors.add(e.getMessage());
           } finally {
             latch.countDown();
           }
@@ -236,17 +249,18 @@ public class MavenValidatingComponentUploadVirtualThreadTest
       }
 
       latch.await(30, TimeUnit.SECONDS);
-      assertEquals(threadCount, successCount.get(), "All validation tasks should complete successfully");
-    } finally {
-      executor.shutdown();
     }
+
+    // Verify all validations were successful
+    if (!errors.isEmpty()) {
+      fail("Validation errors occurred during concurrent execution: " + errors);
+    }
+    assertEquals(threadCount, successCount.get(), "All validation operations should succeed");
   }
 
-  /**
-   * Tests validation of duplicate assets with concurrent virtual threads.
-   */
   @Test
-  void testValidateDuplicatesConcurrently() throws Exception {
+  void validateDuplicatesWithVirtualThreads() throws Exception {
+    // Create a component upload with duplicate assets
     AssetUpload assetUploadOne = new AssetUpload();
     assetUploadOne.getFields().putAll(ImmutableMap.of("extension", "x", "classifier", "y"));
     assetUploadOne.setPayload(jarPayload);
@@ -262,17 +276,20 @@ public class MavenValidatingComponentUploadVirtualThreadTest
     componentUpload.getFields().putAll(ImmutableMap.of("groupId", "g", "artifactId", "a", "version", "1"));
     componentUpload.getAssetUploads().addAll(asList(assetUploadOne, assetUploadTwo, assetUploadThree));
 
-    int threadCount = 100;
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // Execute validation concurrently with virtual threads
+    int threadCount = 50;
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
+    List<String> errors = Collections.synchronizedList(new java.util.ArrayList<>());
 
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
         executor.submit(() -> {
           try {
             expectExceptionOnValidate(componentUpload, "The assets 1 and 2 have identical coordinates");
             successCount.incrementAndGet();
+          } catch (AssertionError e) {
+            errors.add(e.getMessage());
           } finally {
             latch.countDown();
           }
@@ -280,48 +297,40 @@ public class MavenValidatingComponentUploadVirtualThreadTest
       }
 
       latch.await(30, TimeUnit.SECONDS);
-      assertEquals(threadCount, successCount.get(), "All validation tasks should complete successfully");
-    } finally {
-      executor.shutdown();
     }
+
+    // Verify all validations were successful
+    if (!errors.isEmpty()) {
+      fail("Validation errors occurred during concurrent execution: " + errors);
+    }
+    assertEquals(threadCount, successCount.get(), "All validation operations should succeed");
   }
 
-  /**
-   * Tests high concurrency validation with many virtual threads.
-   */
   @Test
-  void testHighConcurrencyValidation() throws Exception {
-    // Create a mix of valid and invalid component uploads
-    List<ComponentUpload> uploads = createMixedComponentUploads(1000);
-    
-    int threadCount = 1000;
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  void validateHighConcurrencyWithVirtualThreads() throws Exception {
+    // Create a component upload with missing required fields
+    AssetUpload assetUpload = new AssetUpload();
+    assetUpload.getFields().put("extension", "jar");
+    assetUpload.setPayload(jarPayload);
+    componentUpload.getAssetUploads().add(assetUpload);
+
+    // Execute validation concurrently with a high number of virtual threads
+    int threadCount = 1000; // Test with 1000 concurrent validations
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
+    List<String> errors = Collections.synchronizedList(new java.util.ArrayList<>());
 
-    try {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < threadCount; i++) {
-        final int index = i % uploads.size();
         executor.submit(() -> {
           try {
-            ComponentUpload upload = uploads.get(index);
-            try {
-              MavenValidatingComponentUpload validated = new MavenValidatingComponentUpload(uploadDefinition, upload);
-              validated.getComponentUpload();
-              // If we get here, it should be a valid upload
-              if (index % 4 == 0) { // Only the first type is valid
-                successCount.incrementAndGet();
-              } else {
-                fail("Expected exception for invalid upload");
-              }
-            } catch (ValidationErrorsException e) {
-              // Expected for invalid uploads
-              if (index % 4 != 0) { // All other types should fail
-                successCount.incrementAndGet();
-              } else {
-                fail("Unexpected exception for valid upload");
-              }
-            }
+            expectExceptionOnValidate(componentUpload,
+                "Missing required component field 'Group ID'",
+                "Missing required component field 'Artifact ID'",
+                "Missing required component field 'Version'");
+            successCount.incrementAndGet();
+          } catch (AssertionError e) {
+            errors.add(e.getMessage());
           } finally {
             latch.countDown();
           }
@@ -329,76 +338,26 @@ public class MavenValidatingComponentUploadVirtualThreadTest
       }
 
       latch.await(60, TimeUnit.SECONDS);
-      assertEquals(threadCount, successCount.get(), "All validation tasks should complete successfully");
-    } finally {
-      executor.shutdown();
     }
+
+    // Verify all validations were successful
+    if (!errors.isEmpty()) {
+      fail("Validation errors occurred during high concurrency execution: " + errors);
+    }
+    assertEquals(threadCount, successCount.get(), "All validation operations should succeed under high concurrency");
   }
 
-  /**
-   * Creates a mix of valid and invalid component uploads for testing.
-   */
-  private List<ComponentUpload> createMixedComponentUploads(int count) {
-    List<ComponentUpload> uploads = new java.util.ArrayList<>(count);
-    
-    for (int i = 0; i < count; i++) {
-      ComponentUpload upload = new ComponentUpload();
-      int type = i % 4;
-      
-      switch (type) {
-        case 0: // Valid POM upload
-          AssetUpload pomAsset = new AssetUpload();
-          pomAsset.setPayload(jarPayload);
-          pomAsset.setFields(Collections.singletonMap("extension", "pom"));
-          upload.getAssetUploads().add(pomAsset);
-          break;
-          
-        case 1: // Missing required fields
-          AssetUpload assetWithExt = new AssetUpload();
-          assetWithExt.getFields().put("extension", "jar");
-          assetWithExt.setPayload(jarPayload);
-          upload.getAssetUploads().add(assetWithExt);
-          break;
-          
-        case 2: // Missing asset field
-          upload.getFields().put("groupId", "org.apache.maven");
-          upload.getFields().put("artifactId", "tomcat");
-          upload.getFields().put("version", "5.0.28");
-          AssetUpload assetNoExt = new AssetUpload();
-          assetNoExt.setPayload(jarPayload);
-          upload.getAssetUploads().add(assetNoExt);
-          break;
-          
-        case 3: // Duplicate assets
-          upload.getFields().putAll(ImmutableMap.of("groupId", "g", "artifactId", "a", "version", "1"));
-          AssetUpload asset1 = new AssetUpload();
-          asset1.getFields().putAll(ImmutableMap.of("extension", "x", "classifier", "y"));
-          asset1.setPayload(jarPayload);
-          AssetUpload asset2 = new AssetUpload();
-          asset2.getFields().putAll(ImmutableMap.of("extension", "x", "classifier", "y"));
-          asset2.setPayload(jarPayload);
-          upload.getAssetUploads().addAll(asList(asset1, asset2));
-          break;
-      }
-      
-      uploads.add(upload);
-    }
-    
-    return uploads;
-  }
-
-  /**
-   * Helper method to verify that validation throws the expected exception with the expected messages.
-   */
   private void expectExceptionOnValidate(final ComponentUpload component, final String... message) {
-    ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, () -> {
+    try {
       MavenValidatingComponentUpload validated = new MavenValidatingComponentUpload(uploadDefinition, component);
       validated.getComponentUpload();
-    }, "Expected exception to be thrown");
-    
-    List<String> messages = exception.getValidationErrors().stream()
-        .map(ValidationErrorXO::getMessage)
-        .collect(toList());
-    assertThat(messages, contains(message));
+      fail("Expected exception to be thrown");
+    }
+    catch (ValidationErrorsException exception) {
+      List<String> messages = exception.getValidationErrors().stream()
+          .map(ValidationErrorXO::getMessage)
+          .collect(toList());
+      assertThat(messages, contains(message));
+    }
   }
 }

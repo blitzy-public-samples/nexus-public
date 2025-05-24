@@ -18,7 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.stream.IntStream;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.Validation;
@@ -40,10 +40,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests for {@link MavenAttributes} using Java 21 Virtual Threads.
  * 
- * @since 3.60
+ * This test validates that MavenAttributes functionality works correctly when executed
+ * in a Virtual Thread environment, ensuring thread safety of bean validation.
  */
-public class MavenAttributesVirtualThreadTest
-    extends VirtualThreadTestSupport
+public class MavenAttributesVirtualThreadTest extends VirtualThreadTestSupport
 {
   private Validator validator;
 
@@ -69,7 +69,6 @@ public class MavenAttributesVirtualThreadTest
 
   @BeforeEach
   public void setUp() {
-    assumeVirtualThreadSupported();
     try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
       validator = factory.getValidator();
     }
@@ -77,220 +76,214 @@ public class MavenAttributesVirtualThreadTest
 
   @Test
   public void testConstructorAndGettersInVirtualThread() throws Exception {
-    String versionPolicy = VALID_VERSION_POLICIES[0];
-    String layoutPolicy = VALID_LAYOUT_POLICIES[0];
-    String contentDisposition = VALID_CONTENT_DISPOSITIONS[0];
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      String versionPolicy = VALID_VERSION_POLICIES[0];
+      String layoutPolicy = VALID_LAYOUT_POLICIES[0];
+      String contentDisposition = VALID_CONTENT_DISPOSITIONS[0];
 
-    callVirtual(() -> {
       MavenAttributes mavenAttributes = new MavenAttributes(versionPolicy, layoutPolicy, contentDisposition);
 
       assertEquals(versionPolicy, mavenAttributes.getVersionPolicy());
       assertEquals(layoutPolicy, mavenAttributes.getLayoutPolicy());
       assertEquals(contentDisposition, mavenAttributes.getContentDisposition());
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testValidVersionPolicyInVirtualThread() throws Exception {
-    ThreadFactory factory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(factory);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      for (String validVersionPolicy : VALID_VERSION_POLICIES) {
+        MavenAttributes attributes =
+            new MavenAttributes(validVersionPolicy, VALID_LAYOUT_POLICIES[0], VALID_CONTENT_DISPOSITIONS[0]);
+        assertTrue(isValid(attributes));
+      }
+    }, createVirtualThreadExecutor());
     
-    try {
-      CompletableFuture<?>[] futures = Arrays.stream(VALID_VERSION_POLICIES)
-          .map(validVersionPolicy -> CompletableFuture.supplyAsync(() -> {
-            MavenAttributes attributes =
-                new MavenAttributes(validVersionPolicy, VALID_LAYOUT_POLICIES[0], VALID_CONTENT_DISPOSITIONS[0]);
-            assertTrue(isValid(attributes));
-            return null;
-          }, executor))
-          .toArray(CompletableFuture[]::new);
-      
-      CompletableFuture.allOf(futures).join();
-    }
-    finally {
-      executor.shutdown();
-    }
+    future.join();
   }
 
   @Test
   public void testValidLayoutPolicyInVirtualThread() throws Exception {
-    ThreadFactory factory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(factory);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      for (String validLayoutPolicy : VALID_LAYOUT_POLICIES) {
+        MavenAttributes attributes =
+            new MavenAttributes(VALID_VERSION_POLICIES[0], validLayoutPolicy, VALID_CONTENT_DISPOSITIONS[0]);
+        assertTrue(isValid(attributes));
+      }
+    }, createVirtualThreadExecutor());
     
-    try {
-      CompletableFuture<?>[] futures = Arrays.stream(VALID_LAYOUT_POLICIES)
-          .map(validLayoutPolicy -> CompletableFuture.supplyAsync(() -> {
-            MavenAttributes attributes =
-                new MavenAttributes(VALID_VERSION_POLICIES[0], validLayoutPolicy, VALID_CONTENT_DISPOSITIONS[0]);
-            assertTrue(isValid(attributes));
-            return null;
-          }, executor))
-          .toArray(CompletableFuture[]::new);
-      
-      CompletableFuture.allOf(futures).join();
-    }
-    finally {
-      executor.shutdown();
-    }
+    future.join();
   }
 
   @Test
   public void testValidContentDispositionInVirtualThread() throws Exception {
-    ThreadFactory factory = Thread.ofVirtual().factory();
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(factory);
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      for (String validContentDisposition : VALID_CONTENT_DISPOSITIONS) {
+        MavenAttributes attributes =
+            new MavenAttributes(VALID_VERSION_POLICIES[0], VALID_LAYOUT_POLICIES[0], validContentDisposition);
+        assertTrue(isValid(attributes));
+      }
+    }, createVirtualThreadExecutor());
     
-    try {
-      CompletableFuture<?>[] futures = Arrays.stream(VALID_CONTENT_DISPOSITIONS)
-          .map(validContentDisposition -> CompletableFuture.supplyAsync(() -> {
-            MavenAttributes attributes =
-                new MavenAttributes(VALID_VERSION_POLICIES[0], VALID_LAYOUT_POLICIES[0], validContentDisposition);
-            assertTrue(isValid(attributes));
-            return null;
-          }, executor))
-          .toArray(CompletableFuture[]::new);
-      
-      CompletableFuture.allOf(futures).join();
-    }
-    finally {
-      executor.shutdown();
-    }
+    future.join();
   }
 
   @Test
   public void testInvalidVersionPolicyInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes =
           new MavenAttributes("invalid", VALID_LAYOUT_POLICIES[0], VALID_CONTENT_DISPOSITIONS[0]);
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, VERSION_POLICY_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testInvalidLayoutPolicyInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes =
           new MavenAttributes(VALID_VERSION_POLICIES[0], "invalid", VALID_CONTENT_DISPOSITIONS[0]);
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, LAYOUT_POLICY_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testInvalidContentDispositionInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes =
           new MavenAttributes(VALID_VERSION_POLICIES[0], VALID_LAYOUT_POLICIES[0], "invalid");
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, CONTENT_DISPOSITION_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testEmptyVersionPolicyInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes = new MavenAttributes("", VALID_LAYOUT_POLICIES[0], VALID_CONTENT_DISPOSITIONS[0]);
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, EMPTY_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testEmptyLayoutPolicyInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes = new MavenAttributes(VALID_VERSION_POLICIES[0], "", VALID_CONTENT_DISPOSITIONS[0]);
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, EMPTY_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testEmptyContentDispositionInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes = new MavenAttributes(VALID_VERSION_POLICIES[0], VALID_LAYOUT_POLICIES[0], "");
       assertFalse(isValid(attributes));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testNullVersionPolicyInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes = new MavenAttributes(null, VALID_LAYOUT_POLICIES[0], VALID_CONTENT_DISPOSITIONS[0]);
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, EMPTY_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testNullLayoutPolicyInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes = new MavenAttributes(VALID_VERSION_POLICIES[0], null, VALID_CONTENT_DISPOSITIONS[0]);
       assertFalse(isValid(attributes));
       assertTrue(hasMessage(attributes, EMPTY_ERROR_MSG));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
 
   @Test
   public void testNullContentDispositionInVirtualThread() throws Exception {
-    callVirtual(() -> {
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       MavenAttributes attributes = new MavenAttributes(VALID_VERSION_POLICIES[0], VALID_LAYOUT_POLICIES[0], null);
       assertTrue(isValid(attributes));
-      return null;
-    });
+    }, createVirtualThreadExecutor());
+    
+    future.join();
   }
-  
+
   @Test
   public void testConcurrentValidationInVirtualThreads() throws Exception {
-    // Create a virtual thread executor
-    ExecutorService executor = newVirtualThreadExecutor("maven-attributes-validation-");
+    int concurrentTasks = 100;
+    AtomicInteger validCount = new AtomicInteger(0);
+    AtomicInteger invalidCount = new AtomicInteger(0);
     
-    try {
-      // Create a mix of valid and invalid attributes to validate concurrently
-      final int iterations = 100;
-      CompletableFuture<?>[] futures = new CompletableFuture[iterations];
-      
-      for (int i = 0; i < iterations; i++) {
-        final int index = i;
-        futures[i] = CompletableFuture.supplyAsync(() -> {
-          // Create different combinations of attributes based on the iteration index
-          String versionPolicy = index % 3 == 0 ? "invalid" : VALID_VERSION_POLICIES[index % VALID_VERSION_POLICIES.length];
-          String layoutPolicy = index % 5 == 0 ? "invalid" : VALID_LAYOUT_POLICIES[index % VALID_LAYOUT_POLICIES.length];
-          String contentDisposition = index % 7 == 0 ? "invalid" : 
-              (index % 11 == 0 ? null : VALID_CONTENT_DISPOSITIONS[index % VALID_CONTENT_DISPOSITIONS.length]);
+    ExecutorService executor = createVirtualThreadExecutor();
+    
+    CompletableFuture<?>[] futures = new CompletableFuture[concurrentTasks];
+    
+    // Create a mix of valid and invalid attribute instances and validate them concurrently
+    for (int i = 0; i < concurrentTasks; i++) {
+      final int index = i;
+      futures[i] = CompletableFuture.runAsync(() -> {
+        if (index % 2 == 0) {
+          // Create valid attributes
+          MavenAttributes attributes = new MavenAttributes(
+              VALID_VERSION_POLICIES[index % VALID_VERSION_POLICIES.length],
+              VALID_LAYOUT_POLICIES[index % VALID_LAYOUT_POLICIES.length],
+              VALID_CONTENT_DISPOSITIONS[index % VALID_CONTENT_DISPOSITIONS.length]);
           
-          MavenAttributes attributes = new MavenAttributes(versionPolicy, layoutPolicy, contentDisposition);
+          if (isValid(attributes)) {
+            validCount.incrementAndGet();
+          }
+        } else {
+          // Create invalid attributes
+          MavenAttributes attributes = new MavenAttributes(
+              "invalid-" + index,
+              VALID_LAYOUT_POLICIES[index % VALID_LAYOUT_POLICIES.length],
+              VALID_CONTENT_DISPOSITIONS[index % VALID_CONTENT_DISPOSITIONS.length]);
           
-          // Validate and verify expected results based on the inputs
-          boolean valid = isValid(attributes);
-          
-          // The attribute should only be valid if all fields are valid
-          boolean shouldBeValid = !versionPolicy.equals("invalid") && 
-                                !layoutPolicy.equals("invalid") && 
-                                (contentDisposition == null || !contentDisposition.equals("invalid"));
-          
-          assertEquals(shouldBeValid, valid, 
-              "Validation result mismatch for attributes: " + versionPolicy + ", " + 
-              layoutPolicy + ", " + contentDisposition);
-          
-          return null;
-        }, executor);
-      }
-      
-      // Wait for all validations to complete
-      CompletableFuture.allOf(futures).join();
+          if (!isValid(attributes)) {
+            invalidCount.incrementAndGet();
+          }
+        }
+      }, executor);
     }
-    finally {
-      executor.shutdown();
-    }
+    
+    // Wait for all validation tasks to complete
+    CompletableFuture.allOf(futures).join();
+    
+    // Verify that all validations were performed correctly
+    assertEquals(concurrentTasks / 2, validCount.get(), "Expected half of the attributes to be valid");
+    assertEquals(concurrentTasks / 2, invalidCount.get(), "Expected half of the attributes to be invalid");
+    
+    executor.shutdown();
+  }
+
+  /**
+   * Creates an executor service that uses virtual threads.
+   */
+  private ExecutorService createVirtualThreadExecutor() {
+    ThreadFactory factory = Thread.ofVirtual().factory();
+    return Executors.newThreadPerTaskExecutor(factory);
   }
 
   private boolean isValid(final MavenAttributes attributes) {

@@ -17,16 +17,16 @@ import java.util.function.Consumer;
 
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemDeletedEvent;
-import org.sonatype.nexus.logging.task.TaskLogging;
 
-import static java.lang.StringTemplate.STR;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Implementation of {@link CapabilityStorageItemDeletedEvent} optimized for Java 21.
+ * Implementation of {@link CapabilityStorageItemDeletedEvent} that leverages Java 21 features
+ * for improved performance and concurrency.
  * <p>
- * This implementation leverages Virtual Threads for asynchronous event processing,
- * providing non-blocking execution for capability deletion events. It uses Java 21
- * features like pattern matching, string templates, and the enhanced concurrency model.
+ * This implementation uses Virtual Threads for asynchronous event processing, which provides
+ * better scalability for I/O-bound operations without consuming significant system resources.
  *
  * @since 3.60
  */
@@ -34,6 +34,8 @@ public class CapabilityStorageItemDeletedEventImpl
     extends CapabilityStorageItemEventSupport
     implements CapabilityStorageItemDeletedEvent
 {
+  private static final Logger log = LoggerFactory.getLogger(CapabilityStorageItemDeletedEventImpl.class);
+
   /**
    * Default constructor for deserialization.
    */
@@ -42,8 +44,9 @@ public class CapabilityStorageItemDeletedEventImpl
   }
 
   /**
-   * Constructs a new deleted event from the given capability storage item data.
-   * Uses pattern matching for improved type safety.
+   * Constructs a new deleted event instance with the provided capability storage item data.
+   * <p>
+   * Uses pattern matching for improved type safety and readability.
    *
    * @param item the capability storage item data
    */
@@ -52,23 +55,32 @@ public class CapabilityStorageItemDeletedEventImpl
   }
   
   /**
-   * Processes the deletion event asynchronously using a Virtual Thread.
-   * This method provides a specialized implementation for deletion events,
-   * with appropriate logging and error handling.
+   * Processes this deletion event asynchronously using a virtual thread.
+   * <p>
+   * This method leverages Java 21 Virtual Threads for improved performance with I/O-bound operations
+   * without consuming significant system resources. It extends the base implementation with
+   * deletion-specific logging and error handling.
    *
-   * @param handler the handler to process the deletion event
-   * @return a CompletableFuture representing the pending completion of the deletion processing
+   * @param processor the event processor to execute asynchronously
+   * @return a CompletableFuture representing the pending completion of the processing
    */
-  public CompletableFuture<Void> processDeleteAsync(Consumer<CapabilityStorageItemDeletedEvent> handler) {
-    return processAsync(() -> {
+  @Override
+  public CompletableFuture<Void> processAsync(Consumer<CapabilityStorageItemEvent> processor) {
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Processing deletion event for capability ID: \{getCapabilityId()}");
+    }
+    
+    return CompletableFuture.runAsync(() -> {
       try {
-        TaskLogging.logEvent(STR."Processing capability deletion: \{getCapabilityId()}");
-        handler.accept(this);
-      }
+        processor.accept(this);
+        if (log.isDebugEnabled()) {
+          log.debug(STR."Successfully processed deletion event for capability ID: \{getCapabilityId()}");
+        }
+      } 
       catch (Exception e) {
-        TaskLogging.logEvent(STR."Error processing capability deletion: \{getCapabilityId()} - \{e.getMessage()}");
+        log.error(STR."Error processing capability deletion event for ID: \{getCapabilityId()}", e);
         throw e;
       }
-    });
+    }, virtualThreadExecutor);
   }
 }

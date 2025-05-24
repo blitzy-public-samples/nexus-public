@@ -13,11 +13,9 @@
 package org.sonatype.nexus.repository.apt.internal.debian;
 
 /**
- * Marker interface to group tests that specifically validate Java 21 features in the Debian version handling code.
- * Used with JUnit's @Category annotation to enable selective test execution based on Java version compatibility.
- * 
- * This interface helps isolate tests for Java 21 specific features such as Pattern Matching for switch and
- * Record Patterns during test runs.
+ * Marker interface to categorize tests that specifically validate Java 21 features
+ * in the Debian version handling code. This enables selective test execution
+ * using JUnit's @Category annotation based on Java version compatibility.
  */
 public interface Java21TestGroup
 {

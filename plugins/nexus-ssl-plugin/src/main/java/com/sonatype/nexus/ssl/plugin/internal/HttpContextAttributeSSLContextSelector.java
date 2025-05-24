@@ -47,16 +47,27 @@ public class HttpContextAttributeSSLContextSelector
 
   @Override
   public SSLContext select(final HttpContext context) {
-    // Add proper null-checking for context to improve robustness
+    // Add null check for context to improve robustness
     if (context == null) {
+      log.debug("HttpContext is null, returning null SSLContext");
       return null;
     }
     
+    // Get the attribute with null-safety
     Object useTrustStore = context.getAttribute(SSLContextSelector.USE_TRUST_STORE);
+    
+    // Check if the attribute equals Boolean.TRUE
     if (Boolean.TRUE.equals(useTrustStore)) {
-      // Get the SSLContext from the trustStore - this approach remains compatible with Java 21
-      return trustStore.getSSLContext();
+      log.debug("Using TrustStore SSLContext as requested by HttpContext attribute");
+      try {
+        return trustStore.getSSLContext();
+      } catch (Exception e) {
+        log.error("Failed to get SSLContext from TrustStore", e);
+        return null;
+      }
     }
+    
+    log.debug("Not using TrustStore SSLContext as not requested by HttpContext attribute");
     return null;
   }
 }

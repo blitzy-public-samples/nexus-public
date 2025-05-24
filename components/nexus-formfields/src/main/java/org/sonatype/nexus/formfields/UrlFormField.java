@@ -14,23 +14,17 @@ package org.sonatype.nexus.formfields;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.MalformedURLException;
 
 /**
- * URL field with Java 21 compatible validation.
+ * URL field with enhanced Java 21 validation capabilities.
  *
  * @since 3.2
  */
 public class UrlFormField
     extends StringTextFormField
 {
-  /**
-   * Default URL validation regex pattern that can be used for basic URL format validation.
-   * 
-   * @since 3.60
-   */
-  public static final String DEFAULT_URL_VALIDATION_REGEX = 
-      "^(https?|ftp|file)://[-a-zA-Z0-9+&@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&@#/%=~_|]";
-
   public UrlFormField(String id, String label, String helpText, boolean required, String regexValidation) {
     super(id, label, helpText, required, regexValidation);
   }
@@ -43,60 +37,101 @@ public class UrlFormField
     super(id);
   }
 
-  /**
-   * Returns the field type.
-   */
-  @Override
   public String getType() {
     return "url";
   }
   
   /**
-   * Validates if the provided string is a valid URL using Java's URI class.
-   * This method is compatible with Java 21's recommended approach for URL validation.
+   * Validates if the input is a valid URL using Java 21 recommended approach.
+   * Uses URI for parsing and validation, then converts to URL if needed.
    *
-   * @param url the URL string to validate
-   * @return true if the URL is valid, false otherwise
-   * @since 3.60
+   * @param input The URL string to validate
+   * @return true if the input is a valid URL, false otherwise
    */
-  public static boolean isValidUrl(String url) {
-    if (url == null || url.isEmpty()) {
+  @Override
+  public boolean isValidInput(final String input) {
+    // First check regex validation from parent class
+    if (!super.isValidInput(input)) {
       return false;
     }
     
+    if (input == null || input.isEmpty()) {
+      return !isRequired();
+    }
+    
     try {
-      URI uri = new URI(url);
-      String scheme = uri.getScheme();
+      // Use URI for parsing and validation as recommended in Java 21
+      URI uri = new URI(input);
       
-      // Check if scheme is present and is a common URL scheme
-      if (scheme == null || !(scheme.equals("http") || scheme.equals("https") || 
-          scheme.equals("ftp") || scheme.equals("file"))) {
+      // Validate that the URI has a scheme
+      if (uri.getScheme() == null) {
         return false;
       }
       
-      // For server-based URIs, validate the authority component
-      if (uri.getHost() == null) {
-        return false;
+      // If the URI has an authority component, validate it can be parsed as server-based
+      if (uri.getAuthority() != null) {
+        try {
+          uri.parseServerAuthority();
+        } catch (URISyntaxException e) {
+          return false;
+        }
       }
       
+      // Additional validation by attempting to convert to URL
+      uri.toURL();
       return true;
-    } 
-    catch (URISyntaxException e) {
+    } catch (URISyntaxException | MalformedURLException e) {
       return false;
     }
   }
   
   /**
-   * Creates a UrlFormField with the default URL validation regex pattern.
-   *
-   * @param id the field ID
-   * @param label the field label
-   * @param helpText the help text
-   * @param required whether the field is required
-   * @return a new UrlFormField with default URL validation
-   * @since 3.60
+   * Validates the URL and returns a detailed validation message using String Templates.
+   * 
+   * @param input The URL string to validate
+   * @return Validation message or null if valid
    */
-  public static UrlFormField withDefaultValidation(String id, String label, String helpText, boolean required) {
-    return new UrlFormField(id, label, helpText, required, DEFAULT_URL_VALIDATION_REGEX);
+  public String validateUrl(final String input) {
+    if (input == null || input.isEmpty()) {
+      return isRequired() ? "URL is required" : null;
+    }
+    
+    try {
+      // Use URI for parsing and validation as recommended in Java 21
+      URI uri = new URI(input);
+      
+      // Validate that the URI has a scheme
+      if (uri.getScheme() == null) {
+        return STR."Invalid URL: missing scheme (protocol) in \{input}";
+      }
+      
+      // If the URI has an authority component, validate it can be parsed as server-based
+      if (uri.getAuthority() != null) {
+        try {
+          uri.parseServerAuthority();
+        } catch (URISyntaxException e) {
+          return STR."Invalid URL authority component in \{input}: \{e.getMessage()}";
+        }
+      }
+      
+      // Additional validation by attempting to convert to URL
+      uri.toURL();
+      return null;
+    } catch (URISyntaxException e) {
+      return STR."Invalid URL syntax in \{input}: \{e.getMessage()}";
+    } catch (MalformedURLException e) {
+      return STR."Malformed URL in \{input}: \{e.getMessage()}";
+    }
+  }
+  
+  /**
+   * Creates a new UrlFormField with the specified initial URL value.
+   *
+   * @param initialValue The initial URL value
+   * @return This field instance for fluent API usage
+   */
+  public UrlFormField withInitialUrl(final String initialValue) {
+    setInitialValue(initialValue);
+    return this;
   }
 }

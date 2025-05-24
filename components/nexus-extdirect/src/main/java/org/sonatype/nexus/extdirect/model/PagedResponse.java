@@ -16,28 +16,23 @@ import java.util.Collection;
 
 /**
  * Ext.Direct paged response.
+ * 
+ * This class is designed to be compatible with Java 21 features including pattern matching
+ * and virtual threads. It maintains backward compatibility with existing code while
+ * supporting modern Java features.
  *
  * @since 3.0
  */
 public class PagedResponse<T>
     extends Response<Collection<T>>
 {
-  private final long total;
+  private long total;
 
-  /**
-   * Constructor for a paged response.
-   *
-   * @param total the total number of results
-   * @param data the collection of data to include in the response
-   */
   public PagedResponse(long total, Collection<T> data) {
     super(true, data);
     this.total = total;
   }
 
-  /**
-   * @return the total number of results
-   */
   public long getTotal() {
     return total;
   }

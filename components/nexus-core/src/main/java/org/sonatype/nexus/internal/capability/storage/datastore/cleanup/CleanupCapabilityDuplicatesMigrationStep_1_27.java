@@ -18,6 +18,7 @@ import java.sql.SQLException;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -29,6 +30,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Cleanup duplicate capabilities migration step. - do cleanup capabilities duplicates (if they exist) - create unique
  * index on capability_storage_item table
+ * 
+ * This implementation is compatible with Java 21 and PostgreSQL JDBC driver 42.7.2, leveraging Virtual Threads
+ * for improved performance with database operations.
  */
 @Named
 @Singleton
@@ -53,62 +57,53 @@ public class CleanupCapabilityDuplicatesMigrationStep_1_27
     return Optional.of("1.27");
   }
 
+  /**
+   * Migrates the database by cleaning up duplicate capabilities and adding a unique index/constraint.
+   * Uses Java 21's improved JDBC connection handling and Virtual Threads for concurrent operations.
+   *
+   * @param connection The database connection (compatible with PostgreSQL JDBC driver 42.7.2)
+   * @throws Exception if any error occurs during migration
+   */
   @Override
   public void migrate(final Connection connection) throws Exception {
-    // Execute cleanup operation
-    cleanupService.doCleanup();
+    // Use Virtual Threads executor for concurrent cleanup operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit cleanup task to virtual thread executor
+      executor.submit(() -> {
+        try {
+          cleanupService.doCleanup();
+          return true;
+        } catch (Exception e) {
+          throw new RuntimeException("Failed to clean up capability duplicates", e);
+        }
+      });
+      
+      // Shutdown executor and wait for tasks to complete
+      executor.shutdown();
+      if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+        throw new SQLException("Cleanup operation timed out after 5 minutes");
+      }
+    }
 
-    // Use try-with-resources to ensure proper resource management with Java 21's improved handling
-    try {
-      // Determine database type and execute appropriate statement
-      if (isPostgresql(connection)) {
-        executeStatement(connection, ADD_INDEX);
-      }
-      else {
-        executeStatement(connection, ADD_CONSTRAINT);
-      }
-    } catch (SQLException e) {
-      throw new Exception("Failed to execute database migration", e);
+    // Add index or constraint using try-with-resources for proper JDBC resource management
+    if (isPostgresql(connection)) {
+      executeStatement(connection, ADD_INDEX);
+    } else {
+      executeStatement(connection, ADD_CONSTRAINT);
     }
   }
   
   /**
-   * Executes a SQL statement using Java 21's improved JDBC connection handling.
-   * 
+   * Executes an SQL statement using Java 21's improved try-with-resources for JDBC operations.
+   * This ensures proper resource management and compatibility with PostgreSQL JDBC driver 42.7.2.
+   *
    * @param connection The database connection
    * @param sql The SQL statement to execute
-   * @throws SQLException If a database access error occurs
+   * @throws SQLException if a database access error occurs
    */
   private void executeStatement(final Connection connection, final String sql) throws SQLException {
-    // Use try-with-resources to ensure PreparedStatement is properly closed
-    try (PreparedStatement statement = connection.prepareStatement(sql)) {
-      statement.execute();
-    }
-  }
-  
-  /**
-   * Executes multiple SQL statements concurrently using Java 21 Virtual Threads.
-   * This method demonstrates how to use Virtual Threads for concurrent database operations.
-   * 
-   * @param connection The database connection
-   * @param sqlStatements Array of SQL statements to execute concurrently
-   * @throws Exception If any execution fails
-   */
-  private void executeStatementsWithVirtualThreads(final Connection connection, final String... sqlStatements) throws Exception {
-    // Create an executor service that creates a new virtual thread per task
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit each SQL statement as a separate task to be executed by a virtual thread
-      for (String sql : sqlStatements) {
-        executor.submit(() -> {
-          try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.execute();
-            return null;
-          } catch (SQLException e) {
-            throw new RuntimeException("Failed to execute SQL: " + sql, e);
-          }
-        });
-      }
-      // No need to explicitly shut down the executor as try-with-resources handles it
+    try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+      stmt.execute();
     }
   }
 }

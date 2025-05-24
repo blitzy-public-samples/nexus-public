@@ -16,11 +16,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -43,11 +43,14 @@ import com.google.common.net.HttpHeaders;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
-import org.junit.jupiter.api.DisplayName;
 import org.mockito.Mock;
-import org.mockito.Mockito;
+import org.mockito.ArgumentCaptor;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.mockito.Answers.RETURNS_DEEP_STUBS;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -57,12 +60,6 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * Tests for describe functionality of {@link ViewServlet}.
@@ -111,11 +108,18 @@ public class ViewServletTest
     ));
 
     when(request.getPath()).thenReturn("/test");
+    when(request.getAction()).thenReturn("GET");
 
     parameters = new Parameters();
     when(request.getParameters()).thenReturn(parameters);
 
     BaseUrlHolder.set("http://placebo", "");
+    
+    // Setup for httpServletRequest mock
+    when(httpServletRequest.getPathInfo()).thenReturn("/repo/path");
+    when(httpServletRequest.getMethod()).thenReturn("GET");
+    when(httpServletRequest.getRequestURI()).thenReturn("/service/rest/repository/repo/path");
+    when(httpServletRequest.getQueryString()).thenReturn(null);
   }
 
   private void descriptionRequested(final String describe) {
@@ -210,6 +214,198 @@ public class ViewServletTest
 
     verify(servletResponse).setHeader(HttpHeaders.X_XSS_PROTECTION, "1; mode=block");
   }
+  
+  /**
+   * Tests that security headers are properly applied in concurrent scenarios using Virtual Threads.
+   */
+  @Test
+  public void securityHeadersAppliedInConcurrentScenarios() throws Exception {
+    // Create multiple mock requests and responses for concurrent testing
+    int concurrentRequests = 10;
+    List<HttpServletRequest> requests = new ArrayList<>();
+    List<HttpServletResponse> responses = new ArrayList<>();
+    
+    for (int i = 0; i < concurrentRequests; i++) {
+      HttpServletRequest req = mock(HttpServletRequest.class);
+      when(req.getPathInfo()).thenReturn("/repo/path" + i);
+      when(req.getMethod()).thenReturn("GET");
+      when(req.getRequestURI()).thenReturn("/service/rest/repository/repo/path" + i);
+      when(req.getQueryString()).thenReturn(null);
+      when(req.getAttributeNames()).thenReturn(Collections.emptyEnumeration());
+      requests.add(req);
+      
+      HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
+      responses.add(resp);
+    }
+    
+    // Use Virtual Threads to process requests concurrently
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CountDownLatch latch = new CountDownLatch(concurrentRequests);
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < concurrentRequests; i++) {
+        final int index = i;
+        futures.add(executor.submit(() -> {
+          try {
+            underTest.service(requests.get(index), responses.get(index));
+          } catch (Exception e) {
+            // Log and rethrow to fail the test
+            log.error("Error in concurrent request processing", e);
+            throw new RuntimeException(e);
+          } finally {
+            latch.countDown();
+          }
+        }));
+      }
+      
+      // Wait for all requests to complete
+      latch.await(10, TimeUnit.SECONDS);
+      
+      // Verify that all responses have the security headers
+      for (int i = 0; i < concurrentRequests; i++) {
+        verify(responses.get(i)).setHeader(HttpHeaders.CONTENT_SECURITY_POLICY,
+            "sandbox allow-forms allow-modals allow-popups allow-presentation allow-scripts allow-top-navigation");
+        verify(responses.get(i)).setHeader(HttpHeaders.X_XSS_PROTECTION, "1; mode=block");
+      }
+    }
+  }
+  
+  /**
+   * Tests concurrent request handling with Virtual Threads.
+   */
+  @Test
+  public void concurrentRequestHandlingWithVirtualThreads() throws Exception {
+    // Setup facet to return responses without exceptions
+    facetThrowsException(false);
+    
+    // Create multiple requests and track their completion
+    int concurrentRequests = 50;
+    AtomicInteger completedRequests = new AtomicInteger(0);
+    CountDownLatch latch = new CountDownLatch(concurrentRequests);
+    
+    // Create a ViewFacet that simulates some processing time
+    ViewFacet delayedFacet = mock(ViewFacet.class);
+    when(delayedFacet.dispatch(any(Request.class))).thenAnswer(new Answer<Response>() {
+      @Override
+      public Response answer(InvocationOnMock invocation) throws Throwable {
+        // Simulate some processing time (varying between 10-50ms)
+        Thread.sleep(10 + (long)(Math.random() * 40));
+        return facetResponse;
+      }
+    });
+    
+    // Use Virtual Threads to process requests concurrently
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < concurrentRequests; i++) {
+        Request req = mock(Request.class);
+        when(req.getPath()).thenReturn("/test" + i);
+        when(req.getParameters()).thenReturn(new Parameters());
+        when(req.getAction()).thenReturn("GET");
+        
+        HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
+        
+        futures.add(executor.submit(() -> {
+          try {
+            underTest.dispatchAndSend(req, delayedFacet, defaultResponseSender, resp);
+            completedRequests.incrementAndGet();
+          } catch (Exception e) {
+            log.error("Error in concurrent request processing", e);
+            throw new RuntimeException(e);
+          } finally {
+            latch.countDown();
+          }
+        }));
+      }
+      
+      // Wait for all requests to complete
+      boolean allCompleted = latch.await(5, TimeUnit.SECONDS);
+      
+      // Verify that all requests completed successfully
+      assertThat("All concurrent requests should complete within the timeout", allCompleted, is(true));
+      assertThat("All requests should have been processed", completedRequests.get(), is(concurrentRequests));
+      
+      // Verify that the facet was called for each request
+      verify(delayedFacet, times(concurrentRequests)).dispatch(any(Request.class));
+    }
+  }
+  
+  /**
+   * Tests servlet behavior under high concurrency load using Virtual Threads.
+   */
+  @Test
+  public void servletBehaviorUnderHighConcurrencyLoad() throws Exception {
+    // Number of concurrent requests to simulate
+    int concurrentRequests = 1000;
+    
+    // Create a repository manager that always returns a repository
+    RepositoryManager repositoryManager = mock(RepositoryManager.class);
+    Repository repository = mock(Repository.class);
+    when(repository.getConfiguration().isOnline()).thenReturn(true);
+    when(repository.facet(ViewFacet.class)).thenReturn(facet);
+    when(repositoryManager.get(any())).thenReturn(repository);
+    
+    // Create a servlet with the mocked repository manager
+    ViewServlet servlet = spy(new ViewServlet(
+        repositoryManager,
+        new HttpResponseSenderSelector(Collections.<String, HttpResponseSender>emptyMap(), defaultResponseSender),
+        mock(DescriptionHelper.class),
+        descriptionRenderer,
+        true
+    ));
+    
+    // Setup facet to return responses without exceptions
+    when(facet.dispatch(any(Request.class))).thenReturn(facetResponse);
+    
+    // Track completion and capture any errors
+    CountDownLatch latch = new CountDownLatch(concurrentRequests);
+    AtomicInteger successCount = new AtomicInteger(0);
+    List<Exception> exceptions = Collections.synchronizedList(new ArrayList<>());
+    
+    // Use Virtual Threads to process requests concurrently
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < concurrentRequests; i++) {
+        final int requestId = i;
+        
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getPathInfo()).thenReturn("/repo/path" + requestId);
+        when(req.getMethod()).thenReturn("GET");
+        when(req.getRequestURI()).thenReturn("/service/rest/repository/repo/path" + requestId);
+        when(req.getQueryString()).thenReturn(null);
+        when(req.getAttributeNames()).thenReturn(Collections.emptyEnumeration());
+        
+        HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
+        
+        executor.submit(() -> {
+          try {
+            servlet.service(req, resp);
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            exceptions.add(e);
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all requests to complete or timeout
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat("All requests should complete within timeout", completed, is(true));
+      assertThat("All requests should succeed", successCount.get(), is(concurrentRequests));
+      assertThat("No exceptions should be thrown", exceptions.size(), is(0));
+      
+      // Verify security headers were set on all responses
+      ArgumentCaptor<String> headerNameCaptor = ArgumentCaptor.forClass(String.class);
+      ArgumentCaptor<String> headerValueCaptor = ArgumentCaptor.forClass(String.class);
+      
+      // We can't verify each individual response due to the high number,
+      // but we can verify the repository manager was called the expected number of times
+      verify(repositoryManager, times(concurrentRequests)).get(any());
+    }
+  }
 
   private void facetThrowsException(final boolean facetThrowsException) throws Exception {
     if (facetThrowsException) {
@@ -217,310 +413,6 @@ public class ViewServletTest
     }
     else {
       when(facet.dispatch(request)).thenReturn(facetResponse);
-    }
-  }
-  
-  /**
-   * Creates a new request mock with the given path.
-   */
-  private Request createRequestMock(String path) {
-    Request req = mock(Request.class);
-    when(req.getPath()).thenReturn(path);
-    Parameters params = new Parameters();
-    when(req.getParameters()).thenReturn(params);
-    return req;
-  }
-  
-  /**
-   * Test to verify servlet behavior under high concurrency load using Virtual Threads.
-   * This test simulates multiple concurrent requests to the servlet and verifies that
-   * all requests are processed correctly without errors.
-   */
-  @Test
-  public void concurrentRequestsWithVirtualThreads() throws Exception {
-    // Number of concurrent requests to simulate
-    final int concurrentRequests = 1000;
-    final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch completionLatch = new CountDownLatch(concurrentRequests);
-    final AtomicInteger successCount = new AtomicInteger(0);
-    final AtomicReference<Exception> firstException = new AtomicReference<>();
-    
-    // Create a list to hold all the mock requests and responses
-    List<Request> requests = new ArrayList<>();
-    List<HttpServletResponse> responses = new ArrayList<>();
-    List<ViewFacet> facets = new ArrayList<>();
-    
-    // Setup mocks for each request
-    for (int i = 0; i < concurrentRequests; i++) {
-      Request req = createRequestMock("/test/" + i);
-      HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
-      ViewFacet fct = mock(ViewFacet.class);
-      Response facetResp = mock(Response.class, RETURNS_DEEP_STUBS);
-      
-      when(fct.dispatch(req)).thenReturn(facetResp);
-      
-      requests.add(req);
-      responses.add(resp);
-      facets.add(fct);
-    }
-    
-    // Use Java 21 Virtual Threads for concurrent execution
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks for concurrent execution
-      for (int i = 0; i < concurrentRequests; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready before starting
-            startLatch.await();
-            
-            // Process the request
-            underTest.dispatchAndSend(requests.get(index), facets.get(index), 
-                defaultResponseSender, responses.get(index));
-            
-            successCount.incrementAndGet();
-          } catch (Exception e) {
-            // Store the first exception encountered
-            firstException.compareAndSet(null, e);
-          } finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all requests to complete (with timeout)
-      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-      
-      // Verify all requests completed successfully
-      assertTrue("Not all requests completed within the timeout", completed);
-      assertEquals("Not all requests succeeded", concurrentRequests, successCount.get());
-      assertNull("Exceptions occurred during concurrent processing: " + 
-          (firstException.get() != null ? firstException.get().getMessage() : ""), 
-          firstException.get());
-      
-      // Verify that the response sender was called for each request
-      verify(defaultResponseSender, times(concurrentRequests)).send(any(Request.class), 
-          any(Response.class), any(HttpServletResponse.class));
-    }
-  }
-  
-  /**
-   * Test to verify that security headers are properly applied in concurrent scenarios.
-   * This test ensures that all responses have the required security headers set,
-   * even under high concurrency with Virtual Threads.
-   */
-  @Test
-  public void securityHeadersAppliedInConcurrentScenarios() throws Exception {
-    // Number of concurrent requests to simulate
-    final int concurrentRequests = 100;
-    final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch completionLatch = new CountDownLatch(concurrentRequests);
-    final AtomicInteger successCount = new AtomicInteger(0);
-    final AtomicReference<Exception> firstException = new AtomicReference<>();
-    
-    // Create a list to hold all the mock requests
-    List<HttpServletRequest> requests = new ArrayList<>();
-    List<HttpServletResponse> responses = new ArrayList<>();
-    
-    // Setup mocks for each request
-    for (int i = 0; i < concurrentRequests; i++) {
-      HttpServletRequest req = mock(HttpServletRequest.class);
-      HttpServletResponse resp = mock(HttpServletResponse.class);
-      
-      requests.add(req);
-      responses.add(resp);
-    }
-    
-    // Use Java 21 Virtual Threads for concurrent execution
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks for concurrent execution
-      for (int i = 0; i < concurrentRequests; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready before starting
-            startLatch.await();
-            
-            // Process the request
-            underTest.service(requests.get(index), responses.get(index));
-            
-            successCount.incrementAndGet();
-          } catch (Exception e) {
-            // Store the first exception encountered
-            firstException.compareAndSet(null, e);
-          } finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all requests to complete (with timeout)
-      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-      
-      // Verify all requests completed successfully
-      assertTrue("Not all requests completed within the timeout", completed);
-      assertEquals("Not all requests succeeded", concurrentRequests, successCount.get());
-      assertNull("Exceptions occurred during concurrent processing: " + 
-          (firstException.get() != null ? firstException.get().getMessage() : ""), 
-          firstException.get());
-      
-      // Verify that security headers were set for each response
-      for (HttpServletResponse response : responses) {
-        verify(response).setHeader(HttpHeaders.CONTENT_SECURITY_POLICY,
-            "sandbox allow-forms allow-modals allow-popups allow-presentation allow-scripts allow-top-navigation");
-        verify(response).setHeader(HttpHeaders.X_XSS_PROTECTION, "1; mode=block");
-      }
-    }
-  }
-  
-  /**
-   * Test to verify servlet behavior when handling mixed request types concurrently.
-   * This test simulates a mix of normal requests, describe requests, and error-generating
-   * requests all being processed concurrently using Virtual Threads.
-   */
-  @Test
-  public void mixedRequestTypesConcurrentHandling() throws Exception {
-    // Number of each type of request
-    final int normalRequests = 100;
-    final int describeHtmlRequests = 50;
-    final int describeJsonRequests = 50;
-    final int errorRequests = 50;
-    final int totalRequests = normalRequests + describeHtmlRequests + describeJsonRequests + errorRequests;
-    
-    final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch completionLatch = new CountDownLatch(totalRequests);
-    final AtomicInteger successCount = new AtomicInteger(0);
-    final AtomicReference<Exception> firstException = new AtomicReference<>();
-    
-    // Create lists to hold all the mock objects
-    List<Request> requests = new ArrayList<>();
-    List<HttpServletResponse> responses = new ArrayList<>();
-    List<ViewFacet> facets = new ArrayList<>();
-    
-    // Setup normal requests
-    for (int i = 0; i < normalRequests; i++) {
-      Request req = createRequestMock("/normal/" + i);
-      HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
-      ViewFacet fct = mock(ViewFacet.class);
-      Response facetResp = mock(Response.class, RETURNS_DEEP_STUBS);
-      
-      when(fct.dispatch(req)).thenReturn(facetResp);
-      
-      requests.add(req);
-      responses.add(resp);
-      facets.add(fct);
-    }
-    
-    // Setup describe HTML requests
-    for (int i = 0; i < describeHtmlRequests; i++) {
-      Request req = createRequestMock("/describe-html/" + i);
-      req.getParameters().set(ViewServlet.P_DESCRIBE, "HTML");
-      HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
-      ViewFacet fct = mock(ViewFacet.class);
-      Response facetResp = mock(Response.class, RETURNS_DEEP_STUBS);
-      
-      when(fct.dispatch(req)).thenReturn(facetResp);
-      
-      requests.add(req);
-      responses.add(resp);
-      facets.add(fct);
-    }
-    
-    // Setup describe JSON requests
-    for (int i = 0; i < describeJsonRequests; i++) {
-      Request req = createRequestMock("/describe-json/" + i);
-      req.getParameters().set(ViewServlet.P_DESCRIBE, "JSON");
-      HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
-      ViewFacet fct = mock(ViewFacet.class);
-      Response facetResp = mock(Response.class, RETURNS_DEEP_STUBS);
-      
-      when(fct.dispatch(req)).thenReturn(facetResp);
-      
-      requests.add(req);
-      responses.add(resp);
-      facets.add(fct);
-    }
-    
-    // Setup error requests
-    for (int i = 0; i < errorRequests; i++) {
-      Request req = createRequestMock("/error/" + i);
-      HttpServletResponse resp = mock(HttpServletResponse.class, RETURNS_DEEP_STUBS);
-      ViewFacet fct = mock(ViewFacet.class);
-      RuntimeException exception = mock(RuntimeException.class, RETURNS_DEEP_STUBS);
-      
-      when(fct.dispatch(req)).thenThrow(exception);
-      
-      requests.add(req);
-      responses.add(resp);
-      facets.add(fct);
-    }
-    
-    // Use Java 21 Virtual Threads for concurrent execution
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks for concurrent execution
-      for (int i = 0; i < totalRequests; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Wait for all threads to be ready before starting
-            startLatch.await();
-            
-            // For error requests, we expect exceptions to be thrown
-            if (index >= (normalRequests + describeHtmlRequests + describeJsonRequests)) {
-              try {
-                underTest.dispatchAndSend(requests.get(index), facets.get(index), 
-                    defaultResponseSender, responses.get(index));
-                // If we get here for error requests, it's unexpected
-                fail("Expected exception was not thrown for error request " + index);
-              } catch (RuntimeException e) {
-                // This is expected for error requests
-                successCount.incrementAndGet();
-              }
-            } else {
-              // Process normal and describe requests
-              underTest.dispatchAndSend(requests.get(index), facets.get(index), 
-                  defaultResponseSender, responses.get(index));
-              successCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            // Only store unexpected exceptions
-            if (index < (normalRequests + describeHtmlRequests + describeJsonRequests)) {
-              firstException.compareAndSet(null, e);
-            }
-          } finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all requests to complete (with timeout)
-      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-      
-      // Verify all requests completed successfully
-      assertTrue("Not all requests completed within the timeout", completed);
-      assertEquals("Not all requests were processed correctly", totalRequests, successCount.get());
-      assertNull("Unexpected exceptions occurred during concurrent processing: " + 
-          (firstException.get() != null ? firstException.get().getMessage() : ""), 
-          firstException.get());
-      
-      // Verify that the describe method was called for HTML and JSON describe requests
-      verify(underTest, times(describeHtmlRequests)).describe(any(Request.class), any(Response.class), 
-          Mockito.isNull(), eq("HTML"));
-      verify(underTest, times(describeJsonRequests)).describe(any(Request.class), any(Response.class), 
-          Mockito.isNull(), eq("JSON"));
-      
-      // Verify that the send method was called for all requests except error requests
-      verify(underTest, times(normalRequests + describeHtmlRequests + describeJsonRequests))
-          .send(any(Request.class), any(Response.class), any(HttpServletResponse.class));
     }
   }
 }

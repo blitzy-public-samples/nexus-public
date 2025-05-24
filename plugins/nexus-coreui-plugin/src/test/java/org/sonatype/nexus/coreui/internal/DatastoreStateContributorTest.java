@@ -17,21 +17,19 @@ import org.sonatype.nexus.common.db.DatabaseCheck;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class DatastoreStateContributorTest
     extends TestSupport
 {
-  @Mock
-  private DatabaseCheck dbCheck;
-
   @Test
-  public void getStateShouldIncludePostgresqlFlag() {
+  public void shouldExposeIsPostgresqlState() {
+    DatabaseCheck dbCheck = mock(DatabaseCheck.class);
     when(dbCheck.isPostgresql()).thenReturn(true);
 
     DatastoreStateContributor contributor = new DatastoreStateContributor(false, false, dbCheck);

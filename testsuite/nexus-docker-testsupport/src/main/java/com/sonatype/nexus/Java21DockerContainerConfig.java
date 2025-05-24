@@ -14,205 +14,305 @@ package com.sonatype.nexus;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import javax.annotation.Nullable;
+
 import com.sonatype.nexus.docker.testsupport.framework.DockerContainerConfig;
+
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Java 21-specific extension of {@link DockerContainerConfig} that adds JVM arguments and environment variables
  * optimized for Java 21 features, particularly Virtual Threads.
  * <p>
- * This class provides a fluent Builder API to configure Java 21-specific settings like ZGC garbage collector,
- * thread pinning detection, and Virtual Thread scheduler parameters.
- *
+ * This class provides a fluent Builder API to configure Java 21-specific settings such as:
+ * <ul>
+ *   <li>Z Garbage Collector (ZGC) with generational mode</li>
+ *   <li>Thread pinning detection for Virtual Thread debugging</li>
+ *   <li>Virtual Thread scheduler parallelism and pool size configuration</li>
+ *   <li>Custom JVM arguments for Java 21 features</li>
+ * </ul>
+ * <p>
+ * Example usage:
+ * <pre>
+ * Java21DockerContainerConfig config = Java21DockerContainerConfig.builder("eclipse-temurin:21-jdk")
+ *     .withExposedPort("8081")
+ *     .withZGC()
+ *     .withThreadPinningDetection()
+ *     .withVirtualThreadSchedulerParallelism("16")
+ *     .withVirtualThreadSchedulerMaxPoolSize("256")
+ *     .withJava21JvmArg("XX:+UseStringDeduplication", "")
+ *     .build();
+ * </pre>
+ * 
  * @since 3.60
  */
 public class Java21DockerContainerConfig
     extends DockerContainerConfig
 {
   /**
-   * Default value for Virtual Thread scheduler parallelism
+   * Default parallelism for the Virtual Thread scheduler.
+   * This value determines how many platform threads (carrier threads) are used to execute virtual threads.
+   * The default value of 16 is a reasonable starting point for most applications.
    */
-  public static final String DEFAULT_VIRTUAL_THREAD_PARALLELISM = "16";
+  private static final String DEFAULT_VIRTUAL_THREAD_PARALLELISM = "16";
+  
+  /**
+   * Default maximum pool size for the Virtual Thread scheduler.
+   * This value limits the maximum number of platform threads that can be created to handle virtual threads.
+   * The default value of 256 allows for significant scaling while preventing resource exhaustion.
+   */
+  private static final String DEFAULT_VIRTUAL_THREAD_MAX_POOL_SIZE = "256";
+  
+  /**
+   * Java 21-specific JVM arguments.
+   * This map contains JVM argument keys and their values (if any).
+   * For boolean flags, the value is an empty string.
+   */
+  private final Map<String, String> java21JvmArgs;
 
   /**
-   * Default value for Virtual Thread scheduler maximum pool size
+   * Private constructor used by the builder.
+   * 
+   * @param image Docker image name (nullable if dockerfile is provided)
+   * @param dockerfile Path to Dockerfile (nullable if image is provided)
+   * @param java21JvmArgs Map of Java 21 JVM arguments
    */
-  public static final String DEFAULT_VIRTUAL_THREAD_MAX_POOL_SIZE = "256";
-
-  /**
-   * Private constructor used by the Builder
-   */
-  private Java21DockerContainerConfig(final String image, final Path dockerfile) {
+  private Java21DockerContainerConfig(@Nullable final String image, 
+                                     @Nullable final Path dockerfile,
+                                     final Map<String, String> java21JvmArgs) {
     super(image, dockerfile);
+    this.java21JvmArgs = java21JvmArgs;
   }
 
   /**
-   * Creates a new Builder for Java21DockerContainerConfig with the specified Docker image.
+   * Get the Java 21-specific JVM arguments.
    *
-   * @param image the Docker image name
-   * @return a new Builder instance
+   * @return Map of JVM argument keys to values
    */
-  public static Builder builder(final String image) {
-    return new Builder(image);
+  public Map<String, String> getJava21JvmArgs() {
+    return java21JvmArgs;
   }
 
   /**
-   * Creates a new Builder for Java21DockerContainerConfig with the specified Dockerfile path.
+   * Create a new builder with the specified image name.
    *
-   * @param dockerfile the path to the Dockerfile
-   * @return a new Builder instance
+   * @param image Docker image name
+   * @return A new builder instance
    */
-  public static Builder builder(final Path dockerfile) {
-    return new Builder(dockerfile);
+  public static Java21Builder builder(final String image) {
+    return new Java21Builder(image);
+  }
+
+  /**
+   * Create a new builder with the specified Dockerfile path.
+   *
+   * @param dockerfile Path to Dockerfile
+   * @return A new builder instance
+   */
+  public static Java21Builder builder(final Path dockerfile) {
+    return new Java21Builder(dockerfile);
   }
 
   /**
    * Builder for Java21DockerContainerConfig that extends DockerContainerConfig.Builder
    * with Java 21-specific configuration options.
    */
-  public static final class Builder
-      extends DockerContainerConfig.Builder
+  /**
+   * Builder for Java21DockerContainerConfig that extends DockerContainerConfig.Builder
+   * with Java 21-specific configuration options. This builder automatically applies
+   * default Java 21 optimizations when created.
+   */
+  public static final class Java21Builder
+      extends Builder
   {
-    private boolean useZGC = true;
-    private boolean useZGenerational = true;
-    private boolean enableThreadPinningDetection = true;
-    private String virtualThreadParallelism = DEFAULT_VIRTUAL_THREAD_PARALLELISM;
-    private String virtualThreadMaxPoolSize = DEFAULT_VIRTUAL_THREAD_MAX_POOL_SIZE;
-    private Map<String, String> java21Env = new HashMap<>();
+    /**
+     * Map of Java 21 JVM arguments and their values.
+     */
+    private Map<String, String> java21JvmArgs = new HashMap<>();
 
-    private Builder(final String image) {
+    /**
+     * Constructor for the builder with an image name.
+     * Automatically applies default Java 21 optimizations.
+     *
+     * @param image Docker image name
+     */
+    private Java21Builder(final String image) {
       super(image);
+      // Set default Java 21 JVM arguments
+      withZGC()
+          .withThreadPinningDetection()
+          .withVirtualThreadSchedulerParallelism(DEFAULT_VIRTUAL_THREAD_PARALLELISM)
+          .withVirtualThreadSchedulerMaxPoolSize(DEFAULT_VIRTUAL_THREAD_MAX_POOL_SIZE);
     }
 
-    private Builder(final Path dockerfile) {
+    /**
+     * Constructor for the builder with a Dockerfile path.
+     * Automatically applies default Java 21 optimizations.
+     *
+     * @param dockerfile Path to Dockerfile
+     */
+    private Java21Builder(final Path dockerfile) {
       super(dockerfile);
+      // Set default Java 21 JVM arguments
+      withZGC()
+          .withThreadPinningDetection()
+          .withVirtualThreadSchedulerParallelism(DEFAULT_VIRTUAL_THREAD_PARALLELISM)
+          .withVirtualThreadSchedulerMaxPoolSize(DEFAULT_VIRTUAL_THREAD_MAX_POOL_SIZE);
     }
 
     /**
-     * Enables or disables the Z Garbage Collector (ZGC).
-     * ZGC is a scalable low-latency garbage collector suitable for Java 21 applications.
+     * Enable the Z Garbage Collector (ZGC) for improved latency and throughput.
      *
-     * @param useZGC true to enable ZGC, false to disable
      * @return this builder instance
      */
-    public Builder withZGC(final boolean useZGC) {
-      this.useZGC = useZGC;
+    /**
+     * Enable the Z Garbage Collector (ZGC) for improved latency and throughput.
+     * Also enables ZGenerational mode for better performance with generational garbage collection.
+     *
+     * @return this builder instance
+     */
+    public Java21Builder withZGC() {
+      java21JvmArgs.put("XX:+UseZGC", "");
+      java21JvmArgs.put("XX:+ZGenerational", "");
       return this;
     }
 
     /**
-     * Enables or disables the Generational Z Garbage Collector.
-     * Generational ZGC splits the heap into young and old generations for improved performance.
+     * Enable thread pinning detection for Virtual Thread debugging.
      *
-     * @param useZGenerational true to enable Generational ZGC, false to disable
      * @return this builder instance
      */
-    public Builder withZGenerational(final boolean useZGenerational) {
-      this.useZGenerational = useZGenerational;
+    /**
+     * Enable thread pinning detection for Virtual Thread debugging.
+     * When enabled, the JVM will log stack traces when virtual threads become pinned,
+     * which helps identify blocking operations that prevent efficient virtual thread execution.
+     *
+     * @return this builder instance
+     */
+    public Java21Builder withThreadPinningDetection() {
+      java21JvmArgs.put("jdk.tracePinnedThreads", "full");
       return this;
     }
 
     /**
-     * Enables or disables thread pinning detection for Virtual Threads.
-     * When enabled, the JVM will log when virtual threads are pinned to carrier threads.
+     * Configure the parallelism level for the Virtual Thread scheduler.
      *
-     * @param enableThreadPinningDetection true to enable thread pinning detection, false to disable
+     * @param parallelism the parallelism level (number of carrier threads)
      * @return this builder instance
      */
-    public Builder withThreadPinningDetection(final boolean enableThreadPinningDetection) {
-      this.enableThreadPinningDetection = enableThreadPinningDetection;
+    /**
+     * Configure the parallelism level for the Virtual Thread scheduler.
+     * This setting controls how many platform threads (carrier threads) are used
+     * to execute virtual threads. The default is typically based on available CPU cores.
+     *
+     * @param parallelism the parallelism level (number of carrier threads)
+     * @return this builder instance
+     * @throws NullPointerException if parallelism is null
+     */
+    public Java21Builder withVirtualThreadSchedulerParallelism(final String parallelism) {
+      java21JvmArgs.put("jdk.virtualThreadScheduler.parallelism", checkNotNull(parallelism));
       return this;
     }
 
     /**
-     * Sets the parallelism level for the Virtual Thread scheduler.
-     * This controls how many carrier threads are used for virtual thread execution.
+     * Configure the maximum pool size for the Virtual Thread scheduler.
      *
-     * @param parallelism the parallelism level as a string
+     * @param maxPoolSize the maximum pool size
      * @return this builder instance
      */
-    public Builder withVirtualThreadParallelism(final String parallelism) {
-      this.virtualThreadParallelism = parallelism;
+    /**
+     * Configure the maximum pool size for the Virtual Thread scheduler.
+     * This setting limits the maximum number of platform threads that can be created
+     * to handle virtual threads, preventing resource exhaustion under high load.
+     *
+     * @param maxPoolSize the maximum pool size
+     * @return this builder instance
+     * @throws NullPointerException if maxPoolSize is null
+     */
+    public Java21Builder withVirtualThreadSchedulerMaxPoolSize(final String maxPoolSize) {
+      java21JvmArgs.put("jdk.virtualThreadScheduler.maxPoolSize", checkNotNull(maxPoolSize));
       return this;
     }
 
     /**
-     * Sets the maximum pool size for the Virtual Thread scheduler.
-     * This limits the maximum number of carrier threads that can be created.
+     * Add a custom Java 21 JVM argument.
      *
-     * @param maxPoolSize the maximum pool size as a string
+     * @param key the JVM argument key
+     * @param value the JVM argument value (can be empty string for flags)
      * @return this builder instance
      */
-    public Builder withVirtualThreadMaxPoolSize(final String maxPoolSize) {
-      this.virtualThreadMaxPoolSize = maxPoolSize;
+    /**
+     * Add a custom Java 21 JVM argument.
+     * This allows adding any additional JVM arguments that are not covered by the
+     * specialized methods in this builder.
+     *
+     * @param key the JVM argument key (e.g., "XX:+UseStringDeduplication")
+     * @param value the JVM argument value (can be empty string for boolean flags)
+     * @return this builder instance
+     * @throws NullPointerException if key or value is null
+     */
+    public Java21Builder withJava21JvmArg(final String key, final String value) {
+      java21JvmArgs.put(checkNotNull(key), checkNotNull(value));
       return this;
     }
 
     /**
-     * Adds a Java 21-specific environment variable to the container configuration.
+     * Build the Java21DockerContainerConfig instance.
      *
-     * @param name the environment variable name
-     * @param value the environment variable value
-     * @return this builder instance
+     * @return a new Java21DockerContainerConfig instance
      */
-    public Builder withJava21EnvVar(final String name, final String value) {
-      this.java21Env.put(name, value);
-      return this;
-    }
-
     /**
-     * Builds the Java21DockerContainerConfig with all configured options.
-     * This method constructs the JVM arguments based on the configured settings
-     * and adds them to the container environment variables.
+     * Build the Java21DockerContainerConfig instance.
+     * This method first builds the parent DockerContainerConfig, then creates a new
+     * Java21DockerContainerConfig with the same properties plus the Java 21-specific JVM arguments.
+     * The Java 21 JVM arguments are added to the JAVA_OPTS environment variable.
      *
      * @return a new Java21DockerContainerConfig instance
      */
     @Override
     public Java21DockerContainerConfig build() {
-      // Build Java 21 JVM arguments
-      StringBuilder jvmArgs = new StringBuilder();
-
-      // Configure ZGC if enabled
-      if (useZGC) {
-        jvmArgs.append("-XX:+UseZGC ");
-        if (useZGenerational) {
-          jvmArgs.append("-XX:+ZGenerational ");
+      // First build the parent DockerContainerConfig
+      DockerContainerConfig parentConfig = super.build();
+      
+      // Create Java21DockerContainerConfig with the same properties
+      Java21DockerContainerConfig config = new Java21DockerContainerConfig(
+          parentConfig.getImage(),
+          parentConfig.getDockerfile(),
+          this.java21JvmArgs
+      );
+      
+      // Copy properties from parent
+      config.pathBinds = parentConfig.getPathBinds();
+      config.exposedPorts = parentConfig.getExposedPorts();
+      config.workingDir = parentConfig.getWorkingDir();
+      config.env = parentConfig.getEnv();
+      
+      // Add Java 21 JVM arguments to environment variables if needed
+      if (!java21JvmArgs.isEmpty()) {
+        StringBuilder jvmArgs = new StringBuilder();
+        for (Map.Entry<String, String> entry : java21JvmArgs.entrySet()) {
+          if (jvmArgs.length() > 0) {
+            jvmArgs.append(" ");
+          }
+          jvmArgs.append("-").append(entry.getKey());
+          if (!entry.getValue().isEmpty()) {
+            jvmArgs.append("=").append(entry.getValue());
+          }
         }
+        
+        // If JAVA_OPTS already exists, append to it, otherwise create it
+        Map<String, String> env = config.env != null ? new HashMap<>(config.env) : new HashMap<>();
+        String existingOpts = env.getOrDefault("JAVA_OPTS", "");
+        if (!existingOpts.isEmpty()) {
+          existingOpts += " ";
+        }
+        env.put("JAVA_OPTS", existingOpts + jvmArgs.toString());
+        config.env = env;
       }
-
-      // Configure thread pinning detection if enabled
-      if (enableThreadPinningDetection) {
-        jvmArgs.append("-Djdk.tracePinnedThreads=full ");
-      }
-
-      // Configure Virtual Thread scheduler parameters
-      jvmArgs.append("-Djdk.virtualThreadScheduler.parallelism=").append(virtualThreadParallelism).append(" ");
-      jvmArgs.append("-Djdk.virtualThreadScheduler.maxPoolSize=").append(virtualThreadMaxPoolSize).append(" ");
-
-      // Get existing environment variables or create new map if none exist
-      Map<String, String> env = getEnv();
-      if (env == null) {
-        env = new HashMap<>();
-      }
-
-      // Add Java 21 JVM arguments to JAVA_TOOL_OPTIONS environment variable
-      String existingJavaOpts = env.getOrDefault("JAVA_TOOL_OPTIONS", "");
-      env.put("JAVA_TOOL_OPTIONS", existingJavaOpts + " " + jvmArgs.toString().trim());
-
-      // Add any additional Java 21-specific environment variables
-      env.putAll(java21Env);
-
-      // Update environment variables in the builder
-      withEnv(env);
-
-      // Create the Java21DockerContainerConfig instance
-      Java21DockerContainerConfig config = new Java21DockerContainerConfig(getImage(), getDockerfile());
-      config.pathBinds = getPathBinds();
-      config.exposedPorts = getExposedPorts();
-      config.workingDir = getWorkingDir();
-      config.env = env;
-
+      
       return config;
     }
   }

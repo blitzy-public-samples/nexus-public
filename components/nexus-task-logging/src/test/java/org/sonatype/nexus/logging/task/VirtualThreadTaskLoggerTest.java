@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -353,10 +353,11 @@ public class VirtualThreadTaskLoggerTest
         int count = 42;
         
         // Create a string template
-        StringTemplate template = STR."Virtual thread \{operation} \{count} items";
+        String message = "Virtual thread " + operation +" " + count + " items";
+        //StringTemplate template = STR."Virtual thread \{operation} \{count} items";
         
         // Log a progress message using the template
-        TaskLoggerHelper.progress(new TaskLoggingEvent(mockLogger, template));
+        TaskLoggerHelper.progress(new TaskLoggingEvent(mockLogger, message));
         TaskLoggerHelper.flush();
       } finally {
         latch.countDown();

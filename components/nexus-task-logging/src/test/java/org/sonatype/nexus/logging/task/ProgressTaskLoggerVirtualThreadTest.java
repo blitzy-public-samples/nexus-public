@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-
+import org.junit.Before;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -28,6 +28,7 @@ import org.junit.jupiter.api.condition.EnabledOnJre;
 import org.junit.jupiter.api.condition.JRE;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.MockitoAnnotations;
 import org.slf4j.Logger;
 import org.slf4j.Marker;
 import org.slf4j.MDC;
@@ -62,9 +63,10 @@ public class ProgressTaskLoggerVirtualThreadTest
   private Logger mockLogger;
 
   private ProgressTaskLogger underTest;
-
+  
   @BeforeEach
   public void setUp() {
+	  MockitoAnnotations.openMocks(this);  
     underTest = new ProgressTaskLogger(mockLogger);
     underTest.start();
   }

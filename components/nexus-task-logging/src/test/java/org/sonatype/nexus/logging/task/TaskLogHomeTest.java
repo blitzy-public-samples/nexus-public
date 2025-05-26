@@ -197,23 +197,15 @@ public class TaskLogHomeTest
    * Uses virtual threads for file operations to improve I/O concurrency.
    */
   private String getLogFileContents(String typeId) throws IOException {
-    Path logDirectory = Paths.get(TaskLogHome.getTaskLogsHome());
+	  Path logDirectory = Paths.get(TaskLogHome.getTaskLogsHome());
 
-    try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(logDirectory, String.format("%s-*.log", typeId))) {
-      for (Path file : dirStream) {
-        if (Files.isRegularFile(file)) {
-          // Use virtual thread for file reading
-          return Thread.startVirtualThread(() -> {
-            try {
-              return new String(Files.readAllBytes(file));
-            }
-            catch (IOException e) {
-              throw new RuntimeException("Error reading log file", e);
-            }
-          }).join();
-        }
-      }
-    }
+	    try (DirectoryStream<Path> dirStream = Files.newDirectoryStream(logDirectory, String.format("%s-*.log", typeId))) {
+	      for (Path file : dirStream) {
+	        if (Files.isRegularFile(file)) {
+	          return new String(Files.readAllBytes(file));
+	        }
+	      }
+	    }
 
     return "";
   }

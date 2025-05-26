@@ -12,6 +12,11 @@
  */
 package org.sonatype.nexus.logging.task;
 
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.IsEqual.equalTo;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,11 +33,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
-
-import static org.hamcrest.CoreMatchers.not;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.core.IsEqual.equalTo;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 /**
  * Special test to cover MDC thread specifics. See NEXUS-14432 and https://logback.qos.ch/manual/mdc.html#managedThreads
@@ -40,7 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * This test also verifies MDC context propagation in both platform threads and virtual threads (Java 21+).
  */
 @ExtendWith(MockitoExtension.class)
-@VirtualThreadTestGroup
+@Category({VirtualThreadTestGroup.class})
 public class ProgressTaskLoggerMDCTest
 {
   @Mock
@@ -98,8 +100,7 @@ public class ProgressTaskLoggerMDCTest
     AtomicBoolean tested = new AtomicBoolean(false);
 
     // create progress task logger with virtual thread factory
-    ProgressTaskLogger progressTaskLogger = new ProgressTaskLogger(mockLogger, 1, 60000, TimeUnit.MILLISECONDS, 
-        Thread.ofVirtual().factory())
+    ProgressTaskLogger progressTaskLogger = new ProgressTaskLogger(mockLogger, 1, 60000, TimeUnit.MILLISECONDS)
     {
       void logProgress() {
         super.logProgress();

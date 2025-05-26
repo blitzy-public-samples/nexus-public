@@ -17,12 +17,17 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+
+import static org.mockito.Mockito.*;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockitoAnnotations;
 import org.slf4j.Logger;
 import org.slf4j.MDC;
+import org.sonatype.goodies.testsupport.TestSupport;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -30,6 +35,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
 
 /**
  * Tests to validate Java 21 String Template formatting in log messages.
@@ -58,6 +64,7 @@ public class StringTemplateLoggingTest
 
   @BeforeEach
   public void setup() {
+	MockitoAnnotations.openMocks(this); // Initialize mocks
     name = "Nexus Repository";
     count = 42;
     complexObject = new TestObject("test-id", 100);
@@ -136,7 +143,8 @@ public class StringTemplateLoggingTest
     when(mockLogger.isInfoEnabled()).thenReturn(true);
     
     // Use a String Template with complex expressions
-    mockLogger.info(STR."Status: \{count > 40 ? "HIGH" : "LOW"} with \{name.toUpperCase()} and ID \{complexObject.getId()}");
+    var testObject = (TestObject)complexObject;
+    mockLogger.info(STR."Status: \{count > 40 ? "HIGH" : "LOW"} with \{name.toUpperCase()} and ID \{testObject.getId()}");
     
     // Capture and verify the log message
     ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);

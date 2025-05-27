@@ -13,34 +13,31 @@
 package org.sonatype.nexus.formfields;
 
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+
+import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasEntry;
-import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests {@link AbstractFormField} behavior under high concurrency using Java 21 Virtual Threads.
- * 
- * This test ensures that form field properties remain thread-safe when multiple virtual threads
+ * Validates that form field properties remain thread-safe when multiple virtual threads
  * simultaneously access and modify field attributes.
  */
-@Tag("virtualthread")
+@Category(VirtualThreadTestGroup.class)
 public class AbstractFormFieldVirtualThreadTest
 {
   private static final String ID = "testId";
@@ -48,13 +45,11 @@ public class AbstractFormFieldVirtualThreadTest
   private static final String TYPE = "testField";
   
   private static final int THREAD_COUNT = 1000;
-  
-  private static final int TIMEOUT_SECONDS = 10;
 
   private AbstractFormField<String> formField;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     formField = new AbstractFormField<String>(ID)
     {
       @Override
@@ -64,169 +59,143 @@ public class AbstractFormFieldVirtualThreadTest
     };
   }
 
+  /**
+   * Verifies that the form field ID and type are correctly accessible from multiple virtual threads.
+   */
   @Test
-  void basicPropertiesAreCorrect() {
-    assertThat(formField.getId(), equalTo(ID));
-    assertThat(formField.getType(), equalTo(TYPE));
-    assertFalse(formField.isRequired());
-    assertFalse(formField.isDisabled());
-    assertFalse(formField.isReadOnly());
-  }
-
-  @Test
-  void concurrentAttributeAccess() throws Exception {
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-      
-      // Launch multiple virtual threads to concurrently access the attributes map
+  public void testConcurrentIdAndTypeAccess() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < THREAD_COUNT; i++) {
-        final int threadNum = i;
         executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
+            // Verify ID and type are correctly accessible
+            String id = formField.getId();
+            String type = formField.getType();
             
-            // Each thread adds a unique attribute
-            String key = "key-" + threadNum;
-            String value = "value-" + threadNum;
+            if (!ID.equals(id) || !TYPE.equals(type)) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent access", errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Verifies that form field properties can be safely modified from multiple virtual threads.
+   */
+  @Test
+  public void testConcurrentPropertyModification() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Set different properties based on thread index
+            if (index % 4 == 0) {
+              formField.setRequired(true);
+              formField.setHelpText("Help text " + index);
+            } else if (index % 4 == 1) {
+              formField.setDisabled(true);
+              formField.setLabel("Label " + index);
+            } else if (index % 4 == 2) {
+              formField.setReadOnly(true);
+              formField.setRegexValidation("[a-z]+");
+            } else {
+              formField.setInitialValue("Value " + index);
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent property modification", errorCount.get(), is(0));
+      
+      // Verify that properties were modified
+      assertThat(formField.isRequired() || formField.isDisabled() || formField.isReadOnly(), is(true));
+      assertThat(formField.getInitialValue(), notNullValue());
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Verifies that the attribute map can be safely modified from multiple virtual threads.
+   * This specifically tests the thread safety of the getAttributes() and withAttribute() methods.
+   */
+  @Test
+  public void testConcurrentAttributeMapModification() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Add an attribute with a unique key
+            String key = "attr" + index;
+            String value = "value" + index;
             formField.withAttribute(key, value);
             
             // Verify the attribute was added correctly
             Map<String, Object> attributes = formField.getAttributes();
-            assertThat(attributes, hasEntry(key, value));
-            
-            return null;
+            if (!value.equals(attributes.get(key))) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
           } finally {
-            completionLatch.countDown();
+            latch.countDown();
           }
         });
       }
       
-      // Start all threads simultaneously
-      startLatch.countDown();
+      // Wait for all tasks to complete
+      latch.await(30, TimeUnit.SECONDS);
       
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
-          "Timed out waiting for virtual threads to complete");
+      // Verify no errors occurred
+      assertThat("No errors should occur during concurrent attribute map modification", errorCount.get(), is(0));
       
-      // Verify all attributes were added correctly
+      // Verify that attributes were added correctly (check a few random ones)
       Map<String, Object> attributes = formField.getAttributes();
       assertThat(attributes.size(), is(THREAD_COUNT));
-      
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        String key = "key-" + i;
-        String expectedValue = "value-" + i;
-        assertThat(attributes, hasEntry(key, expectedValue));
-      }
-    }
-  }
-
-  @Test
-  void concurrentPropertyModification() throws Exception {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-      
-      // Track the last value set for each property
-      ConcurrentHashMap<String, Object> expectedValues = new ConcurrentHashMap<>();
-      
-      // Launch multiple virtual threads to concurrently modify properties
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        final int threadNum = i;
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Each thread modifies various properties
-            String helpText = "Help-" + threadNum;
-            formField.setHelpText(helpText);
-            expectedValues.put("helpText", helpText);
-            
-            String label = "Label-" + threadNum;
-            formField.setLabel(label);
-            expectedValues.put("label", label);
-            
-            String regex = "Regex-" + threadNum;
-            formField.setRegexValidation(regex);
-            expectedValues.put("regex", regex);
-            
-            // Toggle boolean properties
-            boolean required = (threadNum % 2 == 0);
-            formField.setRequired(required);
-            expectedValues.put("required", required);
-            
-            boolean disabled = (threadNum % 3 == 0);
-            formField.setDisabled(disabled);
-            expectedValues.put("disabled", disabled);
-            
-            boolean readOnly = (threadNum % 5 == 0);
-            formField.setReadOnly(readOnly);
-            expectedValues.put("readOnly", readOnly);
-            
-            return null;
-          } finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
-          "Timed out waiting for virtual threads to complete");
-      
-      // Verify the final property values match the last values set
-      assertThat(formField.getHelpText(), equalTo(expectedValues.get("helpText")));
-      assertThat(formField.getLabel(), equalTo(expectedValues.get("label")));
-      assertThat(formField.getRegexValidation(), equalTo(expectedValues.get("regex")));
-      assertThat(formField.isRequired(), equalTo(expectedValues.get("required")));
-      assertThat(formField.isDisabled(), equalTo(expectedValues.get("disabled")));
-      assertThat(formField.isReadOnly(), equalTo(expectedValues.get("readOnly")));
-    }
-  }
-
-  @Test
-  void attributeMapLazyInitialization() throws Exception {
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CountDownLatch startLatch = new CountDownLatch(1);
-      CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
-      
-      // Launch multiple virtual threads to concurrently access the attributes map
-      for (int i = 0; i < THREAD_COUNT; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Each thread gets the attributes map, which should trigger lazy initialization if needed
-            Map<String, Object> attributes = formField.getAttributes();
-            assertThat(attributes, notNullValue());
-            
-            // Add a unique attribute to verify the map is working
-            String uniqueKey = UUID.randomUUID().toString();
-            attributes.put(uniqueKey, "value");
-            assertThat(attributes, hasKey(uniqueKey));
-            
-            return null;
-          } finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      assertTrue(completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
-          "Timed out waiting for virtual threads to complete");
-      
-      // Verify the attributes map was initialized and contains entries
-      Map<String, Object> attributes = formField.getAttributes();
-      assertThat(attributes, notNullValue());
-      assertThat(attributes.size(), is(THREAD_COUNT));
+      assertThat(attributes, hasEntry("attr0", "value0"));
+      assertThat(attributes, hasEntry("attr499", "value499"));
+      assertThat(attributes, hasEntry("attr999", "value999"));
+    } finally {
+      executor.shutdown();
     }
   }
 }

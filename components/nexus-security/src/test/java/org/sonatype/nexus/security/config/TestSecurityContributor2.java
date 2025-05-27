@@ -17,6 +17,12 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege.MemoryCPrivilegeBuilder;
 import org.sonatype.nexus.security.config.memory.MemoryCRole;
 
+/**
+ * Test security contributor that provides a predefined set of privileges and roles for testing.
+ * Compatible with Java 21 and Apache Shiro 2.0.0.
+ *
+ * @since 3.1
+ */
 @Singleton
 public class TestSecurityContributor2
     implements SecurityContributor

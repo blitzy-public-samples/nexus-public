@@ -19,7 +19,6 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static java.util.Collections.singleton;
@@ -28,23 +27,18 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 
-/**
- * Tests for {@link DefaultRoleRealm} using JUnit Jupiter and Java 21 features.
- */
-@DisplayName("DefaultRoleRealm authorization tests")
 public class DefaultRoleRealmTest
     extends TestSupport
 {
   private DefaultRoleRealm underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     underTest = new DefaultRoleRealm();
   }
 
   @Test
-  @DisplayName("When role is not configured, authorization info should be null")
-  void doGetAuthorizationInfoWhenNotConfigured() {
+  public void testDoGetAuthorizationInfo_notConfigured() {
     underTest.setRole(null);
 
     AuthorizationInfo authorizationInfo = underTest.doGetAuthorizationInfo(principals("test"));
@@ -52,8 +46,7 @@ public class DefaultRoleRealmTest
   }
 
   @Test
-  @DisplayName("Authenticated user should receive the default role")
-  void doGetAuthorizationInfoForAuthenticatedUser() {
+  public void testDoGetAuthorizationInfo_authenticatedUser() {
     underTest.setRole("default-role");
 
     AuthorizationInfo authorizationInfo = underTest.doGetAuthorizationInfo(principals("test"));
@@ -62,24 +55,17 @@ public class DefaultRoleRealmTest
   }
 
   @Test
-  @DisplayName("Anonymous user should not receive the default role")
-  void doGetAuthorizationInfoForAnonymousUser() {
+  public void testDoGetAuthorizationInfo_anonymousUser() {
     underTest.setRole("default-role");
 
     AuthorizationInfo authorizationInfo = underTest.doGetAuthorizationInfo(principals("anonymous"));
     assertThat(authorizationInfo, nullValue());
   }
 
-  /**
-   * Creates a principal collection for the given user ID.
-   * Uses pattern matching to determine the type of principal collection to create.
-   *
-   * @param userId the user ID
-   * @return a principal collection for the user
-   */
   private static PrincipalCollection principals(final String userId) {
-    return switch (userId) {
-      case "anonymous" -> new AnonymousPrincipalCollection(userId, "realm");
-      default -> new SimplePrincipalCollection(userId, "realm");
-    };
+    if ("anonymous".equals(userId)) {
+      return new AnonymousPrincipalCollection(userId, "realm");
+    }
+    return new SimplePrincipalCollection(userId, "realm");
   }
+}

@@ -18,17 +18,16 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobSession;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import com.google.common.hash.HashCode;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +41,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
@@ -88,7 +86,7 @@ public class MemoryBlobSessionTest
   private int blobIdSequence = 1;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     Blob restoredBlob = mockBlob(RESTORED_BLOB_ID);
     Blob copiedBlob = mockBlob(COPIED_BLOB_ID);
 
@@ -199,7 +197,7 @@ public class MemoryBlobSessionTest
       session.getTransaction().commit();
     }
     catch (Throwable t) {
-      //explicitly having an assertion pleases sonar
+      //explictly having an assertion pleases sonar
       fail("transaction commit not reached");
     }
 
@@ -224,7 +222,7 @@ public class MemoryBlobSessionTest
       session.getTransaction().rollback();
     }
     catch (Throwable t) {
-      //explicitly having an assertion pleases sonar
+      //explictly having an assertion pleases sonar
       fail("rollback may have failed");
     }
 
@@ -240,59 +238,16 @@ public class MemoryBlobSessionTest
     }
   }
 
-  @Test
-  @VirtualThreadTestGroup
-  void concurrentBlobOperationsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    
-    // Create an executor service using virtual threads
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-      int taskCount = 100;
-      CountDownLatch latch = new CountDownLatch(taskCount);
-      AtomicInteger successCount = new AtomicInteger(0);
-      
-      // Perform concurrent blob operations using virtual threads
-      for (int i = 0; i < taskCount; i++) {
-        final int taskId = i;
-        executor.submit(() -> {
-          try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
-            // Create a blob
-            Blob blob = session.create(blobData, headers);
-            BlobId blobId = blob.getId();
-            
-            // Verify the blob exists
-            if (session.exists(blobId) && session.get(blobId) != null) {
-              // Delete the blob
-              session.delete(blobId);
-              
-              // Commit the transaction
-              session.getTransaction().commit();
-              successCount.incrementAndGet();
-            }
-          } catch (Exception e) {
-            log.error(STR."Error in virtual thread task \{taskId}", e);
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all tasks to complete (with timeout)
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify results
-      assertThat("All tasks should complete within the timeout", completed, is(true));
-      assertThat("All blob operations should succeed", successCount.get(), is(taskCount));
-    }
-  }
-
   private Blob newBlob(final InvocationOnMock unused) {
     return mockBlob(new BlobId(STR."new-blob-\{blobIdSequence++}"));
   }
 
   private Blob getBlob(final InvocationOnMock invocation) {
-    return mockBlob((BlobId) invocation.getArguments()[0]);
+    // Using pattern matching for more concise code
+    if (invocation.getArguments()[0] instanceof BlobId blobId) {
+      return mockBlob(blobId);
+    }
+    return null;
   }
 
   private Blob mockBlob(final BlobId blobId) {
@@ -308,5 +263,67 @@ public class MemoryBlobSessionTest
     session.copy(EXISTING_BLOB_ID, headers);
     session.delete(EXISTING_BLOB_ID);
     session.delete(newBlob.getId()); // go back and delete the first blob we created in this session
+  }
+  
+  /**
+   * Tests concurrent blob operations using Virtual Threads to verify scalability.
+   */
+  @Test
+  @VirtualThreadTestGroup
+  void concurrentBlobOperationsWithVirtualThreads() throws Exception {
+    // Configure test parameters
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Create executor service with virtual threads
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Set up a BlobSession for testing
+      try (BlobSession<?> session = new MemoryBlobSession(blobStore)) {
+        // Submit multiple concurrent tasks using virtual threads
+        for (int i = 0; i < taskCount; i++) {
+          final int taskId = i;
+          executor.submit(() -> {
+            try {
+              // Create a blob
+              BlobId blobId = new BlobId(STR."concurrent-blob-\{taskId}");
+              Blob blob = session.create(blobData, headers, blobId);
+              
+              // Verify the blob exists
+              assertThat(session.exists(blobId), is(true));
+              
+              // Delete the blob if task ID is even
+              if (taskId % 2 == 0) {
+                session.delete(blobId);
+                // Verify the blob is no longer accessible
+                assertThat(session.get(blobId), is(nullValue()));
+              }
+            } catch (Exception e) {
+              errorCount.incrementAndGet();
+            } finally {
+              latch.countDown();
+            }
+          });
+        }
+        
+        // Wait for all tasks to complete
+        boolean completed = latch.await(30, TimeUnit.SECONDS);
+        
+        // Verify results
+        assertThat("All tasks should complete within timeout", completed, is(true));
+        assertThat("No errors should occur during concurrent operations", errorCount.get(), is(0));
+        
+        // Commit the transaction to apply pending deletes
+        session.getTransaction().commit();
+      }
+      
+      // Verify that the BlobStore was called the expected number of times
+      // Note: This is a simplified verification as the actual count would depend on mock setup
+      verify(blobStore, org.mockito.Mockito.atLeast(taskCount)).exists(any());
+    } finally {
+      executor.shutdown();
+    }
   }
 }

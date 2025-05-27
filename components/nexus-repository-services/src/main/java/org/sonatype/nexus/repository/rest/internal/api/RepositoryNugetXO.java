@@ -13,70 +13,144 @@
 package org.sonatype.nexus.repository.rest.internal.api;
 
 import java.util.Collection;
+import java.util.Collections;
 import javax.annotation.Nullable;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-
 /**
- * Repository transfer object for Nuget repositories.
- * Implemented as a Java Record for improved immutability.
+ * Repository NuGet data transfer object implemented as a Java Record.
+ * Extends RepositoryDetailXO and adds NuGet-specific fields.
  *
  * @since 3.30
  */
 public record RepositoryNugetXO(
-    String name,
-    String type,
-    String format,
-    String url,
-    RepositoryStatusXO status,
     @Nullable String nugetVersion,
-    @Nullable Collection<String> memberNames)
+    @Nullable Collection<String> memberNames
+) implements RepositoryDetailXOExtension
 {
   /**
-   * Constructor with validation for required fields.
+   * Creates a new RepositoryNugetXO with the specified parameters.
+   *
+   * @param name         the repository name
+   * @param type         the repository type
+   * @param format       the repository format
+   * @param url          the repository URL
+   * @param status       the repository status
+   * @param nugetVersion the NuGet version
+   * @param memberNames  the collection of member repository names
    */
-  public RepositoryNugetXO {
-    checkNotNull(name);
-    checkNotNull(type);
-    checkNotNull(format);
-    checkNotNull(url);
-    checkNotNull(status);
-    // nugetVersion and memberNames can be null
+  public RepositoryNugetXO(
+      final String name,
+      final String type,
+      final String format,
+      final String url,
+      final RepositoryStatusXO status,
+      @Nullable final String nugetVersion,
+      @Nullable final Collection<String> memberNames)
+  {
+    this(nugetVersion, memberNames);
+    this.repositoryDetailXO = new RepositoryDetailXO(name, type, format, url, status);
   }
   
   /**
-   * Constructor that creates a RepositoryNugetXO from a RepositoryDetailXO and additional Nuget-specific fields.
+   * Compact constructor to validate and normalize the record components.
    */
-  public RepositoryNugetXO(RepositoryDetailXO detail, @Nullable String nugetVersion, @Nullable Collection<String> memberNames) {
-    this(detail.getName(), detail.getType(), detail.getFormat(), detail.getUrl(), detail.getStatus(), 
-        nugetVersion, memberNames);
+  public RepositoryNugetXO {
+    // Use pattern matching to handle nullable fields
+    memberNames = switch (memberNames) {
+      case null -> Collections.emptyList();
+      default -> Collections.unmodifiableCollection(memberNames);
+    };
   }
-
+  
   /**
-   * Returns the Nuget version.
-   * Uses pattern matching to handle null values.
-   *
-   * @return the Nuget version or null if not available
+   * The base RepositoryDetailXO instance.
    */
-  @Nullable
-  public String getNugetVersion() {
-    return switch(this) {
-      case RepositoryNugetXO(_, _, _, _, _, String version, _) -> version;
+  private final transient RepositoryDetailXO repositoryDetailXO;
+  
+  /**
+   * Gets the repository name.
+   *
+   * @return the repository name
+   */
+  @Override
+  public String getName() {
+    return repositoryDetailXO.getName();
+  }
+  
+  /**
+   * Gets the repository type.
+   *
+   * @return the repository type
+   */
+  @Override
+  public String getType() {
+    return repositoryDetailXO.getType();
+  }
+  
+  /**
+   * Gets the repository format.
+   *
+   * @return the repository format
+   */
+  @Override
+  public String getFormat() {
+    return repositoryDetailXO.getFormat();
+  }
+  
+  /**
+   * Gets the repository URL.
+   *
+   * @return the repository URL
+   */
+  @Override
+  public String getUrl() {
+    return repositoryDetailXO.getUrl();
+  }
+  
+  /**
+   * Gets the repository status.
+   *
+   * @return the repository status
+   */
+  @Override
+  public RepositoryStatusXO getStatus() {
+    return repositoryDetailXO.getStatus();
+  }
+  
+  /**
+   * Utility method to extract NuGet version and member names from a repository object using pattern matching.
+   *
+   * @param repository the repository object to extract data from
+   * @return a new RepositoryNugetXO if the repository is a NuGet repository, null otherwise
+   */
+  public static @Nullable RepositoryNugetXO fromRepository(Object repository) {
+    return switch (repository) {
+      case RepositoryNugetXO(var version, var members) -> new RepositoryNugetXO(version, members);
       default -> null;
     };
   }
-
+  
   /**
-   * Returns the member names collection.
-   * Uses pattern matching to handle null values.
+   * Utility method to check if a repository has a specific NuGet version using pattern matching.
    *
-   * @return the collection of member names or null if not available
+   * @param repository the repository object to check
+   * @param version the NuGet version to check for
+   * @return true if the repository is a NuGet repository with the specified version, false otherwise
    */
-  @Nullable
-  public Collection<String> getMemberNames() {
-    return switch(this) {
-      case RepositoryNugetXO(_, _, _, _, _, _, Collection<String> members) -> members;
-      default -> null;
-    };
+  public static boolean hasNugetVersion(Object repository, String version) {
+    return repository instanceof RepositoryNugetXO(String nugetVersion, var _) && 
+           version.equals(nugetVersion);
+  }
+  
+  /**
+   * Utility method to check if a repository contains a specific member using pattern matching.
+   *
+   * @param repository the repository object to check
+   * @param memberName the member name to check for
+   * @return true if the repository is a NuGet repository containing the specified member, false otherwise
+   */
+  public static boolean containsMember(Object repository, String memberName) {
+    return repository instanceof RepositoryNugetXO(var _, Collection<String> members) && 
+           members != null && members.contains(memberName);
   }
 }

@@ -15,7 +15,6 @@ package org.sonatype.nexus.repository.content.event.asset;
 import java.util.Optional;
 
 import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetData;
 import org.sonatype.nexus.repository.content.store.ContentStoreEvent;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -23,11 +22,6 @@ import static org.sonatype.nexus.repository.content.store.InternalIds.contentRep
 
 /**
  * Base {@link Asset} event.
- * <p>
- * This class has been updated for Java 21 to leverage Record Patterns for improved data encapsulation,
- * ensure thread safety for compatibility with Virtual Threads, and use String Templates for better
- * diagnostic output.
- * </p>
  *
  * @since 3.26
  */
@@ -37,57 +31,40 @@ public class AssetEvent
   private final Asset asset;
 
   /**
-   * Creates a new asset event with the given asset.
-   * <p>
-   * This constructor ensures immutability for thread safety, which is essential
-   * when working with Virtual Threads in Java 21.
-   * </p>
-   *
-   * @param asset the asset that triggered this event (must not be null)
+   * Creates a new event with the given asset.
+   * 
+   * @param asset the asset associated with this event (must not be null)
+   * @throws NullPointerException if asset is null
    */
   protected AssetEvent(final Asset asset) {
     super(contentRepositoryId(asset));
-    this.asset = checkNotNull(asset);
+    this.asset = checkNotNull(asset, "Asset cannot be null");
   }
 
   /**
-   * Gets the asset that triggered this event.
-   *
-   * @return the immutable asset instance
+   * Returns the asset associated with this event.
+   * 
+   * @return the asset (never null)
    */
   public Asset getAsset() {
     return asset;
   }
-  
+
   /**
-   * Extracts the asset path using Java 21 Record Patterns.
-   * <p>
-   * This demonstrates how to leverage Record Patterns for more concise data access.
-   * </p>
-   *
-   * @return the asset path or empty string if pattern matching fails
+   * Extracts and formats asset information using Java 21 Record Patterns.
+   * This method demonstrates how to safely extract and process asset data.
+   * 
+   * @return formatted asset information
    */
-  public String getAssetPath() {
-    if (asset != null && asset.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      return path;
+  protected String getAssetInfo() {
+    if (asset instanceof Asset(var path, var kind, var component, var blob, var hasBlob, var lastDownloaded, var blobStoreName, var blobSize)) {
+      return STR."path=\{path}, kind=\{kind}, hasBlob=\{hasBlob}, size=\{blobSize}";
     }
-    return "";
-  }
-  
-  /**
-   * Checks if this asset event is for a component-related asset using Record Patterns.
-   *
-   * @return true if the asset has an associated component
-   */
-  public boolean hasComponent() {
-    if (asset != null && asset.data() instanceof AssetData(var path, var kind, Optional.of(var component), var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      return true;
-    }
-    return false;
+    return asset.toString();
   }
 
   @Override
   public String toString() {
-    return STR."AssetEvent{asset=\{asset}} \{super.toString()}";
+    return STR."AssetEvent{asset=\{getAssetInfo()}} \{super.toString()}";
   }
 }

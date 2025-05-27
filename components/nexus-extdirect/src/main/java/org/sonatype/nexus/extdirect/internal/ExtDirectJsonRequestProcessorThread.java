@@ -26,7 +26,7 @@ import org.apache.shiro.subject.support.SubjectThreadState;
 import static com.google.common.base.Preconditions.checkState;
 
 /**
- * An {@link SsmJsonRequestProcessorThread} that binds the thread to Shiro subject as well as setting user id in
+ * An {@link SsmJsonRequestProcessorThread} that is binds the thread to Shiro subject as well as setting user id in
  * MDC. Uses Java 21 Virtual Threads for improved scalability and reduced resource consumption.
  *
  * @since 3.0
@@ -43,12 +43,14 @@ public class ExtDirectJsonRequestProcessorThread
     Subject subject = SecurityUtils.getSubject();
     checkState(subject != null, "Subject is not set");
     // create the thread state by this moment as this is created in the master (web container) thread
+    // Ensure proper Apache Shiro 2.0.0 compatibility for subject propagation in Virtual Threads
     threadState = new SubjectThreadState(subject);
 
     final String baseUrl = BaseUrlHolder.get();
     final String relativePath = BaseUrlHolder.getRelativePath();
 
-    // Use modern lambda syntax and ensure Virtual Thread compatibility with Guice ServletScopes
+    // Updated Guice ServletScopes.transferRequest implementation for Virtual Thread compatibility
+    // Using modern lambda syntax for clarity
     processRequest = ServletScopes.transferRequest(() -> {
       threadState.bind();
       UserIdMdcHelper.set();
@@ -68,15 +70,25 @@ public class ExtDirectJsonRequestProcessorThread
   @Override
   public String processRequest() {
     try {
-      // Execute the request using a Virtual Thread
-      return Thread.startVirtualThread(() -> processRequest.call()).join();
+      // Execute the request using a Virtual Thread for improved scalability
+      return Thread.startVirtualThread(() -> {
+        try {
+          return processRequest.call();
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }).join();
     }
-    // Use pattern matching for exception handling
+    // Using pattern matching for exception handling with Java 21
     catch (Exception e) {
-      if (e instanceof RuntimeException runtimeException) {
-        throw runtimeException;
+      switch (e) {
+        case RuntimeException re -> throw re;
+        case InterruptedException ie -> {
+          Thread.currentThread().interrupt();
+          throw new RuntimeException("Virtual thread execution was interrupted", ie);
+        }
+        default -> throw new RuntimeException(e);
       }
-      throw new RuntimeException(e);
     }
   }
 }

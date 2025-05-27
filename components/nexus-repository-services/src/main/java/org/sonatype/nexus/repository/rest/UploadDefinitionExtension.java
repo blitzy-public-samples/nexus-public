@@ -13,82 +13,62 @@
 package org.sonatype.nexus.repository.rest;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.repository.upload.UploadFieldDefinition;
 
 /**
  * Extension point interface which provides a mechanism for contributing an {@link UploadFieldDefinition}
- * to the upload system.
- * <p>
- * This interface has been updated for Java 21 compatibility with support for both synchronous and
- * asynchronous contribution methods. The asynchronous method leverages Java 21 Virtual Threads for
- * improved scalability and performance in I/O-bound operations.
- * <p>
- * <h3>Java 21 Compatibility Notes:</h3>
- * <ul>
- *   <li><b>Virtual Threads:</b> Implementations can leverage {@link #contributeAsync()} which uses
- *       Virtual Threads by default for non-blocking, high-throughput processing.</li>
- *   <li><b>String Templates:</b> Implementations should use Java 21 String Templates for error messages
- *       and logging to improve readability and reduce string concatenation errors. For example:
- *       {@code STR."Error processing upload definition: \{fieldName}"}</li>
- *   <li><b>Pattern Matching:</b> When handling different types of upload fields, consider using
- *       pattern matching for instanceof and switch expressions for cleaner code.</li>
- * </ul>
- * <p>
- * <h3>Best Practices:</h3>
- * <ul>
- *   <li>Prefer implementing {@link #contributeAsync()} for I/O-bound operations to leverage Virtual Threads</li>
- *   <li>Keep implementations lightweight to avoid thread pinning</li>
- *   <li>Use structured concurrency patterns when spawning additional asynchronous tasks</li>
- *   <li>Avoid blocking operations in the synchronous {@link #contribute()} method</li>
- *   <li>Use String Templates for error messages and logging for improved readability</li>
- * </ul>
  *
  * @since 3.10
  */
 public interface UploadDefinitionExtension
 {
   /**
-   * Synchronously contribute an {@link UploadFieldDefinition}.
-   * <p>
-   * This is the traditional synchronous method that should be implemented for simple,
-   * non-blocking operations. For I/O-bound or potentially blocking operations,
-   * consider implementing {@link #contributeAsync()} instead to leverage Virtual Threads.
-   *
-   * @return the upload field definition to contribute
+   * Contribute an {@link UploadFieldDefinition} to the upload system.
+   * 
+   * @return the field definition to contribute
    */
   UploadFieldDefinition contribute();
-
+  
   /**
-   * Asynchronously contribute an {@link UploadFieldDefinition} using Java 21 Virtual Threads.
+   * Asynchronously contribute an {@link UploadFieldDefinition} to the upload system using Java 21 Virtual Threads.
+   * This method is designed to be used with I/O-bound operations that benefit from the lightweight concurrency
+   * model provided by Virtual Threads.
    * <p>
-   * This method provides a default implementation that delegates to the synchronous {@link #contribute()}
-   * method, but executes it on a Virtual Thread for improved scalability. Implementations can override
-   * this method to provide custom asynchronous behavior.
+   * Implementation best practices:
+   * <ul>
+   *   <li>Use Virtual Threads for I/O-bound operations by leveraging {@code Executors.newVirtualThreadPerTaskExecutor()}</li>
+   *   <li>Implement error handling using String Templates for clearer error messages, e.g.,
+   *       {@code STR."Error processing upload definition: \{errorDetails}"}</li>
+   *   <li>Avoid blocking operations in the main thread path</li>
+   *   <li>Use structured concurrency patterns when spawning multiple Virtual Threads</li>
+   * </ul>
    * <p>
-   * Example implementation using String Templates for error handling:
+   * Example implementation:
    * <pre>{@code
    * @Override
    * public CompletableFuture<UploadFieldDefinition> contributeAsync() {
    *   return CompletableFuture.supplyAsync(() -> {
    *     try {
+   *       // I/O-bound operations to determine field definition
    *       String fieldName = "example";
-   *       // Use String Template for better error messages
-   *       log.debug(STR."Processing upload field: \{fieldName}");
-   *       return new UploadFieldDefinition(fieldName, false, Type.STRING);
+   *       String helpText = "Example field";
+   *       return new UploadFieldDefinition(fieldName, helpText, false, Type.STRING);
    *     } catch (Exception e) {
-   *       // Use String Template for better error messages
-   *       throw new RuntimeException(STR."Failed to create upload definition: \{e.getMessage()}", e);
+   *       // Using Java 21 String Templates for clearer error messages
+   *       String errorDetails = e.getMessage();
+   *       log.error(STR."Failed to create upload field definition: \{errorDetails}");
+   *       throw e;
    *     }
    *   }, Executors.newVirtualThreadPerTaskExecutor());
    * }
    * }</pre>
-   *
-   * @return a CompletableFuture that will resolve to the upload field definition
-   * @since 3.60.0
+   * 
+   * @return a CompletableFuture that will resolve to the field definition to contribute
+   * @since 3.60 (Java 21 compatibility update)
    */
   default CompletableFuture<UploadFieldDefinition> contributeAsync() {
-    return CompletableFuture.supplyAsync(this::contribute, Executors.newVirtualThreadPerTaskExecutor());
+    // Default implementation calls the synchronous method
+    return CompletableFuture.completedFuture(contribute());
   }
 }

@@ -12,27 +12,35 @@
  */
 package org.sonatype.nexus.script.plugin.internal;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.experimental.categories.Category;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.content.testsuite.groups.SQLTestGroup;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.testdb.DataSessionRule;
+import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
-/**
- * Tests for {@link ScriptDAO} using JUnit Jupiter 5.10.1 and Java 21.
- * <p>
- * This test validates the basic CRUD operations for script storage in the database.
- */
-@org.junit.jupiter.api.Tag("sql")
+@ExtendWith(MockitoExtension.class)
+@Category({SQLTestGroup.class, Java21TestGroup.class})
 public class ScriptDAOTest
     extends TestSupport
 {
@@ -55,7 +63,7 @@ public class ScriptDAOTest
   }
 
   @Test
-  public void testCreateReadUpdateDelete() {
+  public void createReadUpdateDelete() {
     ScriptData script = new ScriptData();
     script.setName("hello");
     script.setContent("log.info('hello')");
@@ -82,5 +90,73 @@ public class ScriptDAOTest
     dao.delete(script.getName());
 
     assertThat(dao.read(script.getName()).isPresent(), is(false));
+  }
+  
+  @Test
+  public void concurrentDatabaseOperationsWithVirtualThreads() throws Exception {
+    // Use virtual threads for concurrent operations
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    int operationCount = 100;
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    List<String> scriptNames = new ArrayList<>();
+    
+    try {
+      // Create multiple scripts concurrently using virtual threads
+      for (int i = 0; i < operationCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            String scriptName = "script-" + index;
+            scriptNames.add(scriptName);
+            
+            ScriptData script = new ScriptData();
+            script.setName(scriptName);
+            script.setContent("log.info('Script " + index + "')");
+            
+            dao.create(script);
+            
+            // Verify script was created
+            Script read = dao.read(scriptName).orElse(null);
+            if (read == null || !read.getName().equals(scriptName)) {
+              errorCount.incrementAndGet();
+            }
+            
+            // Update script
+            script.setContent("log.info('Updated Script " + index + "')");
+            dao.update(script);
+          } 
+          catch (Exception e) {
+            log.error("Error in virtual thread operation", e);
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      latch.await(30, TimeUnit.SECONDS);
+      
+      // Verify results
+      assertThat("All operations should complete without errors", errorCount.get(), is(0));
+      
+      // Verify all scripts exist and can be read
+      for (String name : scriptNames) {
+        Script script = dao.read(name).orElse(null);
+        assertThat("Script " + name + " should exist", script, is(notNullValue()));
+        assertThat(script.getContent(), containsString("Updated Script"));
+      }
+      
+      // Clean up - delete all scripts
+      for (String name : scriptNames) {
+        dao.delete(name);
+      }
+      
+    } finally {
+      executor.shutdown();
+    }
   }
 }

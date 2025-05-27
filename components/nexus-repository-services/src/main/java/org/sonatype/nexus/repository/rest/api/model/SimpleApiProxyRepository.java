@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.rest.api.model;
 
+import java.util.Optional;
 import javax.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.types.ProxyType;
@@ -25,6 +26,7 @@ import io.swagger.annotations.ApiModelProperty;
 
 /**
  * API Proxy Repository for simple formats which do not have custom attributes for proxies.
+ * Updated for Java 21 compatibility with Record-based attribute classes.
  *
  * @since 3.20
  */
@@ -77,81 +79,139 @@ public class SimpleApiProxyRepository
  }
 
   /**
-   * Get storage attributes using record pattern matching.
-   *
-   * @return the storage attributes
+   * Returns the storage attributes for this repository.
+   * 
+   * @return the storage attributes record
    */
   public StorageAttributes getStorage() {
     return storage;
   }
 
   /**
-   * Get cleanup policy attributes.
-   *
-   * @return the cleanup policy attributes
+   * Returns the cleanup policy attributes for this repository.
+   * 
+   * @return the cleanup policy attributes record, may be null
    */
   public CleanupPolicyAttributes getCleanup() {
     return cleanup;
   }
 
   /**
-   * Get proxy attributes using record pattern matching.
+   * Returns the proxy attributes for this repository.
    * 
-   * @return the proxy attributes
+   * @return the proxy attributes record
    */
   public ProxyAttributes getProxy() {
-    if (proxy instanceof ProxyAttributes(var remoteUrl, var contentMaxAge, var metadataMaxAge)) {
-      // Using record pattern to access components directly if needed
-      return proxy;
-    }
     return proxy;
   }
 
   /**
-   * Get negative cache attributes using record pattern matching.
-   *
-   * @return the negative cache attributes
+   * Returns the negative cache attributes for this repository.
+   * 
+   * @return the negative cache attributes record
    */
   public NegativeCacheAttributes getNegativeCache() {
-    if (negativeCache instanceof NegativeCacheAttributes(var enabled, var timeToLive)) {
-      // Using record pattern to access components directly if needed
-      return negativeCache;
-    }
     return negativeCache;
   }
 
   /**
-   * Get HTTP client attributes using record pattern matching.
-   *
-   * @return the HTTP client attributes
+   * Returns the HTTP client attributes for this repository.
+   * 
+   * @return the HTTP client attributes record
    */
   public HttpClientAttributes getHttpClient() {
-    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection, var authentication)) {
-      // Using record pattern to access components directly if needed
-      return httpClient;
-    }
     return httpClient;
   }
 
   /**
-   * Get the routing rule name.
-   *
-   * @return the routing rule name
+   * Returns the routing rule name for this repository.
+   * 
+   * @return the routing rule name, may be null
    */
   public String getRoutingRuleName() {
     return routingRuleName;
   }
 
   /**
-   * Get replication attributes using record pattern matching.
-   *
-   * @return the replication attributes
+   * Returns the replication attributes for this repository.
+   * 
+   * @return the replication attributes record, may be null
    */
   public ReplicationAttributes getReplication() { 
-    if (replication instanceof ReplicationAttributes(var preemptivePullEnabled, var assetPathRegex)) {
-      // Using record pattern to access components directly if needed
-      return replication;
-    }
     return replication; 
+  }
+  
+  /**
+   * Utility method that demonstrates the use of Record Patterns with Java 21.
+   * Extracts the blob store name from the storage attributes using Record Pattern matching.
+   *
+   * @return the blob store name
+   */
+  public String getBlobStoreName() {
+    // Using Record Pattern to extract the blobStoreName component directly
+    if (storage instanceof StorageAttributes(var blobStoreName, var strictContentTypeValidation)) {
+      return blobStoreName;
+    }
+    return null;
+  }
+  
+  /**
+   * Utility method that demonstrates the use of Record Patterns with Java 21.
+   * Extracts the remote URL from the proxy attributes using Record Pattern matching.
+   *
+   * @return the remote URL
+   */
+  public String getRemoteUrl() {
+    // Using Record Pattern to extract the remoteUrl component directly
+    if (proxy instanceof ProxyAttributes(var remoteUrl, var contentMaxAge, var metadataMaxAge)) {
+      return remoteUrl;
+    }
+    return null;
+  }
+  
+  /**
+   * Utility method that demonstrates the use of Record Patterns with Java 21.
+   * Creates a configuration summary string using Record Patterns to extract multiple components.
+   *
+   * @return a configuration summary string
+   */
+  public String getConfigurationSummary() {
+    StringBuilder summary = new StringBuilder();
+    
+    // Using Record Patterns to extract components from multiple records
+    if (storage instanceof StorageAttributes(var blobStoreName, var strictContentTypeValidation)) {
+      summary.append("Storage: ").append(blobStoreName)
+             .append(" (strict validation: ").append(strictContentTypeValidation).append(")\n");
+    }
+    
+    if (proxy instanceof ProxyAttributes(var remoteUrl, var contentMaxAge, var metadataMaxAge)) {
+      summary.append("Proxy: ").append(remoteUrl)
+             .append(" (content cache: ").append(contentMaxAge)
+             .append(" min, metadata cache: ").append(metadataMaxAge).append(" min)\n");
+    }
+    
+    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection)) {
+      summary.append("HTTP Client: blocked=").append(blocked)
+             .append(", autoBlock=").append(autoBlock).append("\n");
+    }
+    
+    return summary.toString();
+  }
+  
+  /**
+   * Utility method that demonstrates the use of Optional with Record Patterns in Java 21.
+   * Safely extracts the content max age from proxy attributes.
+   *
+   * @return an Optional containing the content max age if available
+   */
+  public Optional<Integer> getContentMaxAge() {
+    // Using Record Pattern with Optional for safe access
+    return Optional.ofNullable(proxy)
+        .map(p -> {
+          if (p instanceof ProxyAttributes(var remoteUrl, var contentMaxAge, var metadataMaxAge)) {
+            return contentMaxAge;
+          }
+          return null;
+        });
   }
 }

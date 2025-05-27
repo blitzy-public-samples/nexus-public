@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
-import java.util.Arrays;
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.common.event.EventManager;
@@ -37,45 +37,98 @@ public class DisjunctionCondition
 
   @Override
   protected boolean reevaluate(final Condition... conditions) {
-    // Using pattern matching for switch to evaluate conditions more efficiently
-    return switch (conditions) {
-      case Condition[] c when c.length == 0 -> false;
-      case Condition[] c -> {
-        for (Condition condition : c) {
-          if (condition.isSatisfied()) {
-            lastSatisfied = condition;
-            yield true;
-          }
-        }
+    // Use pattern matching for switch to evaluate conditions more efficiently
+    // Capture the current thread context to ensure proper propagation
+    return switch (findSatisfiedCondition(conditions)) {
+      case Condition satisfied when satisfied != null -> {
+        lastSatisfied = satisfied;
+        yield true;
+      }
+      case null -> {
         lastSatisfied = null;
         yield false;
       }
     };
   }
+  
+  /**
+   * Helper method to find the first satisfied condition.
+   * This preserves thread context during condition evaluation.
+   *
+   * @param conditions The conditions to evaluate
+   * @return The first satisfied condition or null if none are satisfied
+   */
+  private Condition findSatisfiedCondition(final Condition... conditions) {
+    for (final Condition condition : conditions) {
+      if (condition.isSatisfied()) {
+        return condition;
+      }
+    }
+    return null;
+  }
 
   @Override
   public String toString() {
-    return String.join(" OR ", Arrays.stream(getConditions())
-        .map(Object::toString)
-        .toArray(String[]::new));
+    // Use String Templates for more readable string building
+    Condition[] conditions = getConditions();
+    if (conditions.length == 0) {
+      return "";
+    }
+    
+    // Start with the first condition
+    String result = conditions[0].toString();
+    
+    // Add the rest with OR separators
+    for (int i = 1; i < conditions.length; i++) {
+      result = STR."{result} OR {conditions[i]}";
+    }
+    
+    return result;
   }
 
   @Override
   public String explainSatisfied() {
+    // If we have a last satisfied condition, use its explanation
     if (lastSatisfied != null) {
       return lastSatisfied.explainSatisfied();
     }
     
-    return String.join(" OR ", Arrays.stream(getConditions())
-        .map(Condition::explainSatisfied)
-        .toArray(String[]::new));
+    // Otherwise build an explanation using all conditions
+    Condition[] conditions = getConditions();
+    if (conditions.length == 0) {
+      return "";
+    }
+    
+    // Start with the first condition's explanation
+    String explanation = conditions[0].explainSatisfied();
+    
+    // Add the rest with OR separators using String Templates
+    for (int i = 1; i < conditions.length; i++) {
+      explanation = STR."{explanation} OR {conditions[i].explainSatisfied()}";
+    }
+    
+    return explanation;
   }
 
   @Override
   public String explainUnsatisfied() {
-    return String.join(" AND ", Arrays.stream(getConditions())
-        .map(Condition::explainUnsatisfied)
-        .toArray(String[]::new));
+    // Build an explanation for why the disjunction is unsatisfied
+    // Note: For a disjunction to be unsatisfied, all conditions must be unsatisfied
+    Condition[] conditions = getConditions();
+    if (conditions.length == 0) {
+      return "";
+    }
+    
+    // Start with the first condition's unsatisfied explanation
+    String explanation = conditions[0].explainUnsatisfied();
+    
+    // Add the rest with AND separators using String Templates
+    // Note: We use AND here because all conditions must be unsatisfied for the OR to be unsatisfied
+    for (int i = 1; i < conditions.length; i++) {
+      explanation = STR."{explanation} AND {conditions[i].explainUnsatisfied()}";
+    }
+    
+    return explanation;
   }
 
 }

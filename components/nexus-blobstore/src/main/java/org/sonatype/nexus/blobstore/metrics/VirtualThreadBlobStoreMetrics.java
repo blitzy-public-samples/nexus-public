@@ -12,366 +12,251 @@
  */
 package org.sonatype.nexus.blobstore.metrics;
 
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 
-import javax.annotation.Nullable;
+import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
-import org.sonatype.nexus.blobstore.api.BlobStore;
-import org.sonatype.nexus.blobstore.api.OperationType;
-
 import org.sonatype.goodies.common.ComponentSupport;
+import org.sonatype.nexus.blobstore.api.OperationMetrics;
+import org.sonatype.nexus.blobstore.api.OperationType;
+import org.sonatype.nexus.internal.metrics.VirtualThreadMetrics;
+
+import com.codahale.metrics.Gauge;
+import com.codahale.metrics.Metric;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.MetricSet;
+import com.codahale.metrics.Timer;
+import com.google.common.collect.ImmutableMap;
 
 /**
  * Specialized metrics collector for monitoring BlobStore operations executed within Java 21 Virtual Threads.
- * Provides detailed statistics on thread execution patterns, performance characteristics, and resource utilization.
  * 
- * This class enables integration between the BlobStore metrics system and the global Virtual Thread monitoring
- * framework, allowing for proper identification, tracking, and reporting of blob operations running on
- * Virtual Threads versus platform threads.
+ * <p>This class provides detailed statistics on thread execution patterns, performance characteristics,
+ * and resource utilization for BlobStore operations running on Virtual Threads versus platform threads.</p>
+ *
+ * <p>It integrates with the global Virtual Thread monitoring framework to enable proper identification,
+ * tracking, and reporting of blob operations running on Virtual Threads versus platform threads.</p>
  *
  * @since 3.60
  */
-@Named
+@Named("virtual-thread-blobstore")
 @Singleton
-public class VirtualThreadBlobStoreMetrics extends ComponentSupport
+public class VirtualThreadBlobStoreMetrics
+    extends ComponentSupport
+    implements MetricSet
 {
+  private final VirtualThreadMetrics virtualThreadMetrics;
+  
+  private final Map<OperationType, OperationTypeMetrics> operationMetrics = new ConcurrentHashMap<>();
+  
   /**
-   * Metrics for a specific operation type when executed on a Virtual Thread
+   * Constructor.
+   *
+   * @param virtualThreadMetrics the global virtual thread metrics service
+   * @param metricRegistry the metric registry to register metrics with
    */
-  public static class OperationMetrics
+  @Inject
+  public VirtualThreadBlobStoreMetrics(
+      final VirtualThreadMetrics virtualThreadMetrics,
+      final MetricRegistry metricRegistry)
   {
-    private final LongAdder operationCount = new LongAdder();
-    private final LongAdder errorCount = new LongAdder();
-    private final LongAdder totalBytes = new LongAdder();
-    private final LongAdder totalTimeNanos = new LongAdder();
-    private final AtomicLong maxTimeNanos = new AtomicLong(0);
-    private final LongAdder schedulingDelayNanos = new LongAdder();
-    private final AtomicLong maxSchedulingDelayNanos = new AtomicLong(0);
-    private final LongAdder pinnedCount = new LongAdder();
-    private final LongAdder pinnedTimeNanos = new LongAdder();
-    private final AtomicLong maxPinnedTimeNanos = new AtomicLong(0);
+    this.virtualThreadMetrics = virtualThreadMetrics;
     
-    /**
-     * Records a successful operation execution
-     *
-     * @param executionTimeNanos the execution time in nanoseconds
-     * @param bytes the number of bytes processed (if applicable, 0 otherwise)
-     * @param schedulingDelayNanos the delay between operation submission and start in nanoseconds
-     */
-    public void recordSuccess(long executionTimeNanos, long bytes, long schedulingDelayNanos) {
-      operationCount.increment();
-      totalTimeNanos.add(executionTimeNanos);
-      updateMax(maxTimeNanos, executionTimeNanos);
+    // Initialize metrics for each operation type
+    for (OperationType type : OperationType.values()) {
+      operationMetrics.put(type, new OperationTypeMetrics(type));
+    }
+    
+    // Register this metric set with the registry
+    metricRegistry.register(MetricRegistry.name("blobstore", "virtualthread"), this);
+    
+    log.info("Initialized Virtual Thread metrics for BlobStore operations");
+  }
+
+  @Override
+  public Map<String, Metric> getMetrics() {
+    ImmutableMap.Builder<String, Metric> builder = ImmutableMap.builder();
+    
+    // Add metrics for each operation type
+    for (Map.Entry<OperationType, OperationTypeMetrics> entry : operationMetrics.entrySet()) {
+      String opName = entry.getKey().name().toLowerCase();
+      OperationTypeMetrics metrics = entry.getValue();
       
-      if (bytes > 0) {
-        totalBytes.add(bytes);
+      builder.put(opName + ".virtualthread.count", (Gauge<Long>) metrics::getVirtualThreadCount);
+      builder.put(opName + ".platformthread.count", (Gauge<Long>) metrics::getPlatformThreadCount);
+      builder.put(opName + ".virtualthread.latency", metrics.getVirtualThreadTimer());
+      builder.put(opName + ".platformthread.latency", metrics.getPlatformThreadTimer());
+      builder.put(opName + ".virtualthread.size", (Gauge<Long>) metrics::getVirtualThreadBlobSize);
+      builder.put(opName + ".platformthread.size", (Gauge<Long>) metrics::getPlatformThreadBlobSize);
+      builder.put(opName + ".virtualthread.errors", (Gauge<Long>) metrics::getVirtualThreadErrors);
+      builder.put(opName + ".platformthread.errors", (Gauge<Long>) metrics::getPlatformThreadErrors);
+    }
+    
+    return builder.build();
+  }
+  
+  /**
+   * Records metrics for a BlobStore operation executed on a thread.
+   *
+   * @param operationType the type of operation being performed
+   * @param durationMillis the execution duration in milliseconds
+   * @param blobSize the size of the blob in bytes (if applicable, 0 otherwise)
+   * @param isError whether the operation resulted in an error
+   */
+  public void recordOperation(
+      final OperationType operationType,
+      final long durationMillis,
+      final long blobSize,
+      final boolean isError)
+  {
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    OperationTypeMetrics metrics = operationMetrics.get(operationType);
+    
+    if (metrics != null) {
+      if (isVirtualThread) {
+        metrics.recordVirtualThreadOperation(durationMillis, blobSize, isError);
+        // Also record in the global virtual thread metrics
+        virtualThreadMetrics.recordExecution(durationMillis * 1_000_000); // Convert to nanos
       }
-      
-      if (schedulingDelayNanos > 0) {
-        this.schedulingDelayNanos.add(schedulingDelayNanos);
-        updateMax(maxSchedulingDelayNanos, schedulingDelayNanos);
+      else {
+        metrics.recordPlatformThreadOperation(durationMillis, blobSize, isError);
       }
-    }
-    
-    /**
-     * Records an operation that resulted in an error
-     *
-     * @param executionTimeNanos the execution time in nanoseconds before the error occurred
-     */
-    public void recordError(long executionTimeNanos) {
-      errorCount.increment();
-      totalTimeNanos.add(executionTimeNanos);
-      updateMax(maxTimeNanos, executionTimeNanos);
-    }
-    
-    /**
-     * Records a pinning event where a Virtual Thread was pinned to its carrier thread
-     *
-     * @param pinnedTimeNanos the duration of the pinning in nanoseconds
-     */
-    public void recordPinning(long pinnedTimeNanos) {
-      pinnedCount.increment();
-      this.pinnedTimeNanos.add(pinnedTimeNanos);
-      updateMax(maxPinnedTimeNanos, pinnedTimeNanos);
-    }
-    
-    /**
-     * @return the total number of operations executed
-     */
-    public long getOperationCount() {
-      return operationCount.sum();
-    }
-    
-    /**
-     * @return the number of operations that resulted in errors
-     */
-    public long getErrorCount() {
-      return errorCount.sum();
-    }
-    
-    /**
-     * @return the total number of bytes processed
-     */
-    public long getTotalBytes() {
-      return totalBytes.sum();
-    }
-    
-    /**
-     * @return the total execution time in nanoseconds
-     */
-    public long getTotalTimeNanos() {
-      return totalTimeNanos.sum();
-    }
-    
-    /**
-     * @return the maximum execution time in nanoseconds for any single operation
-     */
-    public long getMaxTimeNanos() {
-      return maxTimeNanos.get();
-    }
-    
-    /**
-     * @return the average execution time in nanoseconds, or 0 if no operations have been executed
-     */
-    public double getAverageTimeNanos() {
-      long count = operationCount.sum();
-      return count > 0 ? (double) totalTimeNanos.sum() / count : 0;
-    }
-    
-    /**
-     * @return the total scheduling delay in nanoseconds
-     */
-    public long getSchedulingDelayNanos() {
-      return schedulingDelayNanos.sum();
-    }
-    
-    /**
-     * @return the maximum scheduling delay in nanoseconds
-     */
-    public long getMaxSchedulingDelayNanos() {
-      return maxSchedulingDelayNanos.get();
-    }
-    
-    /**
-     * @return the average scheduling delay in nanoseconds, or 0 if no operations have been executed
-     */
-    public double getAverageSchedulingDelayNanos() {
-      long count = operationCount.sum();
-      return count > 0 ? (double) schedulingDelayNanos.sum() / count : 0;
-    }
-    
-    /**
-     * @return the number of times Virtual Threads were pinned during this operation
-     */
-    public long getPinnedCount() {
-      return pinnedCount.sum();
-    }
-    
-    /**
-     * @return the total time spent pinned in nanoseconds
-     */
-    public long getPinnedTimeNanos() {
-      return pinnedTimeNanos.sum();
-    }
-    
-    /**
-     * @return the maximum time spent pinned in nanoseconds for any single operation
-     */
-    public long getMaxPinnedTimeNanos() {
-      return maxPinnedTimeNanos.get();
-    }
-    
-    /**
-     * @return the average time spent pinned in nanoseconds, or 0 if no pinning has occurred
-     */
-    public double getAveragePinnedTimeNanos() {
-      long count = pinnedCount.sum();
-      return count > 0 ? (double) pinnedTimeNanos.sum() / count : 0;
-    }
-    
-    /**
-     * @return the percentage of operations that experienced pinning
-     */
-    public double getPinningPercentage() {
-      long count = operationCount.sum();
-      return count > 0 ? (double) pinnedCount.sum() / count * 100 : 0;
-    }
-    
-    /**
-     * Updates the maximum value in an AtomicLong if the new value is larger
-     */
-    private void updateMax(AtomicLong maxValue, long newValue) {
-      long current;
-      do {
-        current = maxValue.get();
-        if (newValue <= current) {
-          break;
-        }
-      } while (!maxValue.compareAndSet(current, newValue));
     }
   }
   
-  // Maps BlobStore ID -> Operation Type -> Metrics
-  private final Map<String, Map<OperationType, OperationMetrics>> metricsMap = new ConcurrentHashMap<>();
-  
-  // Thread-local for tracking operation start times
-  private final ThreadLocal<Instant> operationStartTime = new ThreadLocal<>();
+  /**
+   * Updates the metrics from an existing OperationMetrics object, detecting the thread type automatically.
+   *
+   * @param operationType the type of operation
+   * @param metrics the operation metrics to incorporate
+   */
+  public void updateMetrics(final OperationType operationType, final OperationMetrics metrics) {
+    boolean isVirtualThread = Thread.currentThread().isVirtual();
+    OperationTypeMetrics typeMetrics = operationMetrics.get(operationType);
+    
+    if (typeMetrics != null) {
+      if (isVirtualThread) {
+        typeMetrics.updateVirtualThreadMetrics(metrics);
+      }
+      else {
+        typeMetrics.updatePlatformThreadMetrics(metrics);
+      }
+    }
+  }
   
   /**
-   * Determines if the current thread is a Virtual Thread
+   * Determines if the current thread is a virtual thread.
    *
-   * @return true if the current thread is a Virtual Thread, false otherwise
+   * @return true if the current thread is a virtual thread, false otherwise
    */
-  public boolean isVirtualThread() {
+  public static boolean isVirtualThread() {
     return Thread.currentThread().isVirtual();
   }
   
   /**
-   * Records the start of a BlobStore operation on a Virtual Thread
-   *
-   * @return the start time, or null if the current thread is not a Virtual Thread
+   * Inner class to track metrics for a specific operation type, separated by thread type.
    */
-  @Nullable
-  public Instant recordOperationStart() {
-    if (!isVirtualThread()) {
-      return null;
+  private static class OperationTypeMetrics {
+    private final OperationType operationType;
+    private final AtomicLong virtualThreadCount = new AtomicLong();
+    private final AtomicLong platformThreadCount = new AtomicLong();
+    private final AtomicLong virtualThreadBlobSize = new AtomicLong();
+    private final AtomicLong platformThreadBlobSize = new AtomicLong();
+    private final AtomicLong virtualThreadErrors = new AtomicLong();
+    private final AtomicLong platformThreadErrors = new AtomicLong();
+    private final Timer virtualThreadTimer = new Timer();
+    private final Timer platformThreadTimer = new Timer();
+    
+    OperationTypeMetrics(final OperationType operationType) {
+      this.operationType = operationType;
     }
     
-    Instant start = Instant.now();
-    operationStartTime.set(start);
-    return start;
-  }
-  
-  /**
-   * Records the completion of a BlobStore operation on a Virtual Thread
-   *
-   * @param blobStore the BlobStore that performed the operation
-   * @param operationType the type of operation performed
-   * @param bytes the number of bytes processed (if applicable, 0 otherwise)
-   * @param error true if the operation resulted in an error, false otherwise
-   * @param schedulingDelayNanos the delay between operation submission and start in nanoseconds (if known, 0 otherwise)
-   * @return the duration of the operation, or null if the current thread is not a Virtual Thread or no start time was recorded
-   */
-  @Nullable
-  public Duration recordOperationEnd(BlobStore blobStore, OperationType operationType, long bytes, boolean error, long schedulingDelayNanos) {
-    if (!isVirtualThread()) {
-      return null;
-    }
-    
-    Instant start = operationStartTime.get();
-    if (start == null) {
-      log.debug("No operation start time recorded for {} operation on {}", operationType, blobStore.getBlobStoreConfiguration().getName());
-      return null;
-    }
-    
-    try {
-      Instant end = Instant.now();
-      Duration duration = Duration.between(start, end);
-      long durationNanos = duration.toNanos();
+    void recordVirtualThreadOperation(final long durationMillis, final long blobSize, final boolean isError) {
+      virtualThreadCount.incrementAndGet();
+      virtualThreadTimer.update(durationMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
       
-      OperationMetrics metrics = getOrCreateMetrics(blobStore, operationType);
-      if (error) {
-        metrics.recordError(durationNanos);
-      } else {
-        metrics.recordSuccess(durationNanos, bytes, schedulingDelayNanos);
+      if (blobSize > 0) {
+        virtualThreadBlobSize.addAndGet(blobSize);
       }
       
-      return duration;
-    } finally {
-      operationStartTime.remove();
-    }
-  }
-  
-  /**
-   * Records a pinning event where a Virtual Thread was pinned to its carrier thread
-   *
-   * @param blobStore the BlobStore where the pinning occurred
-   * @param operationType the type of operation being performed when pinning occurred
-   * @param pinnedTimeNanos the duration of the pinning in nanoseconds
-   */
-  public void recordPinning(BlobStore blobStore, OperationType operationType, long pinnedTimeNanos) {
-    if (!isVirtualThread()) {
-      return;
+      if (isError) {
+        virtualThreadErrors.incrementAndGet();
+      }
     }
     
-    OperationMetrics metrics = getOrCreateMetrics(blobStore, operationType);
-    metrics.recordPinning(pinnedTimeNanos);
-    
-    if (log.isDebugEnabled()) {
-      log.debug("Virtual Thread pinned for {}ms during {} operation on {}", 
-          pinnedTimeNanos / 1_000_000.0, 
-          operationType, 
-          blobStore.getBlobStoreConfiguration().getName());
+    void recordPlatformThreadOperation(final long durationMillis, final long blobSize, final boolean isError) {
+      platformThreadCount.incrementAndGet();
+      platformThreadTimer.update(durationMillis, java.util.concurrent.TimeUnit.MILLISECONDS);
+      
+      if (blobSize > 0) {
+        platformThreadBlobSize.addAndGet(blobSize);
+      }
+      
+      if (isError) {
+        platformThreadErrors.incrementAndGet();
+      }
     }
-  }
-  
-  /**
-   * Gets metrics for all operations on all BlobStores
-   *
-   * @return a map of BlobStore ID to operation metrics
-   */
-  public Map<String, Map<OperationType, OperationMetrics>> getAllMetrics() {
-    return metricsMap;
-  }
-  
-  /**
-   * Gets metrics for all operations on a specific BlobStore
-   *
-   * @param blobStore the BlobStore to get metrics for
-   * @return a map of operation type to metrics, or null if no metrics exist for the BlobStore
-   */
-  @Nullable
-  public Map<OperationType, OperationMetrics> getBlobStoreMetrics(BlobStore blobStore) {
-    return metricsMap.get(blobStore.getBlobStoreConfiguration().getName());
-  }
-  
-  /**
-   * Gets metrics for a specific operation type on a specific BlobStore
-   *
-   * @param blobStore the BlobStore to get metrics for
-   * @param operationType the operation type to get metrics for
-   * @return the metrics for the specified operation, or null if no metrics exist
-   */
-  @Nullable
-  public OperationMetrics getOperationMetrics(BlobStore blobStore, OperationType operationType) {
-    Map<OperationType, OperationMetrics> blobStoreMetrics = getBlobStoreMetrics(blobStore);
-    return blobStoreMetrics != null ? blobStoreMetrics.get(operationType) : null;
-  }
-  
-  /**
-   * Gets or creates metrics for a specific operation type on a specific BlobStore
-   *
-   * @param blobStore the BlobStore to get or create metrics for
-   * @param operationType the operation type to get or create metrics for
-   * @return the metrics for the specified operation
-   */
-  private OperationMetrics getOrCreateMetrics(BlobStore blobStore, OperationType operationType) {
-    String blobStoreId = blobStore.getBlobStoreConfiguration().getName();
-    return metricsMap
-        .computeIfAbsent(blobStoreId, k -> new ConcurrentHashMap<>())
-        .computeIfAbsent(operationType, k -> new OperationMetrics());
-  }
-  
-  /**
-   * Resets all metrics
-   */
-  public void resetAllMetrics() {
-    metricsMap.clear();
-  }
-  
-  /**
-   * Resets metrics for a specific BlobStore
-   *
-   * @param blobStore the BlobStore to reset metrics for
-   */
-  public void resetBlobStoreMetrics(BlobStore blobStore) {
-    metricsMap.remove(blobStore.getBlobStoreConfiguration().getName());
+    
+    void updateVirtualThreadMetrics(final OperationMetrics metrics) {
+      virtualThreadCount.addAndGet(metrics.getSuccessfulRequests());
+      virtualThreadErrors.addAndGet(metrics.getErrorRequests());
+      virtualThreadBlobSize.addAndGet(metrics.getBlobSize());
+      
+      // Calculate average time per request for timer
+      long successfulRequests = metrics.getSuccessfulRequests();
+      if (successfulRequests > 0) {
+        long avgTimePerRequest = metrics.getTimeOnRequests() / successfulRequests;
+        virtualThreadTimer.update(avgTimePerRequest, java.util.concurrent.TimeUnit.MILLISECONDS);
+      }
+    }
+    
+    void updatePlatformThreadMetrics(final OperationMetrics metrics) {
+      platformThreadCount.addAndGet(metrics.getSuccessfulRequests());
+      platformThreadErrors.addAndGet(metrics.getErrorRequests());
+      platformThreadBlobSize.addAndGet(metrics.getBlobSize());
+      
+      // Calculate average time per request for timer
+      long successfulRequests = metrics.getSuccessfulRequests();
+      if (successfulRequests > 0) {
+        long avgTimePerRequest = metrics.getTimeOnRequests() / successfulRequests;
+        platformThreadTimer.update(avgTimePerRequest, java.util.concurrent.TimeUnit.MILLISECONDS);
+      }
+    }
+    
+    long getVirtualThreadCount() {
+      return virtualThreadCount.get();
+    }
+    
+    long getPlatformThreadCount() {
+      return platformThreadCount.get();
+    }
+    
+    long getVirtualThreadBlobSize() {
+      return virtualThreadBlobSize.get();
+    }
+    
+    long getPlatformThreadBlobSize() {
+      return platformThreadBlobSize.get();
+    }
+    
+    long getVirtualThreadErrors() {
+      return virtualThreadErrors.get();
+    }
+    
+    long getPlatformThreadErrors() {
+      return platformThreadErrors.get();
+    }
+    
+    Timer getVirtualThreadTimer() {
+      return virtualThreadTimer;
+    }
+    
+    Timer getPlatformThreadTimer() {
+      return platformThreadTimer;
+    }
   }
 }

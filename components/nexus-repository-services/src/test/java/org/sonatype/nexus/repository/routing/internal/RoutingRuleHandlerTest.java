@@ -20,17 +20,18 @@ import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Parameters;
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
-import org.sonatype.nexus.test.Java21TestGroup;
 
 import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.ListMultimap;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
@@ -40,7 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@Tag("Java21TestGroup")
 public class RoutingRuleHandlerTest
     extends TestSupport
 {
@@ -75,16 +76,16 @@ public class RoutingRuleHandlerTest
   }
 
   @Test
-  void should_allow_when_rule_permits() throws Exception {
+  public void handleAllowed() throws Exception {
     when(routingRuleHelper.isAllowed(nullable(Repository.class), eq(SOME_PATH))).thenReturn(true);
 
     Response response = underTest.handle(context);
-    assertEquals(contextResponse, response);
+    assertThat(response, is(contextResponse));
     verify(context).proceed();
   }
 
   @Test
-  void should_block_when_rule_denies() throws Exception {
+  public void handleBlocked() throws Exception {
     when(routingRuleHelper.isAllowed(nullable(Repository.class), eq(SOME_PATH))).thenReturn(false);
 
     Type typeMock = mock(Type.class);
@@ -95,12 +96,12 @@ public class RoutingRuleHandlerTest
     Response response = underTest.handle(context);
 
     assertNotNull(response);
-    assertEquals(403, response.getStatus().getCode());
+    assertThat(response.getStatus().getCode(), is(403));
     verify(context, times(0)).proceed();
   }
 
   @Test
-  void should_include_parameters_in_path_check() throws Exception {
+  public void handleParameters() throws Exception {
     ListMultimap<String, String> params = LinkedListMultimap.create();
     params.put("foo", "bar");
     params.put("bar", "foo");
@@ -108,7 +109,7 @@ public class RoutingRuleHandlerTest
     when(routingRuleHelper.isAllowed(nullable(Repository.class), eq("/some/path?foo=bar&bar=foo"))).thenReturn(true);
 
     Response response = underTest.handle(context);
-    assertEquals(contextResponse, response);
+    assertThat(response, is(contextResponse));
     verify(context).proceed();
     verify(routingRuleHelper).isAllowed(nullable(Repository.class), eq("/some/path?foo=bar&bar=foo"));
   }

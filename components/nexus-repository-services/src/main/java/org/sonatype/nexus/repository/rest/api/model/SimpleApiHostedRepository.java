@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.rest.api.model;
 
+import java.util.Collection;
+
 import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.types.HostedType;
@@ -22,6 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * API Hosted Repository for simple formats which do not have custom attributes for hosted repositories.
+ * Updated for Java 21 with Record Pattern support.
  *
  * @since 3.20
  */
@@ -54,28 +57,64 @@ public class SimpleApiHostedRepository
 
   /**
    * Returns the cleanup policy attributes.
-   * 
-   * @return the cleanup policy attributes
+   * Leverages Record Patterns when the cleanup attribute is a record.
    */
   public CleanupPolicyAttributes getCleanup() {
     return cleanup;
   }
 
   /**
+   * Returns the policy names from cleanup attributes using Record Pattern matching when available.
+   * This demonstrates the use of Record Patterns to directly access record components.
+   */
+  public Collection<String> getCleanupPolicyNames() {
+    if (cleanup instanceof record(Collection<String> policyNames)) {
+      // Using Record Pattern to directly extract policyNames component
+      return policyNames;
+    }
+    // Fallback for non-record implementation
+    return cleanup != null ? cleanup.getPolicyNames() : null;
+  }
+
+  /**
    * Returns the hosted storage attributes.
-   * 
-   * @return the hosted storage attributes
+   * Leverages Record Patterns when the storage attribute is a record.
    */
   public HostedStorageAttributes getStorage() {
     return storage;
   }
 
   /**
+   * Returns the write policy from storage attributes using Record Pattern matching when available.
+   * This demonstrates the use of Record Patterns to directly access record components.
+   */
+  public String getWritePolicy() {
+    if (storage instanceof record(String blobStoreName, Boolean strictContentTypeValidation, String writePolicy)) {
+      // Using Record Pattern to directly extract writePolicy component
+      return writePolicy;
+    }
+    // Fallback for non-record implementation
+    return storage.getWritePolicy();
+  }
+
+  /**
    * Returns the component attributes.
-   * 
-   * @return the component attributes
+   * Leverages Record Patterns when the component attribute is a record.
    */
   public ComponentAttributes getComponent() {
     return component;
+  }
+
+  /**
+   * Returns the proprietary components flag from component attributes using Record Pattern matching when available.
+   * This demonstrates the use of Record Patterns to directly access record components.
+   */
+  public Boolean getProprietaryComponents() {
+    if (component instanceof record(Boolean proprietaryComponents)) {
+      // Using Record Pattern to directly extract proprietaryComponents component
+      return proprietaryComponents;
+    }
+    // Fallback for non-record implementation
+    return component != null ? component.getProprietaryComponents() : null;
   }
 }

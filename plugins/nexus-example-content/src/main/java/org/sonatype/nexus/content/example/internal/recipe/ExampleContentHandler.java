@@ -14,8 +14,8 @@ package org.sonatype.nexus.content.example.internal.recipe;
 
 import java.util.Optional;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.content.example.ExampleContentFacet;
@@ -56,22 +56,33 @@ public class ExampleContentHandler
 
     ExampleContentFacet storage = repository.facet(ExampleContentFacet.class);
 
-    return switch (method) {
-      case HEAD, GET -> {
+    switch (method) {
+      case String s when s.equals(HEAD) || s.equals(GET) -> {
         Optional<Content> content = storage.get(path);
-        yield content.isPresent() ? HttpResponses.ok(content.get()) : HttpResponses.notFound(path);
+        if (content.isPresent()) {
+          return HttpResponses.ok(content.get());
+        }
+        return HttpResponses.notFound(path);
       }
-      case PUT -> {
+
+      case String s when s.equals(PUT) -> {
         Payload content = context.getRequest().getPayload();
         storage.put(path, content);
-        yield HttpResponses.created();
+        return HttpResponses.created();
       }
-      case DELETE -> {
+
+      case String s when s.equals(DELETE) -> {
         boolean deleted = storage.delete(path);
-        yield deleted ? HttpResponses.noContent() : HttpResponses.notFound(path);
+        if (deleted) {
+          return HttpResponses.noContent();
+        }
+        return HttpResponses.notFound(path);
       }
-      default -> HttpResponses.methodNotAllowed(method, GET, HEAD, PUT, DELETE);
-    };
+
+      default -> {
+        return HttpResponses.methodNotAllowed(method, GET, HEAD, PUT, DELETE);
+      }
+    }
   }
 
   /**

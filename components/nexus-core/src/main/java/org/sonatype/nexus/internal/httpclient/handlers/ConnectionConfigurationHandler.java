@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.internal.httpclient.handlers;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.crypto.secrets.SecretsFactory;
 import org.sonatype.nexus.httpclient.config.ConnectionConfiguration;
@@ -23,7 +23,8 @@ import org.apache.ibatis.type.TypeHandler;
 
 /**
  * MyBatis {@link TypeHandler} that maps a {@link ConnectionConfiguration} to/from JSON.
- * Optimized for Java 21 with enhanced type handling capabilities.
+ * 
+ * Updated for Java 21 compatibility with jakarta.inject annotations.
  *
  * @since 3.21
  */
@@ -33,12 +34,21 @@ public class ConnectionConfigurationHandler
     extends HttpClientConfigurationHandler<ConnectionConfiguration>
 {
   /**
-   * Creates a new instance with the given secrets factory.
-   *
-   * @param secretsFactory the factory for creating and managing secrets
+   * Creates a new ConnectionConfigurationHandler with the provided SecretsFactory.
+   * 
+   * @param secretsFactory factory for creating and managing secrets
    */
   @Inject
   public ConnectionConfigurationHandler(final SecretsFactory secretsFactory) {
     super(secretsFactory);
+  }
+  
+  /**
+   * Cleanup method to ensure proper resource management with Virtual Threads.
+   * Delegates to parent implementation for ThreadLocal cleanup.
+   */
+  @Override
+  public void cleanup() {
+    super.cleanup();
   }
 }

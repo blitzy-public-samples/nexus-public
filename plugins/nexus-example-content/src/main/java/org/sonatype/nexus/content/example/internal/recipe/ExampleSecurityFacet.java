@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.content.example.internal.recipe;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
+import javax.inject.Inject;
+import javax.inject.Named;
 
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.SecurityFacetSupport;
@@ -21,6 +21,8 @@ import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 
 /**
  * Example format security facet.
+ * 
+ * Updated for Java 21 compatibility and Apache Shiro 2.0.0.
  *
  * @since 3.24
  */
@@ -28,6 +30,13 @@ import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 public class ExampleSecurityFacet
     extends SecurityFacetSupport
 {
+  /**
+   * Constructor with required dependencies.
+   * 
+   * @param securityContributor the format security contributor
+   * @param variableResolverAdapter the variable resolver adapter
+   * @param contentPermissionChecker the content permission checker
+   */
   @Inject
   public ExampleSecurityFacet(
       final ExampleFormatSecurityContributor securityContributor,

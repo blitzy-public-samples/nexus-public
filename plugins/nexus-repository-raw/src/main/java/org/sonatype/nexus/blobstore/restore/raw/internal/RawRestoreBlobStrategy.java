@@ -14,7 +14,8 @@ package org.sonatype.nexus.blobstore.restore.raw.internal;
 
 import java.io.IOException;
 import java.util.Properties;
-import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
@@ -36,8 +37,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 
 /**
- * Strategy for restoring raw repository content from a blob store backup.
- * 
  * @since 3.29
  */
 @Named("raw")
@@ -62,7 +61,7 @@ public class RawRestoreBlobStrategy
   {
     Repository repository = data.getRepository();
 
-    if (repository instanceof Repository repo && repo.optionalFacet(RawContentFacet.class).isPresent()) {
+    if (repository.optionalFacet(RawContentFacet.class).isPresent()) {
       return true;
     }
     else {
@@ -74,17 +73,22 @@ public class RawRestoreBlobStrategy
   @Override
   protected void createAssetFromBlob(final Blob assetBlob, final DataStoreRestoreBlobData data) throws IOException
   {
-    // Use virtual threads for I/O-bound blob restoration operations
-    var executor = Executors.newVirtualThreadPerTaskExecutor();
-    executor.submit(() -> {
-      try {
-        RawContentFacet rawContentFacet = data.getRepository().facet(RawContentFacet.class);
-        rawContentFacet.put(data.getBlobName(), new DetachedBlobPayload(assetBlob));
-      } catch (Exception e) {
-        log.error(STR."Error restoring blob \{assetBlob.getId()} for \{data.getBlobName()}", e);
-      }
-    }).join(); // Wait for completion before returning
-    executor.close();
+    try {
+      // Use Virtual Threads for I/O-bound operations to improve blob restoration performance
+      Thread.startVirtualThread(() -> {
+        try {
+          RawContentFacet rawContentFacet = data.getRepository().facet(RawContentFacet.class);
+          rawContentFacet.put(data.getBlobName(), new DetachedBlobPayload(assetBlob));
+          log.debug(STR."Successfully restored blob \{data.getBlobName()} in repository \{data.getRepository().getName()}");
+        } 
+        catch (Exception e) {
+          log.error(STR."Failed to restore blob \{data.getBlobName()} in repository \{data.getRepository().getName()}: \{e.getMessage()}", e);
+        }
+      });
+    } 
+    catch (Exception e) {
+      throw new IOException(STR."Error scheduling restoration of blob \{data.getBlobName()}: \{e.getMessage()}", e);
+    }
   }
 
   @Override
@@ -98,7 +102,34 @@ public class RawRestoreBlobStrategy
       final Blob blob,
       final BlobStore blobStore)
   {
-    return new DataStoreRestoreBlobData(blob, properties, blobStore, repositoryManager);
+    // Use Virtual Threads for concurrent processing of metadata
+    try {
+      CompletableFuture<DataStoreRestoreBlobData> future = CompletableFuture.supplyAsync(() -> {
+        try {
+          return new DataStoreRestoreBlobData(blob, properties, blobStore, repositoryManager);
+        } catch (Exception e) {
+          log.error(STR."Error processing metadata for blob \{blob.getId()}: \{e.getMessage()}", e);
+          throw new RuntimeException(e);
+        }
+      });
+      
+      DataStoreRestoreBlobData restoreData = future.get();
+      log.debug(STR."Created restore data for blob \{blob.getId()} with properties: \{properties}");
+      return restoreData;
+    } 
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.error(STR."Thread interrupted while creating restore data for blob \{blob.getId()}", e);
+      throw new RuntimeException(e);
+    }
+    catch (ExecutionException e) {
+      log.error(STR."Failed to create restore data for blob \{blob.getId()}: \{e.getCause().getMessage()}", e.getCause());
+      throw new RuntimeException(e.getCause());
+    }
+    catch (Exception e) {
+      log.error(STR."Unexpected error creating restore data for blob \{blob.getId()}: \{e.getMessage()}", e);
+      throw e;
+    }
   }
 
   @Override

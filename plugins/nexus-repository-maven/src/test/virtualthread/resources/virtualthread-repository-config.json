@@ -1,0 +1,94 @@
+{
+  "repositoryConfig": {
+    "version": "1.0",
+    "description": "Configuration for Maven repository Virtual Thread testing",
+    "connectionPool": {
+      "maxConnections": 10000,
+      "maxConnectionsPerRoute": 5000,
+      "connectionTimeout": 5000,
+      "socketTimeout": 30000,
+      "keepAliveTimeout": 60000,
+      "keepAliveMaxRequests": 1000,
+      "validateAfterInactivity": 10000,
+      "evictIdleConnections": true,
+      "evictionInterval": 30000
+    },
+    "threadManagement": {
+      "useVirtualThreads": true,
+      "virtualThreadsEnabled": true,
+      "preventPinning": true,
+      "pinningDetectionEnabled": true,
+      "pinningLoggingEnabled": true,
+      "schedulerType": "virtualThreadPerTask",
+      "maxConcurrentOperations": 10000,
+      "maxQueueSize": 100000,
+      "threadNamePrefix": "maven-vt"
+    },
+    "ioOperations": {
+      "readTimeout": 60000,
+      "writeTimeout": 60000,
+      "connectTimeout": 5000,
+      "responseTimeout": 120000,
+      "downloadChunkSize": 8192,
+      "uploadChunkSize": 8192,
+      "bufferSize": 16384,
+      "useDirectBuffers": true,
+      "nonBlockingIO": true
+    },
+    "mavenRepository": {
+      "proxySettings": {
+        "remoteConnectionTimeout": 20000,
+        "remoteSocketTimeout": 60000,
+        "remoteUserAgentSuffix": "NexusVirtualThreadTest/1.0",
+        "remoteRetries": 3,
+        "remoteNegativeResponseCacheTTL": 1440,
+        "remoteContentValidation": true
+      },
+      "cacheSettings": {
+        "metadataCacheMaxSize": 10000,
+        "metadataCacheExpiration": 1440,
+        "artifactCacheMaxSize": 10000,
+        "artifactCacheExpiration": 1440,
+        "negativeCacheTTL": 10,
+        "negativeCacheEnabled": true
+      },
+      "contentSettings": {
+        "strictContentTypeValidation": true,
+        "contentDispositionHandling": "ATTACHMENT",
+        "metadataMaxAge": 1440,
+        "indexEnabled": true,
+        "searchEnabled": true
+      }
+    },
+    "virtualThreadSpecific": {
+      "carrierThreadPoolSize": "availableProcessors",
+      "maxCarrierThreads": 256,
+      "minFreeCarrierThreads": "halfPoolSize",
+      "pinningTraceEnabled": true,
+      "pinningTraceMode": "full",
+      "continuationStackChunkSize": 8,
+      "continuationStackMaxSize": "platformThreadStackSize",
+      "unmountOnBlock": true,
+      "yieldAfterIOOperations": true,
+      "diagnosticsEnabled": true,
+      "jfrEventsEnabled": true
+    },
+    "testingParameters": {
+      "concurrentRequests": 1000,
+      "requestsPerThread": 100,
+      "warmupIterations": 5,
+      "measurementIterations": 10,
+      "artifactSizes": [1024, 10240, 102400, 1048576],
+      "metadataComplexity": ["simple", "medium", "complex"],
+      "operationMix": {
+        "read": 80,
+        "write": 15,
+        "delete": 5
+      },
+      "compareWithPlatformThreads": true,
+      "collectMemoryMetrics": true,
+      "collectCPUMetrics": true,
+      "collectGCMetrics": true
+    }
+  }
+}

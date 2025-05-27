@@ -35,7 +35,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 /**
  * Base support class for Example repository recipes.
  * 
- * @since 21.0
+ * @since 3.42
  */
 public abstract class ExampleRecipeSupport
     extends RecipeSupport
@@ -66,12 +66,6 @@ public abstract class ExampleRecipeSupport
 
   protected HandlerContributor handlerContributor;
 
-  /**
-   * Constructor for the recipe support class.
-   *
-   * @param type   the repository type
-   * @param format the repository format
-   */
   protected ExampleRecipeSupport(
       final Type type,
       final Format format)
@@ -79,10 +73,6 @@ public abstract class ExampleRecipeSupport
     super(type, format);
   }
 
-  /**
-   * Injects all required dependencies for this recipe.
-   * Updated for Java 21 compatibility with Guice 7.0.0 and Sisu 0.10.0.
-   */
   @Inject
   public final void setDependencies(
       final Provider<ExampleSecurityFacet> securityFacet,
@@ -99,22 +89,10 @@ public abstract class ExampleRecipeSupport
       final LastDownloadedHandler lastDownloadedHandler,
       final HandlerContributor handlerContributor)
   {
-    // Using pattern matching to validate non-null parameters
-    this.securityFacet = switch (securityFacet) {
-      case null -> throw new NullPointerException("securityFacet")
-      case Provider<?> p -> p
-    };
-    this.viewFacet = switch (viewFacet) {
-      case null -> throw new NullPointerException("viewFacet")
-      case Provider<?> p -> p
-    };
-    this.contentFacet = switch (contentFacet) {
-      case null -> throw new NullPointerException("contentFacet")
-      case Provider<?> p -> p
-    };
-    
-    // Using string templates for any potential error messages
-    this.exceptionHandler = checkNotNull(exceptionHandler, STR."\{getClass().getSimpleName()}: exceptionHandler");
+    this.securityFacet = checkNotNull(securityFacet);
+    this.viewFacet = checkNotNull(viewFacet);
+    this.contentFacet = checkNotNull(contentFacet);
+    this.exceptionHandler = checkNotNull(exceptionHandler);
     this.timingHandler = checkNotNull(timingHandler);
     this.indexHtmlForwardHandler = checkNotNull(indexHtmlForwardHandler);
     this.securityHandler = checkNotNull(securityHandler);

@@ -15,6 +15,8 @@ package org.sonatype.nexus.repository.rest.api;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import javax.inject.Inject;
@@ -34,6 +36,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
+ * Repository settings API resource that leverages Java 21 Virtual Threads for improved concurrency
+ * when handling HTTP requests.
+ * 
  * @since 3.26
  */
 @Produces(APPLICATION_JSON)
@@ -59,24 +64,28 @@ public class RepositorySettingsApiResource
     this.convertersByFormat = checkNotNull(convertersByFormat);
   }
 
+  /**
+   * Get repositories using Virtual Threads for improved concurrency.
+   * This implementation executes the repository retrieval and conversion operations
+   * within a Virtual Thread, which is more efficient for I/O-bound operations.
+   */
   @Override
   @RequiresAuthentication
   @GET
   public List<AbstractApiRepository> getRepositories() {
-    // Use Virtual Threads for handling HTTP requests to improve concurrency
-    // This is particularly beneficial for I/O-bound operations like repository data retrieval
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> authorizingRepositoryManager.getRepositoriesWithAdmin().stream()
-          .map(this::convert)
-          .collect(Collectors.toList()))
-          .get(); // Wait for the virtual thread to complete
-    }
-    catch (Exception e) {
-      log.error("Error retrieving repositories using virtual thread", e);
-      // Fall back to synchronous execution if virtual thread execution fails
-      return authorizingRepositoryManager.getRepositoriesWithAdmin().stream()
-          .map(this::convert)
-          .collect(Collectors.toList());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> 
+          authorizingRepositoryManager.getRepositoriesWithAdmin().stream()
+              .map(this::convert)
+              .collect(Collectors.toList())
+      ).get();
+    } catch (InterruptedException e) {
+      log.error("Virtual thread was interrupted while retrieving repositories", e);
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Failed to retrieve repositories", e);
+    } catch (ExecutionException e) {
+      log.error("Error occurred while retrieving repositories in virtual thread", e);
+      throw new RuntimeException("Failed to retrieve repositories", e.getCause());
     }
   }
 

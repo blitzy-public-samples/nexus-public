@@ -19,7 +19,6 @@ import javax.inject.Singleton;
 
 import org.sonatype.nexus.common.event.EventAware;
 import org.sonatype.nexus.common.event.EventManager;
-import org.sonatype.nexus.common.log.LogManager;
 import org.sonatype.nexus.security.ClientInfo;
 import org.sonatype.nexus.security.ClientInfoProvider;
 import org.sonatype.nexus.security.authc.AuthenticationEvent;
@@ -27,14 +26,17 @@ import org.sonatype.nexus.security.authc.NexusAuthenticationEvent;
 
 import com.google.common.eventbus.Subscribe;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.logging.Logger;
+
+// Import for Java 21 String Templates
+import static java.lang.StringTemplate.STR;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Forwards {@link AuthenticationEvent} as {@link NexusAuthenticationEvent}.
- * Updated to support Java 21 features including Virtual Threads and String Templates.
  *
  * @since 3.0
  */
@@ -43,8 +45,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class AuthenticationEventSubscriber
     implements EventAware
 {
-  private static final Logger log = LoggerFactory.getLogger(AuthenticationEventSubscriber.class);
-
+  private static final Logger logger = Logger.getLogger(AuthenticationEventSubscriber.class.getName());
+  
+  // Executor for handling authentication events with virtual threads
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
   private final Provider<EventManager> eventManager;
 
   private final Provider<ClientInfoProvider> clientInfoProvider;
@@ -58,35 +63,43 @@ public class AuthenticationEventSubscriber
     this.clientInfoProvider = checkNotNull(clientInfoProvider);
   }
 
+  /**
+   * Handles authentication events and forwards them as NexusAuthenticationEvents.
+   * Uses Virtual Threads for processing to improve scalability and performance.
+   * 
+   * @param event The authentication event to process
+   */
   @Subscribe
   public void on(final AuthenticationEvent event) {
-    // Get client info with thread context awareness for Virtual Threads
-    final ClientInfo clientInfo = clientInfoProvider.get().getCurrentThreadClientInfo();
-
-    ClientInfo.Builder builder = ClientInfo
-        .builder()
-        .userId(event.getUserId());
-
-    // Use pattern matching to check clientInfo properties
-    if (clientInfo instanceof ClientInfo info) {
-      builder
-          .remoteIP(info.getRemoteIP())
-          .userAgent(info.getUserAgent())
-          .path(info.getPath());
+    // Use virtual threads to handle the event processing
+    virtualThreadExecutor.execute(() -> {
+      // Capture thread context for virtual thread execution
+      final ClientInfo clientInfo = clientInfoProvider.get().getCurrentThreadClientInfo();
       
-      // Log authentication event using String Templates for more efficient logging
-      log.debug(STR."Authentication event for user \{event.getUserId()} from IP \{info.getRemoteIP()}, "
-          + STR."path: \{info.getPath()}, success: \{event.isSuccessful()}");
-    } else {
-      // Log authentication event with limited information using String Templates
-      log.debug(STR."Authentication event for user \{event.getUserId()}, success: \{event.isSuccessful()}");
-    }
-
-    // Post event using thread-safe event manager access
-    eventManager.get()
-        .post(new NexusAuthenticationEvent(
-            builder.build(),
-            event.isSuccessful(),
-            event.getAuthenticationFailureReasons()));
+      // Using Java 21 String Templates for logging
+      logger.fine(STR."Processing authentication event for user: \{event.getUserId()}, success: \{event.isSuccessful()}");
+      
+      ClientInfo.Builder builder = ClientInfo
+          .builder()
+          .userId(event.getUserId());
+      
+      // Using pattern matching to check clientInfo properties
+      if (clientInfo instanceof ClientInfo info) {
+        builder
+            .remoteIP(info.getRemoteIP())
+            .userAgent(info.getUserAgent())
+            .path(info.getPath());
+            
+        // Using String Templates for more efficient logging
+        logger.fine(STR."Client info: IP=\{info.getRemoteIP()}, Agent=\{info.getUserAgent()}, Path=\{info.getPath()}");
+      }
+      
+      // Post the event using the EventManager provider which properly handles thread-local inheritance
+      eventManager.get()
+          .post(new NexusAuthenticationEvent(
+              builder.build(),
+              event.isSuccessful(),
+              event.getAuthenticationFailureReasons()));
+    });
   }
 }

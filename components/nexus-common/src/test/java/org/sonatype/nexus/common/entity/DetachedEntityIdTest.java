@@ -13,16 +13,14 @@
 package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.java21.Java21TestGroup;
 
-// JUnit 4 backward compatibility
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.vintage.engine.descriptor.VintageTestDescriptor; // JUnit Vintage Engine for JUnit 4 backward compatibility
 import org.junit.experimental.categories.Category;
 
-// JUnit Jupiter API
-import org.junit.jupiter.api.Assertions;
-
-// Java 21 compatibility marker
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 /**
  * Tests for {@link DetachedEntityId}
@@ -34,10 +32,10 @@ public class DetachedEntityIdTest
   @Test
   public void detachedEquality() {
     DetachedEntityId a = new DetachedEntityId("a");
-    Assertions.assertEquals(a, a);
-    Assertions.assertEquals(a, new DetachedEntityId("a"));
+    assertEquals(a, a, "Entity ID should be equal to itself");
+    assertEquals(a, new DetachedEntityId("a"), "Entity IDs with same value should be equal");
 
     DetachedEntityId b = new DetachedEntityId("b");
-    Assertions.assertNotEquals(a, b);
+    assertNotEquals(a, b, "Entity IDs with different values should not be equal");
   }
 }

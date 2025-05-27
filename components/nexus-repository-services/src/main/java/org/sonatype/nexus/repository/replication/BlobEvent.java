@@ -20,174 +20,158 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Event representing a blob operation that needs to be replicated.
- * Enhanced for Java 21 with Virtual Thread support, async operation tracking,
- * and improved concurrency handling.
+ * Represents a blob event in the replication system.
+ * Enhanced with Java 21 features for improved concurrency and Virtual Thread support.
  *
  * @since 3.31
  */
 public class BlobEvent
 {
   /**
-   * Enum representing the current state of the asynchronous operation.
+   * Maximum number of retries before giving up.
    */
-  public enum OperationState {
-    PENDING,      // Initial state, not yet processed
-    IN_PROGRESS,  // Currently being processed
-    COMPLETED,    // Successfully completed
-    FAILED        // Failed to complete
+  private static final int MAX_RETRY_COUNT = 10;
+
+  /**
+   * Base delay for exponential backoff in milliseconds.
+   */
+  private static final long BASE_RETRY_DELAY_MS = 100;
+
+  /**
+   * Represents the current state of an asynchronous operation.
+   */
+  public enum AsyncState {
+    PENDING,    // Initial state, not yet processed
+    PROCESSING, // Currently being processed
+    COMPLETED,  // Successfully completed
+    FAILED,     // Failed and will not be retried
+    RETRYING    // Failed but will be retried
   }
 
-  // Base properties
   private String blobId;
+
   private String assetPath;
+
   private String repositoryName;
+
   private String replicationConnectionId;
+
   private BlobEventType blobEventType;
+
   private volatile boolean inUse;
 
-  // Retry and concurrency handling
   private final AtomicInteger retryCount = new AtomicInteger(0);
-  private final AtomicReference<Instant> lastRetryTime = new AtomicReference<>();
-  private final AtomicReference<Instant> createdTime = new AtomicReference<>(Instant.now());
 
-  // Async operation state tracking
-  private final AtomicReference<OperationState> state = new AtomicReference<>(OperationState.PENDING);
-  private final AtomicReference<Instant> stateUpdatedTime = new AtomicReference<>(Instant.now());
-  private final AtomicReference<String> errorMessage = new AtomicReference<>();
-  private final AtomicReference<String> processingThreadId = new AtomicReference<>();
+  private final AtomicReference<AsyncState> asyncState = new AtomicReference<>(AsyncState.PENDING);
 
-  // Batching support
+  private Instant lastAttemptTime;
+
+  private Instant creationTime = Instant.now();
+
   private String batchId;
-  private int priority = 0;
 
-  // Default retry configuration
-  private static final int MAX_RETRY_COUNT = 10;
-  private static final Duration INITIAL_RETRY_DELAY = Duration.ofMillis(100);
-  private static final double BACKOFF_MULTIPLIER = 2.0;
-  private static final Duration MAX_RETRY_DELAY = Duration.ofMinutes(10);
+  private int batchPosition;
+
+  private int batchSize;
 
   /**
-   * Increments the retry count and updates the last retry time.
-   * @return this instance for method chaining
+   * Increments the retry count and updates the async state.
+   * Thread-safe implementation for use with Virtual Threads.
    */
-  public BlobEvent retry() {
+  public void retry() {
     retryCount.incrementAndGet();
-    lastRetryTime.set(Instant.now());
-    return this;
+    asyncState.set(AsyncState.RETRYING);
+    lastAttemptTime = Instant.now();
   }
 
   /**
-   * Checks if this event should be retried based on retry count and max retries.
+   * Determines if this event should be retried based on retry count and max retries.
+   * Thread-safe implementation for use with Virtual Threads.
+   *
    * @return true if the event should be retried, false otherwise
    */
   public boolean shouldRetry() {
-    return retryCount.get() < MAX_RETRY_COUNT;
+    return retryCount.get() > 0 && retryCount.get() <= MAX_RETRY_COUNT;
   }
 
   /**
    * Calculates the next retry delay using exponential backoff.
-   * @return the duration to wait before the next retry attempt
+   * This provides increasing delays between retry attempts to prevent overwhelming the system.
+   *
+   * @return Duration to wait before the next retry attempt
    */
-  public Duration calculateRetryDelay() {
+  public Duration getRetryDelay() {
     int currentRetries = retryCount.get();
     if (currentRetries <= 0) {
-      return INITIAL_RETRY_DELAY;
+      return Duration.ZERO;
     }
     
-    // Calculate exponential backoff with jitter
-    double exponentialFactor = Math.pow(BACKOFF_MULTIPLIER, currentRetries - 1);
-    long delayMillis = (long) (INITIAL_RETRY_DELAY.toMillis() * exponentialFactor);
-    
-    // Add some randomness (jitter) to prevent retry storms - ±15%
-    double jitter = 0.85 + (Math.random() * 0.3); // between 0.85 and 1.15
-    delayMillis = (long) (delayMillis * jitter);
-    
-    // Cap at maximum delay
-    return Duration.ofMillis(Math.min(delayMillis, MAX_RETRY_DELAY.toMillis()));
+    // Exponential backoff with jitter: BASE_DELAY * 2^(retryCount-1) * (0.75 + 0.5*random)
+    // Simplified implementation with fixed 0.875 jitter factor (midpoint of range)
+    long delayMs = (long) (BASE_RETRY_DELAY_MS * Math.pow(2, currentRetries - 1) * 0.875);
+    return Duration.ofMillis(delayMs);
   }
 
   /**
-   * Updates the operation state and records the time of the state change.
-   * @param newState the new operation state
-   * @return this instance for method chaining
+   * Marks this event as being processed by setting the async state to PROCESSING.
+   * Thread-safe implementation for use with Virtual Threads.
    */
-  public BlobEvent updateState(final OperationState newState) {
-    state.set(newState);
-    stateUpdatedTime.set(Instant.now());
-    return this;
+  public void markProcessing() {
+    asyncState.set(AsyncState.PROCESSING);
+    lastAttemptTime = Instant.now();
   }
 
   /**
-   * Updates the operation state to FAILED and records the error message.
-   * @param message the error message describing the failure
-   * @return this instance for method chaining
+   * Marks this event as completed by setting the async state to COMPLETED.
+   * Thread-safe implementation for use with Virtual Threads.
    */
-  public BlobEvent fail(final String message) {
-    state.set(OperationState.FAILED);
-    errorMessage.set(message);
-    stateUpdatedTime.set(Instant.now());
-    return this;
+  public void markCompleted() {
+    asyncState.set(AsyncState.COMPLETED);
   }
 
   /**
-   * Marks this event as being processed by the current thread.
-   * @return this instance for method chaining
+   * Marks this event as failed by setting the async state to FAILED.
+   * Thread-safe implementation for use with Virtual Threads.
    */
-  public BlobEvent markInProgress() {
-    inUse = true;
-    updateState(OperationState.IN_PROGRESS);
-    processingThreadId.set(Thread.currentThread().toString());
-    return this;
+  public void markFailed() {
+    asyncState.set(AsyncState.FAILED);
   }
 
   /**
-   * Marks this event as completed successfully.
-   * @return this instance for method chaining
+   * Gets the current async state of this event.
+   *
+   * @return the current AsyncState
    */
-  public BlobEvent markCompleted() {
-    inUse = false;
-    updateState(OperationState.COMPLETED);
-    return this;
+  public AsyncState getAsyncState() {
+    return asyncState.get();
   }
 
   /**
-   * Creates a new batch ID if one doesn't exist.
-   * @return the batch ID
+   * Gets the time of the last attempt to process this event.
+   *
+   * @return the last attempt time or null if never attempted
    */
-  public String ensureBatchId() {
-    if (batchId == null) {
-      batchId = UUID.randomUUID().toString();
-    }
-    return batchId;
+  public Instant getLastAttemptTime() {
+    return lastAttemptTime;
   }
 
   /**
-   * Gets the duration since this event was created.
-   * @return the duration since creation
+   * Gets the creation time of this event.
+   *
+   * @return the creation time
    */
-  public Duration getAge() {
-    return Duration.between(createdTime.get(), Instant.now());
+  public Instant getCreationTime() {
+    return creationTime;
   }
 
   /**
-   * Gets the duration since the last state change.
-   * @return the duration since the last state change
+   * Creates a new batch ID for a group of related events.
+   *
+   * @return a new batch ID
    */
-  public Duration getTimeSinceStateChange() {
-    return Duration.between(stateUpdatedTime.get(), Instant.now());
+  public static String generateBatchId() {
+    return UUID.randomUUID().toString();
   }
-
-  /**
-   * Gets the duration since the last retry attempt.
-   * @return the duration since the last retry, or null if never retried
-   */
-  public Duration getTimeSinceLastRetry() {
-    Instant lastRetry = lastRetryTime.get();
-    return lastRetry != null ? Duration.between(lastRetry, Instant.now()) : null;
-  }
-
-  // Getters
 
   public String getBlobId() {
     return blobId;
@@ -217,39 +201,50 @@ public class BlobEvent
     return inUse;
   }
 
-  public OperationState getState() {
-    return state.get();
-  }
-
-  public Instant getCreatedTime() {
-    return createdTime.get();
-  }
-
-  public Instant getStateUpdatedTime() {
-    return stateUpdatedTime.get();
-  }
-
-  public Instant getLastRetryTime() {
-    return lastRetryTime.get();
-  }
-
-  public String getErrorMessage() {
-    return errorMessage.get();
-  }
-
-  public String getProcessingThreadId() {
-    return processingThreadId.get();
-  }
-
+  /**
+   * Gets the batch ID this event belongs to, if any.
+   *
+   * @return the batch ID or null if not part of a batch
+   */
   public String getBatchId() {
     return batchId;
   }
 
-  public int getPriority() {
-    return priority;
+  /**
+   * Gets the position of this event within its batch.
+   *
+   * @return the batch position
+   */
+  public int getBatchPosition() {
+    return batchPosition;
   }
 
-  // Fluent setters
+  /**
+   * Gets the total size of the batch this event belongs to.
+   *
+   * @return the batch size
+   */
+  public int getBatchSize() {
+    return batchSize;
+  }
+
+  /**
+   * Checks if this event is part of a batch.
+   *
+   * @return true if this event is part of a batch, false otherwise
+   */
+  public boolean isPartOfBatch() {
+    return batchId != null && batchSize > 0;
+  }
+
+  /**
+   * Checks if this event is the last one in its batch.
+   *
+   * @return true if this is the last event in the batch, false otherwise
+   */
+  public boolean isLastInBatch() {
+    return isPartOfBatch() && batchPosition == batchSize - 1;
+  }
 
   public BlobEvent withBlobId(final String blobId) {
     this.blobId = blobId;
@@ -281,28 +276,48 @@ public class BlobEvent
     return this;
   }
 
+  /**
+   * Sets the retry count for this event.
+   * Thread-safe implementation for use with Virtual Threads.
+   *
+   * @param retryCount the new retry count
+   * @return this BlobEvent instance for method chaining
+   */
   public BlobEvent withRetryCount(final int retryCount) {
     this.retryCount.set(retryCount);
     return this;
   }
 
-  public BlobEvent withBatchId(final String batchId) {
+  /**
+   * Sets the batch information for this event.
+   *
+   * @param batchId the batch ID
+   * @param position the position within the batch
+   * @param size the total size of the batch
+   * @return this BlobEvent instance for method chaining
+   */
+  public BlobEvent withBatchInfo(final String batchId, final int position, final int size) {
     this.batchId = batchId;
+    this.batchPosition = position;
+    this.batchSize = size;
     return this;
   }
 
-  public BlobEvent withPriority(final int priority) {
-    this.priority = priority;
-    return this;
-  }
-
-  public BlobEvent withErrorMessage(final String errorMessage) {
-    this.errorMessage.set(errorMessage);
+  /**
+   * Sets the creation time for this event.
+   * Useful for deserialization or testing.
+   *
+   * @param creationTime the creation time
+   * @return this BlobEvent instance for method chaining
+   */
+  public BlobEvent withCreationTime(final Instant creationTime) {
+    this.creationTime = creationTime;
     return this;
   }
 
   /**
    * Thread-safe implementation of equals that handles concurrent modifications.
+   * Uses volatile and AtomicInteger fields to ensure visibility across threads.
    */
   @Override
   public boolean equals(final Object o) {
@@ -314,47 +329,41 @@ public class BlobEvent
     }
     BlobEvent blobEvent = (BlobEvent) o;
     
-    // Capture atomic values once to prevent inconsistent comparisons
-    int thisRetryCount = this.retryCount.get();
-    OperationState thisState = this.state.get();
-    String thisError = this.errorMessage.get();
+    // Compare atomic fields safely
+    boolean retryCountEqual = retryCount.get() == blobEvent.retryCount.get();
+    boolean asyncStateEqual = asyncState.get() == blobEvent.asyncState.get();
     
-    return inUse == blobEvent.inUse && 
-        thisRetryCount == blobEvent.getRetryCount() &&
-        priority == blobEvent.priority &&
-        Objects.equals(blobId, blobEvent.blobId) &&
+    // Compare the core identity fields that don't change during processing
+    return Objects.equals(blobId, blobEvent.blobId) &&
         Objects.equals(assetPath, blobEvent.assetPath) &&
         Objects.equals(repositoryName, blobEvent.repositoryName) &&
         Objects.equals(replicationConnectionId, blobEvent.replicationConnectionId) &&
         Objects.equals(batchId, blobEvent.batchId) &&
-        thisState == blobEvent.getState() &&
-        Objects.equals(thisError, blobEvent.getErrorMessage()) &&
-        blobEventType == blobEvent.blobEventType;
+        batchPosition == blobEvent.batchPosition &&
+        batchSize == blobEvent.batchSize &&
+        blobEventType == blobEvent.blobEventType &&
+        inUse == blobEvent.inUse &&
+        retryCountEqual &&
+        asyncStateEqual;
   }
 
   /**
    * Thread-safe implementation of hashCode that handles concurrent modifications.
+   * Uses volatile and AtomicInteger fields to ensure visibility across threads.
    */
   @Override
   public int hashCode() {
-    // Capture atomic values once to ensure consistent hash code
-    int thisRetryCount = this.retryCount.get();
-    OperationState thisState = this.state.get();
-    String thisError = this.errorMessage.get();
-    
+    // Include only the core identity fields that don't change during processing
+    // This makes the hash code stable even when state changes during processing
     return Objects.hash(
         blobId, 
         assetPath, 
         repositoryName, 
         replicationConnectionId, 
         blobEventType, 
-        inUse, 
-        thisRetryCount,
-        batchId,
-        priority,
-        thisState,
-        thisError
-    );
+        batchId, 
+        batchPosition, 
+        batchSize);
   }
 
   @Override
@@ -366,13 +375,13 @@ public class BlobEvent
         ", replicationConnectionId='" + replicationConnectionId + '\'' +
         ", blobEventType=" + blobEventType +
         ", inUse=" + inUse +
-        ", retryCount=" + retryCount +
-        ", state=" + state +
-        ", createdTime=" + createdTime +
-        ", lastStateChange=" + stateUpdatedTime +
+        ", retryCount=" + retryCount.get() +
+        ", asyncState=" + asyncState.get() +
+        ", lastAttemptTime=" + lastAttemptTime +
+        ", creationTime=" + creationTime +
         ", batchId='" + batchId + '\'' +
-        ", priority=" + priority +
-        (errorMessage.get() != null ? ", error='" + errorMessage.get() + '\'' : "") +
+        ", batchPosition=" + batchPosition +
+        ", batchSize=" + batchSize +
         '}';
   }
 }

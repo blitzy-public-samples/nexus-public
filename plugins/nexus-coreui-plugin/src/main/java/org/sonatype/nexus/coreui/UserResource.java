@@ -12,6 +12,9 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -23,6 +26,9 @@ import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.container.AsyncResponse;
+import javax.ws.rs.container.Suspended;
+import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -66,6 +72,8 @@ public class UserResource
   private final AuthTicketService authTickets;
 
   private final AnonymousManager anonymousManager;
+  
+  private final ExecutorService executor;
 
   @Inject
   public UserResource(final SecuritySystem securitySystem,
@@ -75,6 +83,7 @@ public class UserResource
     this.securitySystem = checkNotNull(securitySystem);
     this.authTickets = checkNotNull(authTickets);
     this.anonymousManager = checkNotNull(anonymousManager);
+    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -84,28 +93,43 @@ public class UserResource
    */
   @GET
   @RequiresUser
-  public UserAccountXO readAccount()
+  public void readAccount(@Suspended final AsyncResponse asyncResponse)
       throws UserNotFoundException
   {
-    return convert(getCurrentUser());
+    executor.execute(() -> {
+      try {
+        UserAccountXO result = convert(getCurrentUser());
+        asyncResponse.resume(result);
+      } catch (UserNotFoundException e) {
+        asyncResponse.resume(e);
+      }
+    });
   }
 
   @PUT
   @RequiresUser
   @RequiresAuthentication
   @Validate
-  public void updateAccount(@NotNull @Valid final UserAccountXO xo)
-      throws UserNotFoundException, NoSuchUserManagerException
+  public void updateAccount(@Suspended final AsyncResponse asyncResponse,
+                           @NotNull @Valid final UserAccountXO xo)
   {
-    User user = getCurrentUser();
-    if (!user.getUserId().equals(xo.getUserId())) {
-      throw new WebApplicationMessageException(Status.BAD_REQUEST,
-          STR."Mismatch between authenticated user (\{user.getUserId()}) and user to update (\{xo.getUserId()}).");
-    }
-    user.setFirstName(xo.getFirstName());
-    user.setLastName(xo.getLastName());
-    user.setEmailAddress(xo.getEmail());
-    securitySystem.updateUser(user);
+    executor.execute(() -> {
+      try {
+        User user = getCurrentUser();
+        if (!user.getUserId().equals(xo.getUserId())) {
+          asyncResponse.resume(new WebApplicationMessageException(Status.BAD_REQUEST,
+              "Mismatch between authenticated user and user to update."));
+          return;
+        }
+        user.setFirstName(xo.getFirstName());
+        user.setLastName(xo.getLastName());
+        user.setEmailAddress(xo.getEmail());
+        securitySystem.updateUser(user);
+        asyncResponse.resume(Response.Status.OK);
+      } catch (Exception e) {
+        asyncResponse.resume(e);
+      }
+    });
   }
 
   @PUT
@@ -114,27 +138,38 @@ public class UserResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:userschangepw:create")
   @Validate
-  public void changePassword(@PathParam("userId") @NotNull final String userId,
+  public void changePassword(@Suspended final AsyncResponse asyncResponse,
+                             @PathParam("userId") @NotNull final String userId,
                              @NotNull @Valid final UserAccountPasswordXO xo)
-      throws Exception
   {
-    if (authTickets.redeemTicket(xo.getAuthToken())) {
-      if (isAnonymousUser(userId)) {
-        throw new WebApplicationMessageException(Status.BAD_REQUEST,
-            STR."Password cannot be changed for user \{userId}, as it is configured as the Anonymous user");
+    executor.execute(() -> {
+      try {
+        if (authTickets.redeemTicket(xo.getAuthToken())) {
+          if (isAnonymousUser(userId)) {
+            asyncResponse.resume(new WebApplicationMessageException(Status.BAD_REQUEST,
+                "Password cannot be changed for user " + userId + ", as it is configured as the Anonymous user"));
+            return;
+          }
+          securitySystem.changePassword(userId, xo.getPassword());
+          asyncResponse.resume(Response.Status.OK);
+        }
+        else {
+          asyncResponse.resume(new WebApplicationMessageException(Status.FORBIDDEN, "Invalid authentication ticket"));
+        }
+      } catch (Exception e) {
+        asyncResponse.resume(e);
       }
-      securitySystem.changePassword(userId, xo.getPassword());
-    }
-    else {
-      throw new WebApplicationMessageException(Status.FORBIDDEN, "Invalid authentication ticket");
-    }
+    });
   }
 
   private User getCurrentUser() throws UserNotFoundException {
-    return switch (securitySystem.currentUser()) {
-      case User user when user != null -> user;
-      case null -> throw new UserNotFoundException("Unable to get current user");
-    };
+    User user = securitySystem.currentUser();
+    if (user != null) {
+      return user;
+    }
+    else {
+      throw new UserNotFoundException("Unable to get current user");
+    }
   }
 
   UserAccountXO convert(final User user) {

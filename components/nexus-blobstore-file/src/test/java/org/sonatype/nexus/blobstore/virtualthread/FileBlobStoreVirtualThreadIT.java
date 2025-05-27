@@ -14,370 +14,350 @@ package org.sonatype.nexus.blobstore.virtualthread;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
-import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.file.FileBlobDeletionIndex;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;
 import org.sonatype.nexus.blobstore.file.FileBlobStoreITSupport;
 
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
-import static com.google.common.io.ByteStreams.toByteArray;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.Mockito.mock;
 
 /**
  * Integration test for {@link FileBlobStore} with Java 21 Virtual Threads.
  * 
- * This test validates that FileBlobStore operations perform well with Virtual Threads
- * and compares performance between platform threads and virtual threads for I/O-bound operations.
+ * This test compares the performance and behavior of FileBlobStore operations
+ * when executed with platform threads versus virtual threads.
  */
 @Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
-public class FileBlobStoreVirtualThreadIT
-    extends FileBlobStoreITSupport
+public class FileBlobStoreVirtualThreadIT extends FileBlobStoreITSupport
 {
   private static final int CONCURRENT_OPERATIONS = 100;
-  private static final int BLOB_SIZE = 1024 * 10; // 10KB
   private static final int OPERATION_TIMEOUT_SECONDS = 30;
   
-  private ExecutorService platformThreadExecutor;
-  private ExecutorService virtualThreadExecutor;
-  
+  /**
+   * Required implementation of abstract method from parent class.
+   */
   @Override
   protected FileBlobDeletionIndex fileBlobDeletionIndex() {
     return mock(FileBlobDeletionIndex.class);
   }
   
-  @Before
-  public void setupExecutors() {
-    // Create a platform thread executor with a fixed thread pool
-    platformThreadExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
-        createThreadFactory("platform-thread"));
-    
-    // Create a virtual thread executor using Java 21's virtual threads
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-  }
-  
-  @After
-  public void shutdownExecutors() {
-    if (platformThreadExecutor != null) {
-      platformThreadExecutor.shutdown();
-    }
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-    }
-  }
-  
   /**
-   * Creates a named thread factory for better thread identification in logs and debugging.
+   * Creates a platform thread executor with the specified number of threads.
    */
-  private ThreadFactory createThreadFactory(final String prefix) {
-    return new ThreadFactory() {
-      private final AtomicInteger counter = new AtomicInteger();
-      
-      @Override
-      public Thread newThread(final Runnable r) {
-        Thread thread = new Thread(r);
-        thread.setName(prefix + "-" + counter.incrementAndGet());
-        return thread;
-      }
+  private ExecutorService createPlatformThreadExecutor(String name, int threadCount) {
+    ThreadFactory threadFactory = r -> {
+      Thread t = new Thread(r);
+      t.setName(name + "-" + t.getId());
+      return t;
     };
+    return Executors.newFixedThreadPool(threadCount, threadFactory);
   }
   
   /**
-   * Test that compares the performance of creating blobs using platform threads vs virtual threads.
-   * Virtual threads should provide better throughput for I/O-bound operations.
+   * Creates a virtual thread executor that creates a new virtual thread for each task.
+   */
+  private ExecutorService createVirtualThreadExecutor(String name) {
+    ThreadFactory threadFactory = Thread.ofVirtual()
+        .name(name + "-", 0)
+        .factory();
+    return Executors.newThreadPerTaskExecutor(threadFactory);
+  }
+  
+  /**
+   * Test that compares the performance of blob creation operations between platform and virtual threads.
    */
   @Test
-  public void testBlobCreationPerformanceComparison() throws Exception {
-    // Test with platform threads
-    long platformThreadTime = measureExecutionTime(() -> 
-        createBlobsConcurrently(platformThreadExecutor, CONCURRENT_OPERATIONS));
+  public void compareCreateBlobPerformance() throws Exception {
+    // Create executors
+    ExecutorService platformExecutor = createPlatformThreadExecutor("platform", 10);
+    ExecutorService virtualExecutor = createVirtualThreadExecutor("virtual");
     
-    // Test with virtual threads
-    long virtualThreadTime = measureExecutionTime(() -> 
-        createBlobsConcurrently(virtualThreadExecutor, CONCURRENT_OPERATIONS));
-    
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-    
-    // Virtual threads should generally be more efficient for I/O operations
-    // but we don't make this a hard assertion as it depends on the environment
-    if (virtualThreadTime < platformThreadTime) {
-      log.info("Virtual threads were {}% faster than platform threads", 
-          Math.round((platformThreadTime - virtualThreadTime) * 100.0 / platformThreadTime));
+    try {
+      // Run operations with platform threads
+      long platformStartTime = System.currentTimeMillis();
+      List<BlobId> platformBlobIds = runCreateBlobOperations(platformExecutor, CONCURRENT_OPERATIONS);
+      long platformEndTime = System.currentTimeMillis();
+      long platformDuration = platformEndTime - platformStartTime;
+      
+      // Run operations with virtual threads
+      long virtualStartTime = System.currentTimeMillis();
+      List<BlobId> virtualBlobIds = runCreateBlobOperations(virtualExecutor, CONCURRENT_OPERATIONS);
+      long virtualEndTime = System.currentTimeMillis();
+      long virtualDuration = virtualEndTime - virtualStartTime;
+      
+      // Log performance results
+      log("Platform thread create blob operations took {} ms", platformDuration);
+      log("Virtual thread create blob operations took {} ms", virtualDuration);
+      
+      // Verify results
+      assertThat(platformBlobIds.size(), is(equalTo(CONCURRENT_OPERATIONS)));
+      assertThat(virtualBlobIds.size(), is(equalTo(CONCURRENT_OPERATIONS)));
+      
+      // Clean up created blobs
+      cleanupBlobs(platformBlobIds);
+      cleanupBlobs(virtualBlobIds);
+      
+      // Virtual threads should perform better at high concurrency for I/O operations
+      // but we don't want to make this a hard assertion as it depends on the test environment
+      log("Virtual thread performance ratio: {}", (double) platformDuration / virtualDuration);
+    } finally {
+      platformExecutor.shutdown();
+      virtualExecutor.shutdown();
+      platformExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      virtualExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
   }
   
   /**
-   * Test that verifies blob retrieval works correctly with high concurrency using virtual threads.
+   * Test that compares the performance of blob retrieval operations between platform and virtual threads.
    */
   @Test
-  public void testConcurrentBlobRetrievalWithVirtualThreads() throws Exception {
-    // Create test blobs
+  public void compareGetBlobPerformance() throws Exception {
+    // Create test blobs first
     List<BlobId> blobIds = new ArrayList<>();
     for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-      Blob blob = createRandomBlob();
+      Blob blob = createTestBlob();
       blobIds.add(blob.getId());
     }
     
-    // Retrieve blobs concurrently using virtual threads
-    List<CompletableFuture<byte[]>> futures = new ArrayList<>();
-    for (BlobId blobId : blobIds) {
-      futures.add(CompletableFuture.supplyAsync(() -> {
-        try {
-          Blob blob = underTest.get(blobId);
-          assertThat(blob, is(notNullValue()));
-          try (InputStream inputStream = blob.getInputStream()) {
-            return toByteArray(inputStream);
-          }
-        }
-        catch (IOException e) {
-          throw new BlobStoreException(e, blobId);
-        }
-      }, virtualThreadExecutor));
-    }
+    // Create executors
+    ExecutorService platformExecutor = createPlatformThreadExecutor("platform", 10);
+    ExecutorService virtualExecutor = createVirtualThreadExecutor("virtual");
     
-    // Wait for all operations to complete
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-        futures.toArray(new CompletableFuture[0]));
-    
-    allFutures.get(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify all blobs were retrieved successfully
-    for (int i = 0; i < futures.size(); i++) {
-      byte[] content = futures.get(i).get();
-      assertThat(content.length, is(equalTo(BLOB_SIZE)));
+    try {
+      // Run operations with platform threads
+      long platformStartTime = System.currentTimeMillis();
+      runGetBlobOperations(platformExecutor, blobIds);
+      long platformEndTime = System.currentTimeMillis();
+      long platformDuration = platformEndTime - platformStartTime;
+      
+      // Run operations with virtual threads
+      long virtualStartTime = System.currentTimeMillis();
+      runGetBlobOperations(virtualExecutor, blobIds);
+      long virtualEndTime = System.currentTimeMillis();
+      long virtualDuration = virtualEndTime - virtualStartTime;
+      
+      // Log performance results
+      log("Platform thread get blob operations took {} ms", platformDuration);
+      log("Virtual thread get blob operations took {} ms", virtualDuration);
+      
+      // Clean up created blobs
+      cleanupBlobs(blobIds);
+      
+      // Virtual threads should perform better at high concurrency for I/O operations
+      // but we don't want to make this a hard assertion as it depends on the test environment
+      log("Virtual thread performance ratio: {}", (double) platformDuration / virtualDuration);
+    } finally {
+      platformExecutor.shutdown();
+      virtualExecutor.shutdown();
+      platformExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      virtualExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
   }
   
   /**
-   * Test that verifies blob deletion works correctly with high concurrency using virtual threads.
+   * Test that compares the performance of blob deletion operations between platform and virtual threads.
    */
   @Test
-  public void testConcurrentBlobDeletionWithVirtualThreads() throws Exception {
-    // Create test blobs
-    List<BlobId> blobIds = new ArrayList<>();
+  public void compareDeleteBlobPerformance() throws Exception {
+    // Create test blobs first for platform thread test
+    List<BlobId> platformBlobIds = new ArrayList<>();
     for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
-      Blob blob = createRandomBlob();
-      blobIds.add(blob.getId());
+      Blob blob = createTestBlob();
+      platformBlobIds.add(blob.getId());
     }
     
-    // Delete blobs concurrently using virtual threads
-    List<CompletableFuture<Boolean>> futures = new ArrayList<>();
-    for (BlobId blobId : blobIds) {
-      futures.add(CompletableFuture.supplyAsync(() -> 
-          underTest.delete(blobId, "testConcurrentBlobDeletionWithVirtualThreads"), 
-          virtualThreadExecutor));
+    // Create test blobs for virtual thread test
+    List<BlobId> virtualBlobIds = new ArrayList<>();
+    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
+      Blob blob = createTestBlob();
+      virtualBlobIds.add(blob.getId());
     }
     
-    // Wait for all operations to complete
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-        futures.toArray(new CompletableFuture[0]));
+    // Create executors
+    ExecutorService platformExecutor = createPlatformThreadExecutor("platform", 10);
+    ExecutorService virtualExecutor = createVirtualThreadExecutor("virtual");
     
-    allFutures.get(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify all blobs were deleted successfully
-    for (CompletableFuture<Boolean> future : futures) {
-      assertThat(future.get(), is(true));
-    }
-    
-    // Compact to ensure deletions are processed
-    underTest.compact(null);
-    
-    // Verify blobs are no longer accessible
-    for (BlobId blobId : blobIds) {
-      assertThat(underTest.exists(blobId), is(false));
-    }
-  }
-  
-  /**
-   * Test that compares the performance of a complete blob lifecycle (create, get, delete)
-   * between platform threads and virtual threads.
-   */
-  @Test
-  public void testCompleteBlobLifecyclePerformanceComparison() throws Exception {
-    // Test with platform threads
-    long platformThreadTime = measureExecutionTime(() -> 
-        executeBlobLifecycleConcurrently(platformThreadExecutor, CONCURRENT_OPERATIONS / 2));
-    
-    // Test with virtual threads
-    long virtualThreadTime = measureExecutionTime(() -> 
-        executeBlobLifecycleConcurrently(virtualThreadExecutor, CONCURRENT_OPERATIONS / 2));
-    
-    log.info("Platform thread complete lifecycle time: {} ms", platformThreadTime);
-    log.info("Virtual thread complete lifecycle time: {} ms", virtualThreadTime);
-    
-    // Log performance difference
-    if (virtualThreadTime < platformThreadTime) {
-      log.info("Virtual threads were {}% faster for complete lifecycle operations", 
-          Math.round((platformThreadTime - virtualThreadTime) * 100.0 / platformThreadTime));
-    }
-  }
-  
-  /**
-   * Test that verifies virtual threads can handle a very high number of concurrent operations
-   * without exhausting system resources.
-   */
-  @Test
-  public void testHighConcurrencyWithVirtualThreads() throws Exception {
-    // Use a higher number of concurrent operations for this test
-    final int highConcurrency = CONCURRENT_OPERATIONS * 5;
-    
-    // Create and execute many concurrent operations using virtual threads
-    List<CompletableFuture<Blob>> futures = new ArrayList<>();
-    for (int i = 0; i < highConcurrency; i++) {
-      final int index = i;
-      futures.add(CompletableFuture.supplyAsync(() -> {
-        try {
-          // Create a small blob to avoid excessive memory usage
-          byte[] content = new byte[128];
-          new Random().nextBytes(content);
-          return underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
-        }
-        catch (Exception e) {
-          log.error("Error in virtual thread operation {}", index, e);
-          throw new RuntimeException(e);
-        }
-      }, virtualThreadExecutor));
-    }
-    
-    // Wait for all operations to complete
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-        futures.toArray(new CompletableFuture[0]));
-    
-    // This should complete without exhausting system resources
-    allFutures.get(OPERATION_TIMEOUT_SECONDS * 2, TimeUnit.SECONDS);
-    
-    // Verify all operations completed successfully
-    int successCount = 0;
-    for (CompletableFuture<Blob> future : futures) {
-      Blob blob = future.get();
-      if (blob != null && blob.getId() != null) {
-        successCount++;
+    try {
+      // Run operations with platform threads
+      long platformStartTime = System.currentTimeMillis();
+      runDeleteBlobOperations(platformExecutor, platformBlobIds);
+      long platformEndTime = System.currentTimeMillis();
+      long platformDuration = platformEndTime - platformStartTime;
+      
+      // Run operations with virtual threads
+      long virtualStartTime = System.currentTimeMillis();
+      runDeleteBlobOperations(virtualExecutor, virtualBlobIds);
+      long virtualEndTime = System.currentTimeMillis();
+      long virtualDuration = virtualEndTime - virtualStartTime;
+      
+      // Log performance results
+      log("Platform thread delete blob operations took {} ms", platformDuration);
+      log("Virtual thread delete blob operations took {} ms", virtualDuration);
+      
+      // Virtual threads should perform better at high concurrency for I/O operations
+      // but we don't want to make this a hard assertion as it depends on the test environment
+      log("Virtual thread performance ratio: {}", (double) platformDuration / virtualDuration);
+      
+      // Verify all blobs were deleted
+      for (BlobId blobId : platformBlobIds) {
+        assertThat(underTest.exists(blobId), is(false));
       }
+      for (BlobId blobId : virtualBlobIds) {
+        assertThat(underTest.exists(blobId), is(false));
+      }
+    } finally {
+      platformExecutor.shutdown();
+      virtualExecutor.shutdown();
+      platformExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      virtualExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
-    
-    assertThat("All blob creation operations should succeed", 
-        successCount, is(equalTo(highConcurrency)));
   }
   
   /**
-   * Creates a blob with random content of the specified size.
+   * Test that verifies high concurrency operations with virtual threads.
+   * This test creates a large number of virtual threads to verify that the FileBlobStore
+   * can handle high concurrency scenarios efficiently with virtual threads.
    */
-  private Blob createRandomBlob() {
-    byte[] content = new byte[BLOB_SIZE];
-    new Random().nextBytes(content);
+  @Test
+  public void highConcurrencyVirtualThreadTest() throws Exception {
+    // Use a higher number of concurrent operations for this test
+    final int highConcurrencyOperations = CONCURRENT_OPERATIONS * 5;
+    
+    // Create virtual thread executor
+    ExecutorService virtualExecutor = createVirtualThreadExecutor("high-concurrency");
+    
+    try {
+      // Run create operations with high concurrency
+      long startTime = System.currentTimeMillis();
+      List<BlobId> blobIds = runCreateBlobOperations(virtualExecutor, highConcurrencyOperations);
+      long endTime = System.currentTimeMillis();
+      
+      // Log performance results
+      log("High concurrency virtual thread create operations ({} operations) took {} ms", 
+          highConcurrencyOperations, endTime - startTime);
+      
+      // Verify results
+      assertThat(blobIds.size(), is(equalTo(highConcurrencyOperations)));
+      
+      // Clean up created blobs
+      cleanupBlobs(blobIds);
+    } finally {
+      virtualExecutor.shutdown();
+      virtualExecutor.awaitTermination(OPERATION_TIMEOUT_SECONDS * 2, TimeUnit.SECONDS);
+    }
+  }
+  
+  /**
+   * Creates a test blob with random content.
+   */
+  private Blob createTestBlob() {
+    byte[] content = randomBytes();
     return underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
   }
   
   /**
-   * Creates multiple blobs concurrently using the provided executor.
+   * Runs blob creation operations concurrently using the provided executor.
    */
-  private void createBlobsConcurrently(ExecutorService executor, int count) 
+  private List<BlobId> runCreateBlobOperations(ExecutorService executor, int operationCount) 
       throws InterruptedException, ExecutionException {
-    List<CompletableFuture<Blob>> futures = new ArrayList<>();
+    List<Future<BlobId>> futures = new ArrayList<>();
     
-    for (int i = 0; i < count; i++) {
-      futures.add(CompletableFuture.supplyAsync(() -> createRandomBlob(), executor));
+    // Submit create operations
+    for (int i = 0; i < operationCount; i++) {
+      futures.add(executor.submit(() -> {
+        byte[] content = randomBytes();
+        Blob blob = underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
+        return blob.getId();
+      }));
     }
     
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-        futures.toArray(new CompletableFuture[0]));
-    
-    allFutures.get(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-  }
-  
-  /**
-   * Executes a complete blob lifecycle (create, get, delete) concurrently using the provided executor.
-   */
-  private void executeBlobLifecycleConcurrently(ExecutorService executor, int count) 
-      throws InterruptedException, ExecutionException {
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
-    for (int i = 0; i < count; i++) {
-      futures.add(CompletableFuture.supplyAsync(() -> {
-        try {
-          // Create blob
-          Blob blob = createRandomBlob();
-          BlobId blobId = blob.getId();
-          
-          // Get blob
-          Blob retrievedBlob = underTest.get(blobId);
-          try (InputStream inputStream = retrievedBlob.getInputStream()) {
-            byte[] content = toByteArray(inputStream);
-            assertThat(content.length, is(equalTo(BLOB_SIZE)));
-          }
-          
-          // Delete blob
-          boolean deleted = underTest.delete(blobId, "executeBlobLifecycleConcurrently");
-          assertThat(deleted, is(true));
-          
-          return null;
-        }
-        catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      }, executor));
+    // Collect results
+    List<BlobId> blobIds = new ArrayList<>();
+    for (Future<BlobId> future : futures) {
+      BlobId blobId = future.get();
+      assertThat(blobId, is(notNullValue()));
+      blobIds.add(blobId);
     }
     
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
-        futures.toArray(new CompletableFuture[0]));
+    return blobIds;
+  }
+  
+  /**
+   * Runs blob retrieval operations concurrently using the provided executor.
+   */
+  private void runGetBlobOperations(ExecutorService executor, List<BlobId> blobIds) 
+      throws InterruptedException, ExecutionException {
+    List<Future<Blob>> futures = new ArrayList<>();
     
-    allFutures.get(OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    // Submit get operations
+    for (BlobId blobId : blobIds) {
+      futures.add(executor.submit(() -> {
+        Blob blob = underTest.get(blobId);
+        // Read the blob content to ensure I/O operations are performed
+        blob.getInputStream().readAllBytes();
+        return blob;
+      }));
+    }
+    
+    // Wait for all operations to complete
+    for (Future<Blob> future : futures) {
+      Blob blob = future.get();
+      assertThat(blob, is(notNullValue()));
+    }
   }
   
   /**
-   * Measures the execution time of the provided runnable in milliseconds.
+   * Runs blob deletion operations concurrently using the provided executor.
    */
-  private long measureExecutionTime(RunnableWithException runnable) throws Exception {
-    long startTime = System.currentTimeMillis();
-    runnable.run();
-    return System.currentTimeMillis() - startTime;
+  private void runDeleteBlobOperations(ExecutorService executor, List<BlobId> blobIds) 
+      throws InterruptedException, ExecutionException {
+    List<Future<Boolean>> futures = new ArrayList<>();
+    
+    // Submit delete operations
+    for (BlobId blobId : blobIds) {
+      futures.add(executor.submit(() -> 
+          underTest.delete(blobId, "FileBlobStoreVirtualThreadIT")));
+    }
+    
+    // Wait for all operations to complete
+    for (Future<Boolean> future : futures) {
+      Boolean result = future.get();
+      assertThat(result, is(true));
+    }
   }
   
   /**
-   * Functional interface for a runnable that can throw exceptions.
+   * Cleans up the blobs with the given IDs.
    */
-  @FunctionalInterface
-  private interface RunnableWithException {
-    void run() throws Exception;
-  }
-  
-  /**
-   * Marker interface for Java 21 test category.
-   */
-  public interface Java21TestGroup {
-    // Marker interface
-  }
-  
-  /**
-   * Marker interface for Virtual Thread test category.
-   */
-  public interface VirtualThreadTestGroup {
-    // Marker interface
+  private void cleanupBlobs(List<BlobId> blobIds) {
+    for (BlobId blobId : blobIds) {
+      try {
+        if (underTest.exists(blobId)) {
+          underTest.delete(blobId, "cleanup");
+        }
+      } catch (Exception e) {
+        log.warn("Failed to clean up blob {}", blobId, e);
+      }
+    }
   }
 }

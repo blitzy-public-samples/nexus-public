@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  This is a deliberately malformed Maven metadata XML file with String Template placeholders.
+  It is used to test Java 21's String Templates feature in error handling scenarios.
+  The file contains missing closing tags and invalid template expressions.
+-->
+<metadata>
+  <groupId>org.sonatype.nexus.repository.maven</groupId>
+  <artifactId>StringTemplateTest</artifactId>
+  <versioning>
+    <latest>{latestVersion}</latest>
+    <release>{releaseVersion}</release>
+    <versions>
+      <version>{versions[0]}</version>
+      <version>{versions[1]</version>
+    </versions>
+    <lastUpdated>{STR."Error occurred at timestamp: {System.currentTimeMillis()}"}
+    <!-- Missing closing tags to test error handling with String Templates -->
+    <error>{STR."Invalid XML structure detected in {artifactId} at line {lineNumber}"}
+    <details>{STR."Missing closing tags: {missingTags.stream().collect(java.util.stream.Collectors.joining(", "))}"}

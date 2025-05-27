@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
 /**
  * Provides the platform {@link MBeanServer}.
  * <p>
- * Enhanced for Java 21 compatibility with improved error handling for potential JMX access
- * restrictions in Java 21's enhanced security model.
+ * Enhanced for Java 21 compatibility with improved error handling for JMX access restrictions
+ * and diagnostic logging using String Templates.
  *
  * @since 3.0
  */
@@ -41,31 +41,20 @@ public class PlatformMBeanServerProvider
   @Override
   public MBeanServer get() {
     try {
+      log.debug(STR."Accessing platform MBeanServer with Java \{System.getProperty("java.version")}");
       MBeanServer server = ManagementFactory.getPlatformMBeanServer();
       log.debug(STR."Successfully obtained platform MBeanServer: \{server}");
       return server;
     }
     catch (SecurityException e) {
-      // Java 21 has enhanced security model that might restrict JMX access
-      log.warn(STR."Security restriction accessing platform MBeanServer: \{e.getMessage()}");
-      log.debug("Security exception details", e);
-      
-      // Attempt to create a new MBeanServer as fallback
-      try {
-        MBeanServer fallbackServer = ManagementFactory.newPlatformMBeanServerBuilder().buildMBeanServer();
-        log.info(STR."Created fallback MBeanServer: \{fallbackServer}");
-        return fallbackServer;
-      }
-      catch (JMException | SecurityException fallbackEx) {
-        log.error(STR."Failed to create fallback MBeanServer: \{fallbackEx.getMessage()}", fallbackEx);
-        // Re-throw original exception if fallback fails
-        throw e;
-      }
+      // Handle Java 21's enhanced security model restrictions
+      log.error(STR."Security restriction accessing platform MBeanServer: \{e.getMessage()}", e);
+      throw new RuntimeException(STR."Unable to access platform MBeanServer due to security restrictions: \{e.getMessage()}", e);
     }
     catch (Exception e) {
-      // Handle any other unexpected exceptions
-      log.error(STR."Unexpected error accessing platform MBeanServer: \{e.getMessage()}", e);
-      throw e;
+      // Handle other potential JMX access issues
+      log.error(STR."Error accessing platform MBeanServer: \{e.getMessage()}", e);
+      throw new RuntimeException(STR."Unable to access platform MBeanServer: \{e.getMessage()}", e);
     }
   }
 }

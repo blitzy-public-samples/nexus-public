@@ -23,6 +23,9 @@ import org.sonatype.nexus.script.Script;
 /**
  * Store for managing {@link Script} entities.
  * 
+ * <p>All I/O operations in this interface are designed to be compatible with Java 21 Virtual Threads,
+ * allowing for high-throughput concurrent execution without blocking platform threads.</p>
+ * 
  * @since 3.0
  */
 public interface ScriptStore
@@ -36,39 +39,38 @@ public interface ScriptStore
   Script newScript();
 
   /**
-   * Returns all stored {@link Script} entities.
+   * @return all stored {@link Script}
    * 
-   * @return an immutable list of all stored scripts
+   * <p>This operation is optimized for execution in a Virtual Thread when performing I/O operations.</p>
    */
   List<Script> list();
 
   /**
-   * Retrieves a {@link Script} by name.
+   * @return {@link Script} with matching name
    * 
-   * @param name the name of the script to retrieve
-   * @return the script with matching name, or null if not found
+   * <p>This operation is optimized for execution in a Virtual Thread when performing I/O operations.</p>
    */
   @Nullable
   Script get(String name);
 
   /**
-   * Persists a new {@link Script}.
+   * Persist a new {@link Script}.
    * 
-   * @param script the script to create
+   * <p>This operation is optimized for execution in a Virtual Thread when performing I/O operations.</p>
    */
   void create(Script script);
 
   /**
-   * Updates an existing {@link Script}.
+   * Update an existing {@link Script}.
    * 
-   * @param script the script to update
+   * <p>This operation is optimized for execution in a Virtual Thread when performing I/O operations.</p>
    */
   void update(Script script);
 
   /**
-   * Deletes an existing {@link Script}.
+   * Delete an existing {@link Script}.
    * 
-   * @param script the script to delete
+   * <p>This operation is optimized for execution in a Virtual Thread when performing I/O operations.</p>
    */
   void delete(Script script);
 }

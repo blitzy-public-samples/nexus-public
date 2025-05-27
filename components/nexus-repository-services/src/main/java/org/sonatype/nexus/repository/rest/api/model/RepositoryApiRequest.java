@@ -12,11 +12,14 @@
  */
 package org.sonatype.nexus.repository.rest.api.model;
 
-import javax.validation.ValidationException;
+import java.util.Map;
+import java.util.Optional;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
- * Interface defining the contract for repository-related REST API requests.
- * Updated for Java 21 compatibility with default methods.
+ * Repository API request interface defining the contract for repository creation and update operations.
+ * Updated for Java 21 compatibility with default methods for enhanced functionality.
  *
  * @since 3.24
  */
@@ -30,14 +33,14 @@ public interface RepositoryApiRequest
   String getName();
 
   /**
-   * Get the repository format (e.g., maven2, npm, docker).
+   * Get the repository format.
    *
    * @return the repository format
    */
   String getFormat();
 
   /**
-   * Get the repository type (e.g., hosted, proxy, group).
+   * Get the repository type.
    *
    * @return the repository type
    */
@@ -46,50 +49,45 @@ public interface RepositoryApiRequest
   /**
    * Get the repository online status.
    *
-   * @return true if the repository is online, false otherwise
+   * @return the repository online status
    */
   Boolean getOnline();
   
   /**
-   * Checks if the repository is online.
-   * 
-   * @return true if the repository is online, false otherwise
-   * @since 3.60
-   */
-  default boolean isOnline() {
-    Boolean online = getOnline();
-    return online != null && online;
-  }
-  
-  /**
-   * Validates the repository configuration.
-   * Implementations can override this method to provide custom validation logic.
+   * Default method to check if the repository is online.
+   * Provides a convenient way to check the online status without null checks.
    *
-   * @throws ValidationException if the repository configuration is invalid
-   * @since 3.60
+   * @return true if the repository is online, false otherwise
    */
-  default void validate() throws ValidationException {
-    if (getName() == null || getName().isEmpty()) {
-      throw new ValidationException("Repository name cannot be null or empty");
-    }
-    if (getFormat() == null || getFormat().isEmpty()) {
-      throw new ValidationException("Repository format cannot be null or empty");
-    }
-    if (getType() == null || getType().isEmpty()) {
-      throw new ValidationException("Repository type cannot be null or empty");
-    }
-    if (getOnline() == null) {
-      throw new ValidationException("Repository online status cannot be null");
-    }
+  @JsonIgnore
+  default boolean isOnline() {
+    return Optional.ofNullable(getOnline()).orElse(false);
   }
   
   /**
-   * Returns a formatted string representation of the repository configuration using Java 21 String Templates.
-   * 
-   * @return a formatted string representation of the repository configuration
-   * @since 3.60
+   * Default method to get a map of basic repository properties.
+   * Useful for logging, debugging, and simple data transfer.
+   *
+   * @return a map containing the basic repository properties
    */
-  default String toFormattedString() {
-    return STR."Repository[name=\{getName()}, format=\{getFormat()}, type=\{getType()}, online=\{getOnline()}]"; 
+  @JsonIgnore
+  default Map<String, Object> getBasicProperties() {
+    return Map.of(
+        "name", getName(),
+        "format", getFormat(),
+        "type", getType(),
+        "online", isOnline()
+    );
+  }
+  
+  /**
+   * Default method to create a string representation of the repository request.
+   * Uses Java 21 String Templates for more readable output.
+   *
+   * @return a string representation of the repository request
+   */
+  @JsonIgnore
+  default String toSummaryString() {
+    return STR."Repository[name=\{getName()}, format=\{getFormat()}, type=\{getType()}, online=\{getOnline()}]";
   }
 }

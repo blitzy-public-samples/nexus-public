@@ -13,42 +13,40 @@
 package org.sonatype.nexus.freeze.event;
 
 /**
- * Event fired to signal that the system should forcefully exit a frozen state.
+ * Event fired when a system freeze is forcibly released.
  * <p>
- * This event is part of the system freeze mechanism that manages the lifecycle of freeze operations.
- * When this event is published, listeners will immediately release locks and allow normal operations to resume,
- * bypassing any pending operations or safeguards that might be in place during a normal release.
+ * This event is triggered when a system freeze is released through administrative
+ * intervention or an emergency procedure, rather than through the normal release process.
  * <p>
- * This class is designed to work with Java 21's sealed class pattern when the base {@link FreezeEvent}
- * class is updated to use this feature. It represents one of the permitted subclasses in the
- * freeze event hierarchy, specifically handling forced release operations that override normal
- * release procedures.
- * <p>
- * In Java 21 environments, this event can be efficiently pattern-matched in switch expressions:
- * <pre>
- * {@code
- * switch (event) {
- *   case FreezeReleaseEvent e -> handleNormalRelease();
- *   case FreezeForceReleaseEvent e -> handleForcedRelease();
- *   case FreezeRequestEvent e -> handleFreezeRequest(e.getReason());
- *   default -> throw new IllegalStateException("Unknown freeze event type");
+ * As a permitted subclass of the sealed {@link FreezeEvent} class, this event can be
+ * efficiently handled using Java 21's pattern matching in switch expressions:
+ * <pre>{@code
+ * void handleFreezeEvent(FreezeEvent event) {
+ *   switch (event) {
+ *     case FreezeForceReleaseEvent e -> {
+ *       log.warn("System freeze force-released");
+ *       // Handle forced release
+ *     }
+ *     case FreezeRequestEvent e -> { /* handle request */ }
+ *     case FreezeReleaseEvent e -> { /* handle normal release */ }
+ *   }
  * }
  * }</pre>
+ * <p>
+ * This class is designed to be compatible with Java 21's virtual threads and can be safely
+ * used in high-concurrency scenarios. Event handlers processing this event type can be
+ * executed on virtual threads without blocking concerns.
  *
  * @since 3.0
  */
+@FreezeEvent.VirtualThreadCompatible("Safe for processing on virtual threads with no blocking operations")
 public final class FreezeForceReleaseEvent
     extends FreezeEvent
 {
   /**
-   * Creates a new freeze force release event.
+   * Creates a new force release event.
    * <p>
-   * This constructor initializes the event with the {@link FreezeEventTypes#FORCE_RELEASE} type,
-   * indicating an administrative override or emergency release of a system freeze.
-   * <p>
-   * When published, this event signals to all listeners that normal operations should resume
-   * immediately, bypassing any pending operations or safeguards that might be in place during
-   * a normal release.
+   * This constructor initializes the event with the {@link FreezeEventTypes#FORCE_RELEASE} type.
    */
   public FreezeForceReleaseEvent() {
     super(FreezeEventTypes.FORCE_RELEASE);

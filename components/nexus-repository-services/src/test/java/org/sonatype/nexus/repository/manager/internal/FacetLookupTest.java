@@ -13,9 +13,9 @@
 package org.sonatype.nexus.repository.manager.internal;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.repository.Facet;
 import org.sonatype.nexus.repository.FacetSupport;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,7 +68,7 @@ public class FacetLookupTest
   }
 
   @Test
-  public void shouldAddAndGetFacet() {
+  public void addAndGetFacetShouldReturnSameInstance() {
     MyExampleFacet facet1 = new MyExampleFacet();
     underTest.add(facet1);
 
@@ -77,7 +77,7 @@ public class FacetLookupTest
   }
 
   @Test
-  public void shouldAddAndGetFacetExposure() {
+  public void addAndGetFacetExposureShouldWorkWithExposedTypes() {
     MyExampleFacet facet1 = new MyExampleFacet();
     underTest.add(facet1);
 
@@ -95,13 +95,13 @@ public class FacetLookupTest
   }
 
   @Test
-  public void shouldThrowExceptionWhenAddingFacetWithNothingExposed() {
+  public void addFacetWithNothingExposedShouldThrowException() {
     FacetNoExposure facet1 = new FacetNoExposure();
     assertThrows(Exception.class, () -> underTest.add(facet1));
   }
 
   @Test
-  public void shouldDisallowAddingDuplicateFacetExposure() {
+  public void addDuplicateFacetExposureShouldThrowException() {
     underTest.add(new MyExampleFacet());
     assertThrows(Exception.class, () -> underTest.add(new MyExampleFacet()));
   }

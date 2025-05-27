@@ -13,34 +13,29 @@
 package org.sonatype.nexus.repository.security;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import org.apache.shiro.authz.permission.DomainPermission;
 import org.apache.shiro.authz.permission.WildcardPermission;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests for security permission functionality.
- */
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class SecurityTrialTest
     extends TestSupport
 {
   @Test
-  public void shouldAcceptWildcardPermissionString() {
-    assertDoesNotThrow(() -> new WildcardPermission("foo:bar:*:baz"));
+  void wildcardPermissionString() {
+    assertDoesNotThrowException(() -> new WildcardPermission("foo:bar:*:baz"));
   }
 
   @Test
-  public void shouldAcceptDomainPermissionString() {
-    assertDoesNotThrow(() -> new DomainPermission("foo,bar", "read,write"));
+  void domainPermissionString() {
+    assertDoesNotThrowException(() -> new DomainPermission("foo,bar", "read,write"));
   }
 
   private static class CustomPermission
@@ -52,14 +47,23 @@ public class SecurityTrialTest
   }
 
   @Test
-  public void shouldAcceptCustomDomainPermissionString() {
-    assertDoesNotThrow(() -> new CustomPermission("foo,bar", "read,write"));
+  void customDomainPermissionString() {
+    assertDoesNotThrowException(() -> new CustomPermission("foo,bar", "read,write"));
   }
 
   @Test
-  public void shouldImplyPermissionWhenWildcardMatches() {
+  void impliedPermission() {
     WildcardPermission granted = new WildcardPermission("test:*");
     WildcardPermission permission = new WildcardPermission("test:foo");
-    assertTrue(granted.implies(permission), "Wildcard permission should imply more specific permission");
+    assertTrue(granted.implies(permission));
+  }
+
+  private void assertDoesNotThrowException(Runnable r) {
+    try {
+      r.run();
+    }
+    catch (Exception e) {
+      throw new AssertionError("Expected no exception, but got: " + e, e);
+    }
   }
 }

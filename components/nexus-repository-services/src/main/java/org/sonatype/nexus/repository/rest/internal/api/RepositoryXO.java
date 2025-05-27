@@ -13,10 +13,10 @@
 package org.sonatype.nexus.repository.rest.internal.api;
 
 /**
- * Repository transfer object for REST API responses.
- * 
+ * Repository transfer object with improved immutability using Java Record.
+ *
  * @since 3.29
  */
 public record RepositoryXO(String id, String name) {
-  // Record automatically provides constructor, accessors, equals, hashCode, and toString
+  // No additional implementation needed - equals, hashCode, toString, and accessors are automatically generated
 }

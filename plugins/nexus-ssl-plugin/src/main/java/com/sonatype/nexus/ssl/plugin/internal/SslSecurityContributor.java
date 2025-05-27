@@ -12,6 +12,10 @@
  */
 package com.sonatype.nexus.ssl.plugin.internal;
 
+import java.util.Objects;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -22,9 +26,8 @@ import org.sonatype.nexus.security.config.SecurityContributorSupport;
 
 /**
  * SSL security configuration.
- * 
- * Provides security privileges for SSL truststore management.
- * Compatible with Java 21 and Apache Shiro 2.0.0.
+ * <p>
+ * Updated for compatibility with Apache Shiro 2.0.0 and Java 21.
  *
  * @since 3.0
  */
@@ -34,17 +37,41 @@ public class SslSecurityContributor
     extends SecurityContributorSupport
     implements SecurityContributor
 {
+  private static final Logger LOG = Logger.getLogger(SslSecurityContributor.class.getName());
+  
   public static final String SSL_DOMAIN = "ssl-truststore";
 
   public static final String SSL_PRIV_ID_PREFIX = "nx-ssl-truststore";
 
+  /**
+   * Returns the security configuration contribution for SSL truststore privileges.
+   * <p>
+   * This implementation is compatible with Apache Shiro 2.0.0 and Java 21's enhanced security model.
+   * It creates CRUD and ALL application privileges for the SSL truststore domain.
+   *
+   * @return The security configuration containing SSL truststore privileges
+   */
   @Override
   public SecurityConfiguration getContribution() {
-    MemorySecurityConfiguration config = new MemorySecurityConfiguration();
+    try {
+      MemorySecurityConfiguration config = new MemorySecurityConfiguration();
 
-    // Create and register all required SSL truststore privileges
-    createCrudAndAllApplicationPrivileges(SSL_PRIV_ID_PREFIX, SSL_DOMAIN).forEach(config::addPrivilege);
+      // Create and add all privileges for SSL truststore domain
+      var privileges = createCrudAndAllApplicationPrivileges(SSL_PRIV_ID_PREFIX, SSL_DOMAIN);
+      Objects.requireNonNull(privileges, "Failed to create SSL truststore privileges");
+      privileges.forEach(privilege -> {
+        try {
+          config.addPrivilege(privilege);
+        } catch (Exception e) {
+          LOG.log(Level.WARNING, "Failed to add privilege: " + privilege.getId(), e);
+        }
+      });
 
-    return config;
+      return config;
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Failed to create SSL security contribution", e);
+      // Return empty configuration rather than null to prevent NPEs
+      return new MemorySecurityConfiguration();
+    }
   }
 }

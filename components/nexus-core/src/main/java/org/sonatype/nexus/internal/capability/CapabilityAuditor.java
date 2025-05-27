@@ -15,7 +15,10 @@ package org.sonatype.nexus.internal.capability;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -30,7 +33,6 @@ import org.sonatype.nexus.capability.CapabilityReference;
 import org.sonatype.nexus.common.event.EventAware;
 import org.sonatype.nexus.formfields.Encrypted;
 import org.sonatype.nexus.formfields.FormField;
-import org.sonatype.nexus.thread.NexusExecutorService;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
@@ -47,31 +49,29 @@ public class CapabilityAuditor
     implements EventAware
 {
   public static final String DOMAIN = "capability";
-  
+
   /**
-   * Virtual thread executor for processing audit events asynchronously.
-   * Using virtual threads improves performance for I/O-bound operations like audit logging.
+   * Virtual thread executor for parallel property processing
    */
-  private final ExecutorService virtualExecutor;
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public CapabilityAuditor() {
-    // Create a virtual thread executor for processing audit events
-    this.virtualExecutor = NexusExecutorService.forCurrentSubjectVirtual();
+    // No need to register types as we'll use pattern matching for switch instead
   }
 
   /**
    * Determines the audit type based on the event class using pattern matching.
-   * 
-   * @param eventClass the capability event class
-   * @return the audit type string
+   *
+   * @param eventClass The class of the capability event
+   * @return The audit type string
    */
   private String determineAuditType(Class<?> eventClass) {
     return switch (eventClass.getSimpleName()) {
-      case "Created" -> CREATED_TYPE;
-      case "AfterActivated" -> "activated";
-      case "BeforePassivated" -> "passivated";
-      case "AfterRemove" -> DELETED_TYPE;
-      case "AfterUpdate" -> UPDATED_TYPE;
+      case String s when s.equals("Created") -> CREATED_TYPE;
+      case String s when s.equals("AfterActivated") -> "activated";
+      case String s when s.equals("BeforePassivated") -> "passivated";
+      case String s when s.equals("AfterRemove") -> DELETED_TYPE;
+      case String s when s.equals("AfterUpdate") -> UPDATED_TYPE;
       default -> eventClass.getSimpleName().toLowerCase();
     };
   }
@@ -79,118 +79,64 @@ public class CapabilityAuditor
   @Subscribe
   @AllowConcurrentEvents
   public void on(final CapabilityEvent event) {
-    if (isRecording()) {
-      // Process the audit event using a virtual thread for improved performance
-      virtualExecutor.submit(() -> processAuditEvent(event));
-    }
-  }
-  
-  /**
-   * Processes the capability event and records the audit data.
-   * 
-   * @param event the capability event to process
-   */
-  private void processAuditEvent(final CapabilityEvent event) {
-    CapabilityReference reference = event.getReference();
-    CapabilityContext context = reference.context();
-    CapabilityDescriptor descriptor = context.descriptor();
+    // Process the event in a virtual thread for improved performance
+    Thread.startVirtualThread(() -> {
+      if (isRecording()) {
+        CapabilityReference reference = event.getReference();
+        CapabilityContext context = reference.context();
+        CapabilityDescriptor descriptor = context.descriptor();
 
-    AuditData data = new AuditData();
-    data.setDomain(DOMAIN);
-    data.setType(determineAuditType(event.getClass()));
-    data.setContext(context.type().toString());
+        AuditData data = new AuditData();
+        data.setDomain(DOMAIN);
+        data.setType(determineAuditType(event.getClass()));
+        data.setContext(context.type().toString());
 
-    Map<String, Object> attributes = data.getAttributes();
-    
-    // Add basic capability attributes
-    attributes.put("id", context.id().toString());
-    attributes.put("type", context.type().toString());
-    attributes.put("enabled", string(context.isEnabled()));
-    attributes.put("active", string(context.isActive()));
-    attributes.put("failed", string(context.hasFailure()));
+        Map<String, Object> attributes = data.getAttributes();
+        attributes.put("id", context.id().toString());
+        attributes.put("type", context.type().toString());
+        attributes.put("enabled", string(context.isEnabled()));
+        attributes.put("active", string(context.isActive()));
+        attributes.put("failed", string(context.hasFailure()));
 
-    // Process properties in parallel using virtual threads if there are many properties
-    Map<String, FormField> fields = fields(descriptor);
-    Map<String, String> properties = context.properties();
-    
-    // For capabilities with many properties, process them in parallel
-    if (properties.size() > 10) {
-      processPropertiesInParallel(properties, fields, attributes);
-    } else {
-      // For smaller property sets, process sequentially
-      processPropertiesSequentially(properties, fields, attributes);
-    }
+        // Get all non-secure properties using virtual threads for parallel processing
+        collectPropertiesAsync(context, descriptor, attributes);
 
-    record(data);
-  }
-  
-  /**
-   * Process properties sequentially and add them to attributes.
-   * 
-   * @param properties the capability properties
-   * @param fields the form fields
-   * @param attributes the audit attributes to populate
-   */
-  private void processPropertiesSequentially(
-      Map<String, String> properties, 
-      Map<String, FormField> fields, 
-      Map<String, Object> attributes) {
-    
-    for (Entry<String, String> entry : properties.entrySet()) {
-      String key = entry.getKey();
-      FormField field = fields.get(key);
-      
-      // Skip secure fields
-      if (field instanceof Encrypted) {
-        continue;
-      }
-      
-      // Use string concatenation for property key formatting
-      attributes.put("property." + key, entry.getValue());
-    }
-  }
-  
-  /**
-   * Process properties in parallel using virtual threads and add them to attributes.
-   * 
-   * @param properties the capability properties
-   * @param fields the form fields
-   * @param attributes the audit attributes to populate
-   */
-  private void processPropertiesInParallel(
-      Map<String, String> properties, 
-      Map<String, FormField> fields, 
-      Map<String, Object> attributes) {
-    
-    // Create a synchronized map to safely collect results from multiple virtual threads
-    Map<String, Object> syncAttributes = new HashMap<>();
-    
-    // Process each property in a separate virtual thread
-    properties.entrySet().stream().parallel().forEach(entry -> {
-      String key = entry.getKey();
-      FormField field = fields.get(key);
-      
-      // Skip secure fields
-      if (field instanceof Encrypted) {
-        return;
-      }
-      
-      // Use string concatenation for property key formatting
-      synchronized (syncAttributes) {
-        syncAttributes.put("property." + key, entry.getValue());
+        record(data);
       }
     });
-    
-    // Add all collected attributes to the main attributes map
-    attributes.putAll(syncAttributes);
   }
 
   /**
-   * Creates a map of form field IDs to form fields.
-   * 
-   * @param descriptor the capability descriptor
-   * @return a map of form field IDs to form fields
+   * Collects properties asynchronously using virtual threads for parallel processing.
+   *
+   * @param context The capability context
+   * @param descriptor The capability descriptor
+   * @param attributes The attributes map to populate
    */
+  private void collectPropertiesAsync(CapabilityContext context, CapabilityDescriptor descriptor, Map<String, Object> attributes) {
+    Map<String, FormField> fields = fields(descriptor);
+    Map<String, CompletableFuture<Void>> futures = new ConcurrentHashMap<>();
+
+    // Process each property in parallel using virtual threads
+    for (Entry<String, String> entry : context.properties().entrySet()) {
+      String key = entry.getKey();
+      String value = entry.getValue();
+      
+      futures.put(key, CompletableFuture.runAsync(() -> {
+        FormField field = fields.get(key);
+        // Skip secure fields
+        if (field instanceof Encrypted) {
+          return;
+        }
+        // Use String Templates for more efficient attribute processing
+        attributes.put(STR."property.\{key}", value);
+      }, virtualThreadExecutor));
+    }
+
+    // Wait for all property processing to complete
+    CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0])).join();
+  }
+
   private static Map<String, FormField> fields(final CapabilityDescriptor descriptor) {
     Map<String, FormField> result = new HashMap<>();
     for (FormField field : descriptor.formFields()) {

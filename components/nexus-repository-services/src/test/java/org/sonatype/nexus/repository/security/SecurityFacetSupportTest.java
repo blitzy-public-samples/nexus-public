@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.security;
 
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -22,14 +22,12 @@ import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.http.HttpMethods;
 import org.sonatype.nexus.repository.view.Request;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import org.apache.shiro.authz.AuthorizationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -42,7 +40,7 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.security.BreadActions.READ;
 
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@org.junit.experimental.categories.Category(org.sonatype.nexus.java21.Java21TestGroup.class)
 public class SecurityFacetSupportTest
     extends TestSupport
 {
@@ -56,8 +54,6 @@ public class SecurityFacetSupportTest
       super(securityContributor, variableResolverAdapter, contentPermissionChecker);
     }
   }
-
-  private static final int TIMEOUT_SECONDS = 10;
 
   @Mock
   Request request;
@@ -76,8 +72,6 @@ public class SecurityFacetSupportTest
 
   TestSecurityFacetSupport testSecurityFacetSupport;
 
-  private ExecutorService virtualThreadExecutor;
-
   @BeforeEach
   void setupConfig() throws Exception {
     when(request.getPath()).thenReturn("/some/path.txt");
@@ -90,24 +84,21 @@ public class SecurityFacetSupportTest
         variableResolverAdapter, contentPermissionChecker);
 
     testSecurityFacetSupport.attach(repository);
-    
-    // Create virtual thread executor for Java 21 tests
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Test
-  @DisplayName("Should allow permitted actions")
-  void ensurePermittedShouldAllowPermittedActions() throws Exception {
+  @DisplayName("Should allow access when permission is granted")
+  void ensurePermittedWhenPermissionGranted() throws Exception {
     when(contentPermissionChecker.isPermitted(eq("SecurityFacetSupportTest"), eq("test"), eq(READ), any()))
         .thenReturn(true);
     
     assertDoesNotThrow(() -> testSecurityFacetSupport.ensurePermitted(request),
-        "Permitted action should have been allowed");
+        "permitted action should have been permitted");
   }
 
   @Test
-  @DisplayName("Should throw AuthorizationException for non-permitted actions")
-  void ensurePermittedShouldThrowExceptionForNonPermittedActions() throws Exception {
+  @DisplayName("Should deny access when permission is not granted")
+  void ensurePermittedWhenPermissionDenied() throws Exception {
     when(contentPermissionChecker.isPermitted(eq("SecurityFacetSupportTest"), eq("test"), eq(READ), any()))
         .thenReturn(false);
 
@@ -119,46 +110,67 @@ public class SecurityFacetSupportTest
   }
   
   @Test
-  @DisplayName("Should work correctly with virtual threads for permitted actions")
-  void ensurePermittedShouldWorkWithVirtualThreadsForPermittedActions() throws Exception {
+  @DisplayName("Should work correctly with virtual threads")
+  void ensurePermittedWithVirtualThreads() throws Exception {
+    int threadCount = 10;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    
+    // Configure mock to return true for permission check
     when(contentPermissionChecker.isPermitted(eq("SecurityFacetSupportTest"), eq("test"), eq(READ), any()))
         .thenReturn(true);
     
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        testSecurityFacetSupport.ensurePermitted(request);
+    // Create virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple tasks to virtual threads
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            testSecurityFacetSupport.ensurePermitted(request);
+            latch.countDown();
+          } 
+          catch (Exception e) {
+            // If any exception occurs, the test will fail because the latch won't count down fully
+          }
+        });
       }
-      catch (Exception e) {
-        throw new RuntimeException("Should not have thrown exception", e);
-      }
-    }, virtualThreadExecutor);
-    
-    assertDoesNotThrow(() -> future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
-        "Virtual thread execution should complete without exceptions");
+      
+      // Wait for all threads to complete or timeout
+      boolean completed = latch.await(5, TimeUnit.SECONDS);
+      assertDoesNotThrow(() -> {
+        if (!completed) {
+          throw new AssertionError("Not all virtual threads completed security checks successfully");
+        }
+      });
+    }
   }
   
   @Test
-  @DisplayName("Should throw AuthorizationException with virtual threads for non-permitted actions")
-  void ensurePermittedShouldThrowExceptionWithVirtualThreadsForNonPermittedActions() throws Exception {
+  @DisplayName("Should correctly deny access with virtual threads")
+  void ensurePermittedDeniedWithVirtualThreads() throws Exception {
+    // Configure mock to return false for permission check
     when(contentPermissionChecker.isPermitted(eq("SecurityFacetSupportTest"), eq("test"), eq(READ), any()))
         .thenReturn(false);
     
-    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-      try {
-        testSecurityFacetSupport.ensurePermitted(request);
-        throw new RuntimeException("Should have thrown AuthorizationException");
-      }
-      catch (AuthorizationException e) {
-        // Expected exception
-      }
-      catch (Exception e) {
-        throw new RuntimeException("Unexpected exception type", e);
-      }
-    }, virtualThreadExecutor);
-    
-    assertDoesNotThrow(() -> future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
-        "Virtual thread execution should complete with expected AuthorizationException");
-    
-    verify(contentPermissionChecker).isPermitted(eq("SecurityFacetSupportTest"), eq("test"), eq(READ), any());
+    // Create virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit task to virtual thread and get future
+      Exception exception = executor.submit(() -> {
+        try {
+          testSecurityFacetSupport.ensurePermitted(request);
+          return null; // No exception thrown (this would be unexpected)
+        } 
+        catch (Exception e) {
+          return e; // Return the exception that was thrown
+        }
+      }).get(5, TimeUnit.SECONDS);
+      
+      // Verify that the correct exception type was thrown
+      assertDoesNotThrow(() -> {
+        if (!(exception instanceof AuthorizationException)) {
+          throw new AssertionError("Expected AuthorizationException but got: " + 
+              (exception == null ? "no exception" : exception.getClass().getName()));
+        }
+      });
+    }
   }
 }

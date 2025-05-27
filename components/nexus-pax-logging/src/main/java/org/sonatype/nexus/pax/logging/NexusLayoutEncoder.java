@@ -17,12 +17,10 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.pattern.PatternLayoutEncoderBase;
 
 /**
- * Enhanced pattern layout encoder that adds support for:
- * <ul>
- *   <li>Node name via %node pattern</li>
- *   <li>Virtual Thread awareness via %vthread pattern</li>
- *   <li>Java 21 String Template logging formats</li>
- * </ul>
+ * Adds the ability to use %node in an encoder pattern and supports Java 21 features:
+ * - String Template logging formats
+ * - Virtual Thread awareness
+ * - Structured logging
  *
  * @since 3.6.1
  */
@@ -30,53 +28,56 @@ public class NexusLayoutEncoder
     extends PatternLayoutEncoderBase<ILoggingEvent>
 {
   /**
-   * Flag to enable String Template processing for log messages.
-   */
-  private boolean enableStringTemplates = true;
-  
-  /**
-   * Flag to enable Virtual Thread metrics logging.
+   * Whether to enable virtual thread metrics logging
    */
   private boolean enableVirtualThreadMetrics = true;
   
   /**
-   * Sets whether String Template processing is enabled for log messages.
-   *
-   * @param enableStringTemplates true to enable String Template processing, false to disable
+   * Whether to enable string template processing
    */
-  public void setEnableStringTemplates(boolean enableStringTemplates) {
-    this.enableStringTemplates = enableStringTemplates;
-  }
-  
+  private boolean enableStringTemplates = true;
+
   /**
-   * Sets whether Virtual Thread metrics logging is enabled.
+   * Sets whether virtual thread metrics logging is enabled.
    *
-   * @param enableVirtualThreadMetrics true to enable Virtual Thread metrics, false to disable
+   * @param enableVirtualThreadMetrics true to enable, false to disable
    */
   public void setEnableVirtualThreadMetrics(boolean enableVirtualThreadMetrics) {
     this.enableVirtualThreadMetrics = enableVirtualThreadMetrics;
   }
-  
+
+  /**
+   * Sets whether string template processing is enabled.
+   *
+   * @param enableStringTemplates true to enable, false to disable
+   */
+  public void setEnableStringTemplates(boolean enableStringTemplates) {
+    this.enableStringTemplates = enableStringTemplates;
+  }
+
   @Override
   public void start() {
     PatternLayout patternLayout = new PatternLayout();
     
-    // Register standard converters
+    // Register the node name converter
     patternLayout.getDefaultConverterMap().put("node", NexusNodeNameConverter.class.getName());
     
-    // Register Java 21 Virtual Thread aware converter
-    patternLayout.getDefaultConverterMap().put("vthread", VirtualThreadAwareConverter.class.getName());
-    
-    // Set context and pattern
-    patternLayout.setContext(context);
-    patternLayout.setPattern(getPattern());
-    
-    // Configure String Template processor if enabled
-    if (enableStringTemplates) {
-      patternLayout.addListener(new StringTemplateLogProcessor());
+    // Register the virtual thread aware converter for Java 21
+    if (enableVirtualThreadMetrics) {
+      patternLayout.getDefaultConverterMap().put("vthread", VirtualThreadAwareConverter.class.getName());
+      patternLayout.getDefaultConverterMap().put("vtid", VirtualThreadIdConverter.class.getName());
+      patternLayout.getDefaultConverterMap().put("vtname", VirtualThreadNameConverter.class.getName());
+      patternLayout.getDefaultConverterMap().put("vtmetrics", VirtualThreadMetricsConverter.class.getName());
     }
     
-    // Start the pattern layout
+    // Register string template processor for structured logging
+    if (enableStringTemplates) {
+      patternLayout.getDefaultConverterMap().put("template", StringTemplateConverter.class.getName());
+      patternLayout.getDefaultConverterMap().put("st", StringTemplateConverter.class.getName());
+    }
+    
+    patternLayout.setContext(context);
+    patternLayout.setPattern(getPattern());
     patternLayout.start();
     this.layout = patternLayout;
     super.start();

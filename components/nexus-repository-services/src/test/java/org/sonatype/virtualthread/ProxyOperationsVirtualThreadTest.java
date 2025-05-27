@@ -16,21 +16,19 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.function.Supplier;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -50,6 +48,8 @@ import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Request;
 
+import com.google.common.collect.ConcurrentHashMultiset;
+import com.google.common.collect.Multiset;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -57,8 +57,8 @@ import org.mockito.Spy;
 
 import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.io.ByteStreams.toByteArray;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.stream.Collectors.summingInt;
+import static java.util.stream.Collectors.toList;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
@@ -69,60 +69,78 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.http.HttpMethods.GET;
 
 /**
- * Tests proxy repository operations with Java 21 Virtual Threads.
+ * Tests for {@link ProxyFacetSupport} using Java 21 Virtual Threads.
  * 
- * This test validates that proxy repositories can efficiently handle thousands of concurrent
- * requests using virtual threads, significantly improving throughput and resource utilization
- * for I/O-bound operations like proxying remote repositories.
+ * This test verifies that proxy repository operations can efficiently use Virtual Threads
+ * for improved concurrency and resource utilization, particularly for I/O-bound operations
+ * like remote repository fetches.
  */
 public class ProxyOperationsVirtualThreadTest
     extends TestSupport
 {
-  private static final int SMALL_CONCURRENCY = 100;
-  private static final int MEDIUM_CONCURRENCY = 1_000;
-  private static final int LARGE_CONCURRENCY = 10_000;
-  
-  private static final int REMOTE_LATENCY_MS = 100; // simulated remote repository latency
-  private static final int REMOTE_TIMEOUT_MS = 5000; // simulated remote repository timeout
-  
-  private static final byte[] CONTENT_BYTES = "Test content for proxy repository".getBytes(UTF_8);
-  
+  private static final int NUM_CLIENTS = 5000;
+
+  private static final int NUM_PATHS = 100;
+
+  private static final String META_PREFIX = "meta/";
+
+  private static final String ASSET_PREFIX = "asset/";
+
+  private static final byte[] META_CONTENT = "META".getBytes(UTF_8);
+
+  private static final byte[] ASSET_CONTENT = "ASSET".getBytes(UTF_8);
+
   @Mock
   Repository repository;
-  
+
   @Mock
   CacheController cacheController;
-  
+
   @Mock
   CacheControllerHolder cacheControllerHolder;
-  
+
   @Mock
   CacheInfo cacheInfo;
-  
+
   @Mock
   AttributesMap attributesMap;
-  
+
   @Mock
-  Content content;
-  
+  Request metaRequest;
+
+  @Mock
+  Context metaContext;
+
+  @Mock
+  Content metaContent;
+
+  @Mock
+  Content assetContent;
+
   @Mock
   EventManager eventManager;
-  
+
   @Mock
   Format format;
-  
+
   Cooperation2Factory cooperationFactory = new DefaultCooperation2Factory();
-  
-  Random random = new Random(42); // fixed seed for reproducibility
-  
+
+  Random random = new Random();
+
   Map<String, Content> storage = new ConcurrentHashMap<>();
+
+  Multiset<String> upstreamRequestLog = ConcurrentHashMultiset.create();
+
+  Semaphore metaDownloadPermits = new Semaphore(0);
+
+  Semaphore assetDownloadPermits = new Semaphore(0);
   
-  Map<String, AtomicInteger> remoteCallCounters = new ConcurrentHashMap<>();
+  AtomicInteger completedRequests = new AtomicInteger(0);
   
-  Semaphore remoteCallPermits = new Semaphore(Integer.MAX_VALUE);
+  AtomicLong platformThreadTime = new AtomicLong(0);
   
-  LongAdder totalRemoteCalls = new LongAdder();
-  
+  AtomicLong virtualThreadTime = new AtomicLong(0);
+
   @Spy
   ProxyFacetSupport underTest = new ProxyFacetSupport()
   {
@@ -131,475 +149,501 @@ public class ProxyOperationsVirtualThreadTest
     protected Content getCachedContent(final Context context) {
       return storage.get(context.getRequest().getPath());
     }
-    
+
     @Override
     protected Content store(final Context context, final Content content) {
       storage.put(context.getRequest().getPath(), content);
       return content;
     }
-    
+
     @Override
     protected void indicateVerified(final Context context, final Content content, final CacheInfo cacheInfo) {
       // no-op
     }
-    
+
     @Override
     protected String getUrl(@Nonnull final Context context) {
-      return "http://remote-repo/" + context.getRequest().getPath();
+      String path = context.getRequest().getPath();
+      if (context.equals(metaContext)) {
+        return META_PREFIX + path;
+      }
+      if (path.contains("indirect")) {
+        // simulate formats which load index files to find URLs
+        try (InputStream in = get(metaContext).openInputStream()) {
+          return ASSET_PREFIX + path; // pretend we used the index
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }
+      return ASSET_PREFIX + path;
     }
-    
+
     @Override
     protected Content fetch(final String url, final Context context, final Content stale) throws IOException {
-      String path = context.getRequest().getPath();
-      
-      // Track remote call counts
-      remoteCallCounters.computeIfAbsent(path, k -> new AtomicInteger()).incrementAndGet();
-      totalRemoteCalls.increment();
-      
-      try {
-        // Acquire permit (used to control concurrency in tests)
-        if (!remoteCallPermits.tryAcquire(REMOTE_TIMEOUT_MS, MILLISECONDS)) {
-          throw new IOException("Remote call timed out for " + url);
-        }
-        
-        try {
-          // Simulate remote repository latency
-          Thread.sleep(REMOTE_LATENCY_MS);
-          
-          // Simulate errors for paths containing "error"
-          if (path.contains("error")) {
-            throw new IOException("Simulated remote error for " + url);
-          }
-          
-          // Return mock content
-          return content;
-        }
-        finally {
-          remoteCallPermits.release();
-        }
+      upstreamRequestLog.add(url);
+
+      if (url.startsWith(META_PREFIX)) {
+        // wait until the test releases the download
+        metaDownloadPermits.acquireUninterruptibly();
+        return metaContent;
       }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new IOException("Interrupted while fetching " + url, e);
+
+      if (url.startsWith(ASSET_PREFIX)) {
+        // wait until the test releases the download
+        assetDownloadPermits.acquireUninterruptibly();
+        if (url.contains("broken")) {
+          throw new IOException("oops");
+        }
+        return assetContent;
       }
+
+      return null;
     }
   };
-  
+
   @Before
   public void setUp() throws Exception {
+    // this is the mock index used for indirect requests
+    when(metaRequest.getPath()).thenReturn("index.json");
+    when(metaContext.getRequest()).thenReturn(metaRequest);
+    when(metaContext.getAttributes()).thenReturn(new AttributesMap());
+
     when(attributesMap.get(CacheInfo.class)).thenReturn(cacheInfo);
-    
-    when(content.getAttributes()).thenReturn(attributesMap);
-    when(content.openInputStream()).thenAnswer(invocation -> new ByteArrayInputStream(CONTENT_BYTES));
-    
+
+    when(metaContent.getAttributes()).thenReturn(attributesMap);
+    when(assetContent.getAttributes()).thenReturn(attributesMap);
+
+    when(metaContent.openInputStream()).thenAnswer(invocation -> new ByteArrayInputStream(META_CONTENT));
+    when(assetContent.openInputStream()).thenAnswer(invocation -> new ByteArrayInputStream(ASSET_CONTENT));
+
     when(cacheController.isStale(cacheInfo)).thenReturn(false);
     when(cacheControllerHolder.getContentCacheController()).thenReturn(cacheController);
-    
+
     when(repository.getName()).thenReturn("test-repo");
     when(format.getValue()).thenReturn("raw");
     when(repository.getFormat()).thenReturn(format);
-    
+
     underTest.installDependencies(eventManager);
     underTest.cacheControllerHolder = cacheControllerHolder;
     underTest.attach(repository);
   }
-  
-  /**
-   * Creates a request for the given path.
-   */
-  private Request request(final String path) {
+
+  Request request(final String path) {
     return new Request.Builder().action(GET).path(path).build();
   }
-  
-  /**
-   * Generates a list of random requests with the given prefix and count.
-   */
-  private List<Request> generateRandomRequests(final String pathPrefix, final int count, final int uniquePaths) {
-    List<Request> requests = new ArrayList<>(count);
-    for (int i = 0; i < count; i++) {
-      int pathIndex = random.nextInt(uniquePaths);
-      requests.add(request(pathPrefix + pathIndex));
-    }
-    return requests;
+
+  List<Request> generateRandomRequests(final String pathPrefix) {
+    return random.ints(NUM_CLIENTS, 0, NUM_PATHS).mapToObj(i -> pathPrefix + i).map(this::request).collect(toList());
   }
-  
+
+  void waitForThreadCooperation(final int expectedCount) {
+    await().until(
+        () -> underTest.getThreadCooperationPerRequest().entrySet().stream()
+            .collect(summingInt(Entry<String, Integer>::getValue)),
+        is(expectedCount));
+  }
+
+  void waitForMetaDownloads(final int expectedCount) {
+    await().until(() -> metaDownloadPermits.getQueueLength(), is(expectedCount));
+  }
+
+  void releaseMetaDownloads(final int permits) {
+    metaDownloadPermits.release(permits);
+  }
+
+  void waitForAssetDownloads(final int expectedCount) {
+    await().until(() -> assetDownloadPermits.getQueueLength(), is(expectedCount));
+  }
+
+  void releaseAssetDownloads(final int permits) {
+    assetDownloadPermits.release(permits);
+  }
+
+  void waitForCompletedRequests(final int expectedCount) {
+    await().until(() -> completedRequests.get(), is(expectedCount));
+  }
+
+  Runnable proxyGetTask(final Request request) {
+    return () -> {
+      try {
+        Content content = underTest.get(new Context(repository, request));
+        try (InputStream in = content.openInputStream()) {
+          assertThat(toByteArray(in), is(ASSET_CONTENT));
+          completedRequests.incrementAndGet();
+        }
+      }
+      catch (IOException e) {
+        fail("Unexpected " + e);
+      }
+    };
+  }
+
   /**
-   * Executes the given requests using the specified executor service and returns the execution time in milliseconds.
+   * Tests proxy repository operations with a high number of concurrent requests using platform threads.
+   * This establishes a baseline for comparison with virtual threads.
    */
-  private long executeRequests(final List<Request> requests, final ExecutorService executor) throws Exception {
-    int requestCount = requests.size();
-    CountDownLatch latch = new CountDownLatch(requestCount);
-    
-    Instant start = Instant.now();
-    
+  @Test
+  public void testProxyOperationsWithPlatformThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
+        Duration.ofSeconds(10), NUM_CLIENTS);
+    underTest.buildCooperation();
+
+    List<Request> requests = generateRandomRequests("some/valid/indirect/path-");
+    int uniquePathCount = (int) requests.stream().map(Request::getPath).distinct().count();
+    int totalClients = requests.size();
+
+    // Create a fixed thread pool with platform threads
+    ExecutorService executor = Executors.newFixedThreadPool(100); // Limited thread pool size
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean started = new AtomicBoolean(false);
+
+    // Submit all tasks to the executor
     for (Request request : requests) {
       executor.submit(() -> {
         try {
-          Content content = underTest.get(new Context(repository, request));
-          try (InputStream in = content.openInputStream()) {
-            byte[] bytes = toByteArray(in);
-            assertThat(bytes, is(CONTENT_BYTES));
+          // Wait for all threads to be ready before starting
+          if (!started.get()) {
+            latch.await();
           }
+          proxyGetTask(request).run();
         }
-        catch (IOException e) {
-          // Expected for error paths
-          if (!request.getPath().contains("error")) {
-            fail("Unexpected exception: " + e);
-          }
-        }
-        finally {
-          latch.countDown();
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       });
     }
-    
+
+    // Start timing
+    long startTime = System.currentTimeMillis();
+    started.set(true);
+    latch.countDown();
+
+    // Wait for meta downloads and release them
+    waitForMetaDownloads(uniquePathCount);
+    releaseMetaDownloads(uniquePathCount);
+
+    // Wait for asset downloads and release them
+    waitForAssetDownloads(uniquePathCount);
+    releaseAssetDownloads(uniquePathCount);
+
     // Wait for all requests to complete
-    if (!latch.await(30, SECONDS)) {
-      fail("Timed out waiting for requests to complete");
-    }
-    
-    return Duration.between(start, Instant.now()).toMillis();
+    waitForCompletedRequests(totalClients);
+    long endTime = System.currentTimeMillis();
+    platformThreadTime.set(endTime - startTime);
+
+    log.info("Platform thread execution time: {} ms", platformThreadTime.get());
+    log.info("Completed {} requests with {} unique paths", totalClients, uniquePathCount);
+    log.info("Upstream requests: {}", upstreamRequestLog.size());
+
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // Reset for next test
+    completedRequests.set(0);
+    upstreamRequestLog.clear();
+    storage.clear();
   }
-  
+
   /**
-   * Creates an executor service with the specified number of threads.
-   * Uses platform threads or virtual threads based on the useVirtualThreads parameter.
+   * Tests proxy repository operations with a high number of concurrent requests using virtual threads.
+   * Compares performance with platform threads to demonstrate the benefits of virtual threads for I/O-bound operations.
    */
-  private ExecutorService createExecutor(final int threadCount, final boolean useVirtualThreads) {
-    if (useVirtualThreads) {
-      return Executors.newVirtualThreadPerTaskExecutor();
-    }
-    else {
-      return Executors.newFixedThreadPool(threadCount, new ThreadFactory() {
-        private final AtomicInteger counter = new AtomicInteger();
-        
-        @Override
-        public Thread newThread(final Runnable r) {
-          Thread thread = new Thread(r);
-          thread.setName("platform-thread-" + counter.incrementAndGet());
-          thread.setDaemon(true);
-          return thread;
+  @Test
+  public void testProxyOperationsWithVirtualThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
+        Duration.ofSeconds(10), NUM_CLIENTS);
+    underTest.buildCooperation();
+
+    List<Request> requests = generateRandomRequests("some/valid/indirect/path-");
+    int uniquePathCount = (int) requests.stream().map(Request::getPath).distinct().count();
+    int totalClients = requests.size();
+
+    // Create a virtual thread per task executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean started = new AtomicBoolean(false);
+
+    // Submit all tasks to the executor
+    for (Request request : requests) {
+      executor.submit(() -> {
+        try {
+          // Wait for all threads to be ready before starting
+          if (!started.get()) {
+            latch.await();
+          }
+          proxyGetTask(request).run();
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
         }
       });
     }
-  }
-  
-  /**
-   * Runs a performance test with the given parameters and returns the execution time.
-   */
-  private long runPerformanceTest(
-      final int concurrency,
-      final int uniquePaths,
-      final boolean useVirtualThreads,
-      final boolean enableCooperation,
-      final boolean preCacheContent) throws Exception
-  {
-    // Clear state from previous tests
-    storage.clear();
-    remoteCallCounters.clear();
-    totalRemoteCalls.reset();
-    
-    // Configure cooperation
-    underTest.configureCooperation(
-        cooperationFactory,
-        cooperationFactory,
-        false,  // clustered cooperation
-        false,  // clustered
-        enableCooperation,  // enabled
-        Duration.ofSeconds(60),  // major timeout
-        Duration.ofSeconds(10),  // minor timeout
-        concurrency  // max threads
-    );
-    underTest.buildCooperation();
-    
-    // Pre-cache content if requested
-    if (preCacheContent) {
-      for (int i = 0; i < uniquePaths; i++) {
-        String path = "path-" + i;
-        storage.put(path, content);
-      }
-    }
-    
-    // Generate requests
-    List<Request> requests = generateRandomRequests("path-", concurrency, uniquePaths);
-    
-    // Create executor
-    try (ExecutorService executor = createExecutor(concurrency, useVirtualThreads)) {
-      // Execute requests and measure time
-      return executeRequests(requests, executor);
-    }
-  }
-  
-  /**
-   * Compares performance between platform threads and virtual threads for a small number of concurrent requests.
-   */
-  @Test
-  public void testSmallConcurrencyPerformance() throws Exception {
-    int concurrency = SMALL_CONCURRENCY;
-    int uniquePaths = 10;
-    
-    // Run with platform threads
-    long platformTime = runPerformanceTest(concurrency, uniquePaths, false, true, false);
-    log.info("Platform threads execution time (small concurrency): {} ms", platformTime);
-    
-    // Run with virtual threads
-    long virtualTime = runPerformanceTest(concurrency, uniquePaths, true, true, false);
-    log.info("Virtual threads execution time (small concurrency): {} ms", virtualTime);
-    
-    // For small concurrency, times should be comparable (virtual might be slightly faster)
-    // but we don't make strict assertions as performance can vary between environments
-    log.info("Performance ratio (platform/virtual): {}", (double) platformTime / virtualTime);
-  }
-  
-  /**
-   * Compares performance between platform threads and virtual threads for a medium number of concurrent requests.
-   */
-  @Test
-  public void testMediumConcurrencyPerformance() throws Exception {
-    int concurrency = MEDIUM_CONCURRENCY;
-    int uniquePaths = 100;
-    
-    // Run with platform threads
-    long platformTime = runPerformanceTest(concurrency, uniquePaths, false, true, false);
-    log.info("Platform threads execution time (medium concurrency): {} ms", platformTime);
-    
-    // Run with virtual threads
-    long virtualTime = runPerformanceTest(concurrency, uniquePaths, true, true, false);
-    log.info("Virtual threads execution time (medium concurrency): {} ms", virtualTime);
-    
-    // Virtual threads should be noticeably faster with medium concurrency
-    log.info("Performance ratio (platform/virtual): {}", (double) platformTime / virtualTime);
-    assertThat("Virtual threads should be faster than platform threads with medium concurrency",
-        platformTime, greaterThan(virtualTime));
-  }
-  
-  /**
-   * Tests performance with a large number of concurrent requests, which is only practical with virtual threads.
-   */
-  @Test
-  public void testLargeConcurrencyPerformance() throws Exception {
-    int concurrency = LARGE_CONCURRENCY;
-    int uniquePaths = 1000;
-    
-    // Run with virtual threads
-    long virtualTime = runPerformanceTest(concurrency, uniquePaths, true, true, false);
-    log.info("Virtual threads execution time (large concurrency): {} ms", virtualTime);
-    
-    // Verify that we can handle this level of concurrency with virtual threads
-    // We don't run with platform threads as it would likely cause resource exhaustion
-  }
-  
-  /**
-   * Tests the effect of cooperation on remote call reduction with virtual threads.
-   */
-  @Test
-  public void testCooperationEffect() throws Exception {
-    int concurrency = MEDIUM_CONCURRENCY;
-    int uniquePaths = 50; // Small number of unique paths to maximize cooperation opportunities
-    
-    // Run without cooperation
-    runPerformanceTest(concurrency, uniquePaths, true, false, false);
-    long remoteCallsWithoutCooperation = totalRemoteCalls.sum();
-    log.info("Remote calls without cooperation: {}", remoteCallsWithoutCooperation);
-    
-    // Run with cooperation
-    runPerformanceTest(concurrency, uniquePaths, true, true, false);
-    long remoteCallsWithCooperation = totalRemoteCalls.sum();
-    log.info("Remote calls with cooperation: {}", remoteCallsWithCooperation);
-    
-    // Cooperation should significantly reduce remote calls
-    log.info("Remote call reduction ratio: {}", (double) remoteCallsWithoutCooperation / remoteCallsWithCooperation);
-    assertThat("Cooperation should reduce remote calls",
-        remoteCallsWithCooperation, lessThan(remoteCallsWithoutCooperation));
-  }
-  
-  /**
-   * Tests caching behavior with virtual threads.
-   */
-  @Test
-  public void testCachingBehavior() throws Exception {
-    int concurrency = MEDIUM_CONCURRENCY;
-    int uniquePaths = 100;
-    
-    // First run without pre-cached content
-    runPerformanceTest(concurrency, uniquePaths, true, true, false);
-    long remoteCallsFirstRun = totalRemoteCalls.sum();
-    log.info("Remote calls on first run (no cache): {}", remoteCallsFirstRun);
-    
-    // Second run with content now cached from first run
-    runPerformanceTest(concurrency, uniquePaths, true, true, true);
-    long remoteCallsSecondRun = totalRemoteCalls.sum();
-    log.info("Remote calls on second run (with cache): {}", remoteCallsSecondRun);
-    
-    // Cached content should eliminate most remote calls
-    assertThat("Caching should eliminate most remote calls",
-        remoteCallsSecondRun, lessThan(remoteCallsFirstRun / 10)); // At least 90% reduction
-  }
-  
-  /**
-   * Tests error handling with virtual threads.
-   */
-  @Test
-  public void testErrorHandling() throws Exception {
-    // Configure cooperation
-    underTest.configureCooperation(
-        cooperationFactory,
-        cooperationFactory,
-        false,
-        false,
-        true,
-        Duration.ofSeconds(60),
-        Duration.ofSeconds(10),
-        MEDIUM_CONCURRENCY
-    );
-    underTest.buildCooperation();
-    
-    // Clear state
-    storage.clear();
-    remoteCallCounters.clear();
-    totalRemoteCalls.reset();
-    
-    // Create a mix of normal and error requests
-    List<Request> requests = new ArrayList<>();
-    for (int i = 0; i < 100; i++) {
-      requests.add(request("normal-path-" + i));
-      requests.add(request("error-path-" + i));
-    }
-    
-    // Execute with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executeRequests(requests, executor);
-    }
-    
-    // Verify that error paths were called exactly once each
-    for (int i = 0; i < 100; i++) {
-      String errorPath = "error-path-" + i;
-      AtomicInteger counter = remoteCallCounters.get(errorPath);
-      assertThat("Error path should be called exactly once",
-          counter.get(), is(1));
-    }
-    
-    // Verify that normal paths were also called
-    for (int i = 0; i < 100; i++) {
-      String normalPath = "normal-path-" + i;
-      AtomicInteger counter = remoteCallCounters.get(normalPath);
-      assertThat("Normal path should be called",
-          counter.get(), is(1));
-    }
-  }
-  
-  /**
-   * Tests throttling behavior with virtual threads.
-   */
-  @Test
-  public void testThrottling() throws Exception {
-    int concurrency = MEDIUM_CONCURRENCY;
-    int uniquePaths = 100;
-    int maxConcurrentRemoteCalls = 10; // Limit concurrent remote calls
-    
-    // Configure cooperation
-    underTest.configureCooperation(
-        cooperationFactory,
-        cooperationFactory,
-        false,
-        false,
-        true,
-        Duration.ofSeconds(60),
-        Duration.ofSeconds(10),
-        concurrency
-    );
-    underTest.buildCooperation();
-    
-    // Clear state
-    storage.clear();
-    remoteCallCounters.clear();
-    totalRemoteCalls.reset();
-    
-    // Limit concurrent remote calls
-    remoteCallPermits = new Semaphore(maxConcurrentRemoteCalls);
-    
-    // Generate requests
-    List<Request> requests = generateRandomRequests("throttled-path-", concurrency, uniquePaths);
-    
-    // Track max concurrent remote calls
-    AtomicInteger currentCalls = new AtomicInteger(0);
-    AtomicInteger maxCalls = new AtomicInteger(0);
-    
-    // Create a thread to monitor concurrency
-    Thread monitor = new Thread(() -> {
-      try {
-        while (!Thread.currentThread().isInterrupted()) {
-          int current = concurrency - remoteCallPermits.availablePermits();
-          currentCalls.set(current);
-          maxCalls.updateAndGet(max -> Math.max(max, current));
-          Thread.sleep(10);
-        }
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-    });
-    monitor.setDaemon(true);
-    monitor.start();
-    
-    try {
-      // Execute with virtual threads
-      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        executeRequests(requests, executor);
-      }
+
+    // Start timing
+    long startTime = System.currentTimeMillis();
+    started.set(true);
+    latch.countDown();
+
+    // Wait for meta downloads and release them
+    waitForMetaDownloads(uniquePathCount);
+    releaseMetaDownloads(uniquePathCount);
+
+    // Wait for asset downloads and release them
+    waitForAssetDownloads(uniquePathCount);
+    releaseAssetDownloads(uniquePathCount);
+
+    // Wait for all requests to complete
+    waitForCompletedRequests(totalClients);
+    long endTime = System.currentTimeMillis();
+    virtualThreadTime.set(endTime - startTime);
+
+    log.info("Virtual thread execution time: {} ms", virtualThreadTime.get());
+    log.info("Completed {} requests with {} unique paths", totalClients, uniquePathCount);
+    log.info("Upstream requests: {}", upstreamRequestLog.size());
+
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // Compare performance with platform threads
+    if (platformThreadTime.get() > 0) {
+      double improvement = (double) platformThreadTime.get() / virtualThreadTime.get();
+      log.info("Virtual threads were {}x faster than platform threads", improvement);
       
-      // Verify throttling worked
-      log.info("Maximum concurrent remote calls: {}", maxCalls.get());
-      assertThat("Remote calls should be throttled",
-          maxCalls.get(), lessThan(maxConcurrentRemoteCalls + 1)); // +1 for potential race condition
-    }
-    finally {
-      monitor.interrupt();
+      // Virtual threads should be faster for this I/O-bound workload
+      assertThat(virtualThreadTime.get(), lessThan(platformThreadTime.get()));
     }
   }
-  
+
   /**
-   * Compares memory usage between platform threads and virtual threads.
+   * Tests extreme concurrency with virtual threads to verify scalability.
+   * This test creates a very high number of concurrent requests to demonstrate
+   * that virtual threads can handle thousands of concurrent operations efficiently.
    */
   @Test
-  public void testMemoryUsage() throws Exception {
-    // This test is more of a demonstration than a strict assertion,
-    // as memory usage can vary significantly between environments
-    
-    // Function to measure memory usage
-    Supplier<Long> getMemoryUsage = () -> {
-      System.gc(); // Request garbage collection to get more accurate readings
-      return Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-    };
-    
-    int concurrency = MEDIUM_CONCURRENCY;
-    int uniquePaths = 100;
-    
-    // Measure baseline memory usage
-    long baselineMemory = getMemoryUsage.get();
-    log.info("Baseline memory usage: {} MB", baselineMemory / (1024 * 1024));
-    
-    // Measure with platform threads
-    ExecutorService platformExecutor = createExecutor(concurrency, false);
-    long platformMemoryBefore = getMemoryUsage.get();
-    platformExecutor.shutdown();
-    platformExecutor.awaitTermination(1, SECONDS);
-    long platformMemoryAfter = getMemoryUsage.get();
-    long platformMemoryUsage = platformMemoryAfter - platformMemoryBefore;
-    log.info("Platform threads memory usage: {} MB", platformMemoryUsage / (1024 * 1024));
-    
-    // Measure with virtual threads
-    ExecutorService virtualExecutor = createExecutor(concurrency, true);
-    long virtualMemoryBefore = getMemoryUsage.get();
-    virtualExecutor.shutdown();
-    virtualExecutor.awaitTermination(1, SECONDS);
-    long virtualMemoryAfter = getMemoryUsage.get();
-    long virtualMemoryUsage = virtualMemoryAfter - virtualMemoryBefore;
-    log.info("Virtual threads memory usage: {} MB", virtualMemoryUsage / (1024 * 1024));
-    
-    // Log memory usage ratio
-    if (virtualMemoryUsage > 0) { // Avoid division by zero
-      log.info("Memory usage ratio (platform/virtual): {}", (double) platformMemoryUsage / virtualMemoryUsage);
+  public void testExtremeConcurrencyWithVirtualThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
+        Duration.ofSeconds(10), NUM_CLIENTS * 2); // Allow more concurrent threads
+    underTest.buildCooperation();
+
+    // Generate a large number of requests with some duplication to test cooperation
+    List<Request> requests = generateRandomRequests("some/extreme/concurrency/path-");
+    int uniquePathCount = (int) requests.stream().map(Request::getPath).distinct().count();
+    int totalClients = requests.size();
+
+    log.info("Testing with {} total requests and {} unique paths", totalClients, uniquePathCount);
+
+    // Create a virtual thread per task executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean started = new AtomicBoolean(false);
+
+    // Submit all tasks to the executor
+    for (Request request : requests) {
+      executor.submit(() -> {
+        try {
+          if (!started.get()) {
+            latch.await();
+          }
+          proxyGetTask(request).run();
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
     }
+
+    // Start timing
+    long startTime = System.currentTimeMillis();
+    started.set(true);
+    latch.countDown();
+
+    // Wait for meta downloads and release them
+    waitForMetaDownloads(uniquePathCount);
+    releaseMetaDownloads(uniquePathCount);
+
+    // Wait for asset downloads and release them
+    waitForAssetDownloads(uniquePathCount);
+    releaseAssetDownloads(uniquePathCount);
+
+    // Wait for all requests to complete
+    waitForCompletedRequests(totalClients);
+    long endTime = System.currentTimeMillis();
+
+    log.info("Extreme concurrency execution time: {} ms", (endTime - startTime));
+    log.info("Completed {} requests with {} unique paths", totalClients, uniquePathCount);
+    log.info("Upstream requests: {}", upstreamRequestLog.size());
+
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // Verify that cooperation worked correctly - we should have exactly one upstream request per unique path
+    assertThat(upstreamRequestLog.size(), is(uniquePathCount * 2)); // One for meta, one for asset per unique path
+  }
+
+  /**
+   * Tests the cache consistency under high concurrency with virtual threads.
+   * This test verifies that the cache remains consistent when accessed by thousands
+   * of concurrent virtual threads.
+   */
+  @Test
+  public void testCacheConsistencyWithVirtualThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
+        Duration.ofSeconds(10), NUM_CLIENTS);
+    underTest.buildCooperation();
+
+    // Generate requests with a smaller set of unique paths to increase cache hits
+    List<Request> requests = generateRandomRequests("some/cache/test/path-");
+    int uniquePathCount = (int) requests.stream().map(Request::getPath).distinct().count();
+    int totalClients = requests.size();
+
+    // First pass - populate the cache
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean started = new AtomicBoolean(false);
+
+    // Submit all tasks to the executor
+    for (Request request : requests) {
+      executor.submit(() -> {
+        try {
+          if (!started.get()) {
+            latch.await();
+          }
+          proxyGetTask(request).run();
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
+    }
+
+    started.set(true);
+    latch.countDown();
+
+    // Wait for meta downloads and release them
+    waitForMetaDownloads(uniquePathCount);
+    releaseMetaDownloads(uniquePathCount);
+
+    // Wait for asset downloads and release them
+    waitForAssetDownloads(uniquePathCount);
+    releaseAssetDownloads(uniquePathCount);
+
+    // Wait for all requests to complete
+    waitForCompletedRequests(totalClients);
+
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // Record the number of upstream requests after first pass
+    int firstPassRequests = upstreamRequestLog.size();
+    log.info("First pass upstream requests: {}", firstPassRequests);
+
+    // Reset for second pass
+    completedRequests.set(0);
+    upstreamRequestLog.clear();
+
+    // Second pass - should use cache for everything
+    executor = Executors.newVirtualThreadPerTaskExecutor();
+    latch = new CountDownLatch(1);
+    started.set(false);
+
+    // Submit all tasks to the executor again
+    for (Request request : requests) {
+      executor.submit(() -> {
+        try {
+          if (!started.get()) {
+            latch.await();
+          }
+          proxyGetTask(request).run();
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
+    }
+
+    started.set(true);
+    latch.countDown();
+
+    // Wait for all requests to complete
+    waitForCompletedRequests(totalClients);
+
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // Verify that no upstream requests were made in the second pass
+    int secondPassRequests = upstreamRequestLog.size();
+    log.info("Second pass upstream requests: {}", secondPassRequests);
+
+    // Should be zero upstream requests in second pass since everything is cached
+    assertThat(secondPassRequests, is(0));
+    
+    // First pass should have exactly one upstream request per unique path (for meta and asset)
+    assertThat(firstPassRequests, is(uniquePathCount * 2));
+  }
+
+  /**
+   * Tests cooperation patterns with virtual threads to verify that the system
+   * properly coordinates concurrent requests for the same resource.
+   */
+  @Test
+  public void testCooperationPatternsWithVirtualThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
+        Duration.ofSeconds(10), NUM_CLIENTS);
+    underTest.buildCooperation();
+
+    // Generate requests with many duplicates to test cooperation
+    List<Request> requests = generateRandomRequests("some/cooperation/test/path-");
+    int uniquePathCount = (int) requests.stream().map(Request::getPath).distinct().count();
+    int totalClients = requests.size();
+
+    log.info("Testing cooperation with {} total requests and {} unique paths", totalClients, uniquePathCount);
+
+    // Create a virtual thread per task executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean started = new AtomicBoolean(false);
+
+    // Submit all tasks to the executor
+    for (Request request : requests) {
+      executor.submit(() -> {
+        try {
+          if (!started.get()) {
+            latch.await();
+          }
+          proxyGetTask(request).run();
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
+    }
+
+    // Start all threads simultaneously
+    started.set(true);
+    latch.countDown();
+
+    // Wait for cooperation to happen
+    waitForThreadCooperation(totalClients);
+
+    // Wait for meta downloads and release them
+    waitForMetaDownloads(uniquePathCount);
+    releaseMetaDownloads(uniquePathCount);
+
+    // Wait for asset downloads and release them
+    waitForAssetDownloads(uniquePathCount);
+    releaseAssetDownloads(uniquePathCount);
+
+    // Wait for all requests to complete
+    waitForCompletedRequests(totalClients);
+
+    executor.shutdown();
+    executor.awaitTermination(30, TimeUnit.SECONDS);
+
+    // Verify that cooperation worked correctly - we should have exactly one upstream request per unique path
+    assertThat(upstreamRequestLog.size(), is(uniquePathCount * 2)); // One for meta, one for asset per unique path
+    
+    // Verify that we had the expected number of cooperating threads
+    assertThat(totalClients, greaterThan(upstreamRequestLog.size()));
   }
 }

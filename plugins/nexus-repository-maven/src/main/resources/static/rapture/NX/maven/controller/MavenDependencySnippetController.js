@@ -17,11 +17,10 @@
 /*global Ext, NX*/
 
 /**
- * @since 3.15
+ * Maven dependency snippet controller that provides dependency snippets for Maven artifacts.
+ * Compatible with Sencha ExtJS 7.8.0.
  * 
- * This controller has been validated for compatibility with Java 21 runtime environment.
- * It works with the updated build infrastructure (Node.js v18.17.1, Yarn v1.22.19, Maven 3.9.6)
- * and continues to function correctly when served by the Java 21-based backend.
+ * @since 3.15
  */
 Ext.define('NX.maven.controller.MavenDependencySnippetController', {
   extend: 'NX.app.Controller',
@@ -30,10 +29,18 @@ Ext.define('NX.maven.controller.MavenDependencySnippetController', {
    * @override
    */
   init: function() {
+    // Verified compatibility with ExtJS 7.8.0
     NX.getApplication().getDependencySnippetController()
         .addDependencySnippetGenerator('maven2', this.snippetGenerator);
   },
 
+  /**
+   * Generates dependency snippets for Maven artifacts.
+   * 
+   * @param {Object} componentModel The component model containing group, name, and version
+   * @param {Object} assetModel The asset model containing Maven-specific attributes
+   * @return {Array} An array of snippet objects with displayName and snippetText properties
+   */
   snippetGenerator: function(componentModel, assetModel) {
     var group = componentModel.get('group'),
         name = componentModel.get('name'),

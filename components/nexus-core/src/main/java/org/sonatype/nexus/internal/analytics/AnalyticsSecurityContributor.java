@@ -12,18 +12,16 @@
  */
 package org.sonatype.nexus.internal.analytics;
 
-import static java.lang.StringTemplate.STR;
-
 import javax.inject.Named;
 import javax.inject.Singleton;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityContributor;
 import org.sonatype.nexus.security.config.SecurityContributorSupport;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Analytics security configuration.
@@ -37,7 +35,7 @@ public class AnalyticsSecurityContributor
     implements SecurityContributor
 {
   private static final Logger log = LoggerFactory.getLogger(AnalyticsSecurityContributor.class);
-  
+
   public static final String ANALYTICS_DOMAIN = "analytics";
 
   public static final String ANALYTICS_ALL_PRIV_ID = "nx-analytics-all";
@@ -46,15 +44,13 @@ public class AnalyticsSecurityContributor
 
   @Override
   public SecurityConfiguration getContribution() {
-    log.debug(STR."Creating security configuration for \{ANALYTICS_DOMAIN} domain");
-    
     MemorySecurityConfiguration config = new MemorySecurityConfiguration();
-
+    
+    log.debug(STR."Creating analytics privilege: \{ANALYTICS_ALL_PRIV_ID} for domain: \{ANALYTICS_DOMAIN}");
+    
     config.addPrivilege(
         createApplicationPrivilege(ANALYTICS_ALL_PRIV_ID, ANALYTICS_ALL_PRIV_DESCRIPTION, ANALYTICS_DOMAIN,
             ACTION_ALL));
-    
-    log.debug(STR."Added privilege \{ANALYTICS_ALL_PRIV_ID} with description: \{ANALYTICS_ALL_PRIV_DESCRIPTION}");
 
     return config;
   }

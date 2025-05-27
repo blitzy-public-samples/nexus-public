@@ -13,8 +13,11 @@
 package org.java21;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.cache.Cache;
@@ -24,10 +27,9 @@ import javax.cache.expiry.Duration;
 import javax.cache.expiry.EternalExpiryPolicy;
 import javax.cache.expiry.ExpiryPolicy;
 
-import org.sonatype.goodies.common.Time;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.cache.CacheHelper;
-import org.sonatype.nexus.testsupport.test.VirtualThreadTestGroup;
+import org.sonatype.nexus.security.VirtualThreadTestGroup;
 
 import org.apache.shiro.nexus.ShiroJCacheManagerAdapter;
 import org.apache.shiro.session.mgt.eis.CachingSessionDAO;
@@ -39,190 +41,221 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests {@link ShiroJCacheManagerAdapter} compatibility with Java 21 virtual threads.
- * Verifies that cache creation, retrieval, and expiration function correctly in the
- * virtual thread execution environment.
+ * 
+ * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
 @org.junit.experimental.categories.Category(VirtualThreadTestGroup.class)
 public class ShiroJCacheManagerAdapterVirtualThreadTest
     extends TestSupport
 {
+  private static final String TEST_CACHE_NAME = "testCache";
+  private static final String SESSION_CACHE_NAME = CachingSessionDAO.ACTIVE_SESSION_CACHE_NAME;
+  private static final long CACHE_EXPIRY_MINUTES = 2L;
+
   @Mock
   private CacheHelper cacheHelper;
 
+  @Mock
+  private Cache<Object, Object> mockCache;
+
   @Captor
-  private ArgumentCaptor<Factory<ExpiryPolicy>> expiryPolicyCaptor;
+  private ArgumentCaptor<Factory<ExpiryPolicy>> confCaptor;
 
   private ShiroJCacheManagerAdapter underTest;
 
   @BeforeEach
   public void setUp() {
-    underTest = new ShiroJCacheManagerAdapter(() -> cacheHelper, () -> Time.minutes(2L));
+    underTest = new ShiroJCacheManagerAdapter(
+        () -> cacheHelper, 
+        () -> org.sonatype.goodies.common.Time.minutes(CACHE_EXPIRY_MINUTES));
   }
 
   /**
-   * Verifies that cache creation works correctly in a virtual thread.
+   * Verifies that the default cache configuration works correctly with virtual threads.
    */
   @Test
-  public void testCacheCreationInVirtualThread() throws Exception {
-    // Mock cache creation
-    Cache<Object, Object> mockCache = mock(Cache.class);
+  public void defaultCacheConfigurationWithVirtualThreads() throws Exception {
+    // Setup mock behavior
     when(cacheHelper.maybeCreateCache(anyString(), any())).thenReturn(mockCache);
-
-    // Create a latch to wait for the virtual thread to complete
-    CountDownLatch latch = new CountDownLatch(1);
-    AtomicReference<Cache<Object, Object>> resultCache = new AtomicReference<>();
-    AtomicBoolean threadCompleted = new AtomicBoolean(false);
-
-    // Create and start a virtual thread
-    Thread virtualThread = Thread.ofVirtual()
-        .name("cache-creation-thread")
-        .start(() -> {
-          try {
-            resultCache.set(underTest.maybeCreateCache("testCache"));
-          } finally {
-            threadCompleted.set(true);
-            latch.countDown();
-          }
-        });
-
-    // Wait for the virtual thread to complete
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
-    assertTrue(threadCompleted.get(), "Virtual thread did not complete successfully");
-    assertEquals(mockCache, resultCache.get(), "Cache was not created correctly in virtual thread");
-
-    // Verify the cache helper was called with the correct parameters
-    verify(cacheHelper).maybeCreateCache(eq("testCache"), any());
-  }
-
-  /**
-   * Verifies that the default cache expiry policy (2 minutes) is correctly applied in a virtual thread.
-   */
-  @Test
-  public void testDefaultExpiryPolicyInVirtualThread() throws Exception {
-    // Mock cache creation
-    when(cacheHelper.maybeCreateCache(anyString(), expiryPolicyCaptor.capture())).thenReturn(mock(Cache.class));
-
-    // Create a latch to wait for the virtual thread to complete
-    CountDownLatch latch = new CountDownLatch(1);
-
-    // Create and start a virtual thread
-    Thread virtualThread = Thread.ofVirtual()
-        .name("default-expiry-thread")
-        .start(() -> {
-          try {
-            underTest.maybeCreateCache("testCache");
-          } finally {
-            latch.countDown();
-          }
-        });
-
-    // Wait for the virtual thread to complete
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
-
-    // Verify the correct expiry policy was used
-    Factory<ExpiryPolicy> capturedFactory = expiryPolicyCaptor.getValue();
-    assertNotNull(capturedFactory, "Expiry policy factory was not captured");
-    ExpiryPolicy policy = capturedFactory.create();
-    assertTrue(policy instanceof CreatedExpiryPolicy, "Expected CreatedExpiryPolicy but got: " + policy.getClass().getName());
-    assertEquals(new Duration(TimeUnit.MINUTES, 2L), ((CreatedExpiryPolicy) policy).getExpiryForCreation());
-  }
-
-  /**
-   * Verifies that the Shiro session cache uses eternal expiry policy in a virtual thread.
-   */
-  @Test
-  public void testShiroSessionCacheExpiryPolicyInVirtualThread() throws Exception {
-    // Mock cache creation
-    when(cacheHelper.maybeCreateCache(anyString(), expiryPolicyCaptor.capture())).thenReturn(mock(Cache.class));
-
-    // Create a latch to wait for the virtual thread to complete
-    CountDownLatch latch = new CountDownLatch(1);
-
-    // Create and start a virtual thread
-    Thread virtualThread = Thread.ofVirtual()
-        .name("session-cache-thread")
-        .start(() -> {
-          try {
-            underTest.maybeCreateCache(CachingSessionDAO.ACTIVE_SESSION_CACHE_NAME);
-          } finally {
-            latch.countDown();
-          }
-        });
-
-    // Wait for the virtual thread to complete
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Virtual thread did not complete in time");
-
-    // Verify the correct expiry policy was used
-    Factory<ExpiryPolicy> capturedFactory = expiryPolicyCaptor.getValue();
-    assertNotNull(capturedFactory, "Expiry policy factory was not captured");
-    ExpiryPolicy policy = capturedFactory.create();
-    assertTrue(policy instanceof EternalExpiryPolicy, "Expected EternalExpiryPolicy but got: " + policy.getClass().getName());
-  }
-
-  /**
-   * Verifies that concurrent cache operations in multiple virtual threads work correctly without pinning.
-   * Uses CountDownLatch to coordinate between threads and verify no thread pinning occurs.
-   */
-  @Test
-  public void testConcurrentCacheOperationsInVirtualThreads() throws Exception {
-    // Number of virtual threads to create
-    final int threadCount = 10;
     
-    // Mock cache creation
-    Cache<Object, Object> mockCache = mock(Cache.class);
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create a virtual thread and execute the cache creation
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
+      Cache<Object, Object> cache = underTest.maybeCreateCache(TEST_CACHE_NAME);
+      assertNotNull(cache, "Cache should be created successfully in virtual thread");
+    });
+    
+    // Start the thread and wait for it to complete
+    virtualThread.start();
+    virtualThread.join();
+    
+    // Verify the cache was created with the correct configuration
+    verify(cacheHelper).maybeCreateCache(eq(TEST_CACHE_NAME), confCaptor.capture());
+    assertThat(confCaptor.getValue(), is(CreatedExpiryPolicy.factoryOf(new Duration(TimeUnit.MINUTES, CACHE_EXPIRY_MINUTES))));
+  }
+
+  /**
+   * Verifies that the Shiro session cache configuration works correctly with virtual threads.
+   */
+  @Test
+  public void sessionCacheConfigurationWithVirtualThreads() throws Exception {
+    // Setup mock behavior
     when(cacheHelper.maybeCreateCache(anyString(), any())).thenReturn(mockCache);
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create a virtual thread and execute the session cache creation
+    Thread virtualThread = virtualThreadFactory.newThread(() -> {
+      Cache<Object, Object> cache = underTest.maybeCreateCache(SESSION_CACHE_NAME);
+      assertNotNull(cache, "Session cache should be created successfully in virtual thread");
+    });
+    
+    // Start the thread and wait for it to complete
+    virtualThread.start();
+    virtualThread.join();
+    
+    // Verify the session cache was created with the correct configuration (eternal expiry)
+    verify(cacheHelper).maybeCreateCache(eq(SESSION_CACHE_NAME), confCaptor.capture());
+    assertThat(confCaptor.getValue(), is(EternalExpiryPolicy.factoryOf()));
+  }
 
-    // Create latches to coordinate thread execution
-    CountDownLatch startLatch = new CountDownLatch(1); // Used to start all threads simultaneously
-    CountDownLatch completionLatch = new CountDownLatch(threadCount); // Used to wait for all threads to complete
-
-    // Create and start multiple virtual threads
-    for (int i = 0; i < threadCount; i++) {
-      final String cacheName = "testCache" + i;
-      Thread.ofVirtual()
-          .name("concurrent-cache-thread-" + i)
-          .start(() -> {
-            try {
-              // Wait for the signal to start
-              startLatch.await();
-              
-              // Create cache
-              Cache<Object, Object> cache = underTest.maybeCreateCache(cacheName);
-              assertNotNull(cache, "Cache should not be null");
-              
-              // Simulate some work with the cache
-              cache.put("key", "value");
-              Object value = cache.get("key");
-              assertEquals("value", value);
-            } catch (Exception e) {
-              log.error("Error in virtual thread", e);
-            } finally {
-              completionLatch.countDown();
-            }
-          });
+  /**
+   * Tests concurrent cache operations using multiple virtual threads to ensure thread safety.
+   */
+  @Test
+  public void concurrentCacheOperationsWithVirtualThreads() throws Exception {
+    // Setup mock behavior
+    when(cacheHelper.maybeCreateCache(anyString(), any())).thenReturn(mockCache);
+    
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+    
+    // Number of concurrent operations to perform
+    int concurrentOperations = 100;
+    
+    // Use CountDownLatch to coordinate the threads
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(concurrentOperations);
+    
+    // Track any errors that occur during execution
+    AtomicReference<Throwable> error = new AtomicReference<>();
+    
+    // Submit tasks to create caches concurrently
+    for (int i = 0; i < concurrentOperations; i++) {
+      final String cacheName = i % 2 == 0 ? TEST_CACHE_NAME : SESSION_CACHE_NAME;
+      
+      executor.submit(() -> {
+        try {
+          // Wait for the signal to start
+          startLatch.await();
+          
+          // Create the cache
+          Cache<Object, Object> cache = underTest.maybeCreateCache(cacheName);
+          assertNotNull(cache, "Cache should be created successfully");
+        } 
+        catch (Throwable t) {
+          error.compareAndSet(null, t);
+        } 
+        finally {
+          completionLatch.countDown();
+        }
+      });
     }
-
-    // Start all threads simultaneously
+    
+    // Signal all threads to start simultaneously
     startLatch.countDown();
-
-    // Wait for all threads to complete
-    assertTrue(completionLatch.await(10, TimeUnit.SECONDS), "Not all virtual threads completed in time");
-
+    
+    // Wait for all operations to complete (with timeout)
+    boolean completed = completionLatch.await(10, TimeUnit.SECONDS);
+    
+    // Shutdown the executor
+    executor.shutdown();
+    
+    // Check for any errors
+    if (error.get() != null) {
+      throw new AssertionError("Error during concurrent cache operations", error.get());
+    }
+    
+    // Verify all operations completed
+    assertTrue(completed, "All cache operations should complete within the timeout");
+    
     // Verify the cache helper was called the expected number of times
-    verify(cacheHelper, times(threadCount)).maybeCreateCache(anyString(), any());
+    verify(cacheHelper, times(concurrentOperations)).maybeCreateCache(anyString(), any());
+  }
+
+  /**
+   * Tests that cache operations don't cause thread pinning when executed in virtual threads.
+   */
+  @Test
+  public void noPinningDuringCacheOperations() throws Exception {
+    // Setup mock behavior
+    when(cacheHelper.maybeCreateCache(anyString(), any())).thenReturn(mockCache);
+    
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+    
+    // Number of operations to perform
+    int operationCount = 50;
+    
+    // Use CountDownLatch to track completion
+    CountDownLatch completionLatch = new CountDownLatch(operationCount);
+    
+    // Track successful operations
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Submit tasks that alternate between regular and session caches
+    for (int i = 0; i < operationCount; i++) {
+      final String cacheName = i % 2 == 0 ? TEST_CACHE_NAME : SESSION_CACHE_NAME;
+      
+      executor.submit(() -> {
+        try {
+          // Create the cache
+          Cache<Object, Object> cache = underTest.maybeCreateCache(cacheName);
+          
+          // Perform some operations on the cache
+          cache.put("key", "value");
+          Object value = cache.get("key");
+          
+          // Verify the operation was successful
+          if (value != null) {
+            successCount.incrementAndGet();
+          }
+        } 
+        finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all operations to complete (with timeout)
+    boolean completed = completionLatch.await(5, TimeUnit.SECONDS);
+    
+    // Shutdown the executor
+    executor.shutdown();
+    
+    // Verify all operations completed (indicating no thread pinning occurred)
+    assertTrue(completed, "All cache operations should complete without thread pinning");
+    
+    // Verify the expected number of successful operations
+    assertEquals(operationCount, successCount.get(), "All cache operations should succeed");
   }
 }

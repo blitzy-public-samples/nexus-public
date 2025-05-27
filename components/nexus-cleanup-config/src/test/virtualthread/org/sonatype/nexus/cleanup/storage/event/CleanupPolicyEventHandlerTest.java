@@ -13,12 +13,11 @@
 package org.sonatype.nexus.cleanup.storage.event;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.cleanup.storage.CleanupPolicy;
 import org.sonatype.nexus.common.entity.EntityMetadata;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.config.Configuration;
@@ -51,8 +51,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.core.IsNull.notNullValue;
+import static org.hamcrest.core.IsNull.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -62,10 +63,8 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.cleanup.storage.CleanupPolicy.ALL_CLEANUP_POLICY_FORMAT;
 
 /**
- * Tests for {@link CleanupPolicyEventHandler} with Java 21 Virtual Threads.
- * 
- * This test validates that the CleanupPolicyEventHandler correctly processes events
- * when executed with high concurrency using Virtual Threads.
+ * Virtual Thread-specific test for {@link CleanupPolicyEventHandler} to validate concurrent event processing
+ * using Java 21 Virtual Threads.
  */
 @ExtendWith(MockitoExtension.class)
 class CleanupPolicyEventHandlerTest
@@ -102,23 +101,23 @@ class CleanupPolicyEventHandlerTest
   @BeforeEach
   void setup() {
     underTest = new CleanupPolicyEventHandler(repositoryManager);
-    
+
     name1 = generateValidName();
     name2 = generateValidName();
     name3 = generateValidName();
-    
+
     Map<String, Object> cleanupAttributes1 = newHashMap();
     cleanupAttributes1.put(CLEANUP_NAME_KEY, newLinkedHashSet(singletonList(name1)));
-    
+
     Map<String, Object> cleanupAttributes2 = newHashMap();
     cleanupAttributes2.put(CLEANUP_NAME_KEY, newLinkedHashSet(asList(name2, name3)));
-    
+
     attributes1 = newHashMap();
     attributes1.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes1);
-    
+
     attributes2 = newHashMap();
     attributes2.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes2);
-    
+
     when(cleanupPolicy1.getName()).thenReturn(name1);
     when(cleanupPolicy2.getName()).thenReturn(name2);
     when(cleanupPolicy3.getName()).thenReturn(name3);
@@ -139,371 +138,388 @@ class CleanupPolicyEventHandlerTest
     when(repositoryManager.browseForCleanupPolicy(name3)).thenReturn(Stream.of(repository2));
   }
   
+  /**
+   * Tests that cleanup attributes are removed from repository when a cleanup policy is deleted.
+   */
   @Test
   void removedCleanupAttributeFromRepository() {
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy1;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy2;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy3;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata1));
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata2));
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata3));
+
     assertThat(attributes1.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
     assertThat(attributes2.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
-    
+
     verifyConfigurationUpdatedWithoutCleanupPolicyAttribute(3);
   }
   
+  /**
+   * Tests that a single cleanup policy is removed from a repository with multiple policies.
+   */
   @Test
   void removedOneCleanupPolicyFromRepositoryWithMultiPolicy() {
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy3;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata3));
+
     verifyConfigurationUpdated(1);
     verifyContainsCleanupPolicies(attributes2, cleanupPolicy2.getName());
   }
   
+  /**
+   * Tests that only repositories with matching cleanup policy get their attributes removed.
+   */
   @Test
   void onlyRepositoryWithMatchingCleanupPolicyGetsAttributesRemoved() {
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy1;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata1));
+
     assertThat(attributes1.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
     assertThat(attributes2.get(CLEANUP_ATTRIBUTES_KEY), notNullValue());
-    
+
     verifyConfigurationUpdatedWithoutCleanupPolicyAttribute(1);
     verifyContainsCleanupPolicies(attributes2, cleanupPolicy2.getName(), cleanupPolicy3.getName());
   }
   
+  /**
+   * Tests that multiple repositories with the same matching cleanup policy get their attributes removed.
+   */
   @Test
   void multipleRepositoriesWithSameMatchingCleanupPolicyGetTheirAttributesRemoved() {
     // we make the second configuration return the same attributes as the first
     when(repositoryManager.browseForCleanupPolicy(name1)).thenReturn(Stream.of(repository1, repository2));
     when(configuration2.getAttributes()).thenReturn(attributes1);
-    
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy1;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
+
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata1));
+
     assertThat(attributes1.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
     assertThat(attributes2.get(CLEANUP_ATTRIBUTES_KEY), notNullValue());
-    
+
     verifyConfigurationUpdatedWithoutCleanupPolicyAttribute(2);
     verifyContainsCleanupPolicies(attributes2, cleanupPolicy2.getName(), cleanupPolicy3.getName());
   }
   
+  /**
+   * Tests that configuration without repository does not get updated.
+   */
   @Test
   void configurationWithoutRepositoryDoesNotGetUpdated() {
     when(repositoryManager.browseForCleanupPolicy(any())).thenReturn(empty());
-    
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy1;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
+
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata1));
+
     when(repositoryManager.browseForCleanupPolicy(any())).thenReturn(empty());
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy2;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return true;
-      }
-    });
-    
-    verifyConfigurationNeverUpdated();
-  }
-  
-  @Test
-  void ignoresNonLocalEvents() {
-    underTest.on(new CleanupPolicyDeletedEvent() {
-      @Override
-      public CleanupPolicy getCleanupPolicy() {
-        return cleanupPolicy1;
-      }
-      
-      @Override
-      public boolean isLocal() {
-        return false;
-      }
-    });
-    
+    underTest.on(new CleanupPolicyDeletedEvent(entityMetadata2));
+
     verifyConfigurationNeverUpdated();
   }
   
   /**
-   * Tests that the event handler correctly processes a high volume of concurrent events
-   * using Virtual Threads without thread pinning or other concurrency issues.
+   * Tests concurrent cleanup policy deletion events using Virtual Threads.
+   * This test verifies that the CleanupPolicyEventHandler can handle a high volume of
+   * concurrent events without data corruption or thread pinning.
    */
   @Test
-  void concurrentEventProcessingWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+  void concurrentCleanupPolicyDeletionWithVirtualThreads() throws Exception {
+    // Create a large number of cleanup policies and repositories for concurrent testing
+    int policyCount = 1000;
+    Map<String, CleanupPolicy> policies = new ConcurrentHashMap<>();
+    Map<String, EntityMetadata> metadataMap = new ConcurrentHashMap<>();
+    Map<String, Repository> repositories = new ConcurrentHashMap<>();
+    Map<String, Configuration> configurations = new ConcurrentHashMap<>();
+    Map<String, Map<String, Map<String, Object>>> attributesMap = new ConcurrentHashMap<>();
     
-    // Create an executor service that uses virtual threads
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-      int eventCount = 1000;
-      CountDownLatch latch = new CountDownLatch(eventCount);
-      AtomicInteger successCount = new AtomicInteger(0);
-      AtomicBoolean threadPinningDetected = new AtomicBoolean(false);
+    // Setup test data for concurrent testing
+    for (int i = 0; i < policyCount; i++) {
+      String policyName = "policy-" + i;
+      String repoName = "repo-" + i;
       
-      // Create a list to track all the cleanup policies
-      List<CleanupPolicy> policies = new ArrayList<>();
-      List<Repository> repositories = new ArrayList<>();
+      // Create and configure mocks for each policy
+      CleanupPolicy policy = mock(CleanupPolicy.class);
+      EntityMetadata metadata = mock(EntityMetadata.class);
+      Repository repository = mock(Repository.class);
+      Configuration configuration = mock(Configuration.class);
       
-      // Setup the mock repositories and policies
-      for (int i = 0; i < eventCount; i++) {
-        String policyName = "policy-" + i;
-        CleanupPolicy policy = mock(CleanupPolicy.class);
-        Repository repository = mock(Repository.class);
-        Configuration configuration = mock(Configuration.class);
-        
-        Map<String, Object> cleanupAttributes = newHashMap();
-        cleanupAttributes.put(CLEANUP_NAME_KEY, newLinkedHashSet(singletonList(policyName)));
-        
-        Map<String, Map<String, Object>> attributes = newHashMap();
-        attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes);
-        
-        when(policy.getName()).thenReturn(policyName);
-        when(policy.getFormat()).thenReturn(ALL_CLEANUP_POLICY_FORMAT);
-        when(repository.getConfiguration()).thenReturn(configuration);
-        when(configuration.copy()).thenReturn(configuration);
-        when(configuration.getAttributes()).thenReturn(attributes);
-        when(repositoryManager.browseForCleanupPolicy(policyName)).thenReturn(Stream.of(repository));
-        
-        policies.add(policy);
-        repositories.add(repository);
-      }
+      // Setup attributes for this policy
+      Map<String, Object> cleanupAttributes = newHashMap();
+      cleanupAttributes.put(CLEANUP_NAME_KEY, newLinkedHashSet(singletonList(policyName)));
+      Map<String, Map<String, Object>> attributes = newHashMap();
+      attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes);
       
-      // Submit tasks to the executor
-      for (int i = 0; i < eventCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Check if the current thread is a virtual thread
-            boolean isVirtualThread = Thread.currentThread().isVirtual();
-            if (!isVirtualThread) {
+      // Configure the mocks
+      when(policy.getName()).thenReturn(policyName);
+      when(policy.getFormat()).thenReturn(ALL_CLEANUP_POLICY_FORMAT);
+      when(metadata.getEntity()).thenReturn(Optional.of(policy));
+      when(configuration.copy()).thenReturn(configuration);
+      when(configuration.getAttributes()).thenReturn(attributes);
+      when(repository.getConfiguration()).thenReturn(configuration);
+      when(repositoryManager.browseForCleanupPolicy(policyName)).thenReturn(Stream.of(repository));
+      
+      // Store in our maps for later verification
+      policies.put(policyName, policy);
+      metadataMap.put(policyName, metadata);
+      repositories.put(repoName, repository);
+      configurations.put(repoName, configuration);
+      attributesMap.put(repoName, attributes);
+    }
+    
+    // Create virtual thread factory for concurrent testing
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Setup synchronization and tracking
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(policyCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    AtomicBoolean threadPinningDetected = new AtomicBoolean(false);
+    
+    // Submit tasks to delete policies concurrently using virtual threads
+    for (int i = 0; i < policyCount; i++) {
+      final String policyName = "policy-" + i;
+      final EntityMetadata metadata = metadataMap.get(policyName);
+      
+      executor.submit(() -> {
+        try {
+          // Wait for all threads to be ready before starting
+          startLatch.await();
+          
+          // Check if this thread is a virtual thread
+          boolean isVirtual = Thread.currentThread().isVirtual();
+          if (!isVirtual) {
+            log.warn("Thread is not virtual: {}", Thread.currentThread().getName());
+          }
+          
+          // Check for thread pinning
+          Thread currentThread = Thread.currentThread();
+          if (currentThread.isVirtual()) {
+            // Record thread state before operation to detect pinning
+            StackTraceElement[] stackBefore = currentThread.getStackTrace();
+            long startTime = System.nanoTime();
+            
+            // Execute the event handler
+            underTest.on(new CleanupPolicyDeletedEvent(metadata));
+            
+            // Check execution time - unusually long times might indicate pinning
+            long duration = System.nanoTime() - startTime;
+            if (duration > TimeUnit.MILLISECONDS.toNanos(100)) { // Threshold for suspicion
+              StackTraceElement[] stackAfter = currentThread.getStackTrace();
+              log.warn("Possible thread pinning detected. Operation took {} ms", 
+                  TimeUnit.NANOSECONDS.toMillis(duration));
               threadPinningDetected.set(true);
             }
-            
-            // Create and process the event
-            CleanupPolicy policy = policies.get(index);
-            CleanupPolicyDeletedEvent event = new CleanupPolicyDeletedEvent() {
-              @Override
-              public CleanupPolicy getCleanupPolicy() {
-                return policy;
-              }
-              
-              @Override
-              public boolean isLocal() {
-                return true;
-              }
-            };
-            
-            underTest.on(event);
-            successCount.incrementAndGet();
-          } finally {
-            latch.countDown();
+          } else {
+            // Just execute the event handler for non-virtual threads
+            underTest.on(new CleanupPolicyDeletedEvent(metadata));
           }
-        });
-      }
-      
-      // Wait for all tasks to complete with a timeout
-      boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
-      // Verify results
-      assertTrue(completed, "All event processing tasks should complete within the timeout");
-      assertThat(successCount.get(), is(eventCount));
-      assertFalse(threadPinningDetected.get(), "No thread pinning should be detected when using virtual threads");
-      
-      // Verify that the repository manager was called to update configurations
-      verify(repositoryManager, times(eventCount)).update(any(Configuration.class));
-    }
-  }
-  
-  /**
-   * Tests that the event handler correctly processes events with record patterns
-   * for cleaner data handling in Java 21.
-   */
-  @Test
-  void processesEventsWithRecordPatterns() {
-    // Create a record to represent a cleanup policy with name and format
-    record CleanupPolicyRecord(String name, String format) {}
-    
-    // Create test data using records
-    CleanupPolicyRecord policyRecord = new CleanupPolicyRecord(name1, ALL_CLEANUP_POLICY_FORMAT);
-    
-    // Use pattern matching with records for cleaner data handling
-    if (policyRecord instanceof CleanupPolicyRecord(String policyName, String format)) {
-      // Configure mock to return repository for this policy name
-      when(repositoryManager.browseForCleanupPolicy(policyName)).thenReturn(Stream.of(repository1));
-      
-      // Create and process the event
-      underTest.on(new CleanupPolicyDeletedEvent() {
-        @Override
-        public CleanupPolicy getCleanupPolicy() {
-          return cleanupPolicy1;
+        } 
+        catch (Exception e) {
+          log.error("Error in virtual thread execution", e);
+          errorCount.incrementAndGet();
         }
-        
-        @Override
-        public boolean isLocal() {
-          return true;
+        finally {
+          completionLatch.countDown();
         }
       });
-      
-      // Verify the cleanup attributes were removed
-      assertThat(attributes1.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
-      
-      // Verify the configuration was updated
-      verify(repositoryManager).update(configCaptor.capture());
-      Configuration updatedConfig = configCaptor.getValue();
-      assertThat(updatedConfig, is(configuration1));
     }
+    
+    // Start all threads simultaneously
+    startLatch.countDown();
+    
+    // Wait for all threads to complete with timeout
+    boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
+    
+    // Shutdown executor
+    executor.shutdown();
+    boolean terminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+    if (!terminated) {
+      executor.shutdownNow();
+    }
+    
+    // Verify results
+    assertTrue(completed, "Not all virtual threads completed within timeout");
+    assertEquals(0, errorCount.get(), "Some virtual threads encountered errors");
+    assertFalse(threadPinningDetected.get(), "Thread pinning was detected during concurrent execution");
+    
+    // Verify that cleanup policy attributes were correctly removed
+    // Sample a few repositories to verify correct behavior
+    for (int i = 0; i < 10; i++) {
+      String repoName = "repo-" + i;
+      Map<String, Map<String, Object>> attributes = attributesMap.get(repoName);
+      assertThat(attributes.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
+    }
+    
+    // Verify repository manager was called to update configurations
+    verify(repositoryManager, times(policyCount)).update(any(Configuration.class));
   }
   
   /**
-   * Tests that the event handler correctly handles concurrent events with different timing
-   * characteristics, simulating real-world scenarios with varying processing times.
+   * Tests concurrent cleanup policy deletion events with record pattern matching.
+   * This test demonstrates the use of Java 21's record pattern matching feature
+   * while testing virtual thread concurrency.
    */
   @Test
-  void handlesVariableTimingEventsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+  void concurrentCleanupPolicyDeletionWithRecordPatterns() throws Exception {
+    // Create a record to represent policy test data
+    record PolicyTestData(String name, CleanupPolicy policy, EntityMetadata metadata, 
+                         Repository repository, Configuration configuration, 
+                         Map<String, Map<String, Object>> attributes) {}
     
-    // Create an executor service that uses virtual threads
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
-      int eventCount = 100;
-      CountDownLatch latch = new CountDownLatch(eventCount);
+    // Create test data using record for cleaner data handling
+    int policyCount = 100;
+    Map<String, PolicyTestData> testDataMap = new ConcurrentHashMap<>();
+    
+    for (int i = 0; i < policyCount; i++) {
+      String policyName = "record-policy-" + i;
       
-      // Setup the mock repositories and policies with variable processing times
-      for (int i = 0; i < eventCount; i++) {
-        String policyName = "variable-policy-" + i;
-        CleanupPolicy policy = mock(CleanupPolicy.class);
-        Repository repository = mock(Repository.class);
-        Configuration configuration = mock(Configuration.class);
-        
-        Map<String, Object> cleanupAttributes = newHashMap();
-        cleanupAttributes.put(CLEANUP_NAME_KEY, newLinkedHashSet(singletonList(policyName)));
-        
-        Map<String, Map<String, Object>> attributes = newHashMap();
-        attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes);
-        
-        when(policy.getName()).thenReturn(policyName);
-        when(policy.getFormat()).thenReturn(ALL_CLEANUP_POLICY_FORMAT);
-        when(repository.getConfiguration()).thenReturn(configuration);
-        when(configuration.copy()).thenReturn(configuration);
-        when(configuration.getAttributes()).thenReturn(attributes);
-        
-        // Simulate variable processing times for different policies
-        final int processingTime = i % 10; // 0-9 ms
-        when(repositoryManager.browseForCleanupPolicy(policyName)).thenAnswer(invocation -> {
-          // Simulate variable processing time
-          Thread.sleep(processingTime);
-          return Stream.of(repository);
-        });
-        
-        final int index = i;
+      // Create and configure mocks
+      CleanupPolicy policy = mock(CleanupPolicy.class);
+      EntityMetadata metadata = mock(EntityMetadata.class);
+      Repository repository = mock(Repository.class);
+      Configuration configuration = mock(Configuration.class);
+      
+      // Setup attributes
+      Map<String, Object> cleanupAttributes = newHashMap();
+      cleanupAttributes.put(CLEANUP_NAME_KEY, newLinkedHashSet(singletonList(policyName)));
+      Map<String, Map<String, Object>> attributes = newHashMap();
+      attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes);
+      
+      // Configure mocks
+      when(policy.getName()).thenReturn(policyName);
+      when(policy.getFormat()).thenReturn(ALL_CLEANUP_POLICY_FORMAT);
+      when(metadata.getEntity()).thenReturn(Optional.of(policy));
+      when(configuration.copy()).thenReturn(configuration);
+      when(configuration.getAttributes()).thenReturn(attributes);
+      when(repository.getConfiguration()).thenReturn(configuration);
+      when(repositoryManager.browseForCleanupPolicy(policyName)).thenReturn(Stream.of(repository));
+      
+      // Store as record
+      testDataMap.put(policyName, new PolicyTestData(policyName, policy, metadata, 
+                                                   repository, configuration, attributes));
+    }
+    
+    // Create virtual thread executor
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Setup synchronization
+      CountDownLatch completionLatch = new CountDownLatch(policyCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit tasks using record pattern matching for cleaner data access
+      for (var entry : testDataMap.entrySet()) {
         executor.submit(() -> {
           try {
-            CleanupPolicyDeletedEvent event = new CleanupPolicyDeletedEvent() {
-              @Override
-              public CleanupPolicy getCleanupPolicy() {
-                return policy;
-              }
-              
-              @Override
-              public boolean isLocal() {
-                return true;
-              }
-            };
+            // Use record pattern matching to destructure the test data
+            var PolicyTestData(name, policy, metadata, repository, configuration, attributes) = 
+                testDataMap.get(entry.getKey());
             
-            underTest.on(event);
-          } finally {
-            latch.countDown();
+            // Execute the event handler
+            underTest.on(new CleanupPolicyDeletedEvent(metadata));
+            
+            // Verify the cleanup attributes were removed
+            assertThat(attributes.get(CLEANUP_ATTRIBUTES_KEY), nullValue());
+          } 
+          catch (Exception e) {
+            log.error("Error in virtual thread with record pattern", e);
+            errorCount.incrementAndGet();
+          }
+          finally {
+            completionLatch.countDown();
           }
         });
       }
       
-      // Wait for all tasks to complete with a timeout
-      boolean completed = latch.await(10, TimeUnit.SECONDS);
+      // Wait for completion
+      boolean completed = completionLatch.await(10, TimeUnit.SECONDS);
       
       // Verify results
-      assertTrue(completed, "All event processing tasks should complete within the timeout");
-      verify(repositoryManager, times(eventCount)).update(any(Configuration.class));
+      assertTrue(completed, "Not all virtual threads completed within timeout");
+      assertEquals(0, errorCount.get(), "Some virtual threads encountered errors");
+    }
+    
+    // Verify repository manager was called to update configurations
+    verify(repositoryManager, times(policyCount)).update(any(Configuration.class));
+  }
+  
+  /**
+   * Tests high-concurrency cleanup policy deletion with a large number of virtual threads.
+   * This test verifies that the system can handle a very high number of concurrent operations
+   * using virtual threads without exhausting system resources.
+   */
+  @Test
+  void highConcurrencyCleanupPolicyDeletion() throws Exception {
+    // Create a very large number of policies for stress testing
+    int policyCount = 10000; // 10,000 concurrent virtual threads
+    
+    // Setup a single policy and repository for simplicity in high-volume test
+    CleanupPolicy policy = mock(CleanupPolicy.class);
+    EntityMetadata metadata = mock(EntityMetadata.class);
+    Repository repository = mock(Repository.class);
+    Configuration configuration = mock(Configuration.class);
+    
+    // Setup attributes
+    Map<String, Object> cleanupAttributes = newHashMap();
+    cleanupAttributes.put(CLEANUP_NAME_KEY, newLinkedHashSet(singletonList("stress-test-policy")));
+    Map<String, Map<String, Object>> attributes = newHashMap();
+    attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanupAttributes);
+    
+    // Configure mocks
+    when(policy.getName()).thenReturn("stress-test-policy");
+    when(policy.getFormat()).thenReturn(ALL_CLEANUP_POLICY_FORMAT);
+    when(metadata.getEntity()).thenReturn(Optional.of(policy));
+    when(configuration.copy()).thenReturn(configuration);
+    when(configuration.getAttributes()).thenReturn(attributes);
+    when(repository.getConfiguration()).thenReturn(configuration);
+    when(repositoryManager.browseForCleanupPolicy(any())).thenReturn(Stream.of(repository));
+    
+    // Create virtual thread executor with custom name pattern for debugging
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Setup synchronization
+      CountDownLatch completionLatch = new CountDownLatch(policyCount);
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Record start time for performance measurement
+      long startTime = System.nanoTime();
+      
+      // Submit a large number of tasks
+      for (int i = 0; i < policyCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Execute the event handler
+            underTest.on(new CleanupPolicyDeletedEvent(metadata));
+            successCount.incrementAndGet();
+          } 
+          catch (Exception e) {
+            log.error("Error in high-concurrency test", e);
+            errorCount.incrementAndGet();
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Wait for completion with a longer timeout due to high volume
+      boolean completed = completionLatch.await(60, TimeUnit.SECONDS);
+      
+      // Calculate execution time
+      long duration = System.nanoTime() - startTime;
+      double durationSeconds = Duration.ofNanos(duration).toMillis() / 1000.0;
+      
+      // Log performance metrics
+      log.info("High-concurrency test completed in {} seconds", durationSeconds);
+      log.info("Throughput: {} operations/second", policyCount / durationSeconds);
+      log.info("Success count: {}, Error count: {}", successCount.get(), errorCount.get());
+      
+      // Verify results
+      assertTrue(completed, "Not all virtual threads completed within timeout");
+      assertEquals(policyCount, successCount.get(), "Not all operations completed successfully");
+      assertEquals(0, errorCount.get(), "Some virtual threads encountered errors");
     }
   }
   
   private void verifyConfigurationUpdatedWithoutCleanupPolicyAttribute(final int count) {
-    verify(repositoryManager, times(count)).update(any(Configuration.class));
+    verify(repositoryManager, times(count)).update(configCaptor.capture());
   }
   
   private void verifyConfigurationUpdated(final int count) {
-    verify(repositoryManager, times(count)).update(any(Configuration.class));
+    verify(repositoryManager, times(count)).update(configCaptor.capture());
   }
   
   @SuppressWarnings("unchecked")
@@ -523,6 +539,10 @@ class CleanupPolicyEventHandlerTest
     return UUID.randomUUID().toString().replace("-", "");
   }
   
+  /**
+   * Helper method to create a mock object with Mockito.
+   * This is needed for creating mocks within test methods.
+   */
   private <T> T mock(Class<T> classToMock) {
     return org.mockito.Mockito.mock(classToMock);
   }

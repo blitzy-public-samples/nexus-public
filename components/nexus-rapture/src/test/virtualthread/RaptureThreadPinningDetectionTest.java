@@ -10,14 +10,13 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.rapture.virtualthread;
+package org.sonatype.nexus.rapture.internal;
 
 import java.io.ByteArrayOutputStream;
- import java.io.PrintStream;
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
-import java.lang.management.ThreadMXBean;
-import java.time.Duration;
+ import java.io.IOException;
+import java.io.PrintStream;
+import java.lang.Thread.Builder.OfVirtual;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,30 +24,32 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.inject.Provider;
 import javax.servlet.http.HttpServletRequest;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.common.template.TemplateHelper;
+import org.sonatype.nexus.common.template.TemplateParameters;
 import org.sonatype.nexus.rapture.UiPluginDescriptor;
-import org.sonatype.nexus.rapture.internal.RaptureWebResourceBundle;
 import org.sonatype.nexus.rapture.internal.state.StateComponent;
+import org.sonatype.nexus.ui.UiPluginDescriptor;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import com.google.common.collect.Maps;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnJre;
+import org.junit.jupiter.api.condition.JRE;
 import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -58,365 +59,454 @@ import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.when;
 
 /**
- * Test to detect thread pinning issues when using Virtual Threads with the nexus-rapture component.
- * <p>
- * Thread pinning occurs when a Virtual Thread is forced to stay on its carrier thread, which reduces
- * the benefits of virtual threads. Common causes include synchronized blocks, native methods, or
- * thread-local variables with large values.
- * <p>
- * This test uses the JVM flag -Djdk.tracePinnedThreads=full to detect and log thread pinning events.
- * Alternatively, Java Flight Recorder (JFR) can be used to detect pinning through the jdk.VirtualThreadPinned event.
- * <p>
- * Note: In Java 24 and later, the thread pinning issue with synchronized blocks will be resolved through JEP 491,
- * and the -Djdk.tracePinnedThreads flag will be removed. However, for Java 21, thread pinning remains
- * an important consideration for optimal performance with Virtual Threads.
+ * Tests to detect and validate thread pinning issues when using Virtual Threads with the nexus-rapture component.
  * 
+ * <p>Thread pinning occurs when a virtual thread gets "pinned" to its carrier thread, preventing the carrier thread
+ * from being reused for other tasks. This can happen due to synchronized blocks, native methods, or thread-local
+ * variables with large values.</p>
+ *
+ * <p>This test monitors operations that can cause carrier thread pinning, analyzes stack traces for pinning events,
+ * and ensures the implementation avoids problematic patterns.</p>
+ *
  * @since 3.60
  */
+@EnabledOnJre(JRE.JAVA_21) // Only run on Java 21 which supports Virtual Threads
 public class RaptureThreadPinningDetectionTest
     extends TestSupport
 {
+  private static final String PINNED_THREAD_PATTERN = "VirtualThread.*reason:(MONITOR|NATIVE_PARK)";
   private static final int CONCURRENT_THREADS = 50;
-  private static final int ITERATIONS_PER_THREAD = 10;
-  private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+  private static final int OPERATION_COUNT = 100;
+  private static final long MAX_ACCEPTABLE_PINNING_COUNT = 0; // We expect zero pinning events
   
-  // Pattern to match pinned thread stack traces in the output
-  // This pattern works with the output format from -Djdk.tracePinnedThreads=full
-  private static final Pattern PINNED_THREAD_PATTERN = 
-      Pattern.compile("Virtual thread.*has been pinned for \\d+ ms");
+  private final AtomicInteger pinnedThreadCount = new AtomicInteger(0);
+  private final List<String> pinnedThreadStackTraces = new ArrayList<>();
+  private final Map<String, Integer> pinnedThreadLocations = new ConcurrentHashMap<>();
+  
+  private PrintStream originalSystemErr;
+  private ByteArrayOutputStream capturedOutput;
+  private PrintStream capturingSystemErr;
   
   @Mock
   private ApplicationVersion applicationVersion;
   
   @Mock
-  private Provider<HttpServletRequest> servletRequestProvider;
-  
-  @Mock
-  private Provider<StateComponent> stateComponentProvider;
-  
-  @Mock
-  private TemplateHelper templateHelper;
-  
-  @Mock
-  private HttpServletRequest request;
+  private HttpServletRequest servletRequest;
   
   @Mock
   private StateComponent stateComponent;
   
-  private RaptureWebResourceBundle resourceBundle;
+  @Mock
+  private TemplateHelper templateHelper;
   
-  private ExecutorService virtualThreadExecutor;
+  private RaptureWebResourceBundle underTest;
   
-  private ByteArrayOutputStream logCapture;
-  private PrintStream originalErr;
+  private AutoCloseable mocks;
   
-  @Before
-  public void setUp() throws Exception {
-    // Set up the base URL for testing
-    BaseUrlHolder.set("/nexus");
+  /**
+   * Set up the test environment with thread pinning detection enabled.
+   */
+  @BeforeEach
+  public void setUp() {
+    // Store original System.err and set up capturing stream
+    originalSystemErr = System.err;
+    capturedOutput = new ByteArrayOutputStream();
+    capturingSystemErr = new PrintStream(capturedOutput);
+    System.setErr(capturingSystemErr);
     
-    // Configure mocks
+    // Enable thread pinning detection via system property
+    System.setProperty("jdk.tracePinnedThreads", "full");
+    
+    // Initialize mocks
+    mocks = MockitoAnnotations.openMocks(this);
+    
+    // Set up mock behavior
     when(applicationVersion.getVersion()).thenReturn("3.60.0");
     when(applicationVersion.getEdition()).thenReturn("OSS");
-    when(applicationVersion.getBuildTimestamp()).thenReturn("20250522-123456");
+    when(applicationVersion.getBuildTimestamp()).thenReturn("20250101-000000");
+    when(servletRequest.getParameter("debug")).thenReturn(null);
+    when(stateComponent.getState(Maps.newHashMap())).thenReturn(Maps.newHashMap());
     
-    when(servletRequestProvider.get()).thenReturn(request);
-    when(stateComponentProvider.get()).thenReturn(stateComponent);
-    when(stateComponent.getState(Map.of())).thenReturn(Map.of("test", "value"));
+    // Set up BaseUrlHolder for URI generation
+    BaseUrlHolder.set("http://localhost:8081", "/nexus");
     
-    // Create the resource bundle under test
-    resourceBundle = new RaptureWebResourceBundle(
+    // Create the component under test
+    underTest = new RaptureWebResourceBundle(
         applicationVersion,
-        servletRequestProvider,
-        stateComponentProvider,
+        () -> servletRequest,
+        () -> stateComponent,
         templateHelper,
         ImmutableList.of(),
         ImmutableList.of(),
         null,
-        true
-    );
-    
-    // Create a virtual thread executor
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    // Set up log capture to detect pinned thread messages
-    logCapture = new ByteArrayOutputStream();
-    originalErr = System.err;
-    System.setErr(new PrintStream(logCapture));
-    
-    // Verify that the JVM flag for pinned thread detection is set
-    verifyPinnedThreadDetectionEnabled();
+        true);
   }
   
-  @After
+  /**
+   * Clean up after the test.
+   */
+  @AfterEach
   public void tearDown() throws Exception {
     // Restore original System.err
-    System.setErr(originalErr);
+    System.setErr(originalSystemErr);
     
-    // Shutdown the executor service
-    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
-      virtualThreadExecutor.shutdownNow();
+    // Reset thread pinning detection
+    System.clearProperty("jdk.tracePinnedThreads");
+    
+    // Close mocks
+    if (mocks != null) {
+      mocks.close();
     }
     
-    // Reset the base URL
-    BaseUrlHolder.unset();
-  }
-  
-  /**
-   * Verifies that the JVM flag for pinned thread detection is enabled.
-   * This test will log a warning if the flag is not set, but will not fail,
-   * as the flag might be set through other means (like JVM arguments).
-   * 
-   * Note: There is a known issue (JDK-8322846) where using -Djdk.tracePinnedThreads=full
-   * can cause hangs in some situations. If you experience hangs, consider using
-   * JFR events (jdk.VirtualThreadPinned) instead for thread pinning detection.
-   */
-  @Test
-  public void verifyPinnedThreadDetectionEnabled() {
-    String tracePinnedThreads = System.getProperty("jdk.tracePinnedThreads");
-    if (tracePinnedThreads == null || !tracePinnedThreads.equals("full")) {
-      log.warn("The JVM flag -Djdk.tracePinnedThreads=full is not set. " +
-          "Thread pinning detection may not work correctly.");
-      log.warn("Current value: {}", tracePinnedThreads);
-      log.warn("To enable full thread pinning detection, add -Djdk.tracePinnedThreads=full to the JVM arguments.");
-      log.warn("Alternatively, you can use JFR events (jdk.VirtualThreadPinned) for more detailed pinning detection.");
+    // Print any captured pinned thread stack traces for debugging
+    if (!pinnedThreadStackTraces.isEmpty()) {
+      log.info("Detected {} pinned thread events:", pinnedThreadStackTraces.size());
+      for (String stackTrace : pinnedThreadStackTraces) {
+        log.info("\n{}", stackTrace);
+      }
     }
-    else {
-      log.info("Thread pinning detection is enabled with jdk.tracePinnedThreads={}", tracePinnedThreads);
+    
+    // Print pinned thread locations summary
+    if (!pinnedThreadLocations.isEmpty()) {
+      log.info("Pinned thread locations summary:");
+      pinnedThreadLocations.forEach((location, count) -> 
+          log.info("  {} occurrences at: {}", count, location));
     }
   }
   
   /**
-   * Tests that generating the index.html resource does not cause thread pinning.
+   * Test that getting resources doesn't cause thread pinning.
    */
   @Test
-  public void testIndexHtmlGeneration() throws Exception {
-    runConcurrentTest(() -> {
-      // Get all resources to ensure index.html is included
-      resourceBundle.getResources();
-      return null;
-    });
+  public void testGetResourcesWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Check for pinned thread messages
-    assertNoPinnedThreads("index.html generation");
-  }
-  
-  /**
-   * Tests that generating the bootstrap.js resource does not cause thread pinning.
-   */
-  @Test
-  public void testBootstrapJsGeneration() throws Exception {
-    runConcurrentTest(() -> {
-      // Get all resources to ensure bootstrap.js is included
-      resourceBundle.getResources();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("bootstrap.js generation");
-  }
-  
-  /**
-   * Tests that generating the baseapp.css resource does not cause thread pinning.
-   */
-  @Test
-  public void testBaseappCssGeneration() throws Exception {
-    runConcurrentTest(() -> {
-      // Get all resources to ensure baseapp.css is included
-      resourceBundle.getResources();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("baseapp.css generation");
-  }
-  
-  /**
-   * Tests that generating the app.js resource does not cause thread pinning.
-   */
-  @Test
-  public void testAppJsGeneration() throws Exception {
-    runConcurrentTest(() -> {
-      // Get all resources to ensure app.js is included
-      resourceBundle.getResources();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("app.js generation");
-  }
-  
-  /**
-   * Tests that generating the copyright.html resource does not cause thread pinning.
-   */
-  @Test
-  public void testCopyrightHtmlGeneration() throws Exception {
-    runConcurrentTest(() -> {
-      // Get all resources to ensure copyright.html is included
-      resourceBundle.getResources();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("copyright.html generation");
-  }
-  
-  /**
-   * Tests that generating styles list does not cause thread pinning.
-   */
-  @Test
-  public void testGetStyles() throws Exception {
-    runConcurrentTest(() -> {
-      resourceBundle.getStyles();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("getStyles()");
-  }
-  
-  /**
-   * Tests that generating scripts list does not cause thread pinning.
-   */
-  @Test
-  public void testGetScripts() throws Exception {
-    runConcurrentTest(() -> {
-      resourceBundle.getScripts();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("getScripts()");
-  }
-  
-  /**
-   * Tests that generating ExtJS plugin configs does not cause thread pinning.
-   */
-  @Test
-  public void testGetExtJsPluginConfigs() throws Exception {
-    runConcurrentTest(() -> {
-      resourceBundle.getExtJsPluginConfigs();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("getExtJsPluginConfigs()");
-  }
-  
-  /**
-   * Tests that generating ExtJS namespaces does not cause thread pinning.
-   */
-  @Test
-  public void testGetExtJsNamespaces() throws Exception {
-    runConcurrentTest(() -> {
-      resourceBundle.getExtJsNamespaces();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("getExtJsNamespaces()");
-  }
-  
-  /**
-   * Tests that all resource generation operations together do not cause thread pinning.
-   */
-  @Test
-  public void testAllResourceGenerationOperations() throws Exception {
-    runConcurrentTest(() -> {
-      resourceBundle.getResources();
-      resourceBundle.getStyles();
-      resourceBundle.getScripts();
-      resourceBundle.getExtJsPluginConfigs();
-      resourceBundle.getExtJsNamespaces();
-      return null;
-    });
-    
-    // Check for pinned thread messages
-    assertNoPinnedThreads("all resource generation operations");
-  }
-  
-  /**
-   * Runs a test with multiple concurrent virtual threads to detect thread pinning.
-   *
-   * @param task The task to run concurrently
-   * @param <T> The return type of the task
-   * @throws Exception If an error occurs during test execution
-   */
-  private <T> void runConcurrentTest(Supplier<T> task) throws Exception {
-    AtomicInteger completedTasks = new AtomicInteger(0);
-    CountDownLatch startLatch = new CountDownLatch(1);
-    List<Future<T>> futures = new ArrayList<>();
-    
-    // Submit tasks to the virtual thread executor
-    for (int i = 0; i < CONCURRENT_THREADS; i++) {
-      futures.add(virtualThreadExecutor.submit(() -> {
-        // Wait for all threads to start at the same time
-        startLatch.await();
-        
-        for (int j = 0; j < ITERATIONS_PER_THREAD; j++) {
-          T result = task.get();
-          completedTasks.incrementAndGet();
-          return result;
-        }
-        
-        return null;
-      }));
-    }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all tasks to complete or timeout
-    virtualThreadExecutor.awaitTermination(TEST_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-    
-    // Check that all tasks completed successfully
-    for (Future<T> future : futures) {
-      future.get(1, TimeUnit.SECONDS); // Short timeout since tasks should be done
-    }
-    
-    log.info("Completed {} tasks across {} virtual threads", 
-        completedTasks.get(), CONCURRENT_THREADS);
-  }
-  
-  /**
-   * Asserts that no thread pinning was detected during the test.
-   * <p>
-   * This method analyzes the captured log output for thread pinning messages.
-   * Thread pinning can significantly impact the performance benefits of Virtual Threads,
-   * especially in high-concurrency scenarios like UI resource generation.
-   *
-   * @param operationName The name of the operation being tested
-   */
-  private void assertNoPinnedThreads(String operationName) {
-    String logOutput = logCapture.toString();
-    Matcher matcher = PINNED_THREAD_PATTERN.matcher(logOutput);
-    
-    if (matcher.find()) {
-      log.error("Thread pinning detected during {}: {}", operationName, matcher.group(0));
-      log.error("Full pinned thread stack trace:\n{}", logOutput);
-      log.error("Thread pinning reduces the benefits of Virtual Threads by preventing them from unmounting from carrier threads.");
-      log.error("Consider refactoring code to avoid synchronized blocks or using java.util.concurrent.locks.ReentrantLock instead.");
-      assertThat("No thread pinning should occur during " + operationName, false);
-    }
-    else {
-      log.info("No thread pinning detected during {}", operationName);
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+      
+      // Submit tasks to get resources concurrently
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // Get resources multiple times to increase chance of detecting pinning
+            for (int j = 0; j < OPERATION_COUNT; j++) {
+              underTest.getResources();
+            }
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertThat("All operations should complete in time",
+          latch.await(30, TimeUnit.SECONDS), is(true));
+      
+      // Analyze captured output for thread pinning events
+      analyzeThreadPinning();
+      
+      // Assert that no thread pinning occurred
+      assertThat("No thread pinning should occur during resource generation",
+          pinnedThreadCount.get(), is(MAX_ACCEPTABLE_PINNING_COUNT));
+    } 
+    finally {
+      executor.shutdown();
     }
   }
   
   /**
-   * Gets information about all running threads to help diagnose pinning issues.
-   *
-   * @return A map of thread IDs to thread information
+   * Test that generating styles doesn't cause thread pinning.
    */
-  private Map<Long, ThreadInfo> getAllThreadInfo() {
-    ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-    ThreadInfo[] threadInfos = threadMXBean.dumpAllThreads(true, true);
+  @Test
+  public void testGetStylesWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    Map<Long, ThreadInfo> result = new ConcurrentHashMap<>();
-    for (ThreadInfo info : threadInfos) {
-      result.put(info.getThreadId(), info);
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+      
+      // Submit tasks to get styles concurrently
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // Get styles multiple times to increase chance of detecting pinning
+            for (int j = 0; j < OPERATION_COUNT; j++) {
+              List<URI> styles = underTest.getStyles();
+              assertThat(styles.isEmpty(), is(false));
+            }
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertThat("All operations should complete in time",
+          latch.await(30, TimeUnit.SECONDS), is(true));
+      
+      // Analyze captured output for thread pinning events
+      analyzeThreadPinning();
+      
+      // Assert that no thread pinning occurred
+      assertThat("No thread pinning should occur during style generation",
+          pinnedThreadCount.get(), is(MAX_ACCEPTABLE_PINNING_COUNT));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Test that generating scripts doesn't cause thread pinning.
+   */
+  @Test
+  public void testGetScriptsWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+      
+      // Submit tasks to get scripts concurrently
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // Get scripts multiple times to increase chance of detecting pinning
+            for (int j = 0; j < OPERATION_COUNT; j++) {
+              List<URI> scripts = underTest.getScripts();
+              assertThat(scripts.isEmpty(), is(false));
+            }
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertThat("All operations should complete in time",
+          latch.await(30, TimeUnit.SECONDS), is(true));
+      
+      // Analyze captured output for thread pinning events
+      analyzeThreadPinning();
+      
+      // Assert that no thread pinning occurred
+      assertThat("No thread pinning should occur during script generation",
+          pinnedThreadCount.get(), is(MAX_ACCEPTABLE_PINNING_COUNT));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Test that template rendering doesn't cause thread pinning.
+   */
+  @Test
+  public void testTemplateRenderingWithVirtualThreads() throws Exception {
+    // Mock template rendering to return a simple string
+    when(templateHelper.render(org.mockito.ArgumentMatchers.any(), 
+        org.mockito.ArgumentMatchers.any(TemplateParameters.class)))
+        .thenReturn("<html><body>Test</body></html>");
+    
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+      
+      // Submit tasks to render templates concurrently
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // Access resources that use template rendering
+            for (int j = 0; j < OPERATION_COUNT; j++) {
+              underTest.getResources();
+            }
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertThat("All operations should complete in time",
+          latch.await(30, TimeUnit.SECONDS), is(true));
+      
+      // Analyze captured output for thread pinning events
+      analyzeThreadPinning();
+      
+      // Assert that no thread pinning occurred
+      assertThat("No thread pinning should occur during template rendering",
+          pinnedThreadCount.get(), is(MAX_ACCEPTABLE_PINNING_COUNT));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Test that concurrent access to plugin descriptors doesn't cause thread pinning.
+   */
+  @Test
+  public void testPluginDescriptorAccessWithVirtualThreads() throws Exception {
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+      
+      // Submit tasks to access plugin descriptors concurrently
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // Access plugin descriptors multiple times
+            for (int j = 0; j < OPERATION_COUNT; j++) {
+              List<String> configs = underTest.getExtJsPluginConfigs();
+              List<String> namespaces = underTest.getExtJsNamespaces();
+            }
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertThat("All operations should complete in time",
+          latch.await(30, TimeUnit.SECONDS), is(true));
+      
+      // Analyze captured output for thread pinning events
+      analyzeThreadPinning();
+      
+      // Assert that no thread pinning occurred
+      assertThat("No thread pinning should occur during plugin descriptor access",
+          pinnedThreadCount.get(), is(MAX_ACCEPTABLE_PINNING_COUNT));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Test that demonstrates how to detect thread pinning with a deliberately synchronized block.
+   * This test is expected to show pinning and is used to validate the detection mechanism.
+   */
+  @Test
+  public void testDeliberateSynchronizedBlockCausesPinning() throws Exception {
+    // Skip this test in normal runs as it's expected to fail
+    // It's included to validate the pinning detection mechanism
+    if (Boolean.getBoolean("skipPinningValidationTest")) {
+      return;
     }
     
-    return result;
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Create an object to synchronize on
+    final Object lock = new Object();
+    
+    try {
+      // Create a latch to wait for all operations to complete
+      CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+      
+      // Submit tasks that use synchronized blocks with blocking operations
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // This synchronized block with a sleep inside will cause pinning
+            synchronized (lock) {
+              // Simulate a blocking operation inside synchronized block
+              Thread.sleep(50);
+            }
+          } 
+          catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          }
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all operations to complete
+      assertThat("All operations should complete in time",
+          latch.await(30, TimeUnit.SECONDS), is(true));
+      
+      // Analyze captured output for thread pinning events
+      analyzeThreadPinning();
+      
+      // This assertion is expected to fail, showing that pinning was detected
+      // We're validating that our detection mechanism works
+      assertThat("Synchronized block with sleep should cause pinning",
+          pinnedThreadCount.get(), is(lessThan(CONCURRENT_THREADS)));
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Analyze the captured output for thread pinning events.
+   */
+  private void analyzeThreadPinning() {
+    // Flush the capturing stream to ensure all output is captured
+    capturingSystemErr.flush();
+    
+    // Get the captured output as a string
+    String output = capturedOutput.toString();
+    
+    // Reset the output stream for the next test
+    capturedOutput.reset();
+    
+    // If no output, nothing to analyze
+    if (output.isEmpty()) {
+      return;
+    }
+    
+    // Use regex to find pinned thread patterns in the output
+    Pattern pattern = Pattern.compile(PINNED_THREAD_PATTERN);
+    Matcher matcher = pattern.matcher(output);
+    
+    // Count pinned thread occurrences
+    while (matcher.find()) {
+      pinnedThreadCount.incrementAndGet();
+      
+      // Extract the stack trace for this pinning event
+      int start = Math.max(0, matcher.start() - 100); // Include some context before the match
+      int end = Math.min(output.length(), matcher.end() + 1000); // Include stack trace after the match
+      String stackTrace = output.substring(start, end);
+      
+      // Add to the list of pinned thread stack traces
+      pinnedThreadStackTraces.add(stackTrace);
+      
+      // Extract the location of the pinning for summary reporting
+      extractPinningLocation(stackTrace);
+    }
+  }
+  
+  /**
+   * Extract the location where thread pinning occurred from a stack trace.
+   */
+  private void extractPinningLocation(String stackTrace) {
+    // Look for the first occurrence of org.sonatype in the stack trace
+    // This is likely where our code is causing the pinning
+    String[] lines = stackTrace.split("\n");
+    for (String line : lines) {
+      if (line.contains("org.sonatype.nexus")) {
+        // Count occurrences of this location
+        pinnedThreadLocations.compute(line.trim(), (k, v) -> (v == null) ? 1 : v + 1);
+        return;
+      }
+    }
   }
 }

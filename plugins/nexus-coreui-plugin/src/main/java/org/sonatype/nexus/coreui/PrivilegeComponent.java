@@ -45,6 +45,9 @@ import javax.validation.groups.Default;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -63,6 +66,9 @@ public class PrivilegeComponent
   private final SecuritySystem securitySystem;
 
   private final List<PrivilegeDescriptor> privilegeDescriptors;
+  
+  // Executor for virtual threads
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public PrivilegeComponent(
@@ -83,10 +89,15 @@ public class PrivilegeComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:privileges:read")
   public PagedResponse<PrivilegeXO> read(final StoreLoadParameters parameters) {
-    List<PrivilegeXO> privileges = securitySystem.listPrivileges()
-        .stream()
-        .map(this::convert)
-        .collect(Collectors.toList()); // NOSONAR
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    CompletableFuture<List<PrivilegeXO>> privilegesFuture = CompletableFuture.supplyAsync(() -> 
+        securitySystem.listPrivileges()
+            .stream()
+            .map(this::convert)
+            .collect(Collectors.toList()), // NOSONAR
+        virtualThreadExecutor);
+    
+    List<PrivilegeXO> privileges = privilegesFuture.join();
     return extractPage(parameters, privileges);
   }
 
@@ -98,10 +109,15 @@ public class PrivilegeComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:privileges:read")
   public List<ReferenceXO> readReferences() {
-    return securitySystem.listPrivileges()
-        .stream()
-        .map(privilege -> new ReferenceXO(privilege.getId(), privilege.getName()))
-        .collect(Collectors.toList()); // NOSONAR
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    CompletableFuture<List<ReferenceXO>> referencesFuture = CompletableFuture.supplyAsync(() ->
+        securitySystem.listPrivileges()
+            .stream()
+            .map(privilege -> new ReferenceXO(privilege.getId(), privilege.getName()))
+            .collect(Collectors.toList()), // NOSONAR
+        virtualThreadExecutor);
+    
+    return referencesFuture.join();
   }
 
   /**
@@ -110,7 +126,7 @@ public class PrivilegeComponent
    */
   @RequiresPermissions("nexus:privileges:read")
   public PagedResponse<PrivilegeXO> extractPage(final StoreLoadParameters parameters, final List<PrivilegeXO> xos) {
-    log.trace("requesting page with parameters: {} and size of: ${}", parameters, xos.size());
+    log.trace("requesting page with parameters: {} and size of: {}", parameters, xos.size());
 
     checkArgument(parameters.getStart() == null || parameters.getStart() == 0 || parameters.getStart() < xos.size(),
         "Requested to skip more results than available");
@@ -118,9 +134,18 @@ public class PrivilegeComponent
     List<PrivilegeXO> result = new ArrayList<>(xos);
     if (parameters.getFilter() != null && !parameters.getFilter().isEmpty()) {
       String filter = parameters.getFilter().get(0).getValue();
+      // Using pattern matching for switch to improve readability
       result = xos.stream()
-          .filter(xo -> xo.getName().contains(filter) || xo.getDescription().contains(filter) ||
-              xo.getPermission().contains(filter) || xo.getType().contains(filter))
+          .filter(xo -> {
+            // Check each field for the filter value
+            return switch(xo) {
+              case PrivilegeXO p when p.getName().contains(filter) -> true;
+              case PrivilegeXO p when p.getDescription().contains(filter) -> true;
+              case PrivilegeXO p when p.getPermission().contains(filter) -> true;
+              case PrivilegeXO p when p.getType().contains(filter) -> true;
+              default -> false;
+            };
+          })
           .collect(Collectors.toList());
     }
 
@@ -153,11 +178,13 @@ public class PrivilegeComponent
   @RequiresPermissions("nexus:privileges:read")
   public List<PrivilegeTypeXO> readTypes() {
     return privilegeDescriptors.stream()
-        .map(descriptor -> new PrivilegeTypeXO(
-            descriptor.getType(),
-            descriptor.getName(),
-            convertFormFields(descriptor)
-        ))
+        .map(descriptor -> {
+          PrivilegeTypeXO xo = new PrivilegeTypeXO();
+          xo.setId(descriptor.getType());
+          xo.setName(descriptor.getName());
+          xo.setFormFields(convertFormFields(descriptor));
+          return xo;
+        })
         .collect(Collectors.toList()); // NOSONAR
   }
 
@@ -174,10 +201,26 @@ public class PrivilegeComponent
   @RequiresPermissions("nexus:privileges:create")
   @Validate(groups = {Create.class, Default.class})
   public PrivilegeXO create(@NotNull @Valid final PrivilegeXO privilege) throws NoSuchAuthorizationManagerException {
-    AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
-    privilege.withId(
-        privilege.getName()); // Use name as privilege ID (note: eventually IDs should go away in favor of names)
-    return convert(authorizationManager.addPrivilege(convert(privilege)));
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    CompletableFuture<PrivilegeXO> privilegeFuture = CompletableFuture.supplyAsync(() -> {
+      try {
+        AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
+        privilege.withId(
+            privilege.getName()); // Use name as privilege ID (note: eventually IDs should go away in favor of names)
+        return convert(authorizationManager.addPrivilege(convert(privilege)));
+      } catch (NoSuchAuthorizationManagerException e) {
+        throw new RuntimeException(e);
+      }
+    }, virtualThreadExecutor);
+    
+    try {
+      return privilegeFuture.join();
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
+        throw (NoSuchAuthorizationManagerException) e.getCause();
+      }
+      throw e;
+    }
   }
 
   /**
@@ -195,12 +238,25 @@ public class PrivilegeComponent
   public PrivilegeXO update(
       @NotNull @Valid final PrivilegeXO privilege) throws NoSuchAuthorizationManagerException, IllegalAccessException
   {
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    CompletableFuture<PrivilegeXO> privilegeFuture = CompletableFuture.supplyAsync(() -> {
+      try {
+        AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
+        return convert(authorizationManager.updatePrivilege(convert(privilege)));
+      } catch (NoSuchAuthorizationManagerException | ReadonlyPrivilegeException e) {
+        throw new RuntimeException(e);
+      }
+    }, virtualThreadExecutor);
+    
     try {
-      AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
-      return convert(authorizationManager.updatePrivilege(convert(privilege)));
-    }
-    catch (ReadonlyPrivilegeException e) {
-      throw new IllegalAccessException("Privilege [" + privilege.getId() + "] is readonly and cannot be updated");
+      return privilegeFuture.join();
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
+        throw (NoSuchAuthorizationManagerException) e.getCause();
+      } else if (e.getCause() instanceof ReadonlyPrivilegeException) {
+        throw new IllegalAccessException("Privilege [" + privilege.getId() + "] is readonly and cannot be updated");
+      }
+      throw e;
     }
   }
 
@@ -216,12 +272,25 @@ public class PrivilegeComponent
   @RequiresPermissions("nexus:privileges:delete")
   @Validate
   public void remove(@NotEmpty final String id) throws NoSuchAuthorizationManagerException, IllegalAccessException {
-    AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
+    // Using CompletableFuture with virtual threads for I/O-bound operation
+    CompletableFuture<Void> removeFuture = CompletableFuture.runAsync(() -> {
+      try {
+        AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
+        authorizationManager.deletePrivilege(id);
+      } catch (NoSuchAuthorizationManagerException | ReadonlyPrivilegeException e) {
+        throw new RuntimeException(e);
+      }
+    }, virtualThreadExecutor);
+    
     try {
-      authorizationManager.deletePrivilege(id);
-    }
-    catch (ReadonlyPrivilegeException e) {
-      throw new IllegalAccessException("Privilege [" + id + "] is readonly and cannot be deleted");
+      removeFuture.join();
+    } catch (RuntimeException e) {
+      if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
+        throw (NoSuchAuthorizationManagerException) e.getCause();
+      } else if (e.getCause() instanceof ReadonlyPrivilegeException) {
+        throw new IllegalAccessException("Privilege [" + id + "] is readonly and cannot be deleted");
+      }
+      throw e;
     }
   }
 
@@ -229,29 +298,37 @@ public class PrivilegeComponent
    * Convert privilege to XO.
    */
   PrivilegeXO convert(Privilege input) {
-    return new PrivilegeXO()
-        .withId(input.getId())
-        .withVersion(String.valueOf(input.getVersion()))
-        .withName(input.getName() != null ? input.getName() : input.getId())
-        .withDescription(input.getDescription() != null ? input.getDescription() : input.getId())
-        .withType(input.getType())
-        .withReadOnly(input.isReadOnly())
-        .withProperties(Maps.newHashMap(input.getProperties()))
-        .withPermission(input.getPermission().toString());
+    return switch (input) {
+      case null -> throw new IllegalArgumentException("Input privilege cannot be null");
+      case Privilege p -> new PrivilegeXO()
+          .withId(p.getId())
+          .withVersion(String.valueOf(p.getVersion()))
+          .withName(p.getName() != null ? p.getName() : p.getId())
+          .withDescription(p.getDescription() != null ? p.getDescription() : p.getId())
+          .withType(p.getType())
+          .withReadOnly(p.isReadOnly())
+          .withProperties(Maps.newHashMap(p.getProperties()))
+          .withPermission(p.getPermission().toString());
+    };
   }
 
   /**
    * Convert XO to privilege.
    */
   Privilege convert(PrivilegeXO input) {
-    Privilege privilege = new Privilege();
-    privilege.setId(input.getId());
-    privilege.setVersion(input.getVersion().isEmpty() ? 0 : Integer.parseInt(input.getVersion()));
-    privilege.setName(input.getName());
-    privilege.setDescription(input.getDescription());
-    privilege.setType(input.getType());
-    privilege.setProperties(Maps.newHashMap(input.getProperties()));
-    return privilege;
+    return switch (input) {
+      case null -> throw new IllegalArgumentException("Input privilege XO cannot be null");
+      case PrivilegeXO p -> {
+        Privilege privilege = new Privilege();
+        privilege.setId(p.getId());
+        privilege.setVersion(p.getVersion().isEmpty() ? 0 : Integer.parseInt(p.getVersion()));
+        privilege.setName(p.getName());
+        privilege.setDescription(p.getDescription());
+        privilege.setType(p.getType());
+        privilege.setProperties(Maps.newHashMap(p.getProperties()));
+        yield privilege;
+      }
+    };
   }
 
   private Comparable getFieldValue(Object obj, String fieldName) {
@@ -270,7 +347,7 @@ public class PrivilegeComponent
       return null;
     }
 
-    return (List<FormFieldXO>) descriptor.getFormFields()
+    return descriptor.getFormFields()
         .stream()
         .map(f -> FormFieldXO.create((FormField) f))
         .collect(Collectors.toList()); // NOSONAR

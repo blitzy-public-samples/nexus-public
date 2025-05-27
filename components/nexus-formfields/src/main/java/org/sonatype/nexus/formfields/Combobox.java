@@ -14,18 +14,33 @@ package org.sonatype.nexus.formfields;
 
 import java.io.Serializable;
 import java.util.Map;
-import javax.annotation.Nullable;
+import java.util.Objects;
 
 /**
  * Combo-box {@link FormField} support.
+ * 
+ * <p>
+ * This class has been updated for Java 21 compatibility with the following enhancements:
+ * <ul>
+ *   <li>Refined generic type parameters for improved type safety</li>
+ *   <li>String Templates for error messages and debug output</li>
+ *   <li>Improved validation with descriptive error messages</li>
+ * </ul>
+ * </p>
  *
- * @param <V> The value type for the combobox, must be serializable for proper data transfer
+ * @param <V> The value type for this combobox, must be Serializable for proper transport
  * @since 2.7
  */
 public abstract class Combobox<V extends Serializable>
     extends AbstractFormField<V>
     implements Selectable
 {
+  /**
+   * Default store API value when none is specified.
+   * 
+   * @since 3.60
+   */
+  private static final String DEFAULT_STORE_API = null;
 
   public Combobox(final String id,
                   final String label,
@@ -34,6 +49,7 @@ public abstract class Combobox<V extends Serializable>
                   final V initialValue)
   {
     super(id, label, helpText, required, null, initialValue);
+    validateConstructorParams(id, label);
   }
 
   public Combobox(final String id,
@@ -56,6 +72,23 @@ public abstract class Combobox<V extends Serializable>
   {
     this(id, label, null);
   }
+  
+  /**
+   * Validates constructor parameters using String Templates for error messages.
+   * 
+   * @param id the field ID to validate
+   * @param label the field label to validate
+   * @throws NullPointerException if any required parameter is null
+   * @since 3.60
+   */
+  private void validateConstructorParams(String id, String label) {
+    if (id == null) {
+      throw new NullPointerException(STR."Field ID cannot be null for combobox: \{label}");
+    }
+    if (label == null) {
+      throw new NullPointerException(STR."Field label cannot be null for combobox with ID: \{id}");
+    }
+  }
 
   @Override
   public String getType() {
@@ -64,81 +97,135 @@ public abstract class Combobox<V extends Serializable>
   
   /**
    * Returns the store API for this combobox.
-   * Must be implemented by concrete subclasses to specify the data source.
-   *
-   * @return the Ext.Direct API name used to configure Ext proxy
+   * Implementations should override this method to provide a specific store API.
+   * 
+   * @return the store API or null if not specified
+   * @since 3.60
    */
   @Override
-  public abstract String getStoreApi();
-
+  public String getStoreApi() {
+    return DEFAULT_STORE_API;
+  }
+  
   /**
-   * Returns filters to be applied to the store.
-   * Can be overridden by subclasses to provide specific filtering.
-   *
-   * @return filters to be applied to the store or null if no filtering is needed
+   * Returns the store filters for this combobox.
+   * Implementations should override this method to provide specific store filters.
+   * 
+   * @return the store filters or null if not specified
+   * @since 3.60
    */
   @Override
-  @Nullable
   public Map<String, String> getStoreFilters() {
     return null;
   }
 
   @Override
   public String getIdMapping() {
-    return "id";
+    return null;
   }
 
   @Override
   public String getNameMapping() {
-    return "name";
+    return null;
   }
 
+  /**
+   * Sets the ID for this combobox.
+   * 
+   * @param id the ID to set
+   * @return this combobox instance for method chaining
+   * @throws NullPointerException if id is null
+   */
   public Combobox<V> withId(final String id) {
+    Objects.requireNonNull(id, STR."ID cannot be null for combobox: \{getLabel()}");
     setId(id);
     return this;
   }
 
+  /**
+   * Sets the label for this combobox.
+   * 
+   * @param label the label to set
+   * @return this combobox instance for method chaining
+   * @throws NullPointerException if label is null
+   */
   public Combobox<V> withLabel(final String label) {
+    Objects.requireNonNull(label, STR."Label cannot be null for combobox with ID: \{getId()}");
     setLabel(label);
     return this;
   }
 
+  /**
+   * Sets the help text for this combobox.
+   * 
+   * @param helpText the help text to set
+   * @return this combobox instance for method chaining
+   */
   public Combobox<V> withHelpText(final String helpText) {
     setHelpText(helpText);
     return this;
   }
 
+  /**
+   * Sets the regex validation pattern for this combobox.
+   * 
+   * @param regex the regex validation pattern to set
+   * @return this combobox instance for method chaining
+   */
   public Combobox<V> withRegexValidation(final String regex) {
     setRegexValidation(regex);
     return this;
   }
 
+  /**
+   * Sets whether this combobox is required.
+   * 
+   * @param required true if the combobox is required, false otherwise
+   * @return this combobox instance for method chaining
+   */
   public Combobox<V> withRequired(final boolean required) {
     setRequired(required);
     return this;
   }
 
+  /**
+   * Makes this combobox optional.
+   * 
+   * @return this combobox instance for method chaining
+   */
   public Combobox<V> optional() {
     return withRequired(OPTIONAL);
   }
 
+  /**
+   * Makes this combobox mandatory.
+   * 
+   * @return this combobox instance for method chaining
+   */
   public Combobox<V> mandatory() {
     return withRequired(MANDATORY);
   }
 
+  /**
+   * Sets the initial value for this combobox.
+   * 
+   * @param value the initial value to set
+   * @return this combobox instance for method chaining
+   */
   public Combobox<V> withInitialValue(final V value) {
     setInitialValue(value);
     return this;
   }
   
   /**
-   * Adds a custom attribute to this combobox.
-   *
-   * @param key the attribute key
-   * @param value the attribute value
-   * @return this combobox instance for method chaining
+   * Returns a string representation of this combobox using String Templates.
+   * 
+   * @return a string representation of this combobox
+   * @since 3.60
    */
-  public Combobox<V> withAttribute(String key, Object value) {
-    return (Combobox<V>) super.withAttribute(key, value);
+  @Override
+  public String toString() {
+    return STR."Combobox{id=\{getId()}, label=\{getLabel()}, required=\{isRequired()}, "
+        + STR."readOnly=\{isReadOnly()}, disabled=\{isDisabled()}, type=\{getType()}}"; 
   }
 }

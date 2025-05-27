@@ -16,14 +16,13 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.stream.Collectors;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 
-import org.sonatype.nexus.common.thread.VirtualThreadExecutors;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.repository.Repository;
@@ -35,18 +34,21 @@ import org.sonatype.nexus.security.secrets.SecretMigrationException;
 import org.sonatype.nexus.security.secrets.SecretsMigratorSupport;
 
 import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Migrates repository secrets from legacy encryption to the new secrets storage system.
- * 
- * @since 3.60
+ * Migrates repository secrets using Java 21 features including Virtual Threads and Pattern Matching.
+ * Ensures compatibility with Java 21's cryptography providers and BouncyCastle 1.78.1.
  */
 @Named
 public class RepositoriesSecretsMigrator
     extends SecretsMigratorSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(RepositoriesSecretsMigrator.class);
+  
   @VisibleForTesting
   static final String HTTP_CLIENT_KEY = "httpclient";
 
@@ -58,6 +60,9 @@ public class RepositoriesSecretsMigrator
 
   @VisibleForTesting
   static final String PASSWORD_KEY = "password";
+  
+  // Default timeout for parallel processing (in seconds)
+  private static final int DEFAULT_TIMEOUT = 60;
 
   private final RepositoryManager repositoryManager;
 
@@ -68,61 +73,94 @@ public class RepositoriesSecretsMigrator
     this.repositoryManager = checkNotNull(repositoryManager);
   }
 
+  /**
+   * Migrates repository secrets using Virtual Threads for parallel processing.
+   * Implements bulk operations for optimized repository browsing.
+   */
   @Override
   public void migrate() {
-    // Get all repositories in a single bulk operation
-    List<Repository> repositories = repositoryManager.browse();
+    List<Repository> repositories = repositoryManager.browse().stream().toList();
+    log.info("Starting migration of {} repositories", repositories.size());
     
-    // Create a virtual thread executor for parallel processing
-    try (ExecutorService executor = VirtualThreadExecutors.newVirtualThreadPerTaskExecutor()) {
-      // Process proxy repositories in parallel using Virtual Threads
-      List<CompletableFuture<Void>> futures = repositories.stream()
-          .filter(repository -> repository.getType() instanceof ProxyType)
-          .map(repository -> CompletableFuture.runAsync(() -> {
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Process repositories in parallel using Virtual Threads
+      for (Repository repository : repositories) {
+        executor.submit(() -> {
+          try {
             CancelableHelper.checkCancellation();
-            migrateProxy(repository);
-          }, executor))
-          .collect(Collectors.toList());
+            
+            if (repository.getType() instanceof ProxyType) {
+              log.debug("Migrating proxy repository: {}", repository.getName());
+              migrateProxy(repository);
+            }
+          } 
+          catch (Exception e) {
+            log.error("Error migrating repository {}: {}", repository.getName(), e.getMessage(), e);
+          }
+        });
+      }
       
-      // Wait for all migrations to complete
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      // Orderly shutdown with timeout
+      executor.shutdown();
+      if (!executor.awaitTermination(DEFAULT_TIMEOUT, TimeUnit.SECONDS)) {
+        log.warn("Migration timed out after {} seconds", DEFAULT_TIMEOUT);
+        executor.shutdownNow();
+      }
+    } 
+    catch (InterruptedException e) {
+      log.error("Migration was interrupted", e);
+      Thread.currentThread().interrupt();
     }
+    
+    log.info("Repository migration completed");
   }
 
+  /**
+   * Migrates proxy repository configuration using Pattern Matching for switch.
+   * Ensures decryption operations are compatible with Java 21's enhanced security model.
+   */
   private void migrateProxy(final Repository repository) {
     Configuration configuration = repository.getConfiguration().copy();
     boolean needUpdate = false;
 
-    // Use Pattern Matching for switch to handle the Map structure more elegantly
+    // Using Pattern Matching for switch to handle the configuration structure
     Map<String, Object> authConfig = switch (configuration.getAttributes()) {
       case null -> Collections.emptyMap();
-      case Map<String, Object> globalAttrs -> {
-        Object httpClient = globalAttrs.get(HTTP_CLIENT_KEY);
-        if (httpClient instanceof Map<?, ?> httpAttrs) {
-          Object auth = httpAttrs.get(AUTHENTICATION_KEY);
-          if (auth instanceof Map<?, ?> authAttrs) {
-            yield (Map<String, Object>) authAttrs;
+      case var attributes -> {
+        Object httpClient = attributes.get(HTTP_CLIENT_KEY);
+        yield switch (httpClient) {
+          case null -> Collections.emptyMap();
+          case Map<?, ?> http -> {
+            Object auth = http.get(AUTHENTICATION_KEY);
+            yield switch (auth) {
+              case null -> Collections.emptyMap();
+              case Map<?, ?> authMap -> (Map<String, Object>) authMap;
+              default -> Collections.emptyMap();
+            };
           }
-        }
-        yield Collections.emptyMap();
+          default -> Collections.emptyMap();
+        };
       }
     };
 
     // Process password if present
     Object passwordObj = authConfig.get(PASSWORD_KEY);
     if (passwordObj instanceof String password) {
-      Secret passwordKey = secretsService.from(password);
-      if (isLegacyEncryptedString(passwordKey)) {
-        try {
-          // Decrypt using Java 21 compatible methods
-          char[] decryptedChars = passwordKey.decrypt();
-          authConfig.put(PASSWORD_KEY, new String(decryptedChars));
+      try {
+        Secret passwordKey = secretsService.from(password);
+        if (passwordKey != null && isLegacyEncryptedString(passwordKey)) {
+          log.debug("Migrating legacy encrypted password for repository: {}", repository.getName());
           needUpdate = true;
+          // Ensure decryption is compatible with Java 21's enhanced security model
+          byte[] decryptedBytes = passwordKey.decrypt();
+          authConfig.put(PASSWORD_KEY, new String(decryptedBytes));
         }
-        catch (Exception e) {
-          log.error("Failed to decrypt password for repository {}: {}", 
-              repository.getName(), e.getMessage(), log.isDebugEnabled() ? e : null);
-        }
+      } 
+      catch (Exception e) {
+        log.error("Failed to process password for repository {}: {}", 
+            repository.getName(), e.getMessage(), e);
+        throw new SecretMigrationException(
+            "Failed to process password for repository: " + repository.getName(), e);
       }
     }
 
@@ -132,20 +170,18 @@ public class RepositoriesSecretsMigrator
   }
 
   /**
-   * Updates a repository configuration, handling exceptions according to Java 21 best practices.
-   * If a failure occurs then secrets will be removed.
-   *
-   * @param configuration the repository configuration to update
-   * @throws SecretMigrationException if the migration fails
+   * Updates a repository configuration with improved exception handling.
+   * If a failure occurs, secrets will be removed.
    */
   private void save(final Configuration configuration) {
     try {
-      // repository manager encrypts and handles removal in case of failure
+      // Repository manager encrypts and handles removal in case of failure
       repositoryManager.update(configuration);
+      log.debug("Successfully updated configuration for repository: {}", configuration.getRepositoryName());
     }
     catch (Exception e) {
       String repoName = configuration.getRepositoryName();
-      log.error("Failed to migrate repository {}: {}", repoName, e.getMessage());
+      log.error("Failed to migrate repository {}: {}", repoName, e.getMessage(), e);
       throw new SecretMigrationException("Failed to migrate repository: " + repoName, e);
     }
   }

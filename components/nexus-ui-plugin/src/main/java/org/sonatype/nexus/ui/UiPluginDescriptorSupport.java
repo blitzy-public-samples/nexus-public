@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.ui;
 
-import java.util.Collections;
 import java.util.List;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -21,9 +20,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Support for {@link UiPluginDescriptor} implementations.
- * <p>
- * Compatible with Java 21, Guice 7.0.0, and Eclipse Sisu 0.10.0.
- * Collections.emptyList() returns a list that implements Java 21's SequencedList interface.
+ * 
+ * This class is compatible with Java 21 and leverages the Sequenced Collections API.
+ * It is also compatible with Guice 7.0.0 and Eclipse Sisu 0.10.0.
  *
  * @since 3.20
  */
@@ -44,13 +43,15 @@ public abstract class UiPluginDescriptorSupport
 
   @Override
   public List<String> getScripts(final boolean isDebug) {
-    // Returns an immutable empty list that implements Java 21's SequencedList interface
-    return Collections.emptyList();
+    // Using List.of() from Java 9+ which returns an immutable list
+    // This is compatible with Java 21's Sequenced Collections API as List implements SequencedCollection
+    return List.of();
   }
 
   @Override
   public List<String> getStyles() {
-    // Returns an immutable empty list that implements Java 21's SequencedList interface
-    return Collections.emptyList();
+    // Using List.of() from Java 9+ which returns an immutable list
+    // This is compatible with Java 21's Sequenced Collections API as List implements SequencedCollection
+    return List.of();
   }
 }

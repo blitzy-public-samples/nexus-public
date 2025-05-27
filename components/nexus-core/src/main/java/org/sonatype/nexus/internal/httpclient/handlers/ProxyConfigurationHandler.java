@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.internal.httpclient.handlers;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.crypto.secrets.SecretsFactory;
 import org.sonatype.nexus.httpclient.config.ProxyConfiguration;
@@ -23,7 +23,6 @@ import org.apache.ibatis.type.TypeHandler;
 
 /**
  * MyBatis {@link TypeHandler} that maps a {@link ProxyConfiguration} to/from JSON.
- * Optimized for Java 21 with enhanced type handling capabilities.
  *
  * @since 3.21
  */
@@ -32,11 +31,6 @@ import org.apache.ibatis.type.TypeHandler;
 public class ProxyConfigurationHandler
     extends HttpClientConfigurationHandler<ProxyConfiguration>
 {
-  /**
-   * Creates a new instance with the given secrets factory.
-   *
-   * @param secretsFactory the factory for creating and managing secrets
-   */
   @Inject
   public ProxyConfigurationHandler(final SecretsFactory secretsFactory) {
     super(secretsFactory);

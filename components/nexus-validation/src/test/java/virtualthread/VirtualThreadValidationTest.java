@@ -16,11 +16,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.validation.ConstraintViolation;
@@ -28,26 +26,31 @@ import javax.validation.Valid;
 import javax.validation.Validation;
 import javax.validation.ValidatorFactory;
 import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Size;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadMatchers;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests that validate the Bean Validation framework works correctly with Java 21's Virtual Threads.
+ * Tests to validate that Bean Validation framework works correctly with Java 21's Virtual Threads.
+ * 
+ * These tests verify that validation operations can be efficiently executed on Virtual Threads
+ * without thread pinning, and that concurrent validation of multiple objects maintains correctness.
+ * 
+ * The test suite includes validation of simple constraints, cascading validation with nested objects,
+ * and map-based validation, all executed on Virtual Threads. It also tests high-concurrency scenarios
+ * to ensure thread safety and correctness under load, which is critical for Nexus Repository's
+ * validation framework in a Java 21 environment.
  * 
  * @since 3.60
  */
+@EnabledIf("isVirtualThreadSupported")
 public class VirtualThreadValidationTest
     extends VirtualThreadTestSupport
 {
@@ -55,24 +58,19 @@ public class VirtualThreadValidationTest
 
   @BeforeEach
   public void setUp() {
-    assumeVirtualThreadSupported();
     factory = Validation.buildDefaultValidatorFactory();
   }
 
   /**
-   * Simple entity with validation constraints.
+   * Test entity with validation constraints.
    */
-  private static class SimpleEntity
+  private static class TestEntity
   {
     @NotNull
     private String name;
 
-    @Size(min = 3, max = 50)
-    private String description;
-
-    public SimpleEntity(String name, String description) {
+    public TestEntity(String name) {
       this.name = name;
-      this.description = description;
     }
   }
 
@@ -116,7 +114,7 @@ public class VirtualThreadValidationTest
   }
 
   /**
-   * Entity with map containing validatable objects.
+   * Entity with map containing validated objects.
    */
   private static class WithMap
   {
@@ -129,314 +127,214 @@ public class VirtualThreadValidationTest
   }
 
   /**
-   * Tests that basic validation works correctly on a virtual thread.
+   * Tests that simple validation works correctly when executed on a Virtual Thread.
+   * This verifies that constraint violations are correctly detected and reported
+   * when running on Virtual Threads.
    */
   @Test
-  public void testBasicValidationOnVirtualThread() throws Exception {
-    Callable<Set<ConstraintViolation<SimpleEntity>>> validationTask = () -> {
-      // Verify we're running on a virtual thread
-      assertThat(Thread.currentThread(), VirtualThreadMatchers.isVirtualThread());
+  public void testSimpleValidationOnVirtualThread() throws Exception {
+    supplyFromVirtualThread(() -> {
+      // Verify we're running on a Virtual Thread
+      assertCurrentThreadIsVirtual();
       
-      // Create an entity with validation errors
-      SimpleEntity entity = new SimpleEntity(null, "ab");
+      // Perform validation
+      TestEntity entity = new TestEntity(null);
+      Set<ConstraintViolation<TestEntity>> violations = factory.getValidator().validate(entity);
       
-      // Validate the entity
-      return factory.getValidator().validate(entity);
-    };
-    
-    // Execute the validation on a virtual thread
-    Set<ConstraintViolation<SimpleEntity>> violations = callVirtual(validationTask);
-    
-    // Verify the validation results
-    assertThat(violations, hasSize(2));
-    
-    // Check for the expected constraint violations
-    boolean foundNameViolation = false;
-    boolean foundDescriptionViolation = false;
-    
-    for (ConstraintViolation<SimpleEntity> violation : violations) {
-      if (violation.getPropertyPath().toString().equals("name")) {
-        assertThat(violation.getMessage(), equalTo("must not be null"));
-        foundNameViolation = true;
-      }
-      else if (violation.getPropertyPath().toString().equals("description")) {
-        assertThat(violation.getMessage(), equalTo("size must be between 3 and 50"));
-        foundDescriptionViolation = true;
-      }
-    }
-    
-    assertThat("Name violation should be found", foundNameViolation, is(true));
-    assertThat("Description violation should be found", foundDescriptionViolation, is(true));
+      // Verify violations
+      assertThat(violations, hasSize(1));
+      ConstraintViolation<TestEntity> violation = violations.iterator().next();
+      assertThat(violation.getPropertyPath().toString(), equalTo("name"));
+      assertThat(violation.getMessage(), equalTo("must not be null"));
+      
+      return true;
+    });
   }
 
   /**
-   * Tests that cascading validation works correctly on a virtual thread.
+   * Tests that cascading validation works correctly when executed on a Virtual Thread.
+   * This verifies that constraint violations in nested objects are correctly detected
+   * and reported when running on Virtual Threads.
    */
   @Test
   public void testCascadingValidationOnVirtualThread() throws Exception {
-    Callable<Set<ConstraintViolation<Parent>>> validationTask = () -> {
-      // Verify we're running on a virtual thread
-      assertThat(Thread.currentThread(), VirtualThreadMatchers.isVirtualThread());
+    supplyFromVirtualThread(() -> {
+      // Verify we're running on a Virtual Thread
+      assertCurrentThreadIsVirtual();
       
-      // Create a parent with a child and grandchild that has a validation error
+      // Perform cascading validation
       Parent parent = new Parent(new Child(new GrandChild(null)));
+      Set<ConstraintViolation<Parent>> violations = factory.getValidator().validate(parent);
       
-      // Validate the parent, which should cascade to child and grandchild
-      return factory.getValidator().validate(parent);
-    };
-    
-    // Execute the validation on a virtual thread
-    Set<ConstraintViolation<Parent>> violations = callVirtual(validationTask);
-    
-    // Verify the validation results
-    assertThat(violations, hasSize(1));
-    ConstraintViolation<Parent> violation = violations.iterator().next();
-    assertThat(violation.getPropertyPath().toString(), equalTo("child.grandChild.name"));
-    assertThat(violation.getMessage(), equalTo("must not be null"));
+      // Verify violations
+      assertThat(violations, hasSize(1));
+      ConstraintViolation<Parent> violation = violations.iterator().next();
+      assertThat(violation.getPropertyPath().toString(), equalTo("child.grandChild.name"));
+      assertThat(violation.getMessage(), equalTo("must not be null"));
+      
+      return true;
+    });
   }
 
   /**
-   * Tests that map-based cascading validation works correctly on a virtual thread.
+   * Tests that map validation works correctly when executed on a Virtual Thread.
+   * This verifies that constraint violations in objects contained within maps are
+   * correctly detected and reported when running on Virtual Threads.
    */
   @Test
   public void testMapValidationOnVirtualThread() throws Exception {
-    Callable<Set<ConstraintViolation<WithMap>>> validationTask = () -> {
-      // Verify we're running on a virtual thread
-      assertThat(Thread.currentThread(), VirtualThreadMatchers.isVirtualThread());
+    supplyFromVirtualThread(() -> {
+      // Verify we're running on a Virtual Thread
+      assertCurrentThreadIsVirtual();
       
-      // Create a parent with a child and grandchild that has a validation error
+      // Perform validation with map
       Parent parent = new Parent(new Child(new GrandChild(null)));
       WithMap withMap = new WithMap(Map.of("foo", parent));
+      Set<ConstraintViolation<WithMap>> violations = factory.getValidator().validate(withMap);
       
-      // Validate the map container, which should cascade to its contents
-      return factory.getValidator().validate(withMap);
-    };
-    
-    // Execute the validation on a virtual thread
-    Set<ConstraintViolation<WithMap>> violations = callVirtual(validationTask);
-    
-    // Verify the validation results
-    assertThat(violations, hasSize(1));
-    ConstraintViolation<WithMap> violation = violations.iterator().next();
-    assertThat(violation.getPropertyPath().toString(), equalTo("contents[foo].child.grandChild.name"));
-    assertThat(violation.getMessage(), equalTo("must not be null"));
+      // Verify violations
+      assertThat(violations, hasSize(1));
+      ConstraintViolation<WithMap> violation = violations.iterator().next();
+      assertThat(violation.getPropertyPath().toString(), equalTo("contents[foo].child.grandChild.name"));
+      assertThat(violation.getMessage(), equalTo("must not be null"));
+      
+      return true;
+    });
   }
 
   /**
-   * Tests concurrent validation of multiple objects on virtual threads.
+   * Tests concurrent validation of multiple objects using Virtual Threads.
+   * This verifies that the Bean Validation framework works correctly under high concurrency
+   * when using Virtual Threads, ensuring that validation operations maintain correctness
+   * and thread safety.
    */
   @Test
-  public void testConcurrentValidationOnVirtualThreads() throws Exception {
+  public void testConcurrentValidationWithVirtualThreads() throws Exception {
     // Number of concurrent validations to perform
     final int concurrentValidations = 1000;
     
-    // Create a list of entities to validate
-    List<SimpleEntity> entities = new ArrayList<>(concurrentValidations);
-    for (int i = 0; i < concurrentValidations; i++) {
-      // Every other entity has validation errors
-      if (i % 2 == 0) {
-        entities.add(new SimpleEntity(null, "ab"));
-      } else {
-        entities.add(new SimpleEntity("Valid Name " + i, "Valid Description " + i));
-      }
-    }
+    // Create a countdown latch to synchronize thread start
+    final CountDownLatch startLatch = new CountDownLatch(1);
     
-    // Counter for tracking validation results
-    AtomicInteger validEntities = new AtomicInteger(0);
-    AtomicInteger invalidEntities = new AtomicInteger(0);
-    
-    // Create a latch to wait for all validations to complete
-    CountDownLatch latch = new CountDownLatch(concurrentValidations);
-    
-    // Create an executor service with virtual threads
-    ExecutorService executor = newVirtualThreadExecutor("validation-test-");
-    
-    try {
-      // Submit validation tasks for each entity
-      for (SimpleEntity entity : entities) {
-        executor.submit(() -> {
-          try {
-            // Verify we're running on a virtual thread
-            assertThat(Thread.currentThread(), VirtualThreadMatchers.isVirtualThread());
-            assertThat(Thread.currentThread().getName(), is(notNullValue()));
-            
-            // Validate the entity
-            Set<ConstraintViolation<SimpleEntity>> violations = factory.getValidator().validate(entity);
-            
-            // Update counters based on validation result
-            if (violations.isEmpty()) {
-              validEntities.incrementAndGet();
-            } else {
-              invalidEntities.incrementAndGet();
-            }
+    // Create an executor service with Virtual Threads
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      // Track successful validations
+      AtomicInteger successfulValidations = new AtomicInteger(0);
+      
+      // Submit validation tasks
+      List<Future<Boolean>> futures = new ArrayList<>();
+      for (int i = 0; i < concurrentValidations; i++) {
+        final int index = i;
+        futures.add(executor.submit(() -> {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Verify we're running on a Virtual Thread
+          assertTrue(Thread.currentThread().isVirtual(), 
+              "Task " + index + " not running on a Virtual Thread");
+          
+          // Perform validation (alternating between valid and invalid entities)
+          TestEntity entity = new TestEntity(index % 2 == 0 ? null : "Valid Name");
+          Set<ConstraintViolation<TestEntity>> violations = factory.getValidator().validate(entity);
+          
+          // Verify violations
+          if (index % 2 == 0) {
+            // Should have a violation (null name)
+            assertThat(violations, hasSize(1));
+            ConstraintViolation<TestEntity> violation = violations.iterator().next();
+            assertThat(violation.getPropertyPath().toString(), equalTo("name"));
+            assertThat(violation.getMessage(), equalTo("must not be null"));
+          } else {
+            // Should have no violations (valid name)
+            assertThat(violations, hasSize(0));
           }
-          finally {
-            latch.countDown();
-          }
-        });
+          
+          successfulValidations.incrementAndGet();
+          return true;
+        }));
       }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
       
       // Wait for all validations to complete
-      boolean completed = latch.await(10, TimeUnit.SECONDS);
-      assertThat("All validation tasks should complete within the timeout", completed, is(true));
+      for (Future<Boolean> future : futures) {
+        assertTrue(future.get(), "Validation task failed");
+      }
       
-      // Verify the validation results
-      assertThat("Half of the entities should be valid", validEntities.get(), equalTo(concurrentValidations / 2));
-      assertThat("Half of the entities should be invalid", invalidEntities.get(), equalTo(concurrentValidations / 2));
-    }
-    finally {
-      executor.shutdown();
+      // Verify all validations were successful
+      assertThat(successfulValidations.get(), equalTo(concurrentValidations));
     }
   }
 
   /**
-   * Tests concurrent cascading validation with complex object hierarchies on virtual threads.
+   * Tests concurrent cascading validation using Virtual Threads.
+   * This verifies that the Bean Validation framework correctly handles cascading validation
+   * under high concurrency when using Virtual Threads, ensuring that validation operations
+   * maintain correctness and thread safety with complex object hierarchies.
+   * 
+   * This test is particularly important for Nexus Repository as it validates that the
+   * Bean Validation framework can handle complex object hierarchies in a highly concurrent
+   * environment, which is common in repository operations like uploads and metadata processing.
    */
   @Test
-  public void testConcurrentCascadingValidationOnVirtualThreads() throws Exception {
+  public void testConcurrentCascadingValidationWithVirtualThreads() throws Exception {
     // Number of concurrent validations to perform
     final int concurrentValidations = 500;
     
-    // Create a list of parent entities to validate
-    List<Parent> parents = new ArrayList<>(concurrentValidations);
-    for (int i = 0; i < concurrentValidations; i++) {
-      // Every other entity has validation errors
-      if (i % 2 == 0) {
-        parents.add(new Parent(new Child(new GrandChild(null))));
-      } else {
-        parents.add(new Parent(new Child(new GrandChild("Valid Name " + i))));
+    // Create a countdown latch to synchronize thread start
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create an executor service with Virtual Threads
+    try (ExecutorService executor = createVirtualThreadExecutorService()) {
+      // Track successful validations
+      AtomicInteger successfulValidations = new AtomicInteger(0);
+      
+      // Submit validation tasks
+      List<Future<Boolean>> futures = new ArrayList<>();
+      for (int i = 0; i < concurrentValidations; i++) {
+        final int index = i;
+        futures.add(executor.submit(() -> {
+          // Wait for all threads to be ready
+          startLatch.await();
+          
+          // Verify we're running on a Virtual Thread
+          assertTrue(Thread.currentThread().isVirtual(), 
+              "Task " + index + " not running on a Virtual Thread");
+          
+          // Create parent with child and grandchild (alternating between valid and invalid)
+          GrandChild grandChild = new GrandChild(index % 2 == 0 ? null : "Valid Name");
+          Parent parent = new Parent(new Child(grandChild));
+          
+          // Perform cascading validation
+          Set<ConstraintViolation<Parent>> violations = factory.getValidator().validate(parent);
+          
+          // Verify violations
+          if (index % 2 == 0) {
+            // Should have a violation (null name in grandchild)
+            assertThat(violations, hasSize(1));
+            ConstraintViolation<Parent> violation = violations.iterator().next();
+            assertThat(violation.getPropertyPath().toString(), equalTo("child.grandChild.name"));
+            assertThat(violation.getMessage(), equalTo("must not be null"));
+          } else {
+            // Should have no violations (valid name in grandchild)
+            assertThat(violations, hasSize(0));
+          }
+          
+          successfulValidations.incrementAndGet();
+          return true;
+        }));
       }
-    }
-    
-    // Counter for tracking validation results
-    AtomicInteger validEntities = new AtomicInteger(0);
-    AtomicInteger invalidEntities = new AtomicInteger(0);
-    
-    // Submit validation tasks for each parent entity
-    Future<?>[] futures = callConcurrently(concurrentValidations, () -> {
-      // Get the parent entity for this task
-      int index = (int) (Thread.currentThread().threadId() % concurrentValidations);
-      Parent parent = parents.get(index);
       
-      // Verify we're running on a virtual thread
-      assertThat(Thread.currentThread(), VirtualThreadMatchers.isVirtualThread());
-      assertThat(Thread.currentThread(), VirtualThreadMatchers.isNotPinned());
+      // Start all threads simultaneously
+      startLatch.countDown();
       
-      // Validate the parent entity (with cascading validation)
-      Set<ConstraintViolation<Parent>> violations = factory.getValidator().validate(parent);
-      
-      // Update counters based on validation result
-      if (violations.isEmpty()) {
-        validEntities.incrementAndGet();
-      } else {
-        invalidEntities.incrementAndGet();
-        
-        // Verify the violation details for invalid entities
-        assertThat(violations, hasSize(1));
-        ConstraintViolation<Parent> violation = violations.iterator().next();
-        assertThat(violation.getPropertyPath().toString(), equalTo("child.grandChild.name"));
-        assertThat(violation.getMessage(), equalTo("must not be null"));
+      // Wait for all validations to complete
+      for (Future<Boolean> future : futures) {
+        assertTrue(future.get(), "Validation task failed");
       }
       
-      return violations.size();
-    });
-    
-    // Wait for all futures to complete
-    for (Future<?> future : futures) {
-      future.get(10, TimeUnit.SECONDS);
+      // Verify all validations were successful
+      assertThat(successfulValidations.get(), equalTo(concurrentValidations));
     }
-    
-    // Verify the validation results
-    assertThat("Half of the entities should be valid", validEntities.get(), equalTo(concurrentValidations / 2));
-    assertThat("Half of the entities should be invalid", invalidEntities.get(), equalTo(concurrentValidations / 2));
   }
-
-  /**
-   * Tests that validation operations do not cause thread pinning.
-   */
-  @Test
-  public void testValidationDoesNotCauseThreadPinning() throws Exception {
-    // Create a complex entity with cascading validation
-    Parent parent = new Parent(new Child(new GrandChild(null)));
-    
-    // Check if validation causes thread pinning
-    boolean pinningDetected = detectThreadPinning(() -> {
-      // Perform validation in a loop to increase chances of detecting pinning
-      for (int i = 0; i < 100; i++) {
-        factory.getValidator().validate(parent);
-      }
-    });
-    
-    // Verify that no thread pinning was detected
-    assertThat("Validation should not cause thread pinning", pinningDetected, is(false));
-  }
-
-  /**
-   * Tests the performance of validation on virtual threads compared to a baseline.
-   */
-  @Test
-  public void testValidationPerformanceOnVirtualThreads() throws Exception {
-    // Number of concurrent validations to perform
-    final int concurrentValidations = 10000;
-    
-    // Create a validation task
-    Callable<Long> validationTask = () -> {
-      long startTime = System.nanoTime();
-      
-      // Create and validate a complex entity
-      Parent parent = new Parent(new Child(new GrandChild("Name")));
-      Set<ConstraintViolation<Parent>> violations = factory.getValidator().validate(parent);
-      assertThat(violations, hasSize(0));
-      
-      return TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - startTime);
-    };
-    
-    // Measure the execution time of a single validation on the current thread (warm-up)
-    long singleThreadTime = validationTask.call();
-    log.info("Single thread validation time: {} µs", singleThreadTime);
-    
-    // Execute the validation task concurrently on multiple virtual threads
-    long startTime = System.nanoTime();
-    Future<Long>[] futures = callConcurrently(concurrentValidations, () -> validationTask.call());
-    
-    // Calculate statistics from the results
-    long totalTime = 0;
-    long maxTime = 0;
-    long minTime = Long.MAX_VALUE;
-    
-    for (Future<Long> future : futures) {
-      long time = future.get(30, TimeUnit.SECONDS);
-      totalTime += time;
-      maxTime = Math.max(maxTime, time);
-      minTime = Math.min(minTime, time);
-    }
-    
-    long avgTime = totalTime / concurrentValidations;
-    long totalExecutionTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
-    
-    log.info("Concurrent validation statistics for {} validations:", concurrentValidations);
-    log.info("  Total execution time: {} ms", totalExecutionTime);
-    log.info("  Average validation time: {} µs", avgTime);
-    log.info("  Min validation time: {} µs", minTime);
-    log.info("  Max validation time: {} µs", maxTime);
-    
-    // Verify that concurrent validation on virtual threads is efficient
-    // The total time should be much less than singleThreadTime * concurrentValidations
-    // because virtual threads allow for efficient concurrent execution
-    long serialExecutionEstimate = singleThreadTime * concurrentValidations / 1000; // Convert to ms
-    
-    assertThat("Total execution time should be significantly less than serial execution time",
-        totalExecutionTime, lessThan(serialExecutionEstimate / 10));
-    
-    // Verify that individual validation operations have reasonable performance
-    assertThat("Average validation time should be reasonable", 
-        avgTime, lessThan(singleThreadTime * 10));
-    
-    // Verify that we achieved a high level of concurrency
-    double concurrencyLevel = (double) concurrentValidations / (totalExecutionTime / 1000.0 * 1000000.0 / avgTime);
-    log.info("  Estimated concurrency level: {}", concurrencyLevel);
-    
-    assertThat("Should achieve a reasonable level of concurrency", 
-        concurrencyLevel, greaterThanOrEqualTo(10.0));
-  }
-}

@@ -12,16 +12,17 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal.describe;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.SequencedCollection;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Accumulates a renderable description of request-processing activity.
  * 
- * This class uses Java 21 features like Sequenced Collections for improved
- * collection management and works with Record Patterns through DescriptionItem records.
+ * <p>This class is thread-safe and can be safely used in a Virtual Thread environment.
+ * The internal list of description items uses a {@link CopyOnWriteArrayList} to ensure
+ * thread safety when multiple threads (including Virtual Threads) access or modify the list
+ * concurrently.</p>
  *
  * @since 3.0
  */
@@ -29,35 +30,42 @@ public class Description
 {
   private final Map<String, Object> parameters;
 
-  // Using ArrayList which implements SequencedCollection in Java 21
-  private final List<DescriptionItem> items = new ArrayList<>();
+  // Using CopyOnWriteArrayList for thread safety in Virtual Thread environments
+  private final List<DescriptionItem> items = new CopyOnWriteArrayList<>();
 
   /**
    * Creates a new Description with the given parameters.
-   *
-   * @param parameters the parameters for this description
+   * 
+   * @param parameters the parameters for this description (should be immutable)
    */
   public Description(final Map<String, Object> parameters) {
     this.parameters = parameters;
   }
 
   /**
-   * Adds a topic item to the description.
-   *
+   * Adds a topic to this description.
+   * 
+   * <p>This method is thread-safe and can be called from multiple threads,
+   * including Virtual Threads.</p>
+   * 
    * @param name the name of the topic
-   * @return this Description instance for method chaining
+   * @return this Description for method chaining
    */
   public Description topic(final String name) {
-    items.add(new DescriptionItem(name, "topic", name));
+    // Using Java 21 String Template for more efficient string operations
+    items.add(new DescriptionItem(name, "topic", STR."{name}"));
     return this;
   }
 
   /**
-   * Adds a table item to the description.
-   *
+   * Adds a table to this description.
+   * 
+   * <p>This method is thread-safe and can be called from multiple threads,
+   * including Virtual Threads.</p>
+   * 
    * @param name the name of the table
-   * @param values the values to include in the table
-   * @return this Description instance for method chaining
+   * @param values the values for the table
+   * @return this Description for method chaining
    */
   public Description addTable(final String name, final Map<String, Object> values) {
     items.add(new DescriptionItem(name, "table", values));
@@ -66,8 +74,8 @@ public class Description
 
   /**
    * Gets the parameters for this description.
-   *
-   * @return the parameters map
+   * 
+   * @return the parameters (should be treated as immutable)
    */
   public Map<String, Object> getParameters() {
     return parameters;
@@ -75,9 +83,11 @@ public class Description
 
   /**
    * Gets the items in this description.
-   * The returned list maintains insertion order and can be used with Java 21 Sequenced Collection features.
-   *
-   * @return the list of description items
+   * 
+   * <p>The returned list is a thread-safe view of the items. Modifications to the
+   * returned list will be reflected in this Description, but should be avoided.</p>
+   * 
+   * @return the items in this description
    */
   public List<DescriptionItem> getItems() {
     return items;

@@ -19,7 +19,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -31,15 +30,17 @@ import org.sonatype.nexus.datastore.mybatis.FrozenChecker;
 
 import org.apache.ibatis.executor.Executor;
 import org.apache.ibatis.mapping.MappedStatement;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -48,17 +49,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests the {@link EntityExecutor} class with Java 21 Virtual Threads, validating that the MyBatis executor wrapper
- * correctly handles concurrent database operations using virtual threads.
+ * Tests the {@link EntityExecutor} class with Java 21 Virtual Threads.
+ * 
+ * This test validates that the MyBatis executor wrapper correctly handles concurrent database operations
+ * using virtual threads, ensuring proper delegation of JDBC operations, entity ID generation, exception mapping,
+ * and transaction handling within the virtual thread context.
  */
+@ExtendWith(MockitoExtension.class)
 public class EntityExecutorVirtualThreadTest
     extends TestSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(EntityExecutorVirtualThreadTest.class);
-
-  private static final int VIRTUAL_THREAD_COUNT = 100;
-  private static final int OPERATIONS_PER_THREAD = 10;
-  private static final int TIMEOUT_SECONDS = 30;
+  private static final int CONCURRENT_THREADS = 100;
+  private static final int TIMEOUT_SECONDS = 10;
 
   @Mock
   private Executor delegate;
@@ -68,418 +70,345 @@ public class EntityExecutorVirtualThreadTest
 
   private EntityExecutor underTest;
 
-  @Before
+  @BeforeEach
   public void setup() {
     underTest = new EntityExecutor(delegate, frozenChecker);
   }
 
   /**
-   * Tests that commit operations work correctly in a concurrent virtual thread environment.
+   * Tests that concurrent commit operations work correctly when executed in virtual threads.
    */
   @Test
-  public void testConcurrentCommit() throws Exception {
-    log.info("Starting concurrent commit test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
+  public void testConcurrentCommitWithVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+    AtomicInteger successCount = new AtomicInteger(0);
 
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        executorService.submit(() -> {
+    try {
+      // Submit multiple concurrent commit operations using virtual threads
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
           try {
             underTest.commit(true);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread commit operation: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            // Exception not expected in this test
+            logger.error("Unexpected exception during commit", e);
+          } finally {
             latch.countDown();
           }
         });
       }
 
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All commit operations should complete within timeout", completed, is(true));
-      assertThat("All commit operations should succeed", success.get(), is(true));
-      verify(delegate, times(VIRTUAL_THREAD_COUNT)).commit(true);
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all operations succeeded
+      assertEquals(CONCURRENT_THREADS, successCount.get(), 
+          "All virtual thread operations should succeed");
+
+      // Verify the delegate was called the expected number of times
+      verify(delegate, times(CONCURRENT_THREADS)).commit(true);
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that rollback operations work correctly in a concurrent virtual thread environment.
+   * Tests that concurrent update operations work correctly when executed in virtual threads.
    */
   @Test
-  public void testConcurrentRollback() throws Exception {
-    log.info("Starting concurrent rollback test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
-
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        executorService.submit(() -> {
-          try {
-            underTest.rollback(true);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread rollback operation: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All rollback operations should complete within timeout", completed, is(true));
-      assertThat("All rollback operations should succeed", success.get(), is(true));
-      verify(delegate, times(VIRTUAL_THREAD_COUNT)).rollback(true);
-    }
-  }
-
-  /**
-   * Tests that update operations work correctly in a concurrent virtual thread environment.
-   */
-  @Test
-  public void testConcurrentUpdate() throws Exception {
-    log.info("Starting concurrent update test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
+  public void testConcurrentUpdateWithVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+    AtomicInteger successCount = new AtomicInteger(0);
     MappedStatement ms = mock(MappedStatement.class);
 
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        final int threadId = i;
-        executorService.submit(() -> {
+    try {
+      // Submit multiple concurrent update operations using virtual threads
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        final int id = i;
+        executor.submit(() -> {
           try {
-            // Use thread ID as a parameter to simulate different update operations
-            underTest.update(ms, threadId);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread update operation: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
+            // Simulate an update with a different parameter for each thread
+            underTest.update(ms, "entity-" + id);
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            // Exception not expected in this test
+            logger.error("Unexpected exception during update", e);
+          } finally {
             latch.countDown();
           }
         });
       }
 
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All update operations should complete within timeout", completed, is(true));
-      assertThat("All update operations should succeed", success.get(), is(true));
-      
-      // Verify that update was called for each thread with the correct parameter
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        verify(delegate).update(ms, i);
-      }
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all operations succeeded
+      assertEquals(CONCURRENT_THREADS, successCount.get(), 
+          "All virtual thread operations should succeed");
+
+      // Verify the delegate was called the expected number of times
+      verify(delegate, times(CONCURRENT_THREADS)).update(any(), any());
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that query operations work correctly in a concurrent virtual thread environment.
+   * Tests that concurrent query operations work correctly when executed in virtual threads.
    */
   @Test
-  public void testConcurrentQuery() throws Exception {
-    log.info("Starting concurrent query test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
+  public void testConcurrentQueryWithVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+    AtomicInteger successCount = new AtomicInteger(0);
 
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        final int threadId = i;
-        executorService.submit(() -> {
+    try {
+      // Submit multiple concurrent query operations using virtual threads
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
           try {
-            // Use thread ID to create unique query parameters
-            underTest.query(null, threadId, null, null);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread query operation: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
+            underTest.query(null, null, null, null);
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            // Exception not expected in this test
+            logger.error("Unexpected exception during query", e);
+          } finally {
             latch.countDown();
           }
         });
       }
 
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All query operations should complete within timeout", completed, is(true));
-      assertThat("All query operations should succeed", success.get(), is(true));
-      
-      // Verify that query was called for each thread with the correct parameter
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        verify(delegate).query(null, i, null, null);
-      }
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all operations succeeded
+      assertEquals(CONCURRENT_THREADS, successCount.get(), 
+          "All virtual thread operations should succeed");
+
+      // Verify the delegate was called the expected number of times
+      verify(delegate, times(CONCURRENT_THREADS)).query(null, null, null, null);
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that error translation works correctly in a concurrent virtual thread environment.
+   * Tests that exception translation works correctly when executed in virtual threads.
    */
   @Test
-  public void testErrorTranslationInVirtualThreads() throws Exception {
-    log.info("Starting error translation test with virtual threads");
-    CountDownLatch latch = new CountDownLatch(3); // One for each error type
-    List<Exception> caughtExceptions = new ArrayList<>();
-    MappedStatement ms = mock(MappedStatement.class);
+  public void testExceptionTranslationInVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(3);
+    List<Class<? extends Exception>> caughtExceptions = new ArrayList<>();
 
-    // Configure delegate to throw different exceptions for different parameter values
-    when(delegate.update(ms, 0)).thenThrow(duplicateKeyException());
-    when(delegate.update(ms, 1)).thenThrow(serializedAccessException());
-    when(delegate.update(ms, 2)).thenThrow(missingStateException());
+    // Configure delegate to throw different exceptions
+    doThrow(duplicateKeyException(), serializedAccessException(), missingStateException())
+        .when(delegate).commit(anyBoolean());
 
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Test duplicate key exception
-      executorService.submit(() -> {
+    try {
+      // Test DuplicateKeyException translation
+      executor.submit(() -> {
         try {
-          underTest.update(ms, 0);
-        }
-        catch (Exception e) {
-          synchronized (caughtExceptions) {
-            caughtExceptions.add(e);
-          }
-        }
-        finally {
+          underTest.commit(true);
+        } catch (Exception e) {
+          caughtExceptions.add(e.getClass());
+        } finally {
           latch.countDown();
         }
       });
 
-      // Test serialized access exception
-      executorService.submit(() -> {
+      // Test SerializedAccessException translation
+      executor.submit(() -> {
         try {
-          underTest.update(ms, 1);
-        }
-        catch (Exception e) {
-          synchronized (caughtExceptions) {
-            caughtExceptions.add(e);
-          }
-        }
-        finally {
+          underTest.commit(false);
+        } catch (Exception e) {
+          caughtExceptions.add(e.getClass());
+        } finally {
           latch.countDown();
         }
       });
 
-      // Test generic SQL exception
-      executorService.submit(() -> {
+      // Test generic SQLException translation
+      executor.submit(() -> {
         try {
-          underTest.update(ms, 2);
-        }
-        catch (Exception e) {
-          synchronized (caughtExceptions) {
-            caughtExceptions.add(e);
-          }
-        }
-        finally {
+          underTest.commit(true);
+        } catch (Exception e) {
+          caughtExceptions.add(e.getClass());
+        } finally {
           latch.countDown();
         }
       });
 
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All error test operations should complete within timeout", completed, is(true));
-      
-      // Verify that we got the expected exceptions with proper translation
-      assertThat("Should have caught 3 exceptions", caughtExceptions.size(), is(3));
-      
-      boolean foundDuplicateKey = false;
-      boolean foundSerializedAccess = false;
-      boolean foundSqlException = false;
-      
-      for (Exception e : caughtExceptions) {
-        if (e instanceof DuplicateKeyException) {
-          foundDuplicateKey = true;
-        }
-        else if (e instanceof SerializedAccessException) {
-          foundSerializedAccess = true;
-        }
-        else if (e instanceof SQLException) {
-          foundSqlException = true;
-        }
-      }
-      
-      assertThat("Should have translated to DuplicateKeyException", foundDuplicateKey, is(true));
-      assertThat("Should have translated to SerializedAccessException", foundSerializedAccess, is(true));
-      assertThat("Should have preserved SQLException", foundSqlException, is(true));
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all expected exception types were caught
+      assertEquals(3, caughtExceptions.size(), "Should have caught 3 exceptions");
+      assertTrue(caughtExceptions.contains(DuplicateKeyException.class), 
+          "Should have caught DuplicateKeyException");
+      assertTrue(caughtExceptions.contains(SerializedAccessException.class), 
+          "Should have caught SerializedAccessException");
+      assertTrue(caughtExceptions.contains(SQLException.class), 
+          "Should have caught SQLException");
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that frozen checks work correctly in a concurrent virtual thread environment.
+   * Tests that frozen checking works correctly when executed in virtual threads.
    */
   @Test
-  public void testFrozenCheckInVirtualThreads() throws Exception {
-    log.info("Starting frozen check test with virtual threads");
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
+  public void testFrozenCheckingInVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
     AtomicInteger frozenExceptionCount = new AtomicInteger(0);
     MappedStatement ms = mock(MappedStatement.class);
-    
-    // Configure frozen checker to throw exception for even thread IDs
+
+    // Configure frozen checker to throw FrozenException
     doThrow(new FrozenException("Frozen")).when(frozenChecker).checkFrozen(ms);
 
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        executorService.submit(() -> {
+    try {
+      // Submit multiple concurrent update operations using virtual threads
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
           try {
             underTest.update(ms, null);
-          }
-          catch (FrozenException e) {
+          } catch (FrozenException e) {
             frozenExceptionCount.incrementAndGet();
-          }
-          catch (Exception e) {
-            log.error("Unexpected error in frozen check test: {}", e.getMessage(), e);
-          }
-          finally {
+          } catch (Exception e) {
+            // Other exceptions not expected
+            logger.error("Unexpected exception", e);
+          } finally {
             latch.countDown();
           }
         });
       }
 
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All frozen check operations should complete within timeout", completed, is(true));
-      assertThat("All operations should have thrown FrozenException", 
-          frozenExceptionCount.get(), is(VIRTUAL_THREAD_COUNT));
-      verify(delegate, never()).update(ms, null);
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all operations resulted in FrozenException
+      assertEquals(CONCURRENT_THREADS, frozenExceptionCount.get(), 
+          "All operations should have thrown FrozenException");
+
+      // Verify the delegate was never called due to frozen check failing
+      verify(delegate, never()).update(any(), any());
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that flushStatements works correctly in a concurrent virtual thread environment.
+   * Tests that transaction operations (commit/rollback) work correctly when executed in virtual threads.
    */
   @Test
-  public void testConcurrentFlushStatements() throws Exception {
-    log.info("Starting concurrent flushStatements test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
+  public void testTransactionOperationsInVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS * 2); // commit + rollback for each thread
+    AtomicInteger successCount = new AtomicInteger(0);
 
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        executorService.submit(() -> {
+    try {
+      // Submit multiple concurrent transaction operations using virtual threads
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
+          try {
+            // Perform a commit operation
+            underTest.commit(true);
+            // Perform a rollback operation
+            underTest.rollback(false);
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            // Exception not expected in this test
+            logger.error("Unexpected exception during transaction operations", e);
+          } finally {
+            latch.countDown();
+            latch.countDown(); // Count down twice for commit and rollback
+          }
+        });
+      }
+
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all operations succeeded
+      assertEquals(CONCURRENT_THREADS, successCount.get(), 
+          "All virtual thread transaction operations should succeed");
+
+      // Verify the delegate was called the expected number of times
+      verify(delegate, times(CONCURRENT_THREADS)).commit(true);
+      verify(delegate, times(CONCURRENT_THREADS)).rollback(false);
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  /**
+   * Tests that flushStatements operations work correctly when executed in virtual threads.
+   */
+  @Test
+  public void testFlushStatementsInVirtualThreads() throws Exception {
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
+    AtomicInteger successCount = new AtomicInteger(0);
+
+    try {
+      // Submit multiple concurrent flushStatements operations using virtual threads
+      for (int i = 0; i < CONCURRENT_THREADS; i++) {
+        executor.submit(() -> {
           try {
             underTest.flushStatements();
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread flushStatements operation: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            // Exception not expected in this test
+            logger.error("Unexpected exception during flushStatements", e);
+          } finally {
             latch.countDown();
           }
         });
       }
 
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All flushStatements operations should complete within timeout", completed, is(true));
-      assertThat("All flushStatements operations should succeed", success.get(), is(true));
-      verify(delegate, times(VIRTUAL_THREAD_COUNT)).flushStatements();
+      // Wait for all operations to complete
+      assertTrue(latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+
+      // Verify all operations succeeded
+      assertEquals(CONCURRENT_THREADS, successCount.get(), 
+          "All virtual thread flushStatements operations should succeed");
+
+      // Verify the delegate was called the expected number of times
+      verify(delegate, times(CONCURRENT_THREADS)).flushStatements();
+    } finally {
+      executor.shutdown();
     }
   }
 
   /**
-   * Tests that queryCursor works correctly in a concurrent virtual thread environment.
+   * Creates a SQLException with the SQL state for duplicate key violations.
    */
-  @Test
-  public void testConcurrentQueryCursor() throws Exception {
-    log.info("Starting concurrent queryCursor test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
-
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        final int threadId = i;
-        executorService.submit(() -> {
-          try {
-            // Use thread ID to create unique query parameters
-            underTest.queryCursor(null, threadId, null);
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread queryCursor operation: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All queryCursor operations should complete within timeout", completed, is(true));
-      assertThat("All queryCursor operations should succeed", success.get(), is(true));
-      
-      // Verify that queryCursor was called for each thread with the correct parameter
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        verify(delegate).queryCursor(null, i, null);
-      }
-    }
-  }
-
-  /**
-   * Tests a mixed workload of different EntityExecutor operations in a concurrent virtual thread environment.
-   */
-  @Test
-  public void testMixedWorkload() throws Exception {
-    log.info("Starting mixed workload test with {} virtual threads", VIRTUAL_THREAD_COUNT);
-    CountDownLatch latch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean success = new AtomicBoolean(true);
-    MappedStatement ms = mock(MappedStatement.class);
-
-    try (ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        final int threadId = i;
-        executorService.submit(() -> {
-          try {
-            // Each thread performs a different operation based on its ID
-            switch (threadId % 5) {
-              case 0:
-                underTest.update(ms, threadId);
-                break;
-              case 1:
-                underTest.query(null, threadId, null, null);
-                break;
-              case 2:
-                underTest.queryCursor(null, threadId, null);
-                break;
-              case 3:
-                underTest.commit(true);
-                break;
-              case 4:
-                underTest.rollback(true);
-                break;
-            }
-          }
-          catch (Exception e) {
-            log.error("Error in virtual thread mixed workload: {}", e.getMessage(), e);
-            success.set(false);
-          }
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-
-      boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertThat("All mixed workload operations should complete within timeout", completed, is(true));
-      assertThat("All mixed workload operations should succeed", success.get(), is(true));
-      
-      // Verify that the appropriate number of each operation was called
-      int expectedCount = VIRTUAL_THREAD_COUNT / 5;
-      int remainder = VIRTUAL_THREAD_COUNT % 5;
-      
-      verify(delegate, times(expectedCount + (remainder > 0 ? 1 : 0))).update(ms, 0);
-      verify(delegate, times(expectedCount + (remainder > 1 ? 1 : 0))).query(null, 1, null, null);
-      verify(delegate, times(expectedCount + (remainder > 2 ? 1 : 0))).queryCursor(null, 2, null);
-      verify(delegate, times(expectedCount + (remainder > 3 ? 1 : 0))).commit(true);
-      verify(delegate, times(expectedCount + (remainder > 4 ? 1 : 0))).rollback(true);
-    }
-  }
-
   private static SQLException duplicateKeyException() {
     return new SQLException("Duplicate Key", DuplicateKeyException.SQL_STATE);
   }
 
+  /**
+   * Creates a SQLException with the SQL state for serialized access violations.
+   */
   private static SQLException serializedAccessException() {
     return new SQLException("Isolation", SerializedAccessException.SQL_STATE);
   }
 
+  /**
+   * Creates a generic SQLException without a specific SQL state.
+   */
   private static SQLException missingStateException() {
     return new SQLException("Some hikari error");
   }

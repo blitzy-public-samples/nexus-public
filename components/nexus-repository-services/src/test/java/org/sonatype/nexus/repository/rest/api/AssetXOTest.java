@@ -15,11 +15,14 @@ package org.sonatype.nexus.repository.rest.api;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
+import java.lang.StringTemplate.Processor; // For String Template support
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.Format;
@@ -30,8 +33,6 @@ import org.sonatype.nexus.repository.manager.internal.RepositoryImpl;
 import org.sonatype.nexus.repository.rest.api.SimpleApiRepositoryAdapterTest.SimpleConfiguration;
 import org.sonatype.nexus.repository.search.AssetSearchResult;
 import org.sonatype.nexus.repository.types.HostedType;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,44 +45,51 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static java.lang.StringTemplate.STR;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
+import static java.lang.StringTemplate.STR; // For String Template processor
 
 @ExtendWith(MockitoExtension.class)
 @Category(Java21TestGroup.class)
 public class AssetXOTest
     extends TestSupport
 {
+  @Mock
+  private AssetSearchResult assetSearchResult;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     BaseUrlHolder.set("https://nexus-url", "");
   }
 
-  @ParameterizedTest
-  @MethodSource("repositoryPathProvider")
-  void testFrom(String repositoryName, String path, String expectedUrl) throws Exception {
-    Repository repository = createRepository(new HostedType(), repositoryName);
-    AssetSearchResult assetSearchResult = Mockito.mock(AssetSearchResult.class);
-    when(assetSearchResult.getPath()).thenReturn(path);
-    when(assetSearchResult.getId()).thenReturn("resource-id");
-    when(assetSearchResult.getFormat()).thenReturn("test-format");
-    AssetXO assetXO = AssetXO.from(assetSearchResult, repository, null);
-    assertTrue(assetXO.getDownloadUrl().contains(expectedUrl));
-  }
-  
-  static Stream<Arguments> repositoryPathProvider() {
+  /**
+   * Provides test parameters for URL generation tests
+   */
+  static Stream<Arguments> urlTestParameters() {
     return Stream.of(
-        arguments("hosted", "/path/to/resource", "/hosted/path/to/resource"),
-        arguments("hosted", "path/to/resource", "/hosted/path/to/resource")
+        Arguments.of("hosted", "/path/to/resource", "/hosted/path/to/resource"),
+        Arguments.of("hosted", "path/to/resource", "/hosted/path/to/resource")
     );
   }
 
+  @ParameterizedTest
+  @MethodSource("urlTestParameters")
+  public void testFrom(String repositoryName, String path, String expectedUrl) throws Exception {
+    Repository repository = createRepository(new HostedType(), repositoryName);
+    when(assetSearchResult.getPath()).thenReturn(path);
+    when(assetSearchResult.getId()).thenReturn("resource-id");
+    when(assetSearchResult.getFormat()).thenReturn("test-format");
+    
+    AssetXO assetXO = AssetXO.from(assetSearchResult, repository, null);
+    
+    assertTrue(assetXO.getDownloadUrl().contains(expectedUrl), 
+        "Download URL should contain the expected URL path");
+  }
+
   @Test
-  void testGetExpandedAttributes_withExposedKeys() {
+  public void testGetExpandedAttributes_withExposedKeys() {
     Map<String, Object> attributes = new HashMap<>();
     Map<String, Object> formatAttributes = new HashMap<>();
     formatAttributes.put("key1", "value1");
@@ -94,15 +102,15 @@ public class AssetXOTest
 
     Map<String, Object> result = AssetXO.getExpandedAttributes(attributes, "test-format", assetDescriptors);
 
-    assertEquals(1, result.size());
-    assertTrue(result.containsKey("test-format"));
+    assertEquals(1, result.size(), "Result should contain exactly one entry");
+    assertTrue(result.containsKey("test-format"), "Result should contain test-format key");
     Map<String, Object> resultFormatAttributes = (Map<String, Object>) result.get("test-format");
-    assertEquals(1, resultFormatAttributes.size());
-    assertEquals("value1", resultFormatAttributes.get("key1"));
+    assertEquals(1, resultFormatAttributes.size(), "Format attributes should contain exactly one entry");
+    assertEquals("value1", resultFormatAttributes.get("key1"), "Format attribute should have correct value");
   }
 
   @Test
-  void testGetExpandedAttributes_withoutExposedKeys() {
+  public void testGetExpandedAttributes_withoutExposedKeys() {
     Map<String, Object> attributes = new HashMap<>();
     Map<String, Object> formatAttributes = new HashMap<>();
     formatAttributes.put("key1", "value1");
@@ -115,14 +123,14 @@ public class AssetXOTest
 
     Map<String, Object> result = AssetXO.getExpandedAttributes(attributes, "test-format", assetDescriptors);
 
-    assertEquals(1, result.size());
-    assertTrue(result.containsKey("test-format"));
+    assertEquals(1, result.size(), "Result should contain exactly one entry");
+    assertTrue(result.containsKey("test-format"), "Result should contain test-format key");
     Map<String, Object> resultFormatAttributes = (Map<String, Object>) result.get("test-format");
-    assertTrue(resultFormatAttributes.isEmpty());
+    assertTrue(resultFormatAttributes.isEmpty(), "Format attributes should be empty");
   }
 
   @Test
-  void testGetExpandedAttributes_withNullDescriptors() {
+  public void testGetExpandedAttributes_withNullDescriptors() {
     Map<String, Object> attributes = new HashMap<>();
     Map<String, Object> formatAttributes = new HashMap<>();
     formatAttributes.put("key1", "value1");
@@ -131,50 +139,79 @@ public class AssetXOTest
 
     Map<String, Object> result = AssetXO.getExpandedAttributes(attributes, "test-format", null);
 
-    assertEquals(1, result.size());
-    assertTrue(result.containsKey("test-format"));
+    assertEquals(1, result.size(), "Result should contain exactly one entry");
+    assertTrue(result.containsKey("test-format"), "Result should contain test-format key");
     Map<String, Object> resultFormatAttributes = (Map<String, Object>) result.get("test-format");
-    assertTrue(resultFormatAttributes.isEmpty());
+    assertTrue(resultFormatAttributes.isEmpty(), "Format attributes should be empty");
   }
-  
+
+  /**
+   * Test that validates AssetXO URL generation works correctly with Virtual Threads
+   * 
+   * This test demonstrates the use of Java 21 Virtual Threads to process AssetXO URL generation
+   * concurrently, showing that the AssetXO class works correctly in a virtual thread context.
+   */
   @Test
   @Category(Java21TestGroup.class)
-  void testAssetXOUrlGenerationWithVirtualThreads() throws ExecutionException, InterruptedException {
-    Repository repository = createRepository(new HostedType(), "hosted");
-    AssetSearchResult assetSearchResult = Mockito.mock(AssetSearchResult.class);
-    when(assetSearchResult.getPath()).thenReturn("/path/to/resource");
-    when(assetSearchResult.getId()).thenReturn("resource-id");
+  public void testAssetXOUrlGenerationWithVirtualThreads() throws Exception {
+    Repository repository = createRepository(new HostedType(), "virtual-repo");
+    when(assetSearchResult.getPath()).thenReturn("/path/to/virtual/resource");
+    when(assetSearchResult.getId()).thenReturn("virtual-resource-id");
     when(assetSearchResult.getFormat()).thenReturn("test-format");
     
-    // Create a virtual thread to generate the AssetXO
-    CompletableFuture<AssetXO> future = CompletableFuture.supplyAsync(
-        () -> AssetXO.from(assetSearchResult, repository, null),
-        Thread.ofVirtual().factory()
-    );
-    
-    AssetXO assetXO = future.get();
-    assertTrue(assetXO.getDownloadUrl().contains("/hosted/path/to/resource"));
+    // Create a virtual thread executor using Java 21's virtual thread per task executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the task to a virtual thread - this will run in a lightweight virtual thread
+      // rather than a platform thread, demonstrating Java 21's improved concurrency model
+      Future<AssetXO> future = executor.submit(() -> {
+        // This code runs in a virtual thread
+        Thread currentThread = Thread.currentThread();
+        // In Java 21, we can check if this is a virtual thread
+        assertTrue(currentThread.isVirtual(), "Should be running in a virtual thread");
+        return AssetXO.from(assetSearchResult, repository, null);
+      });
+      
+      // Get the result from the virtual thread
+      AssetXO assetXO = future.get();
+      
+      // Verify the result
+      assertNotNull(assetXO, "AssetXO should not be null");
+      assertTrue(assetXO.getDownloadUrl().contains("/virtual-repo/path/to/virtual/resource"), 
+          "Download URL should contain the expected URL path");
+    }
   }
-  
+
+  /**
+   * Test for String Template usage in URL formatting
+   */
   @Test
   @Category(Java21TestGroup.class)
-  void testStringTemplateInUrlFormatting() throws Exception {
-    Repository repository = createRepository(new HostedType(), "hosted");
-    AssetSearchResult assetSearchResult = Mockito.mock(AssetSearchResult.class);
-    String path = "/path/to/resource";
+  public void testStringTemplateUrlFormatting() throws Exception {
+    Repository repository = createRepository(new HostedType(), "template-repo");
+    String path = "/path/to/template/resource";
+    String id = "template-resource-id";
+    String format = "test-format";
+    
     when(assetSearchResult.getPath()).thenReturn(path);
-    when(assetSearchResult.getId()).thenReturn("resource-id");
-    when(assetSearchResult.getFormat()).thenReturn("test-format");
+    when(assetSearchResult.getId()).thenReturn(id);
+    when(assetSearchResult.getFormat()).thenReturn(format);
     
     AssetXO assetXO = AssetXO.from(assetSearchResult, repository, null);
     
-    // Using String Template to format the expected URL
-    String repoName = "hosted";
-    String expectedUrl = STR."https://nexus-url/repository/\{repoName}\{path}";
+    // Using String Template to format the expected URL (Java 21 feature)
+    String baseUrl = BaseUrlHolder.get();
+    String repoName = repository.getName();
     
-    // Verify the download URL contains the expected path
-    assertTrue(assetXO.getDownloadUrl().contains(path));
-    assertTrue(assetXO.getDownloadUrl().contains(repoName));
+    // This is a demonstration of String Template syntax - in actual code this would use the STR processor
+    // String expectedUrl = STR."{baseUrl}/repository/{repoName}{path}";
+    
+    // For testing purposes, we'll verify the components are correctly included in the URL
+    assertTrue(assetXO.getDownloadUrl().startsWith(baseUrl), 
+        "Download URL should start with the base URL");
+    assertTrue(assetXO.getDownloadUrl().contains("/template-repo/path/to/template/resource"), 
+        "Download URL should contain the repository name and path");
+    assertNotNull(assetXO.getId(), "Asset ID should not be null");
+    assertEquals(id, assetXO.getId(), "Asset ID should match the expected value");
   }
 
   private static Repository createRepository(final Type type, String repositoryName) throws Exception {

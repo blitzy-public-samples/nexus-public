@@ -17,13 +17,11 @@ import java.util.List;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 
 import static org.apache.http.HttpStatus.SC_BAD_REQUEST;
 import static org.apache.http.HttpStatus.SC_FORBIDDEN;
@@ -34,81 +32,27 @@ import static org.sonatype.nexus.rest.ApiDocConstants.INSUFFICIENT_PERMISSIONS;
 
 /**
  * REST facade for {@link BlobStoreResource}
- * 
- * This interface defines the API operations for blob store management.
- * All operations leverage Java 21 Virtual Threads for improved concurrency and performance,
- * allowing for more efficient handling of I/O-bound operations without consuming platform threads.
  *
  * @since 3.14
  */
-@Tag(name = "Blob store")
+@Api(value = "Blob store")
 public interface BlobStoreResourceDoc
 {
-  /**
-   * List all configured blob stores.
-   * 
-   * This operation is executed on a Virtual Thread, providing improved scalability
-   * for concurrent API requests without blocking platform threads.
-   *
-   * @return List of blob store information
-   */
-  @Operation(summary = "List the blob stores", 
-      description = "Returns a list of all configured blob stores. Executes on Virtual Threads for improved performance.")
-  @ApiResponse(responseCode = "200", description = "List of blob stores", 
-      content = @Content(mediaType = "application/json", 
-      schema = @Schema(implementation = GenericBlobStoreApiResponse.class)))
+  @ApiOperation("List the blob stores")
   List<GenericBlobStoreApiResponse> listBlobStores();
 
-  /**
-   * Delete a blob store by name.
-   * 
-   * This operation is executed on a Virtual Thread, providing improved scalability
-   * for concurrent API requests without blocking platform threads.
-   *
-   * @param name The name of the blob store to delete
-   * @throws Exception if deletion fails
-   */
-  @Operation(summary = "Delete a blob store by name", 
-      description = "Deletes the specified blob store. Executes on Virtual Threads for improved performance.")
-  @ApiResponse(responseCode = "204", description = "Blob store was successfully deleted")
-  @ApiResponse(responseCode = "400", description = "Blob store is in use or other constraint violation")
-  @ApiResponse(responseCode = "404", description = "Blob store not found")
-  void deleteBlobStore(@Parameter(description = "The name of the blob store to delete") String name) throws Exception;
+  @ApiOperation("Delete a blob store by name")
+  void deleteBlobStore(@ApiParam("The name of the blob store to delete") String name) throws Exception;
 
-  /**
-   * Get quota status for a given blob store.
-   * 
-   * This operation is executed on a Virtual Thread, providing improved scalability
-   * for concurrent API requests without blocking platform threads.
-   *
-   * @param id The blob store id
-   * @return Quota status information
-   */
-  @Operation(summary = "Get quota status for a given blob store", 
-      description = "Returns quota status information for the specified blob store. Executes on Virtual Threads for improved performance.")
-  @ApiResponse(responseCode = "200", description = "Quota status information", 
-      content = @Content(mediaType = "application/json", 
-      schema = @Schema(implementation = BlobStoreQuotaResultXO.class)))
-  @ApiResponse(responseCode = "404", description = "Blob store not found")
+  @ApiOperation("Get quota status for a given blob store")
   BlobStoreQuotaResultXO quotaStatus(String id);
 
-  /**
-   * Verify connection using supplied Blob Store settings.
-   * 
-   * This operation is executed on a Virtual Thread, providing improved scalability
-   * for concurrent API requests without blocking platform threads, which is especially
-   * beneficial for network operations like connection verification.
-   *
-   * @param blobStoreConnectionXO The connection settings to verify
-   */
-  @Operation(summary = "Verify connection using supplied Blob Store settings", 
-      description = "Tests the connection to the blob store using the provided settings. Executes on Virtual Threads for improved performance.", 
-      hidden = true)
+  @ApiOperation(value = "Verify connection using supplied Blob Store settings", hidden = true)
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "204", description = "Blob Store connection was successful"),
-      @ApiResponse(responseCode = "400", description = "Blob Store connection failed"),
-      @ApiResponse(responseCode = "401", description = AUTHENTICATION_REQUIRED),
-      @ApiResponse(responseCode = "403", description = INSUFFICIENT_PERMISSIONS)
+      @ApiResponse(code = SC_NO_CONTENT, message = "Blob Store connection was successful"),
+      @ApiResponse(code = SC_BAD_REQUEST, message = "Blob Store connection failed"),
+      @ApiResponse(code = SC_UNAUTHORIZED, message = AUTHENTICATION_REQUIRED),
+      @ApiResponse(code = SC_FORBIDDEN, message = INSUFFICIENT_PERMISSIONS)
   })
   void verifyConnection(final @NotNull @Valid BlobStoreConnectionXO blobStoreConnectionXO);
 }

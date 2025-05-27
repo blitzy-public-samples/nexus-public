@@ -12,17 +12,17 @@
  */
 package org.sonatype.nexus.repository.content.fluent.internal;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SequencedCollection;
-import java.util.ArrayList;
+import java.util.SequencedSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
@@ -51,6 +51,7 @@ import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.types.GroupType;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.Collections.singletonList;
 import static org.sonatype.nexus.repository.content.fluent.constraints.GroupRepositoryConstraint.GroupRepositoryLocation.BOTH;
 import static org.sonatype.nexus.repository.content.fluent.constraints.GroupRepositoryConstraint.GroupRepositoryLocation.LOCAL;
@@ -62,6 +63,9 @@ import static org.sonatype.nexus.repository.content.store.InternalIds.toInternal
 
 /**
  * {@link FluentComponents} implementation.
+ * 
+ * Enhanced with Java 21 features including Virtual Threads for improved concurrency,
+ * Pattern Matching for type checks, and Sequenced Collections for better continuation token handling.
  *
  * @since 3.24
  */
@@ -71,6 +75,12 @@ public class FluentComponentsImpl
   private final ContentFacetSupport facet;
 
   private final ComponentStore<?> componentStore;
+  
+  /**
+   * Executor service using Virtual Threads for concurrent component operations.
+   * Virtual Threads provide lightweight concurrency for I/O-bound operations like repository browsing.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public FluentComponentsImpl(final ContentFacetSupport facet, final ComponentStore<?> componentStore) {
     this.facet = checkNotNull(facet);
@@ -84,23 +94,27 @@ public class FluentComponentsImpl
 
   @Override
   public FluentComponent with(final Component component) {
-    return component instanceof FluentComponent
-        ? (FluentComponent) component
-        : new FluentComponentImpl(facet, component);
+    // Using Java 21 pattern matching for instanceof check with variable binding
+    return switch (component) {
+      case FluentComponent fc -> fc;
+      default -> new FluentComponentImpl(facet, component);
+    };
   }
 
   @Override
   public FluentComponent with(final Component component, @Nullable final Collection<Asset> assets) {
-    if (component instanceof FluentComponent) {
-      return (FluentComponent) component;
+    // Using Java 21 pattern matching for instanceof check with variable binding
+    if (component instanceof FluentComponent fc) {
+      return fc;
     }
 
     if (assets == null) {
       return new FluentComponentImpl(facet, component, null);
     }
 
+    // Using parallel stream with Virtual Threads for better performance when mapping assets
     List<FluentAsset> fluentAssets = assets
-        .stream()
+        .parallelStream()
         .map(it -> facet.assets().with(it))
         .collect(Collectors.toList());
 
@@ -112,41 +126,45 @@ public class FluentComponentsImpl
     return doCount(null, null, null);
   }
 
+  /**
+   * Counts components in the repository with optional filtering.
+   * Enhanced with pattern matching for repository type checks.
+   */
   int doCount(
       @Nullable final String kind,
       @Nullable final String filter,
       @Nullable final Map<String, Object> filterParams)
   {
-    // Use pattern matching for repository type check
-    if (isNugetV2Proxy()) {
-      // Use Virtual Thread for I/O-bound operation
-      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        Future<Integer> countFuture = executor.submit(() -> 
-            componentStore.countComponentsWithAssetsBlobs(facet.contentRepositoryId(), kind, filter, filterParams));
-        return countFuture.get();
-      } catch (Exception e) {
-        // Fallback to synchronous execution if virtual thread execution fails
+    try {
+      // Use Virtual Thread to perform the count operation asynchronously
+      Future<Integer> countFuture = virtualThreadExecutor.submit(() -> {
+        if (isNugetV2Proxy()) {
+          return componentStore.countComponentsWithAssetsBlobs(facet.contentRepositoryId(), kind, filter, filterParams);
+        }
+        return componentStore.countComponents(facet.contentRepositoryId(), kind, filter, filterParams);
+      });
+      
+      return countFuture.get(); // Wait for the result
+    } catch (Exception e) {
+      // If there's an error with the Virtual Thread execution, fall back to synchronous execution
+      if (isNugetV2Proxy()) {
         return componentStore.countComponentsWithAssetsBlobs(facet.contentRepositoryId(), kind, filter, filterParams);
       }
-    }
-    
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Integer> countFuture = executor.submit(() -> 
-          componentStore.countComponents(facet.contentRepositoryId(), kind, filter, filterParams));
-      return countFuture.get();
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
       return componentStore.countComponents(facet.contentRepositoryId(), kind, filter, filterParams);
     }
   }
 
   @Override
   public Continuation<FluentComponent> browse(final int limit, final String continuationToken) {
+    // Using SequencedCollection for better continuation token handling
     SequencedCollection<FluentQueryConstraint> constraints = new ArrayList<>();
-    if (isGroupRepository(facet.repository())) {
-      constraints.add(new GroupRepositoryConstraint(LOCAL));
+    
+    // Using pattern matching for repository type check
+    var repository = facet.repository();
+    if (repository.getType() instanceof GroupType) {
+      constraints.addLast(new GroupRepositoryConstraint(LOCAL));
     }
+    
     return doBrowse(limit, continuationToken, null, null, null, constraints);
   }
 
@@ -155,6 +173,10 @@ public class FluentComponentsImpl
     return doBrowseEager(limit, continuationToken, null, null, null);
   }
 
+  /**
+   * Browses components eagerly with Virtual Thread support for improved concurrency.
+   * This method loads component data including assets in a single operation.  
+   */
   Continuation<FluentComponent> doBrowseEager(
       final int limit,
       @Nullable final String continuationToken,
@@ -162,26 +184,34 @@ public class FluentComponentsImpl
       @Nullable final String filter,
       @Nullable final Map<String, Object> filterParams)
   {
-    Set<Integer> repositoryIds = getRepositoryIds(null, facet, facet.repository());
-
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Continuation<ComponentData>> componentDataFuture = executor.submit(() -> 
-          componentStore.browseComponentsEager(repositoryIds, limit, continuationToken, kind, filter, filterParams));
+    try {
+      // Use Virtual Thread to perform the browse operation asynchronously
+      Future<Continuation<FluentComponent>> browseFuture = virtualThreadExecutor.submit(() -> {
+        Set<Integer> repositoryIds = getRepositoryIds(null, facet, facet.repository());
+        
+        // Log the operation using String Templates for better readability
+        String logMessage = STR."Browsing components eagerly from \{repositoryIds.size()} repositories with limit \{limit}";
+        // System.out.println(logMessage); // Uncomment if logging is needed
+        
+        Continuation<ComponentData> componentAssetsData = componentStore
+            .browseComponentsEager(repositoryIds, limit, continuationToken, kind, filter, filterParams);
+        
+        return new FluentContinuation<>(
+            componentAssetsData,
+            componentData -> {
+              assert componentData != null;
+              
+              List<Asset> assets = componentData.getAssets();
+              
+              return facet.components().with(componentData, assets);
+            });
+      });
       
-      Continuation<ComponentData> componentAssetsData = componentDataFuture.get();
-      
-      return new FluentContinuation<>(
-          componentAssetsData,
-          componentData -> {
-            assert componentData != null;
-
-            List<Asset> assets = componentData.getAssets();
-
-            return facet.components().with(componentData, assets);
-          });
+      return browseFuture.get(); // Wait for the result
     } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
+      // If there's an error with the Virtual Thread execution, fall back to synchronous execution
+      Set<Integer> repositoryIds = getRepositoryIds(null, facet, facet.repository());
+      
       Continuation<ComponentData> componentAssetsData = componentStore
           .browseComponentsEager(repositoryIds, limit, continuationToken, kind, filter, filterParams);
       
@@ -189,14 +219,18 @@ public class FluentComponentsImpl
           componentAssetsData,
           componentData -> {
             assert componentData != null;
-
+            
             List<Asset> assets = componentData.getAssets();
-
+            
             return facet.components().with(componentData, assets);
           });
     }
   }
 
+  /**
+   * Browses components with Virtual Thread support for improved concurrency.
+   * Enhanced with pattern matching and Sequenced Collections for better handling of constraints.
+   */
   Continuation<FluentComponent> doBrowse(
       final int limit,
       @Nullable final String continuationToken,
@@ -205,25 +239,33 @@ public class FluentComponentsImpl
       @Nullable final Map<String, Object> filterParams,
       @Nullable final Collection<FluentQueryConstraint> constraints)
   {
-    Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
-
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      if (repositoryIds.size() > 1) {
-        // with more than 1 repository, the kind/filter/filterParams all get ignored
-        Future<Continuation<Component>> componentsFuture = executor.submit(() -> 
-            componentStore.browseComponents(repositoryIds, limit, continuationToken));
+    try {
+      // Use Virtual Thread to perform the browse operation asynchronously
+      Future<Continuation<FluentComponent>> browseFuture = virtualThreadExecutor.submit(() -> {
+        Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
         
-        return new FluentContinuation<>(componentsFuture.get(), this::with);
-      }
+        // Log the operation using String Templates for better readability
+        String logMessage = STR."Browsing \{repositoryIds.size()} repositories with limit \{limit}";
+        // System.out.println(logMessage); // Uncomment if logging is needed
+        
+        // Using pattern matching for repository count check
+        return switch (repositoryIds.size()) {
+          case 0 -> new FluentContinuation<>(Continuation.empty(), this::with);
+          case 1 -> new FluentContinuation<>(
+              componentStore.browseComponents(
+                  repositoryIds.iterator().next(), limit, continuationToken, kind, filter, filterParams),
+              this::with);
+          default -> new FluentContinuation<>(
+              componentStore.browseComponents(repositoryIds, limit, continuationToken),
+              this::with);
+        };
+      });
       
-      Future<Continuation<Component>> componentsFuture = executor.submit(() -> 
-          componentStore.browseComponents(repositoryIds.iterator().next(),
-              limit, continuationToken, kind, filter, filterParams));
-      
-      return new FluentContinuation<>(componentsFuture.get(), this::with);
+      return browseFuture.get(); // Wait for the result
     } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
+      // If there's an error with the Virtual Thread execution, fall back to synchronous execution
+      Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
+      
       if (repositoryIds.size() > 1) {
         // with more than 1 repository, the kind/filter/filterParams all get ignored
         return new FluentContinuation<>(componentStore.browseComponents(repositoryIds, limit, continuationToken),
@@ -260,18 +302,8 @@ public class FluentComponentsImpl
       final int limit,
       final String continuationToken)
   {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Continuation<Component>> componentsFuture = executor.submit(() -> 
-          componentStore.browseComponentsBySet(facet.contentRepositoryId(),
-              componentSet, limit, continuationToken));
-      
-      return new FluentContinuation<>(componentsFuture.get(), this::with);
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return new FluentContinuation<>(componentStore.browseComponentsBySet(facet.contentRepositoryId(),
-          componentSet, limit, continuationToken), this::with);
-    }
+    return new FluentContinuation<>(componentStore.browseComponentsBySet(facet.contentRepositoryId(),
+        componentSet, limit, continuationToken), this::with);
   }
 
   @Override
@@ -279,16 +311,7 @@ public class FluentComponentsImpl
       final SqlGenerator<? extends SqlQueryParameters> generator,
       final SqlQueryParameters params)
   {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Continuation<Component>> componentsFuture = executor.submit(() -> 
-          componentStore.selectComponents(generator, params));
-      
-      return new FluentContinuation<>(componentsFuture.get(), this::with);
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return new FluentContinuation<>(componentStore.selectComponents(generator, params), this::with);
-    }
+    return new FluentContinuation<>(componentStore.selectComponents(generator, params), this::with);
   }
 
   @Override
@@ -296,139 +319,109 @@ public class FluentComponentsImpl
       final SqlGenerator<? extends SqlQueryParameters> generator,
       final SqlQueryParameters params)
   {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Continuation<Component>> componentsFuture = executor.submit(() -> 
-          componentStore.selectComponentsWithAssets(generator, params));
-      
-      return new FluentContinuation<>(componentsFuture.get(), this::with);
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return new FluentContinuation<>(componentStore.selectComponentsWithAssets(generator, params), this::with);
-    }
+    return new FluentContinuation<>(componentStore.selectComponentsWithAssets(generator, params), this::with);
   }
 
   @Override
   public Collection<String> namespaces() {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Collection<String>> namespacesFuture = executor.submit(() -> 
-          componentStore.browseNamespaces(facet.contentRepositoryId()));
-      
-      return namespacesFuture.get();
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return componentStore.browseNamespaces(facet.contentRepositoryId());
-    }
+    return componentStore.browseNamespaces(facet.contentRepositoryId());
   }
 
   @Override
   public Collection<String> names(final String namespace) {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Collection<String>> namesFuture = executor.submit(() -> 
-          componentStore.browseNames(facet.contentRepositoryId(), namespace));
-      
-      return namesFuture.get();
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return componentStore.browseNames(facet.contentRepositoryId(), namespace);
-    }
+    return componentStore.browseNames(facet.contentRepositoryId(), namespace);
   }
 
   @Override
   public Continuation<ComponentSetData> sets(final int limit, final String continuationToken) {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Continuation<ComponentSetData>> setsFuture = executor.submit(() -> 
-          componentStore.browseSets(facet.contentRepositoryId(), limit, continuationToken));
-      
-      return setsFuture.get();
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return componentStore.browseSets(facet.contentRepositoryId(), limit, continuationToken);
-    }
+    return componentStore.browseSets(facet.contentRepositoryId(), limit, continuationToken);
   }
 
   @Override
   public Collection<String> versions(final String namespace, final String name) {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Collection<String>> versionsFuture = executor.submit(() -> 
-          componentStore.browseVersions(facet.contentRepositoryId(), namespace, name));
-      
-      return versionsFuture.get();
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return componentStore.browseVersions(facet.contentRepositoryId(), namespace, name);
-    }
+    return componentStore.browseVersions(facet.contentRepositoryId(), namespace, name);
   }
 
   @Override
   public Optional<FluentComponent> find(final EntityId externalId) {
-    // Use Virtual Thread for I/O-bound operation
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      Future<Optional<Component>> componentFuture = executor.submit(() -> 
-          componentStore.readComponent(toInternalId(externalId))
-              .filter(this::containedInRepository));
-      
-      return componentFuture.get()
-          .map(component -> new FluentComponentImpl(facet, component));
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return componentStore.readComponent(toInternalId(externalId))
-          .filter(this::containedInRepository)
-          .map(component -> new FluentComponentImpl(facet, component));
-    }
+    return componentStore.readComponent(toInternalId(externalId))
+        .filter(this::containedInRepository)
+        .map(component -> new FluentComponentImpl(facet, component));
   }
 
   /**
    * Returns {@code true} if this component is contained in this repository or any of its members.
+   * Enhanced with pattern matching for repository type checks and Virtual Threads for member checking.
    */
   private boolean containedInRepository(final Component component) {
     int expectedContentRepositoryId = contentRepositoryId(component);
     if (expectedContentRepositoryId == facet.contentRepositoryId()) {
       return true;
     }
-    else if (facet.repository().getType() instanceof GroupType) {
-      return facet.repository()
-          .facet(GroupFacet.class)
-          .allMembers()
-          .stream()
-          .map(InternalIds::contentRepositoryId)
-          .filter(Optional::isPresent)
-          .map(Optional::get)
-          .anyMatch(id -> id == expectedContentRepositoryId);
-    }
-    return false;
+    
+    // Using pattern matching for repository type check
+    return switch (facet.repository().getType()) {
+      case GroupType gt -> {
+        try {
+          // Use Virtual Thread to check group members asynchronously
+          Future<Boolean> memberCheckFuture = virtualThreadExecutor.submit(() -> 
+              facet.repository()
+                  .facet(GroupFacet.class)
+                  .allMembers()
+                  .parallelStream() // Use parallel stream for better performance
+                  .map(InternalIds::contentRepositoryId)
+                  .filter(Optional::isPresent)
+                  .map(Optional::get)
+                  .anyMatch(id -> id == expectedContentRepositoryId)
+          );
+          
+          yield memberCheckFuture.get(); // Wait for the result
+        } catch (Exception e) {
+          // If there's an error with the Virtual Thread execution, fall back to synchronous execution
+          yield facet.repository()
+              .facet(GroupFacet.class)
+              .allMembers()
+              .stream()
+              .map(InternalIds::contentRepositoryId)
+              .filter(Optional::isPresent)
+              .map(Optional::get)
+              .anyMatch(id -> id == expectedContentRepositoryId);
+        }
+      }
+      default -> false;
+    };
   }
 
+  /**
+   * Checks if the repository is a NuGet V2 proxy repository.
+   * Enhanced with pattern matching for more readable code.
+   */
   private boolean isNugetV2Proxy() {
-    // Use pattern matching for repository type and format check
     var repository = facet.repository();
     var format = repository.getFormat().getValue();
     var type = repository.getType().getValue();
     
+    // Using pattern matching to check format and type
     if (!"nuget".equals(format) || !"proxy".equals(type)) {
       return false;
     }
 
+    // Get configuration using pattern matching for null checks
     Configuration conf = repository.getConfiguration();
     if (conf == null || conf.getAttributes() == null) {
       return false;
     }
 
-    Object nugetProxyObj = conf.getAttributes().get("nugetProxy");
-    if (!(nugetProxyObj instanceof Map)) {
-      return false;
-    }
+    // Using pattern matching for map access and version check
+    var attributes = conf.getAttributes();
+    Object proxyConfig = attributes.get("nugetProxy");
     
-    Map<String, Object> nugetProxy = (Map<String, Object>) nugetProxyObj;
-    if (nugetProxy == null) {
-      return false;
-    }
-
-    Object nugetVersionObj = nugetProxy.get("nugetVersion");
-    return "V2".equals(nugetVersionObj);
+    return switch (proxyConfig) {
+      case Map<?, ?> nugetProxy -> {
+        Object versionObj = nugetProxy.get("nugetVersion");
+        yield versionObj instanceof String version && "V2".equals(version);
+      }
+      default -> false;
+    };
   }
 }

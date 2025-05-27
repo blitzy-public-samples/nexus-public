@@ -15,15 +15,15 @@ package org.sonatype.nexus.repository.json;
 import java.io.IOException;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -35,8 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@ExtendWith(MockitoExtension.class)
 @Category(Java21TestGroup.class)
+@ExtendWith(MockitoExtension.class)
 public class NestedAttributesMapJsonParserTest
     extends TestSupport
 {
@@ -48,17 +48,17 @@ public class NestedAttributesMapJsonParserTest
   private NestedAttributesMapJsonParser underTest;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     underTest = new NestedAttributesMapJsonParser(jsonParser, nestedAttributesMap);
   }
 
   @Test
-  void testDefaultMappingDisabledByDefault() {
+  void defaultMappingDisabledByDefault() {
     assertFalse(underTest.isDefaultMapping());
   }
 
   @Test
-  void testChangeDefaultMapping() {
+  void changeDefaultMapping() {
     underTest.enableDefaultMapping();
     assertTrue(underTest.isDefaultMapping());
 
@@ -67,12 +67,12 @@ public class NestedAttributesMapJsonParserTest
   }
 
   @Test
-  void testMappingInsideArrayDisabledByDefault() {
+  void mappingInsideArrayDisabledByDefault() {
     assertFalse(underTest.isMappingInsideArray());
   }
 
   @Test
-  void testMarkMappingInsideArray() {
+  void markMappingInsideArray() {
     underTest.markMappingInsideArray();
     assertTrue(underTest.isMappingInsideArray());
 
@@ -81,27 +81,27 @@ public class NestedAttributesMapJsonParserTest
   }
 
   @Test
-  void testAssureSameRootMap() {
-    assertEquals(nestedAttributesMap, underTest.getRoot());
+  void assureSameRootMap() {
+    assertEquals(underTest.getRoot(), nestedAttributesMap);
   }
 
   @Test
-  void testNoChildMapFromRootMapOnMappingInsideArray() {
+  void noChildMapFromRootMapOnMappingInsideArray() {
     underTest.markMappingInsideArray();
     assertThat(underTest.getChildFromRoot(), nullValue());
   }
 
   @Test
-  void testNoChildMapFromRootMapOnNoChildFound() {
+  void noChildMapFromRootMapOnNoChildFound() {
     assertThat(underTest.getChildFromRoot(), nullValue());
   }
 
   @Test
-  void testRetrieveChildMapFromRootMap() throws IOException {
+  void retrieveChildMapFromRootMap() throws IOException {
     String simpleJson = "{\"user\":{\"description\":\"simplestuff\"}}";
     underTest = new NestedAttributesMapJsonParser(new JsonFactory().createParser(simpleJson), nestedAttributesMap);
 
-    // for the test fast forward to first child
+    // for the test fast forward to first chid
     underTest.nextValue();
     underTest.nextValue();
     NestedAttributesMap child = underTest.getChildFromRoot();

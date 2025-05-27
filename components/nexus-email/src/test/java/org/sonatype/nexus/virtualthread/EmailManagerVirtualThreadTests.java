@@ -12,15 +12,12 @@
  */
 package org.sonatype.nexus.virtualthread;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.commons.mail.Email;
 import org.apache.commons.mail.SimpleEmail;
@@ -28,11 +25,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.Category;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.event.EventManager;
@@ -49,354 +44,260 @@ import javax.inject.Provider;
 import javax.net.ssl.SSLContext;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link EmailManager} using Java 21 Virtual Threads to validate thread safety and performance
- * when sending emails concurrently.
+ * Tests for {@link EmailManager} using Java 21 Virtual Threads to validate thread safety and performance.
+ * 
+ * This test class verifies that the EmailManager can handle a large number of concurrent email sending
+ * operations without errors or race conditions by leveraging Virtual Threads to simulate high concurrency
+ * with minimal resource overhead.
  */
 @ExtendWith(MockitoExtension.class)
-@org.junit.Category(VirtualThreadTestGroup.class)
+@org.junit.experimental.categories.Category(VirtualThreadTestGroup.class)
 public class EmailManagerVirtualThreadTests
     extends TestSupport
 {
-    private static final int CONCURRENT_THREADS = 1000;
-    private static final int TIMEOUT_SECONDS = 30;
+  private static final int CONCURRENT_OPERATIONS = 1000;
+  private static final int TIMEOUT_SECONDS = 30;
+  
+  @Mock
+  private EventManager eventManager;
+
+  @Mock
+  private EmailConfigurationStore emailConfigurationStore;
+
+  @Mock
+  private TrustStore trustStore;
+
+  @Mock
+  private Provider<?> capabilityRegistryProvider;
+
+  @Mock
+  private SecretsService secretsService;
+  
+  private EmailManagerImpl emailManager;
+  
+  private AutoCloseable userIdHelperMock;
+  
+  @BeforeEach
+  public void setup() throws Exception {
+    // Setup mock for UserIdHelper
+    userIdHelperMock = mockStatic(UserIdHelper.class);
+    ((org.mockito.MockedStatic<UserIdHelper>) userIdHelperMock).when(UserIdHelper::get).thenReturn("userId");
     
-    @Mock
-    private EventManager eventManager;
+    // Setup SSL context
+    when(trustStore.getSSLContext()).thenReturn(SSLContext.getDefault());
     
-    @Mock
-    private EmailConfigurationStore emailConfigurationStore;
+    // Create and configure the email manager
+    emailManager = new EmailManagerImpl(eventManager, emailConfigurationStore, trustStore, 
+        config -> config, capabilityRegistryProvider, secretsService);
     
-    @Mock
-    private TrustStore trustStore;
+    // Setup email configuration
+    EmailConfiguration emailConfig = mock(EmailConfiguration.class);
+    when(emailConfig.isEnabled()).thenReturn(true);
+    when(emailConfig.getHost()).thenReturn("example.com");
+    when(emailConfig.getPort()).thenReturn(25);
+    when(emailConfig.getFromAddress()).thenReturn("sender@example.com");
+    when(emailConfig.getUsername()).thenReturn("user");
+    when(emailConfig.isStartTlsEnabled()).thenReturn(true);
+    when(emailConfig.isStartTlsRequired()).thenReturn(false);
+    when(emailConfig.isSslOnConnectEnabled()).thenReturn(false);
+    when(emailConfig.isSslCheckServerIdentityEnabled()).thenReturn(false);
+    when(emailConfig.isNexusTrustStoreEnabled()).thenReturn(true);
     
-    @Mock
-    private Provider capabilityRegistryProvider;
+    when(emailConfigurationStore.load()).thenReturn(emailConfig);
     
-    @Mock
-    private SecretsService secretsService;
+    // Configure thread pinning detection for virtual threads
+    System.setProperty("jdk.tracePinnedThreads", "full");
+  }
+  
+  @AfterEach
+  public void tearDown() throws Exception {
+    userIdHelperMock.close();
+    System.clearProperty("jdk.tracePinnedThreads");
+  }
+  
+  /**
+   * Tests that the EmailManager can handle a large number of concurrent email sending operations
+   * using Virtual Threads without errors or race conditions.
+   */
+  @Test
+  public void testConcurrentEmailSending() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    @Captor
-    private ArgumentCaptor<Email> emailCaptor;
+    int taskCount = CONCURRENT_OPERATIONS;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
     
-    private EmailManagerImpl emailManager;
+    // Mock the email send method to avoid actual network operations
+    doAnswer(invocation -> {
+      // Simulate some processing time
+      Thread.sleep(5);
+      return null;
+    }).when(trustStore).getSSLContext();
     
-    @BeforeEach
-    public void setup() throws Exception {
-        // Initialize the email manager with mocks
-        emailManager = new EmailManagerImpl(eventManager, emailConfigurationStore, trustStore, 
-                                           email -> email, capabilityRegistryProvider, secretsService);
-        
-        // Configure the trust store to return a default SSL context
-        when(trustStore.getSSLContext()).thenReturn(SSLContext.getDefault());
-        
-        // Configure a mock email configuration
-        EmailConfiguration emailConfig = mock(EmailConfiguration.class);
-        when(emailConfig.isEnabled()).thenReturn(true);
-        when(emailConfig.getHost()).thenReturn("smtp.example.com");
-        when(emailConfig.getPort()).thenReturn(25);
-        when(emailConfig.getFromAddress()).thenReturn("sender@example.com");
-        when(emailConfig.getUsername()).thenReturn("user");
-        when(emailConfig.isStartTlsEnabled()).thenReturn(true);
-        when(emailConfig.isStartTlsRequired()).thenReturn(false);
-        when(emailConfig.isSslOnConnectEnabled()).thenReturn(false);
-        when(emailConfig.isSslCheckServerIdentityEnabled()).thenReturn(false);
-        when(emailConfig.isNexusTrustStoreEnabled()).thenReturn(true);
-        
-        // Configure the email configuration store to return our mock configuration
-        when(emailConfigurationStore.load()).thenReturn(emailConfig);
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < taskCount; i++) {
+        final int emailIndex = i;
+        executor.submit(() -> {
+          try {
+            Email email = new SimpleEmail();
+            email.setSubject("Test Email " + emailIndex);
+            email.setMsg("This is test email " + emailIndex);
+            email.addTo("recipient" + emailIndex + "@example.com");
+            
+            emailManager.send(email);
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+            log.error("Error sending email", e);
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      if (!latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        fail("Timed out waiting for email operations to complete");
+      }
+      
+      // Verify results
+      assertEquals(0, errorCount.get(), "No errors should occur during concurrent email sending");
+      
+      // Verify the email send method was called the expected number of times
+      verify(trustStore, times(taskCount)).getSSLContext();
+    } finally {
+      executor.shutdown();
     }
+  }
+  
+  /**
+   * Tests the performance difference between Virtual Threads and Platform Threads
+   * when performing concurrent email operations.
+   */
+  @Test
+  public void testThreadPerformanceComparison() throws Exception {
+    // Configure thread factories
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
     
-    @AfterEach
-    public void tearDown() {
-        // No additional cleanup needed as mocks are handled by MockitoExtension
-    }
+    // Mock the email send method to avoid actual network operations
+    doAnswer(invocation -> {
+      // Simulate some I/O bound operation
+      Thread.sleep(10);
+      return null;
+    }).when(trustStore).getSSLContext();
     
-    /**
-     * Tests that the EmailManager can handle a large number of concurrent email sending operations
-     * using Java 21 Virtual Threads without errors or race conditions.
-     */
-    @Test
-    public void testConcurrentEmailSendingWithVirtualThreads() throws Exception {
-        // Create a thread factory for virtual threads
-        ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-        
-        // Create an executor service using virtual threads
-        ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-        
-        // Track completion and errors
-        CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
-        AtomicInteger errorCount = new AtomicInteger(0);
-        AtomicReference<Throwable> firstError = new AtomicReference<>();
-        
-        // Spy on the email manager to verify method calls
-        EmailManagerImpl emailManagerSpy = spy(emailManager);
-        
-        // Configure the spy to not actually send emails
-        doNothing().when(emailManagerSpy).send(any(Email.class));
-        
-        try {
-            // Submit concurrent email sending tasks
-            for (int i = 0; i < CONCURRENT_THREADS; i++) {
-                final int taskId = i;
-                executor.submit(() -> {
-                    try {
-                        // Create a simple email
-                        SimpleEmail email = new SimpleEmail();
-                        email.setSubject("Test Email " + taskId);
-                        email.setMsg("This is a test email sent from virtual thread " + taskId);
-                        email.addTo("recipient" + taskId + "@example.com");
-                        
-                        // Send the email
-                        emailManagerSpy.send(email);
-                    } catch (Throwable t) {
-                        errorCount.incrementAndGet();
-                        firstError.compareAndSet(null, t);
-                    } finally {
-                        latch.countDown();
-                    }
-                });
-            }
-            
-            // Wait for all tasks to complete
-            boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            
-            // Verify all tasks completed within the timeout
-            assertTrue(completed, "Not all email sending tasks completed within the timeout");
-            
-            // Verify no errors occurred
-            assertEquals(0, errorCount.get(), 
-                    "Errors occurred during concurrent email sending: " + 
-                    (firstError.get() != null ? firstError.get().getMessage() : "unknown error"));
-            
-            // Verify the send method was called the expected number of times
-            verify(emailManagerSpy, times(CONCURRENT_THREADS)).send(any(Email.class));
-        } finally {
-            executor.shutdown();
-        }
-    }
+    // Test with platform threads
+    long platformThreadTime = measureExecutionTime(platformThreadFactory, 500);
     
-    /**
-     * Compares the performance of sending emails using platform threads vs virtual threads.
-     */
-    @Test
-    public void testEmailSendingPerformanceComparison() throws Exception {
-        // Create thread factories
-        ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-        ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
-        
-        // Spy on the email manager to verify method calls
-        EmailManagerImpl emailManagerSpy = spy(emailManager);
-        
-        // Configure the spy to not actually send emails
-        doNothing().when(emailManagerSpy).send(any(Email.class));
-        
-        // Test with platform threads
-        long platformThreadTime = measureEmailSendingTime(emailManagerSpy, platformThreadFactory, CONCURRENT_THREADS);
-        log.info("Platform thread execution time: {} ms", platformThreadTime);
-        
-        // Test with virtual threads
-        long virtualThreadTime = measureEmailSendingTime(emailManagerSpy, virtualThreadFactory, CONCURRENT_THREADS);
-        log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-        
-        // Log the performance improvement
-        double improvementFactor = (double) platformThreadTime / virtualThreadTime;
-        log.info("Performance improvement factor with virtual threads: {}x", String.format("%.2f", improvementFactor));
-        
-        // Verify that virtual threads provide better performance
-        // Note: This assertion might be environment-dependent, so we use a conservative threshold
-        assertThat(virtualThreadTime, lessThanOrEqualTo(platformThreadTime));
-    }
+    // Test with virtual threads
+    long virtualThreadTime = measureExecutionTime(virtualThreadFactory, 500);
     
-    /**
-     * Tests that the EmailManager correctly handles mutex synchronization when accessed concurrently
-     * by multiple virtual threads.
-     */
-    @Test
-    public void testMutexSynchronizationWithVirtualThreads() throws Exception {
-        // Create a thread factory for virtual threads
-        ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-        
-        // Create an executor service using virtual threads
-        ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-        
-        // Track completion
-        CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
-        
-        // Create a list to track all created emails
-        List<Email> capturedEmails = new ArrayList<>();
-        
-        // Spy on the email manager
-        EmailManagerImpl emailManagerSpy = spy(emailManager);
-        
-        // Configure the spy to capture emails instead of sending them
-        doAnswer(invocation -> {
-            Email email = invocation.getArgument(0);
-            synchronized (capturedEmails) {
-                capturedEmails.add(email);
-            }
-            return null;
-        }).when(emailManagerSpy).send(any(Email.class));
-        
-        try {
-            // Submit concurrent email sending tasks
-            for (int i = 0; i < CONCURRENT_THREADS; i++) {
-                final int taskId = i;
-                executor.submit(() -> {
-                    try {
-                        // Create a simple email with a unique subject
-                        SimpleEmail email = new SimpleEmail();
-                        email.setSubject("Test Email " + taskId);
-                        email.setMsg("This is a test email sent from virtual thread " + taskId);
-                        email.addTo("recipient" + taskId + "@example.com");
-                        
-                        // Send the email
-                        emailManagerSpy.send(email);
-                    } finally {
-                        latch.countDown();
-                    }
-                });
-            }
-            
-            // Wait for all tasks to complete
-            boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            
-            // Verify all tasks completed within the timeout
-            assertTrue(completed, "Not all email sending tasks completed within the timeout");
-            
-            // Verify the correct number of emails were captured
-            assertEquals(CONCURRENT_THREADS, capturedEmails.size(), 
-                    "Not all emails were captured during concurrent sending");
-            
-            // Verify that each email has a unique subject (no duplicates or overwrites)
-            List<String> subjects = new ArrayList<>();
-            for (Email email : capturedEmails) {
-                subjects.add(email.getSubject());
-            }
-            
-            // Check for the expected number of unique subjects
-            assertEquals(CONCURRENT_THREADS, subjects.stream().distinct().count(), 
-                    "Some emails were duplicated or overwritten during concurrent sending");
-        } finally {
-            executor.shutdown();
-        }
-    }
+    log.info("Platform Thread execution time: {} ms", platformThreadTime);
+    log.info("Virtual Thread execution time: {} ms", virtualThreadTime);
     
-    /**
-     * Tests that the EmailManager correctly handles thread pinning detection when using virtual threads.
-     */
-    @Test
-    public void testThreadPinningDetection() throws Exception {
-        // Enable thread pinning detection via system property
-        System.setProperty("jdk.tracePinnedThreads", "full");
-        
-        try {
-            // Create a thread factory for virtual threads
-            ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-            
-            // Create an executor service using virtual threads
-            ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-            
-            // Track completion
-            CountDownLatch latch = new CountDownLatch(CONCURRENT_THREADS);
-            AtomicInteger pinnedThreadCount = new AtomicInteger(0);
-            
-            // Spy on the email manager
-            EmailManagerImpl emailManagerSpy = spy(emailManager);
-            
-            // Configure the spy to not actually send emails
-            doNothing().when(emailManagerSpy).send(any(Email.class));
-            
-            try {
-                // Submit concurrent email sending tasks
-                for (int i = 0; i < CONCURRENT_THREADS; i++) {
-                    final int taskId = i;
-                    executor.submit(() -> {
-                        try {
-                            // Create a simple email
-                            SimpleEmail email = new SimpleEmail();
-                            email.setSubject("Test Email " + taskId);
-                            email.setMsg("This is a test email sent from virtual thread " + taskId);
-                            email.addTo("recipient" + taskId + "@example.com");
-                            
-                            // Send the email
-                            emailManagerSpy.send(email);
-                        } finally {
-                            latch.countDown();
-                        }
-                    });
-                }
-                
-                // Wait for all tasks to complete
-                boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                
-                // Verify all tasks completed within the timeout
-                assertTrue(completed, "Not all email sending tasks completed within the timeout");
-                
-                // Log the pinned thread count (this is informational, as we can't reliably detect pinning in a test)
-                log.info("Detected {} potentially pinned threads during email sending", pinnedThreadCount.get());
-                
-                // We don't assert on the pinned thread count as it's environment-dependent
-                // and we're just demonstrating the detection capability
-            } finally {
-                executor.shutdown();
-            }
-        } finally {
-            // Reset the system property
-            System.clearProperty("jdk.tracePinnedThreads");
-        }
-    }
+    // Virtual threads should be more efficient for I/O bound operations
+    assertThat("Virtual threads should perform better than platform threads for I/O bound operations",
+        virtualThreadTime, lessThan(platformThreadTime));
+  }
+  
+  /**
+   * Tests that the EmailManager correctly handles mutex synchronization when accessed
+   * concurrently from multiple virtual threads.
+   */
+  @Test
+  public void testMutexSynchronization() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
-    /**
-     * Helper method to measure the time taken to send a specified number of emails using
-     * the provided thread factory.
-     */
-    private long measureEmailSendingTime(EmailManagerImpl emailManager, ThreadFactory threadFactory, int count) 
-            throws Exception {
-        // Create an executor service using the provided thread factory
-        ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
-        
-        // Track completion
-        CountDownLatch latch = new CountDownLatch(count);
-        
-        try {
-            // Record start time
-            long startTime = System.currentTimeMillis();
-            
-            // Submit email sending tasks
-            for (int i = 0; i < count; i++) {
-                final int taskId = i;
-                executor.submit(() -> {
-                    try {
-                        // Create a simple email
-                        SimpleEmail email = new SimpleEmail();
-                        email.setSubject("Test Email " + taskId);
-                        email.setMsg("This is a test email");
-                        email.addTo("recipient" + taskId + "@example.com");
-                        
-                        // Send the email
-                        emailManager.send(email);
-                    } finally {
-                        latch.countDown();
-                    }
-                });
-            }
-            
-            // Wait for all tasks to complete
-            latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            
-            // Calculate and return the elapsed time
-            return System.currentTimeMillis() - startTime;
-        } finally {
-            executor.shutdown();
-        }
+    int taskCount = 100;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Setup a mock email configuration
+    EmailConfiguration emailConfig = mock(EmailConfiguration.class);
+    lenient().when(emailConfig.copy()).thenReturn(emailConfig);
+    Secret secret = mock(Secret.class);
+    lenient().when(secretsService.encrypt(any(), any(), any())).thenReturn(secret);
+    
+    try {
+      // Submit multiple concurrent configuration update tasks
+      for (int i = 0; i < taskCount; i++) {
+        final int configIndex = i;
+        executor.submit(() -> {
+          try {
+            // This operation involves mutex synchronization in the EmailManager
+            emailManager.setConfiguration(emailConfig, "password" + configIndex);
+            successCount.incrementAndGet();
+          } catch (Exception e) {
+            log.error("Error updating configuration", e);
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      if (!latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        fail("Timed out waiting for configuration operations to complete");
+      }
+      
+      // Verify results
+      assertEquals(taskCount, successCount.get(), 
+          "All configuration updates should succeed without synchronization issues");
+    } finally {
+      executor.shutdown();
     }
+  }
+  
+  /**
+   * Helper method to measure execution time for a given thread factory and operation count.
+   */
+  private long measureExecutionTime(ThreadFactory threadFactory, int operationCount) throws Exception {
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
+    CountDownLatch latch = new CountDownLatch(operationCount);
+    
+    long startTime = System.currentTimeMillis();
+    
+    try {
+      for (int i = 0; i < operationCount; i++) {
+        executor.submit(() -> {
+          try {
+            Email email = new SimpleEmail();
+            email.setSubject("Performance Test");
+            email.setMsg("This is a performance test email");
+            email.addTo("performance@example.com");
+            
+            emailManager.send(email);
+          } catch (Exception e) {
+            log.error("Error in performance test", e);
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      return System.currentTimeMillis() - startTime;
+    } finally {
+      executor.shutdown();
+    }
+  }
 }

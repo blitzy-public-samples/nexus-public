@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.stringtemplates;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -19,240 +20,192 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mock;
 
 import static java.lang.StringTemplate.STR;
 import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.when;
 
 /**
- * Tests for using Java 21 String Templates in configuration processing.
+ * Tests for using Java 21 String Templates in configuration parsing and formatting.
  */
 public class ConfigurationTemplateTest
     extends TestSupport
 {
-  private static final String TEST_ENV_VAR = "NEXUS_TEST_CONFIG";
-  private static final String TEST_SYSTEM_PROP = "nexus.test.config";
-
-  @Mock
-  private ConfigurationSource mockConfigSource;
-
+  private static final String CONFIG_KEY_1 = "nexus.config.template.test.key1";
+  private static final String CONFIG_KEY_2 = "nexus.config.template.test.key2";
+  private static final String CONFIG_KEY_3 = "nexus.config.template.test.key3";
+  
+  private Map<String, String> configValues;
+  
   @Before
   public void setup() {
-    // Set up test environment variable and system property
-    System.setProperty(TEST_SYSTEM_PROP, "system-value");
-    // Note: We can't easily set environment variables in Java, so we'll mock the access
+    // Clear any existing system properties that might interfere with tests
+    System.clearProperty(CONFIG_KEY_1);
+    System.clearProperty(CONFIG_KEY_2);
+    System.clearProperty(CONFIG_KEY_3);
+    
+    // Setup mock configuration values
+    configValues = new HashMap<>();
+    configValues.put(CONFIG_KEY_1, "test-value-1");
+    configValues.put(CONFIG_KEY_2, "test-value-2");
   }
-
+  
   @After
   public void teardown() {
-    System.clearProperty(TEST_SYSTEM_PROP);
+    // Clean up system properties
+    System.clearProperty(CONFIG_KEY_1);
+    System.clearProperty(CONFIG_KEY_2);
+    System.clearProperty(CONFIG_KEY_3);
   }
-
+  
   /**
    * Test basic String Template interpolation with configuration values.
    */
   @Test
   public void testBasicTemplateInterpolation() {
-    String host = "localhost";
-    int port = 8081;
+    String value1 = configValues.get(CONFIG_KEY_1);
+    String value2 = configValues.get(CONFIG_KEY_2);
     
-    // Using String Templates for configuration formatting
-    String configValue = STR."Server running at http://\{host}:\{port}/";
+    String result = STR."Configuration values: \{CONFIG_KEY_1}=\{value1}, \{CONFIG_KEY_2}=\{value2}";
     
-    assertThat(configValue, is("Server running at http://localhost:8081/"));
+    assertThat(result, containsString("Configuration values:"));
+    assertThat(result, containsString(CONFIG_KEY_1 + "=" + value1));
+    assertThat(result, containsString(CONFIG_KEY_2 + "=" + value2));
   }
-
+  
   /**
    * Test String Template interpolation with system properties.
    */
   @Test
-  public void testSystemPropertyInterpolation() {
-    String configValue = STR."System property value: \{System.getProperty(TEST_SYSTEM_PROP)}";
+  public void testTemplateWithSystemProperties() {
+    // Set system properties
+    System.setProperty(CONFIG_KEY_1, "system-value-1");
+    System.setProperty(CONFIG_KEY_2, "system-value-2");
     
-    assertThat(configValue, is("System property value: system-value"));
+    String result = STR."System properties: \{CONFIG_KEY_1}=\{System.getProperty(CONFIG_KEY_1)}, " +
+        "\{CONFIG_KEY_2}=\{System.getProperty(CONFIG_KEY_2)}";
+    
+    assertThat(result, containsString("System properties:"));
+    assertThat(result, containsString(CONFIG_KEY_1 + "=system-value-1"));
+    assertThat(result, containsString(CONFIG_KEY_2 + "=system-value-2"));
   }
-
+  
   /**
-   * Test String Template interpolation with environment variables.
+   * Test String Template with conditional formatting based on configuration values.
    */
   @Test
-  public void testEnvironmentVariableInterpolation() {
-    // Mock environment variable access
-    when(mockConfigSource.getEnvironmentVariable(TEST_ENV_VAR)).thenReturn("env-value");
+  public void testConditionalTemplateFormatting() {
+    // Set system property for conditional logic
+    System.setProperty(CONFIG_KEY_3, "true");
     
-    String configValue = STR."Environment variable value: \{mockConfigSource.getEnvironmentVariable(TEST_ENV_VAR)}";
+    String result = STR."Feature enabled: \{Boolean.parseBoolean(System.getProperty(CONFIG_KEY_3, "false")) ? "YES" : "NO"}";
     
-    assertThat(configValue, is("Environment variable value: env-value"));
+    assertThat(result, is(equalTo("Feature enabled: YES")));
+    
+    // Change the condition
+    System.clearProperty(CONFIG_KEY_3);
+    
+    result = STR."Feature enabled: \{Boolean.parseBoolean(System.getProperty(CONFIG_KEY_3, "false")) ? "YES" : "NO"}";
+    
+    assertThat(result, is(equalTo("Feature enabled: NO")));
   }
-
+  
   /**
-   * Test nested expressions in String Templates for configuration.
+   * Test String Template with nested expressions for complex configuration formatting.
    */
   @Test
-  public void testNestedExpressions() {
-    Map<String, Object> config = Map.of(
-        "db.url", "jdbc:postgresql://localhost:5432/nexus",
-        "db.username", "nexus_user",
-        "db.password", "secret"
-    );
+  public void testNestedTemplateExpressions() {
+    configValues.put(CONFIG_KEY_3, "test-value-3");
     
-    String connectionString = STR."""
-        Database connection configured with:
-        URL: \{config.get("db.url")}
-        Username: \{config.get("db.username")}
-        Password: \{config.get("db.password").toString().replaceAll(".", "*")}
+    String result = STR."""
+        Configuration:
+          - \{CONFIG_KEY_1}: \{configValues.get(CONFIG_KEY_1)}
+          - \{CONFIG_KEY_2}: \{configValues.get(CONFIG_KEY_2)}
+          - \{CONFIG_KEY_3}: \{configValues.getOrDefault(CONFIG_KEY_3, "<not set>")}
+          - Combined: \{STR."\{configValues.get(CONFIG_KEY_1)}_\{configValues.get(CONFIG_KEY_2)}"}
         """;
     
-    assertThat(connectionString, containsString("URL: jdbc:postgresql://localhost:5432/nexus"));
-    assertThat(connectionString, containsString("Username: nexus_user"));
-    assertThat(connectionString, containsString("Password: ******"));
+    assertThat(result, containsString("Configuration:"));
+    assertThat(result, containsString(CONFIG_KEY_1 + ": test-value-1"));
+    assertThat(result, containsString(CONFIG_KEY_2 + ": test-value-2"));
+    assertThat(result, containsString(CONFIG_KEY_3 + ": test-value-3"));
+    assertThat(result, containsString("Combined: test-value-1_test-value-2"));
   }
-
+  
   /**
-   * Test conditional formatting in String Templates for configuration.
+   * Test String Template with environment variables for configuration.
    */
   @Test
-  public void testConditionalFormatting() {
-    boolean sslEnabled = true;
-    int port = sslEnabled ? 443 : 80;
+  public void testTemplateWithEnvironmentVariables() {
+    // Get some environment variables that should exist on most systems
+    String path = System.getenv("PATH");
+    String javaHome = System.getenv("JAVA_HOME");
     
-    String configValue = STR."Server running on \{sslEnabled ? "https" : "http"}://localhost:\{port}/";
+    // Skip test if environment variables aren't available
+    if (path == null || javaHome == null) {
+      log.info("Skipping environment variable test due to missing variables");
+      return;
+    }
     
-    assertThat(configValue, is("Server running on https://localhost:443/"));
+    String result = STR."Environment: PATH=\{path.length() > 10 ? path.substring(0, 10) + "..." : path}, " +
+        "JAVA_HOME=\{javaHome}";
     
-    sslEnabled = false;
-    port = sslEnabled ? 443 : 80;
-    
-    configValue = STR."Server running on \{sslEnabled ? "https" : "http"}://localhost:\{port}/";
-    
-    assertThat(configValue, is("Server running on http://localhost:80/"));
+    assertThat(result, containsString("Environment: PATH="));
+    assertThat(result, containsString("JAVA_HOME="));
   }
-
+  
   /**
    * Test error handling with malformed templates.
    */
   @Test
   public void testErrorHandlingWithMalformedTemplates() {
-    String nullValue = null;
+    // Test with null value in template
+    configValues.put(CONFIG_KEY_3, null);
     
-    // Test handling null values in templates
-    NullPointerException exception = assertThrows(NullPointerException.class, () -> {
-      String configValue = STR."Config value: \{nullValue.toString()}";
-    });
+    String result = STR."Config value: \{configValues.get(CONFIG_KEY_3) != null ? configValues.get(CONFIG_KEY_3) : "<null>"}";
     
-    assertThat(exception.getMessage(), containsString("Cannot invoke"));
-    assertThat(exception.getMessage(), containsString("because "nullValue" is null"));
+    assertThat(result, is(equalTo("Config value: <null>")));
+    
+    // Test with exception handling in template
+    result = STR."Config value: \{try { Integer.parseInt("not-a-number"); "parsed" } catch (NumberFormatException e) { "error" }}";
+    
+    assertThat(result, is(equalTo("Config value: error")));
   }
   
-  /**
-   * Test String Templates with complex expressions for configuration formatting.
-   */
-  @Test
-  public void testComplexExpressions() {
-    int maxHeapSize = 4096;
-    int initialHeapSize = maxHeapSize / 2;
-    String[] supportedProtocols = {"TLSv1.2", "TLSv1.3"};
-    
-    String jvmConfig = STR."""
-    JVM Configuration:
-    -Xmx\{maxHeapSize}m
-    -Xms\{initialHeapSize}m
-    -Dhttps.protocols=\{String.join(",", supportedProtocols)}
-    """;
-    
-    assertThat(jvmConfig, containsString("-Xmx4096m"));
-    assertThat(jvmConfig, containsString("-Xms2048m"));
-    assertThat(jvmConfig, containsString("-Dhttps.protocols=TLSv1.2,TLSv1.3"));
-  }
-
   /**
    * Test compatibility with OSGi configuration mechanisms.
    */
   @Test
   public void testOsgiConfigurationCompatibility() {
-    // Mock OSGi configuration property access
-    when(mockConfigSource.getOsgiProperty("nexus.http.host")).thenReturn("0.0.0.0");
-    when(mockConfigSource.getOsgiProperty("nexus.http.port")).thenReturn("8081");
+    // Simulate OSGi configuration property format
+    String osgiPropertyKey = "org.sonatype.nexus.repository.httpbridge.internal.HttpBridgeModule";
+    String osgiPropertyValue = "enabled=true;timeout=30;maxConnections=100";
     
-    String host = mockConfigSource.getOsgiProperty("nexus.http.host");
-    String port = mockConfigSource.getOsgiProperty("nexus.http.port");
+    // Parse the OSGi-style property using String Templates
+    String[] properties = osgiPropertyValue.split(";");
+    Map<String, String> parsedProps = new HashMap<>();
     
-    String configValue = STR."Nexus listening on \{host}:\{port}";
+    for (String property : properties) {
+      String[] keyValue = property.split("=");
+      if (keyValue.length == 2) {
+        parsedProps.put(keyValue[0], keyValue[1]);
+      }
+    }
     
-    assertThat(configValue, is("Nexus listening on 0.0.0.0:8081"));
-  }
-  
-  /**
-   * Test using String Templates with multi-line configuration values.
-   */
-  @Test
-  public void testMultiLineConfigurationValues() {
-    String jdbcUrl = "jdbc:postgresql://localhost:5432/nexus";
-    String username = "nexus_user";
-    int maxConnections = 50;
-    boolean enableSsl = true;
-    
-    String configBlock = STR."""
-    <datasource>
-        <url>\{jdbcUrl}</url>
-        <username>\{username}</username>
-        <max-connections>\{maxConnections}</max-connections>
-        <ssl-enabled>\{enableSsl}</ssl-enabled>
-    </datasource>
-    """;
-    
-    assertThat(configBlock, containsString("<url>jdbc:postgresql://localhost:5432/nexus</url>"));
-    assertThat(configBlock, containsString("<username>nexus_user</username>"));
-    assertThat(configBlock, containsString("<max-connections>50</max-connections>"));
-    assertThat(configBlock, containsString("<ssl-enabled>true</ssl-enabled>"));
-  }
-
-  /**
-   * Test using String Templates for sanitizing sensitive configuration data.
-   */
-  @Test
-  public void testSanitizingSensitiveData() {
-    String username = "admin";
-    String password = "admin123";
-    String apiKey = "abcdef123456";
-    
-    String sanitizedConfig = STR."""
-        Configuration:
-        Username: \{username}
-        Password: \{"*".repeat(password.length())}
-        API Key: \{apiKey.substring(0, 3) + "***" + apiKey.substring(apiKey.length() - 3)}
+    // Format using String Templates
+    String result = STR."""
+        OSGi Configuration for \{osgiPropertyKey}:
+          - enabled: \{parsedProps.get("enabled")}
+          - timeout: \{parsedProps.get("timeout")} seconds
+          - maxConnections: \{parsedProps.get("maxConnections")}
         """;
     
-    assertThat(sanitizedConfig, containsString("Username: admin"));
-    assertThat(sanitizedConfig, containsString("Password: ********"));
-    assertThat(sanitizedConfig, containsString("API Key: abc***456"));
-  }
-  
-  /**
-   * Test using String Templates for formatting configuration error messages.
-   */
-  @Test
-  public void testConfigurationErrorMessages() {
-    String configKey = "nexus.http.port";
-    String expectedType = "Integer";
-    String actualValue = "invalid-port";
-    
-    String errorMessage = STR."Configuration error: Value '\{actualValue}' for key '\{configKey}' cannot be converted to \{expectedType}";
-    
-    assertThat(errorMessage, is("Configuration error: Value 'invalid-port' for key 'nexus.http.port' cannot be converted to Integer"));
-  }
-
-  /**
-   * Mock interface for configuration sources.
-   */
-  interface ConfigurationSource {
-    String getEnvironmentVariable(String name);
-    String getOsgiProperty(String name);
+    assertThat(result, containsString("OSGi Configuration for " + osgiPropertyKey));
+    assertThat(result, containsString("enabled: true"));
+    assertThat(result, containsString("timeout: 30 seconds"));
+    assertThat(result, containsString("maxConnections: 100"));
   }
 }

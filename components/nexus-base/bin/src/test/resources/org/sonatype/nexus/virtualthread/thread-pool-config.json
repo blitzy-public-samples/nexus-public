@@ -1,0 +1,248 @@
+{
+  "executors": {
+    "platformThreadExecutors": {
+      "fixedThreadPool": {
+        "type": "fixed",
+        "corePoolSize": 10,
+        "threadNamePattern": "nexus-fixed-pool-%d",
+        "daemon": true,
+        "description": "Standard fixed thread pool for comparison with virtual threads"
+      },
+      "cachedThreadPool": {
+        "type": "cached",
+        "maxPoolSize": 100,
+        "keepAliveTimeSeconds": 60,
+        "threadNamePattern": "nexus-cached-pool-%d",
+        "daemon": true,
+        "description": "Cached thread pool that creates new threads as needed and reuses idle ones"
+      },
+      "scheduledThreadPool": {
+        "type": "scheduled",
+        "corePoolSize": 5,
+        "threadNamePattern": "nexus-scheduled-pool-%d",
+        "daemon": true,
+        "description": "Scheduled thread pool for periodic task execution"
+      },
+      "workStealingPool": {
+        "type": "workStealing",
+        "parallelism": 4,
+        "description": "Work-stealing pool using fork-join framework"
+      },
+      "singleThreadExecutor": {
+        "type": "single",
+        "threadNamePattern": "nexus-single-thread-%d",
+        "daemon": true,
+        "description": "Single thread executor for sequential task processing"
+      }
+    },
+    "virtualThreadExecutors": {
+      "basicVirtualThreadExecutor": {
+        "type": "virtualPerTask",
+        "threadNamePattern": "vt-basic-%d",
+        "description": "Basic virtual thread executor using newVirtualThreadPerTaskExecutor"
+      },
+      "customNamedVirtualThreadExecutor": {
+        "type": "virtualPerTask",
+        "threadNamePattern": "nexus-vt-%s-%d",
+        "description": "Virtual thread executor with custom naming pattern"
+      },
+      "scheduledVirtualThreadExecutor": {
+        "type": "scheduledVirtual",
+        "corePoolSize": 1,
+        "threadFactory": "virtual",
+        "threadNamePattern": "nexus-scheduled-vt-%d",
+        "description": "Scheduled executor service using virtual threads"
+      },
+      "httpClientVirtualThreadExecutor": {
+        "type": "virtualPerTask",
+        "threadNamePattern": "nexus-http-vt-%d",
+        "description": "Virtual thread executor optimized for HTTP client operations"
+      },
+      "blobStoreVirtualThreadExecutor": {
+        "type": "virtualPerTask",
+        "threadNamePattern": "nexus-blob-vt-%d",
+        "description": "Virtual thread executor optimized for BlobStore I/O operations"
+      }
+    }
+  },
+  "schedulerConfigurations": {
+    "defaultVirtualThreadScheduler": {
+      "parallelism": "availableProcessors",
+      "maxPoolSize": 256,
+      "minRunnable": "parallelism / 2",
+      "description": "Default configuration for the virtual thread scheduler"
+    },
+    "highThroughputVirtualThreadScheduler": {
+      "parallelism": 16,
+      "maxPoolSize": 512,
+      "minRunnable": 4,
+      "description": "High throughput configuration for the virtual thread scheduler"
+    },
+    "lowResourceVirtualThreadScheduler": {
+      "parallelism": 4,
+      "maxPoolSize": 64,
+      "minRunnable": 2,
+      "description": "Low resource configuration for the virtual thread scheduler"
+    },
+    "containerizedVirtualThreadScheduler": {
+      "parallelism": 8,
+      "maxPoolSize": 128,
+      "minRunnable": 2,
+      "description": "Configuration optimized for containerized environments with limited resources"
+    },
+    "microserviceVirtualThreadScheduler": {
+      "parallelism": "availableProcessors * 2",
+      "maxPoolSize": 256,
+      "minRunnable": "parallelism / 2",
+      "description": "Configuration optimized for microservice deployments"
+    }
+  },
+  "testScenarios": {
+    "ioBoundWorkload": {
+      "executor": "basicVirtualThreadExecutor",
+      "taskCount": 1000,
+      "ioIntensity": "high",
+      "cpuIntensity": "low",
+      "description": "I/O-bound workload ideal for virtual threads"
+    },
+    "cpuBoundWorkload": {
+      "executor": "fixedThreadPool",
+      "taskCount": 100,
+      "ioIntensity": "low",
+      "cpuIntensity": "high",
+      "description": "CPU-bound workload better suited for platform threads"
+    },
+    "mixedWorkload": {
+      "executor": "customNamedVirtualThreadExecutor",
+      "taskCount": 500,
+      "ioIntensity": "medium",
+      "cpuIntensity": "medium",
+      "description": "Mixed workload with both I/O and CPU operations"
+    },
+    "blobStoreOperations": {
+      "executor": "blobStoreVirtualThreadExecutor",
+      "taskCount": 200,
+      "ioIntensity": "high",
+      "cpuIntensity": "low",
+      "description": "BlobStore operations with high I/O and low CPU usage"
+    },
+    "repositoryOperations": {
+      "executor": "customNamedVirtualThreadExecutor",
+      "taskCount": 300,
+      "ioIntensity": "medium",
+      "cpuIntensity": "medium",
+      "description": "Repository operations with mixed I/O and CPU usage"
+    },
+    "securityOperations": {
+      "executor": "fixedThreadPool",
+      "taskCount": 50,
+      "ioIntensity": "low",
+      "cpuIntensity": "high",
+      "description": "Security operations with high CPU usage for encryption/decryption"
+    },
+    "httpClientOperations": {
+      "executor": "httpClientVirtualThreadExecutor",
+      "taskCount": 500,
+      "ioIntensity": "high",
+      "cpuIntensity": "low",
+      "description": "HTTP client operations with high I/O and low CPU usage"
+    },
+    "databaseOperations": {
+      "executor": "basicVirtualThreadExecutor",
+      "taskCount": 200,
+      "ioIntensity": "high",
+      "cpuIntensity": "low",
+      "description": "Database operations with high I/O and low CPU usage"
+    },
+    "eventProcessing": {
+      "executor": "customNamedVirtualThreadExecutor",
+      "taskCount": 1000,
+      "ioIntensity": "medium",
+      "cpuIntensity": "medium",
+      "description": "Event processing operations with mixed I/O and CPU usage"
+    }
+  },
+  "comparisonTests": {
+    "httpClientComparison": {
+      "platformExecutor": "fixedThreadPool",
+      "virtualExecutor": "httpClientVirtualThreadExecutor",
+      "concurrentRequests": [10, 100, 1000, 5000, 10000],
+      "requestTimeoutMs": 5000,
+      "description": "Comparison of platform vs virtual threads for HTTP client operations"
+    },
+    "databaseOperationsComparison": {
+      "platformExecutor": "fixedThreadPool",
+      "virtualExecutor": "basicVirtualThreadExecutor",
+      "concurrentOperations": [10, 50, 100, 500, 1000],
+      "operationTimeoutMs": 3000,
+      "description": "Comparison of platform vs virtual threads for database operations"
+    },
+    "blobStoreComparison": {
+      "platformExecutor": "cachedThreadPool",
+      "virtualExecutor": "blobStoreVirtualThreadExecutor",
+      "concurrentOperations": [10, 50, 100, 500, 1000],
+      "operationTimeoutMs": 10000,
+      "description": "Comparison of platform vs virtual threads for BlobStore operations"
+    },
+    "scheduledTasksComparison": {
+      "platformExecutor": "scheduledThreadPool",
+      "virtualExecutor": "scheduledVirtualThreadExecutor",
+      "taskCount": 100,
+      "periodMs": 1000,
+      "description": "Comparison of platform vs virtual threads for scheduled tasks"
+    },
+    "eventProcessingComparison": {
+      "platformExecutor": "workStealingPool",
+      "virtualExecutor": "customNamedVirtualThreadExecutor",
+      "concurrentOperations": [100, 500, 1000, 5000],
+      "operationTimeoutMs": 2000,
+      "description": "Comparison of platform vs virtual threads for event processing"
+    },
+    "mixedWorkloadComparison": {
+      "platformExecutor": "cachedThreadPool",
+      "virtualExecutor": "basicVirtualThreadExecutor",
+      "concurrentOperations": [50, 200, 500],
+      "operationTimeoutMs": 5000,
+      "description": "Comparison of platform vs virtual threads for mixed workloads"
+    }
+  },
+  "systemProperties": {
+    "virtualThreadScheduler": {
+      "jdk.virtualThreadScheduler.parallelism": "${availableProcessors}",
+      "jdk.virtualThreadScheduler.maxPoolSize": "256",
+      "jdk.virtualThreadScheduler.minRunnable": "${parallelism / 2}",
+      "description": "System properties for configuring the virtual thread scheduler"
+    },
+    "threadDiagnostics": {
+      "jdk.tracePinnedThreads": "true",
+      "description": "System property to trace pinned threads for debugging"
+    },
+    "activeProcessorCount": {
+      "XX:ActiveProcessorCount": "16",
+      "description": "System property to set the number of active processors for containerized environments"
+    },
+    "continuationPreview": {
+      "jdk.enableVirtualThreadContinuations": "true",
+      "description": "System property to enable continuations for virtual threads (preview feature)"
+    }
+  },
+  "threadFactoryConfigurations": {
+    "defaultVirtualThreadFactory": {
+      "type": "virtual",
+      "namePrefix": "nexus-vt-",
+      "daemon": true,
+      "description": "Default virtual thread factory configuration"
+    },
+    "platformThreadFactory": {
+      "type": "platform",
+      "namePrefix": "nexus-pt-",
+      "daemon": true,
+      "priority": "NORM_PRIORITY",
+      "description": "Platform thread factory configuration"
+    },
+    "inheritedThreadFactory": {
+      "type": "inherited",
+      "description": "Thread factory that inherits from the current thread"
+    }
+  }
+}

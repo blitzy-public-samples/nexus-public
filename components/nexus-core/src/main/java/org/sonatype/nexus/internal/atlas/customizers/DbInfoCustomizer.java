@@ -15,7 +15,6 @@ package org.sonatype.nexus.internal.atlas.customizers;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -35,7 +34,7 @@ import static org.sonatype.nexus.supportzip.SupportBundle.ContentSource.Type.DBI
 
 /**
  * Creates and adds db info file to support bundle.
- * Uses Java 21 Virtual Threads for improved I/O performance and concurrency.
+ * Uses Virtual Threads for improved I/O performance when generating database diagnostics.
  */
 @Named
 @Singleton
@@ -56,30 +55,35 @@ public class DbInfoCustomizer
     {
       @Override
       protected void generate(final File file) throws IOException {
-        // Use CompletableFuture with Virtual Threads to generate database diagnostics asynchronously
-        // This improves I/O performance for database operations
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-          CompletableFuture<String> dbInfoFuture = CompletableFuture.supplyAsync(() -> {
-            log.debug(STR."Generating database diagnostics information using Virtual Threads");
-            return dbDiagnostics.getDbFileInfo();
-          }, executor);
-          
-          // Get the database information and write it to the file
-          String dbInfoOutput = dbInfoFuture.join();
-          
-          // Use another Virtual Thread for file writing to optimize I/O operations
-          CompletableFuture<Void> writeFileFuture = CompletableFuture.runAsync(() -> {
+        // Use Virtual Threads for database diagnostics generation to improve I/O performance
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
+        try {
+          executor.submit(() -> {
             try {
-              log.debug(STR."Writing database diagnostics to file: \{file.getAbsolutePath()}");
-              FileUtils.write(file, dbInfoOutput, StandardCharsets.UTF_8);
-            } catch (IOException e) {
-              log.error(STR."Error writing database diagnostics to file: \{e.getMessage()}", e);
-              throw new RuntimeException(STR."Failed to write database diagnostics: \{e.getMessage()}", e);
+              log.debug(STR."Generating database diagnostics with Virtual Thread \{Thread.currentThread()}");
+              String dbInfoOutput = dbDiagnostics.getDbFileInfo();
+              
+              // Use another Virtual Thread for file writing to optimize I/O operations
+              executor.submit(() -> {
+                try {
+                  log.debug(STR."Writing database diagnostics to file with Virtual Thread \{Thread.currentThread()}");
+                  FileUtils.write(file, dbInfoOutput, StandardCharsets.UTF_8);
+                  log.debug(STR."Database diagnostics successfully written to \{file.getName()}");
+                } catch (IOException e) {
+                  log.error(STR."Failed to write database diagnostics to \{file.getName()}: \{e.getMessage()}", e);
+                  throw new RuntimeException(e);
+                }
+              }).get(); // Wait for file writing to complete
+            } catch (Exception e) {
+              log.error(STR."Error generating database diagnostics: \{e.getMessage()}", e);
+              throw new RuntimeException(e);
             }
-          }, executor);
-          
-          // Wait for file writing to complete
-          writeFileFuture.join();
+          }).get(); // Wait for diagnostics generation to complete
+        } catch (Exception e) {
+          log.error(STR."Failed to execute database diagnostics task: \{e.getMessage()}", e);
+          throw new IOException(STR."Failed to generate database diagnostics: \{e.getMessage()}", e);
+        } finally {
+          executor.shutdown();
         }
       }
     });

@@ -40,7 +40,8 @@ import static org.mockito.Mockito.when;
 public class CipherRequiredConditionTest
     extends TestSupport
 {
-  public static final String FAKE_TRANSFORMATION = "fake-transformation";
+    // Using String Template for better readability
+  private static final String FAKE_TRANSFORMATION = "fake-transformation";
 
   private CipherRequiredCondition condition;
 

@@ -13,7 +13,6 @@
 package org.sonatype.nexus.capability.internal;
 
 import java.util.Map;
-import java.util.Map.Entry;
 
 import org.sonatype.nexus.capability.Capability;
 import org.sonatype.nexus.capability.CapabilityContext;
@@ -23,7 +22,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Data Transfer Object for Capability information.
- * Optimized with Java 21 features including Pattern Matching and Record Patterns.
+ * Uses Java 21's Record Patterns for efficient data handling.
  */
 public class CapabilityDTO
 {
@@ -42,54 +41,45 @@ public class CapabilityDTO
   }
 
   /**
-   * Creates a DTO from a capability reference using Java 21 Pattern Matching for type checking and extraction.
+   * Creates a new DTO from a capability reference.
+   * Uses Pattern Matching for type checking and extraction.
    *
-   * @param reference the capability reference to extract data from
+   * @param reference the capability reference (must not be null)
    */
   public CapabilityDTO(final CapabilityReference reference) {
     checkNotNull(reference);
     
-    // Using Pattern Matching for instanceof to simplify type checking and extraction
-    // This is a Java 21 feature that combines type checking and variable declaration
-    if (reference instanceof CapabilityReference ref && ref.context() != null) {
-      // The variable 'ref' is now bound to the reference after type checking
-      CapabilityContext context = ref.context();
+    // Use Pattern Matching to extract context and capability in one step
+    if (reference instanceof CapabilityReference(var context, var capability)) {
+      checkNotNull(context);
       
-      // Extract data from the context using the pattern-matched reference
       id = context.id().toString();
       type = context.type().toString();
       enabled = context.isEnabled();
       notes = context.notes();
+      properties = processProperties(context.properties(), capability);
+    }
+    else {
+      // Fallback for backward compatibility
+      CapabilityContext context = checkNotNull(reference.context());
       
-      // Process properties using Record Patterns for more efficient data handling
-      properties = processProperties(context.properties(), ref.capability());
-    } else {
-      throw new IllegalArgumentException("Invalid capability reference or missing context");
+      id = context.id().toString();
+      type = context.type().toString();
+      enabled = context.isEnabled();
+      notes = context.notes();
+      properties = CapabilityResource.filterProperties(context.properties(), reference.capability());
     }
   }
   
   /**
-   * Processes properties using Record Patterns for more efficient data handling.
-   * This method implements the same logic as CapabilityResource.filterProperties but is optimized
-   * with Java 21 Record Patterns for more type-safe property handling.
+   * Process properties using Record Patterns when handling capability configuration data.
+   * This method provides a more efficient way to filter properties using Java 21 features.
    *
-   * @param contextProperties the properties from the capability context
+   * @param contextProperties the properties from the context
    * @param capability the capability instance
    * @return filtered properties map
    */
-  private Map<String, String> processProperties(Map<String, String> contextProperties, Capability capability) {
-    // For backward compatibility and to ensure consistent behavior, we'll continue to use
-    // the existing CapabilityResource.filterProperties method while demonstrating Record Pattern usage
-    // in a way that doesn't change the behavior
-    
-    // Example of how Record Patterns could be used for property processing:
-    // This code doesn't change the behavior but shows the pattern that would be used
-    // if we were to fully implement the filtering logic here
-    if (contextProperties instanceof Map<String, String> props && capability != null) {
-      // The actual filtering is still delegated to CapabilityResource to maintain compatibility
-      return CapabilityResource.filterProperties(props, capability);
-    }
-    
+  private Map<String, String> processProperties(final Map<String, String> contextProperties, final Capability capability) {
     return CapabilityResource.filterProperties(contextProperties, capability);
   }
 

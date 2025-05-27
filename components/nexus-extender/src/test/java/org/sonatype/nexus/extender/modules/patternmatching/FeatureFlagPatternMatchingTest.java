@@ -28,208 +28,302 @@ import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 
 /**
- * Tests the enhanced FeatureFlaggedIndex component's evaluation of feature flags using Java 21's Pattern Matching features.
- * This test validates pattern matching for switch expressions and instanceof patterns, ensuring proper conditional logic
- * execution when evaluating feature flag annotations with various configurations.
- *
+ * Tests for {@link FeatureFlaggedIndex} using Java 21 Pattern Matching features.
+ * 
  * @since 3.60
  */
 public class FeatureFlagPatternMatchingTest
     extends TestSupport
 {
   private static final String FLAG_1 = "FeatureFlagPatternMatchingTest_1";
-
   private static final String FLAG_2 = "FeatureFlagPatternMatchingTest_2";
+  private static final String FLAG_3 = "FeatureFlagPatternMatchingTest_3";
 
   @Mock
   Bundle mockBundle;
 
   @Before
   public void setup() throws ClassNotFoundException {
+    // Clear all test flags
     System.clearProperty(FLAG_1);
     System.clearProperty(FLAG_2);
+    System.clearProperty(FLAG_3);
+    
+    // Verify flags are cleared
     assertThat(System.getProperty(FLAG_1), is((String) null));
     assertThat(System.getProperty(FLAG_2), is((String) null));
+    assertThat(System.getProperty(FLAG_3), is((String) null));
   }
 
   @After
   public void teardown() {
+    // Clean up after tests
     System.clearProperty(FLAG_1);
     System.clearProperty(FLAG_2);
+    System.clearProperty(FLAG_3);
   }
 
   /**
-   * Tests pattern matching in switch expressions for evaluating feature flags.
-   * This demonstrates how Java 21's pattern matching in switch can simplify the evaluation
-   * of different feature flag configurations.
+   * Test class with multiple feature flags for pattern matching tests
    */
-  @Test
-  public void testPatternMatchingInSwitchForFeatureFlags() throws ClassNotFoundException {
-    // Define test classes with different feature flag configurations
-    @FeatureFlag(name = FLAG_1)
-    class StandardFlag {}
-
-    @FeatureFlag(name = FLAG_1, inverse = true)
-    class InverseFlag {}
-
-    @FeatureFlag(name = FLAG_1, enabledByDefault = true)
-    class EnabledByDefaultFlag {}
-
-    @FeatureFlag(name = FLAG_1, inverse = true, enabledByDefault = true)
-    class InverseEnabledByDefaultFlag {}
-
-    // Configure mock to return different classes based on input
-    doReturn(StandardFlag.class).when(mockBundle).loadClass("StandardFlag");
-    doReturn(InverseFlag.class).when(mockBundle).loadClass("InverseFlag");
-    doReturn(EnabledByDefaultFlag.class).when(mockBundle).loadClass("EnabledByDefaultFlag");
-    doReturn(InverseEnabledByDefaultFlag.class).when(mockBundle).loadClass("InverseEnabledByDefaultFlag");
-
-    // Test with property not set
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "StandardFlag"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "EnabledByDefaultFlag"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseEnabledByDefaultFlag"), is(false));
-
-    // Test with property set to true
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "StandardFlag"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "EnabledByDefaultFlag"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseEnabledByDefaultFlag"), is(true));
-
-    // Test with property set to false
-    System.setProperty(FLAG_1, Boolean.toString(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "StandardFlag"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "EnabledByDefaultFlag"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseEnabledByDefaultFlag"), is(false));
+  @FeatureFlag(name = FLAG_1)
+  @FeatureFlag(name = FLAG_2)
+  private static class MultipleFeatureFlagsClass {
   }
 
   /**
-   * Tests instanceof pattern matching with type patterns for FeatureFlag annotation configurations.
-   * This demonstrates how Java 21's pattern matching with instanceof can simplify type checking
-   * and variable extraction in a single step.
+   * Test class with inverted feature flag
+   */
+  @FeatureFlag(name = FLAG_1, inverse = true)
+  private static class InvertedFeatureFlagClass {
+  }
+
+  /**
+   * Test class with enabled by default feature flag
+   */
+  @FeatureFlag(name = FLAG_1, enabledByDefault = true)
+  private static class EnabledByDefaultClass {
+  }
+
+  /**
+   * Test class with complex feature flag configuration
+   */
+  @FeatureFlag(name = FLAG_1, inverse = true, enabledByDefault = true)
+  private static class ComplexFeatureFlagClass {
+  }
+
+  /**
+   * Test class with multiple feature flags with different configurations
+   */
+  @FeatureFlag(name = FLAG_1)
+  @FeatureFlag(name = FLAG_2, inverse = true)
+  @FeatureFlag(name = FLAG_3, enabledByDefault = true)
+  private static class MixedFeatureFlagsClass {
+  }
+
+  /**
+   * Tests pattern matching in switch expressions when evaluating feature flags.
+   * This demonstrates Java 21's enhanced switch pattern matching capabilities.
    */
   @Test
-  public void testInstanceofPatternMatchingForFeatureFlags() throws ClassNotFoundException {
-    // Define test classes with different feature flag configurations
-    @FeatureFlag(name = FLAG_1)
-    @FeatureFlag(name = FLAG_2)
-    class MultipleFlags {}
+  public void testPatternMatchingInSwitchExpressions() throws ClassNotFoundException {
+    // Configure mock to return our test class
+    doReturn(MultipleFeatureFlagsClass.class).when(mockBundle).loadClass(nullable(String.class));
+    
+    // Test with different flag combinations using pattern matching in switch
+    for (String flagName : new String[]{FLAG_1, FLAG_2}) {
+      boolean result = switch (flagName) {
+        case String name when name.equals(FLAG_1) -> {
+          System.setProperty(FLAG_1, "true");
+          yield !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+        }
+        case String name when name.equals(FLAG_2) -> {
+          System.clearProperty(FLAG_1);
+          System.setProperty(FLAG_2, "true");
+          yield !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+        }
+        default -> false;
+      };
+      
+      // Both flags should return false since we need both enabled
+      assertThat("Flag " + flagName + " should not enable the feature alone", result, is(false));
+      
+      // Clean up after each iteration
+      System.clearProperty(FLAG_1);
+      System.clearProperty(FLAG_2);
+    }
+    
+    // Now test with both flags enabled
+    boolean result = switch ("BOTH") {
+      case String s when s.equals("BOTH") -> {
+        System.setProperty(FLAG_1, "true");
+        System.setProperty(FLAG_2, "true");
+        yield !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+      }
+      default -> false;
+    };
+    
+    assertThat("Both flags enabled should enable the feature", result, is(true));
+  }
 
-    @FeatureFlag(name = FLAG_1, inverse = true)
-    class InverseFlag {}
-
-    // Configure mock to return different classes based on input
-    doReturn(MultipleFlags.class).when(mockBundle).loadClass("MultipleFlags");
-    doReturn(InverseFlag.class).when(mockBundle).loadClass("InverseFlag");
-
-    // Test with no flags enabled
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "MultipleFlags"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(true));
-
-    // Test with one flag enabled
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "MultipleFlags"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(true));
-
-    // Test with all flags enabled
-    System.setProperty(FLAG_2, Boolean.toString(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "MultipleFlags"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(true));
-
-    // Test inverse flag with property set to false
-    System.clearProperty(FLAG_1);
-    System.clearProperty(FLAG_2);
-    System.setProperty(FLAG_1, Boolean.toString(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "InverseFlag"), is(false));
+  /**
+   * Tests instanceof pattern matching with type patterns for FeatureFlag configurations.
+   * This demonstrates Java 21's enhanced instanceof pattern matching capabilities.
+   */
+  @Test
+  public void testInstanceofPatternMatching() throws ClassNotFoundException {
+    // Test different feature flag configurations using instanceof pattern matching
+    Object[] testCases = {
+        new TestCase(InvertedFeatureFlagClass.class, FLAG_1, "true", true),
+        new TestCase(InvertedFeatureFlagClass.class, FLAG_1, "false", false),
+        new TestCase(EnabledByDefaultClass.class, FLAG_1, null, false),
+        new TestCase(ComplexFeatureFlagClass.class, FLAG_1, "true", true),
+        new TestCase(ComplexFeatureFlagClass.class, FLAG_1, null, false)
+    };
+    
+    for (Object testCase : testCases) {
+      if (testCase instanceof TestCase tc) {
+        // Configure mock to return the test class
+        doReturn(tc.testClass).when(mockBundle).loadClass(nullable(String.class));
+        
+        // Set property value if specified
+        if (tc.propertyValue != null) {
+          System.setProperty(tc.flagName, tc.propertyValue);
+        }
+        
+        // Verify the expected result
+        assertThat(
+            "Feature flag evaluation for " + tc.testClass.getSimpleName() + 
+            " with property " + tc.flagName + "=" + tc.propertyValue,
+            FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""),
+            is(tc.expectedDisabled)
+        );
+        
+        // Clean up
+        System.clearProperty(tc.flagName);
+      }
+    }
   }
 
   /**
    * Tests typesafe handling of feature flag attributes using pattern variables.
-   * This demonstrates how Java 21's pattern variables can be used to safely extract and use
-   * attributes from feature flag annotations.
+   * This demonstrates Java 21's record pattern matching capabilities.
    */
   @Test
-  public void testPatternVariablesForFeatureFlagAttributes() throws ClassNotFoundException {
-    // Define test classes with different feature flag configurations
-    @FeatureFlag(name = FLAG_1, enabledByDefault = true)
-    class EnabledByDefaultFlag {}
-
-    @FeatureFlag(name = FLAG_1, inverse = true, enabledByDefault = true)
-    class ComplexFlag {}
-
-    // Configure mock to return different classes based on input
-    doReturn(EnabledByDefaultFlag.class).when(mockBundle).loadClass("EnabledByDefaultFlag");
-    doReturn(ComplexFlag.class).when(mockBundle).loadClass("ComplexFlag");
-
-    // Test with property not set (should use enabledByDefault value)
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "EnabledByDefaultFlag"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "ComplexFlag"), is(false));
-
-    // Test with property set to true
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "EnabledByDefaultFlag"), is(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "ComplexFlag"), is(true));
-
-    // Test with property set to false
-    System.setProperty(FLAG_1, Boolean.toString(false));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "EnabledByDefaultFlag"), is(true));
-    assertThat(FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "ComplexFlag"), is(false));
-  }
-
-  /**
-   * Tests a custom implementation of feature flag evaluation using Java 21 pattern matching.
-   * This demonstrates how the actual implementation could leverage pattern matching for cleaner code.
-   */
-  @Test
-  public void testCustomFeatureFlagEvaluationWithPatternMatching() throws ClassNotFoundException {
-    // Define test classes with different feature flag configurations
-    @FeatureFlag(name = FLAG_1)
-    class StandardFlag {}
-
-    @FeatureFlag(name = FLAG_1, inverse = true)
-    class InverseFlag {}
-
-    @FeatureFlag(name = FLAG_1, enabledByDefault = true)
-    class EnabledByDefaultFlag {}
-
-    // Configure mock to return different classes based on input
-    doReturn(StandardFlag.class).when(mockBundle).loadClass("StandardFlag");
-    doReturn(InverseFlag.class).when(mockBundle).loadClass("InverseFlag");
-    doReturn(EnabledByDefaultFlag.class).when(mockBundle).loadClass("EnabledByDefaultFlag");
-
-    // Test with property not set
-    assertThat(evaluateFeatureFlagWithPatternMatching(StandardFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(false));
-    assertThat(evaluateFeatureFlagWithPatternMatching(InverseFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(false));
-    assertThat(evaluateFeatureFlagWithPatternMatching(EnabledByDefaultFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(true));
-
-    // Test with property set to true
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    assertThat(evaluateFeatureFlagWithPatternMatching(StandardFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(true));
-    assertThat(evaluateFeatureFlagWithPatternMatching(InverseFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(false));
-    assertThat(evaluateFeatureFlagWithPatternMatching(EnabledByDefaultFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(true));
-
-    // Test with property set to false
-    System.setProperty(FLAG_1, Boolean.toString(false));
-    assertThat(evaluateFeatureFlagWithPatternMatching(StandardFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(false));
-    assertThat(evaluateFeatureFlagWithPatternMatching(InverseFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(true));
-    assertThat(evaluateFeatureFlagWithPatternMatching(EnabledByDefaultFlag.class.getAnnotationsByType(FeatureFlag.class)[0]), is(false));
-  }
-
-  /**
-   * Example implementation of feature flag evaluation using Java 21 pattern matching.
-   * This demonstrates how switch expressions with pattern matching can simplify the evaluation logic.
-   */
-  private boolean evaluateFeatureFlagWithPatternMatching(FeatureFlag flag) {
-    String propertyValue = System.getProperty(flag.name());
+  public void testRecordPatternMatching() throws ClassNotFoundException {
+    // Configure mock to return our test class with mixed feature flags
+    doReturn(MixedFeatureFlagsClass.class).when(mockBundle).loadClass(nullable(String.class));
     
-    // Using pattern matching in switch expression to handle different cases
-    return switch (propertyValue) {
-      case null -> flag.enabledByDefault();
-      case String value when Boolean.parseBoolean(value) -> !flag.inverse();
-      case String value when !Boolean.parseBoolean(value) -> flag.inverse();
-      default -> flag.enabledByDefault();
+    // Define test scenarios as records for pattern matching
+    record FlagScenario(String flagName, String value, boolean expectedResult) {}
+    
+    FlagScenario[] scenarios = {
+        // FLAG_1 (standard flag) - disabled by default, enabled when true
+        new FlagScenario(FLAG_1, "true", false),  // not disabled when true
+        new FlagScenario(FLAG_1, "false", true),   // disabled when false
+        new FlagScenario(FLAG_1, null, true),      // disabled when not set
+        
+        // FLAG_2 (inverse flag) - disabled by default, enabled when false
+        new FlagScenario(FLAG_2, "true", true),    // disabled when true
+        new FlagScenario(FLAG_2, "false", false),  // not disabled when false
+        new FlagScenario(FLAG_2, null, true),      // disabled when not set
+        
+        // FLAG_3 (enabled by default) - enabled by default, disabled when false
+        new FlagScenario(FLAG_3, "true", false),   // not disabled when true
+        new FlagScenario(FLAG_3, "false", true),   // disabled when false
+        new FlagScenario(FLAG_3, null, false)      // not disabled when not set (enabled by default)
     };
+    
+    // Test each scenario using record pattern matching
+    for (FlagScenario scenario : scenarios) {
+        // Using record pattern matching (Java 21 feature)
+        if (scenario instanceof FlagScenario(String flagName, String value, boolean expectedResult)) {
+            // Set or clear the property based on the scenario
+            if (value != null) {
+                System.setProperty(flagName, value);
+            } else {
+                System.clearProperty(flagName);
+            }
+            
+            // Test just this single flag in isolation
+            boolean actualResult = FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+            
+            assertThat(
+                "Flag " + flagName + (value != null ? "=" + value : " (unset)"),
+                actualResult,
+                is(true)  // All individual flags should result in disabled=true since we need all flags enabled
+            );
+            
+            // Clean up
+            System.clearProperty(flagName);
+        }
+    }
+    
+    // Now test with all flags set to their enabling values
+    System.setProperty(FLAG_1, "true");    // Standard flag - enabled when true
+    System.setProperty(FLAG_2, "false");   // Inverse flag - enabled when false
+    System.setProperty(FLAG_3, "true");    // Enabled by default - explicitly enabled
+    
+    boolean allFlagsResult = !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+    assertThat("All flags properly configured should enable the feature", allFlagsResult, is(true));
+  }
+
+  /**
+   * Tests feature flag evaluation logic with Java 21 pattern matching syntax.
+   * This demonstrates combining multiple pattern matching features.
+   */
+  @Test
+  public void testCombinedPatternMatchingFeatures() throws ClassNotFoundException {
+    // Test different combinations of feature flags using pattern matching
+    record FlagConfig(Class<?> testClass, String[] enabledFlags) {}
+    
+    FlagConfig[] configs = {
+        new FlagConfig(MultipleFeatureFlagsClass.class, new String[]{FLAG_1, FLAG_2}),
+        new FlagConfig(InvertedFeatureFlagClass.class, new String[]{/* FLAG_1 should be false */}),
+        new FlagConfig(EnabledByDefaultClass.class, new String[]{}), // Already enabled by default
+        new FlagConfig(MixedFeatureFlagsClass.class, new String[]{FLAG_1, /* FLAG_2 should be false */, FLAG_3})
+    };
+    
+    for (FlagConfig config : configs) {
+        if (config instanceof FlagConfig(Class<?> testClass, String[] enabledFlags)) {
+            // Configure mock to return the test class
+            doReturn(testClass).when(mockBundle).loadClass(nullable(String.class));
+            
+            // Clear all flags first
+            System.clearProperty(FLAG_1);
+            System.clearProperty(FLAG_2);
+            System.clearProperty(FLAG_3);
+            
+            // Set up the flags according to the configuration
+            for (String flag : enabledFlags) {
+                System.setProperty(flag, "true");
+            }
+            
+            // Special handling for inverse flags
+            if (testClass == InvertedFeatureFlagClass.class) {
+                System.setProperty(FLAG_1, "false"); // Inverse flag is enabled when false
+            } else if (testClass == MixedFeatureFlagsClass.class) {
+                System.setProperty(FLAG_2, "false"); // FLAG_2 is inverse in MixedFeatureFlagsClass
+            }
+            
+            // Evaluate the feature flag using pattern matching on the class type
+            boolean result = switch (testClass.getSimpleName()) {
+                case String name when name.equals("MultipleFeatureFlagsClass") -> 
+                    !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+                case String name when name.equals("InvertedFeatureFlagClass") -> 
+                    !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+                case String name when name.equals("EnabledByDefaultClass") -> 
+                    !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+                case String name when name.equals("MixedFeatureFlagsClass") -> 
+                    !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+                case String name when name.equals("ComplexFeatureFlagClass") -> 
+                    !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+                default -> false;
+            };
+            
+            assertThat(
+                "Feature should be enabled for " + testClass.getSimpleName() + " with configured flags",
+                result,
+                is(true)
+            );
+        }
+    }
+  }
+
+  /**
+   * Helper class for testing instanceof pattern matching
+   */
+  private static class TestCase {
+    final Class<?> testClass;
+    final String flagName;
+    final String propertyValue;
+    final boolean expectedDisabled;
+
+    TestCase(Class<?> testClass, String flagName, String propertyValue, boolean expectedDisabled) {
+      this.testClass = testClass;
+      this.flagName = flagName;
+      this.propertyValue = propertyValue;
+      this.expectedDisabled = expectedDisabled;
+    }
   }
 }

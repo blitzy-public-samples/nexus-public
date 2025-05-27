@@ -24,7 +24,6 @@ import org.sonatype.nexus.httpclient.SSLContextSelector;
 
 import org.apache.http.protocol.HttpContext;
 
-import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
@@ -48,12 +47,27 @@ public class HttpContextAttributeSSLContextSelector
 
   @Override
   public SSLContext select(final HttpContext context) {
-    Object useTrustStore = context.getAttribute(SSLContextSelector.USE_TRUST_STORE);
-    if (Boolean.TRUE.equals(useTrustStore)) {
-      log.debug(STR."Using Nexus SSL TrustStore for context: \{context}");
-      return trustStore.getSSLContext();
+    // Add null check for context to improve robustness
+    if (context == null) {
+      log.debug("HttpContext is null, returning null SSLContext");
+      return null;
     }
-    log.trace(STR."Not using Nexus SSL TrustStore for context: \{context}");
+    
+    // Get the attribute with null-safety
+    Object useTrustStore = context.getAttribute(SSLContextSelector.USE_TRUST_STORE);
+    
+    // Check if the attribute equals Boolean.TRUE
+    if (Boolean.TRUE.equals(useTrustStore)) {
+      log.debug("Using TrustStore SSLContext as requested by HttpContext attribute");
+      try {
+        return trustStore.getSSLContext();
+      } catch (Exception e) {
+        log.error("Failed to get SSLContext from TrustStore", e);
+        return null;
+      }
+    }
+    
+    log.debug("Not using TrustStore SSLContext as not requested by HttpContext attribute");
     return null;
   }
 }

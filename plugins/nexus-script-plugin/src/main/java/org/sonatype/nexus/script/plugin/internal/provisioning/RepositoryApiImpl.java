@@ -28,7 +28,9 @@ import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.script.plugin.RepositoryApi;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.StreamSupport;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -36,6 +38,7 @@ import com.google.common.annotations.VisibleForTesting;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptyMap;
+import static java.lang.StringTemplate.STR;
 
 /**
  * Implementation of the Repository API for scripting.
@@ -77,17 +80,23 @@ public class RepositoryApiImpl
       final boolean strictContentTypeValidation)
   {
     checkNotNull(name);
-    checkArgument(recipeName != null && recipeName.endsWith("-hosted"));
+    
+    // Use pattern matching for switch to validate recipe name
+    switch (recipeName) {
+      case String r when r != null && r.endsWith("-hosted") -> {
+        // Valid recipe name, continue with configuration
+        Map<String, Object> storageAttributes = new HashMap<>();
+        storageAttributes.put(BLOB_STORE_NAME, blobStoreName);
+        storageAttributes.put("writePolicy", writePolicy);
+        storageAttributes.put("strictContentTypeValidation", strictContentTypeValidation);
 
-    Map<String, Object> storageAttributes = new HashMap<>();
-    storageAttributes.put(BLOB_STORE_NAME, blobStoreName);
-    storageAttributes.put("writePolicy", writePolicy);
-    storageAttributes.put("strictContentTypeValidation", strictContentTypeValidation);
+        Map<String, Map<String, Object>> attributes = new HashMap<>();
+        attributes.put(STORAGE, storageAttributes);
 
-    Map<String, Map<String, Object>> attributes = new HashMap<>();
-    attributes.put(STORAGE, storageAttributes);
-
-    return newConfiguration(name, recipeName, true, attributes);
+        return newConfiguration(name, recipeName, true, attributes);
+      }
+      default -> throw new IllegalArgumentException(STR."Recipe name must end with '-hosted': \{recipeName}");
+    }
   }
 
   /**
@@ -102,32 +111,39 @@ public class RepositoryApiImpl
       final boolean strictContentTypeValidation)
   {
     checkNotNull(name);
-    checkArgument(recipeName != null && recipeName.endsWith("-proxy"));
-    Map<String, Map<String, Object>> attributes = new HashMap<>();
+    
+    // Use pattern matching for switch to validate recipe name
+    switch (recipeName) {
+      case String r when r != null && r.endsWith("-proxy") -> {
+        // Valid recipe name, continue with configuration
+        Map<String, Map<String, Object>> attributes = new HashMap<>();
 
-    Map<String, Object> httpClientAttributes = new HashMap<>();
-    Map<String, Object> connectionAttributes = new HashMap<>();
-    connectionAttributes.put("blocked", false);
-    connectionAttributes.put("autoBlock", true);
-    httpClientAttributes.put("connection", connectionAttributes);
-    attributes.put("httpclient", httpClientAttributes);
+        Map<String, Object> httpClientAttributes = new HashMap<>();
+        Map<String, Object> connectionAttributes = new HashMap<>();
+        connectionAttributes.put("blocked", false);
+        connectionAttributes.put("autoBlock", true);
+        httpClientAttributes.put("connection", connectionAttributes);
+        attributes.put("httpclient", httpClientAttributes);
 
-    Map<String, Object> proxyAttributes = new HashMap<>();
-    proxyAttributes.put("remoteUrl", remoteUrl);
-    proxyAttributes.put("contentMaxAge", 1440);
-    proxyAttributes.put("metadataMaxAge", 1440);
-    attributes.put("proxy", proxyAttributes);
+        Map<String, Object> proxyAttributes = new HashMap<>();
+        proxyAttributes.put("remoteUrl", remoteUrl);
+        proxyAttributes.put("contentMaxAge", 1440);
+        proxyAttributes.put("metadataMaxAge", 1440);
+        attributes.put("proxy", proxyAttributes);
 
-    Map<String, Object> negativeCacheAttributes = new HashMap<>();
-    negativeCacheAttributes.put("enabled", true);
-    negativeCacheAttributes.put("timeToLive", 1440);
-    attributes.put("negativeCache", negativeCacheAttributes);
+        Map<String, Object> negativeCacheAttributes = new HashMap<>();
+        negativeCacheAttributes.put("enabled", true);
+        negativeCacheAttributes.put("timeToLive", 1440);
+        attributes.put("negativeCache", negativeCacheAttributes);
 
-    Map<String, Object> storageAttributes = new HashMap<>();
-    storageAttributes.put(BLOB_STORE_NAME, blobStoreName);
-    storageAttributes.put("strictContentTypeValidation", strictContentTypeValidation);
-    attributes.put(STORAGE, storageAttributes);
-    return newConfiguration(name, recipeName, true, attributes);
+        Map<String, Object> storageAttributes = new HashMap<>();
+        storageAttributes.put(BLOB_STORE_NAME, blobStoreName);
+        storageAttributes.put("strictContentTypeValidation", strictContentTypeValidation);
+        attributes.put(STORAGE, storageAttributes);
+        return newConfiguration(name, recipeName, true, attributes);
+      }
+      default -> throw new IllegalArgumentException(STR."Recipe name must end with '-proxy': \{recipeName}");
+    }
   }
 
   @Nonnull
@@ -138,18 +154,24 @@ public class RepositoryApiImpl
       final String... members)
   {
     checkNotNull(name);
-    checkArgument(recipeName != null && recipeName.endsWith("-group"));
+    
+    // Use pattern matching for switch to validate recipe name
+    switch (recipeName) {
+      case String r when r != null && r.endsWith("-group") -> {
+        // Valid recipe name, continue with configuration
+        Map<String, Object> groupAttributes = new HashMap<>();
+        groupAttributes.put("memberNames", Arrays.stream(members).distinct().toList());
 
-    Map<String, Object> groupAttributes = new HashMap<>();
-    groupAttributes.put("memberNames", Arrays.stream(members).distinct().toList());
+        Map<String, Object> storageAttributes = new HashMap<>();
+        storageAttributes.put(BLOB_STORE_NAME, blobStoreName);
 
-    Map<String, Object> storageAttributes = new HashMap<>();
-    storageAttributes.put(BLOB_STORE_NAME, blobStoreName);
-
-    Map<String, Map<String, Object>> attributes = new HashMap<>();
-    attributes.put("group", groupAttributes);
-    attributes.put(STORAGE, storageAttributes);
-    return newConfiguration(name, recipeName, true, attributes);
+        Map<String, Map<String, Object>> attributes = new HashMap<>();
+        attributes.put("group", groupAttributes);
+        attributes.put(STORAGE, storageAttributes);
+        return newConfiguration(name, recipeName, true, attributes);
+      }
+      default -> throw new IllegalArgumentException(STR."Recipe name must end with '-group': \{recipeName}");
+    }
   }
 
   private Configuration newConfiguration(
@@ -526,7 +548,7 @@ public class RepositoryApiImpl
   {
     Configuration configuration =
         createHosted(name, "yum-hosted", blobStoreName, writePolicy, strictContentTypeValidation);
-    configuration.getAttributes().put("yum", Map.of("repodataDepth", depth));
+    configuration.getAttributes().put("yum", Collections.singletonMap("repodataDepth", depth));
     return createRepository(configuration);
   }
 
@@ -619,57 +641,56 @@ public class RepositoryApiImpl
   }
 
   /**
-   * Creates a repository with the given configuration.
-   * This method runs validation checks before creating the repository.
-   * 
-   * @param configuration the repository configuration
-   * @return the created repository
-   * @throws Exception if repository creation fails
+   * Creates a repository using the provided configuration.
+   * Uses Virtual Threads for I/O-bound operations to improve performance.  
    */
   public Repository createRepository(final Configuration configuration) throws Exception {
-    // Run validations using virtual threads for better performance
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var blobStoreValidation = executor.submit(() -> validateBlobStore(configuration));
-      var groupMembersValidation = executor.submit(() -> validateGroupMembers(configuration));
+    // Create a virtual thread executor for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Run validations concurrently using virtual threads
+      CompletableFuture<Void> blobStoreValidation = CompletableFuture.runAsync(
+          () -> validateBlobStore(configuration), executor);
       
-      // Wait for validations to complete
-      blobStoreValidation.get();
-      groupMembersValidation.get();
+      CompletableFuture<Void> groupMembersValidation = CompletableFuture.runAsync(
+          () -> validateGroupMembers(configuration), executor);
+      
+      // Wait for all validations to complete
+      CompletableFuture.allOf(blobStoreValidation, groupMembersValidation).join();
+      
+      // Create the repository after validations pass
+      return repositoryManager.create(configuration);
     }
-    
-    return repositoryManager.create(configuration);
   }
 
+  /**
+   * Validates that the blob store specified in the configuration exists.
+   * Optimized with Virtual Threads for better performance during repository operations.
+   */
+  @VisibleForTesting
+  void validateBlobStore(final Configuration configuration) {
+    String name = (String) configuration.getAttributes().getOrDefault(STORAGE, emptyMap()).get(BLOB_STORE_NAME);
+    boolean exists = StreamSupport.stream(blobStoreManager.browse().spliterator(), false)
+        .anyMatch(blobStore -> blobStore.getBlobStoreConfiguration().getName().equals(name));
+    if (!exists) {
+      throw new IllegalArgumentException(STR."No blobStore found with name \{name}");
+    }
+  }
+
+  /**
+   * Validates that all group members specified in the configuration exist.
+   * Optimized with Virtual Threads for better performance during repository operations.
+   */
   @VisibleForTesting
   void validateGroupMembers(final Configuration configuration) {
-    Map<String, Object> groupMap = configuration.getAttributes().getOrDefault("group", emptyMap());
-    if (groupMap instanceof Map<?, ?> map) {
-      Object memberNamesObj = map.get("memberNames");
-      if (memberNamesObj instanceof Collection<?> members) {
-        List<String> existingRepos = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
-            .map(Repository::getName)
-            .toList();
-        
-        boolean valid = members.stream()
-            .filter(String.class::isInstance)
-            .map(String.class::cast)
-            .allMatch(existingRepos::contains);
-            
-        if (!valid) {
-          throw new IllegalStateException("One or more of the specified group memberNames does not actually exist");
-        }
-      }
-    }
-  }
-
-  @VisibleForTesting
-  void validateBlobStore(Configuration configuration) {
-    Object nameObj = configuration.getAttributes().getOrDefault(STORAGE, emptyMap()).get(BLOB_STORE_NAME);
-    if (nameObj instanceof String name) {
-      boolean exists = StreamSupport.stream(blobStoreManager.browse().spliterator(), false)
-          .anyMatch(blobStore -> blobStore.getBlobStoreConfiguration().getName().equals(name));
-      if (!exists) {
-        throw new IllegalArgumentException("No blobStore found with name " + name);
+    Collection<String> members =
+        (Collection<String>) configuration.getAttributes().getOrDefault("group", emptyMap()).get("memberNames");
+    if (members != null) {
+      List<String> existingRepos = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
+          .map(Repository::getName)
+          .toList();
+      boolean valid = members.stream().allMatch(existingRepos::contains);
+      if (!valid) {
+        throw new IllegalStateException(STR."One or more of the specified group memberNames does not actually exist: \{members}");
       }
     }
   }

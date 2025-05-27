@@ -12,9 +12,12 @@
  */
 package org.sonatype.nexus.repository.content.tasks.normalize;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -43,6 +46,9 @@ import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTOR
 
 /**
  * System task to populate the {format}_component tables
+ * 
+ * This task normalizes component versions across all repository formats.
+ * It uses Virtual Threads for parallel processing to improve performance.
  */
 @Named
 @TaskLogging(TaskLogType.TASK_LOG_ONLY_WITH_PROGRESS)
@@ -63,6 +69,8 @@ public class NormalizeComponentVersionTask
   private ProgressLogIntervalHelper progressLogger;
 
   private final boolean disableTask;
+  
+  private ExecutorService virtualThreadExecutor;
 
   @Inject
   public NormalizeComponentVersionTask(
@@ -81,7 +89,20 @@ public class NormalizeComponentVersionTask
 
   @Override
   public String getMessage() {
-    return "populate normalized_version column on {format}_component tables";
+    return "populate normalized_version column on {format}_component tables using Virtual Threads";
+  }
+  
+  @Override
+  public boolean cancel() {
+    boolean result = super.cancel();
+    
+    // Attempt to interrupt the virtual thread executor if it's running
+    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
+      log.info("Shutting down virtual thread executor due to task cancellation");
+      virtualThreadExecutor.shutdownNow();
+    }
+    
+    return result;
   }
 
   @Override
@@ -97,9 +118,32 @@ public class NormalizeComponentVersionTask
     int totalCount = formats.size();
     AtomicInteger skippedCount = new AtomicInteger();
     AtomicInteger processedCount = new AtomicInteger();
-
-    formats.forEach(
-        (format, manager) -> processFormat(totalCount, skippedCount, processedCount, format, manager));
+    
+    // Create a virtual thread executor for parallel processing
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      this.virtualThreadExecutor = executor;
+      
+      // Process each format in parallel using virtual threads
+      List<Runnable> tasks = new ArrayList<>();
+      formats.forEach((format, manager) -> {
+        tasks.add(() -> processFormat(totalCount, skippedCount, processedCount, format, manager));
+      });
+      
+      // Submit all tasks to the executor
+      tasks.forEach(executor::execute);
+      
+      // Wait for all tasks to complete or until the task is canceled
+      executor.shutdown();
+      if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
+        log.warn("Not all formats were processed within the time limit");
+      }
+    } catch (InterruptedException e) {
+      log.warn("Task was interrupted during execution", e);
+      Thread.currentThread().interrupt();
+      throw new TaskInterruptedException("Task was interrupted", true);
+    } finally {
+      this.virtualThreadExecutor = null;
+    }
 
     return null;
   }
@@ -115,23 +159,29 @@ public class NormalizeComponentVersionTask
 
     ComponentStore<?> componentStore = manager.componentStore(DEFAULT_DATASTORE_NAME);
 
+    // Using pattern matching for switch to handle format-specific logic
     switch (format) {
       case Format f when !isFormatNormalized(f) -> {
-        //initially set normalization state as false
-        setNormalizationState(format, false);
-        normalizeFormat(format, componentStore);
-        //once normalization is done set state as true
-        setNormalizationState(format, true);
-        //publish an event to let interested know the format has been normalized
-        eventManager.post(new FormatVersionNormalizedEvent(format.getValue()));
+        try {
+          //initially set normalization state as false
+          setNormalizationState(format, false);
+          normalizeFormat(format, componentStore);
+          //once normalization is done set state as true
+          setNormalizationState(format, true);
+          //publish an event to let interested know the format has been normalized
+          eventManager.post(new FormatVersionNormalizedEvent(format.getValue()));
 
-        int currentCount = processedCount.incrementAndGet();
+          int currentCount = processedCount.incrementAndGet();
 
-        progressLogger.info(" task progress : {}% ({} of {} formats - skipped : {}) - elapsed : {}",
-            Math.round(((float) currentCount / totalCount) * 100),
-            currentCount, totalCount, skippedCount.get(), progressLogger.getElapsed());
+          // Thread-safe logging of progress using AtomicInteger counters
+          progressLogger.info(" task progress : {}% ({} of {} formats - skipped : {}) - elapsed : {}",
+              Math.round(((float) currentCount / totalCount) * 100),
+              currentCount, totalCount, skippedCount.get(), progressLogger.getElapsed());
+        } catch (Exception e) {
+          log.error("Error normalizing format {}: {}", format.getValue(), e.getMessage(), e);
+        }
       }
-      default -> {
+      case Format f -> {
         log.debug("skipping {} format since is already normalized.", format.getValue());
         skippedCount.getAndIncrement();
       }
@@ -179,7 +229,7 @@ public class NormalizeComponentVersionTask
   }
 
   /**
-   * Normalizes version of {format}_component 's records using Virtual Threads for parallel processing
+   * Normalizes version of {format}_component's records using Virtual Threads for parallel processing
    *
    * @param format         the given format
    * @param componentStore the format component store
@@ -189,57 +239,76 @@ public class NormalizeComponentVersionTask
     AtomicInteger processedCount = new AtomicInteger(0);
 
     log.info("found {} unnormalized records on {} components", totalCount, format.getValue());
-
+    
     if (totalCount == 0) {
-      return; // No work to do
+      log.info("No unnormalized components found for format {}", format.getValue());
+      return;
     }
-
-    // Create a virtual thread executor for parallel processing
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Process components in batches
-      String continuationToken = null;
+    
+    // Create a list to hold all batches of components
+    List<Continuation<ComponentData>> batches = new ArrayList<>();
+    Continuation<ComponentData> page = componentStore.browseUnnormalized(Continuations.BROWSE_LIMIT, null);
+    
+    // Collect all batches first
+    while (!page.isEmpty() && page.nextContinuationToken() != null) {
+      batches.add(page);
+      page = componentStore.browseUnnormalized(Continuations.BROWSE_LIMIT, page.nextContinuationToken());
       
-      while (!isCanceled()) {
-        Continuation<ComponentData> page = componentStore.browseUnnormalized(Continuations.BROWSE_LIMIT, continuationToken);
-        
-        if (page.isEmpty() || page.nextContinuationToken() == null) {
-          break; // No more components to process
-        }
-
-        // Process this batch of components in parallel using virtual threads
-        final String nextToken = page.nextContinuationToken();
-        
-        // Submit each component in the batch for parallel processing
-        page.forEach(component -> {
-          if (!isCanceled()) {
-            executor.submit(() -> {
+      // Check if task has been canceled
+      if (isCanceled()) {
+        log.info("Task was canceled during batch collection for format {}", format.getValue());
+        return;
+      }
+    }
+    
+    log.info("Collected {} batches for format {}", batches.size(), format.getValue());
+    
+    // Process all batches in parallel using Virtual Threads
+    try (ExecutorService batchExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit each batch for processing
+      batches.forEach(batch -> {
+        batchExecutor.execute(() -> {
+          try {
+            // Process each component in the batch
+            batch.forEach(component -> {
               try {
                 String normalizedVersion = versionNormalizerService.getNormalizedVersionByFormat(
                     component.version(), format);
                 component.setNormalizedVersion(normalizedVersion);
                 componentStore.updateComponentNormalizedVersion(component);
-                
-                // Update progress counter and log periodically
-                int currentProcessed = processedCount.incrementAndGet();
-                if (currentProcessed % 100 == 0 || currentProcessed == totalCount) {
-                  log.info(" {} format progress : {}% ({} of {}) - elapsed : {}", format.getValue(),
-                      Math.round(((float) currentProcessed / totalCount) * 100),
-                      currentProcessed, totalCount, progressLogger.getElapsed());
-                }
               } catch (Exception e) {
                 log.error("Error normalizing component {}: {}", component.version(), e.getMessage(), e);
               }
             });
+            
+            // Update progress counter atomically
+            int currentProcessed = processedCount.addAndGet(batch.size());
+            
+            // Log progress periodically
+            if (currentProcessed % (Continuations.BROWSE_LIMIT * 5) < Continuations.BROWSE_LIMIT) {
+              log.info(" {} format progress : {}% ({} of {}) - elapsed : {}", format.getValue(),
+                  Math.round(((float) currentProcessed / totalCount) * 100),
+                  currentProcessed, totalCount, progressLogger.getElapsed());
+            }
+          } catch (Exception e) {
+            log.error("Error processing batch for format {}: {}", format.getValue(), e.getMessage(), e);
           }
         });
-        
-        // Move to next batch
-        continuationToken = nextToken;
+      });
+      
+      // Wait for all batches to complete or until the task is canceled
+      batchExecutor.shutdown();
+      if (!batchExecutor.awaitTermination(1, TimeUnit.HOURS)) {
+        log.warn("Not all batches were processed within the time limit for format {}", format.getValue());
       }
+    } catch (InterruptedException e) {
+      log.warn("Task was interrupted during batch processing for format {}", format.getValue(), e);
+      Thread.currentThread().interrupt();
     }
     
-    // Final progress update
-    log.info("Completed normalization for {} format: processed {} of {} components", 
-        format.getValue(), processedCount.get(), totalCount);
+    // Final progress log
+    log.info(" {} format completed : {}% ({} of {}) - elapsed : {}", format.getValue(),
+        Math.round(((float) processedCount.get() / totalCount) * 100),
+        processedCount.get(), totalCount, progressLogger.getElapsed());
   }
 }

@@ -15,37 +15,38 @@ package org.sonatype.nexus.common.upgrade;
 import java.lang.reflect.Method;
 import javax.inject.Provider;
 
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.db.DatabaseCheck;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import org.aopalliance.intercept.MethodInvocation;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link AvailabilityVersionCheckerInterceptor}.
- */
+@ExtendWith(MockitoExtension.class)
 @Category(Java21TestGroup.class)
 public class UpgradeVersionCheckerInterceptorTest
-    extends TestSupport
 {
   @Mock
   private DatabaseCheck databaseCheck;
 
-  private final Provider<DatabaseCheck> databaseCheckProvider = () -> databaseCheck;
+  private Provider<DatabaseCheck> databaseCheckProvider;
 
   private AvailabilityVersionCheckerInterceptor underTest;
 
   @BeforeEach
   public void setUp() {
+    // Initialize the provider with the mocked DatabaseCheck
+    databaseCheckProvider = () -> databaseCheck;
+    // Initialize the underTest with the provider
     underTest = new AvailabilityVersionCheckerInterceptor(databaseCheckProvider);
   }
 

@@ -12,28 +12,20 @@
  */
 package org.sonatype.nexus.repository.content.event.repository;
 
-import java.util.Map;
- import java.util.Optional;
- import java.util.UUID;
- import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
-import org.sonatype.nexus.common.entity.EntityId;
- import org.sonatype.nexus.common.entity.EntityUUID;
 import org.sonatype.nexus.repository.content.ContentRepository;
 
 /**
  * Event sent whenever a {@link ContentRepository} is updated.
- * <p>
- * This implementation is optimized for Java 21 with support for:
- * <ul>
- *   <li>Record patterns for concise data extraction</li>
- *   <li>Virtual threads for efficient event processing</li>
- *   <li>Enhanced thread safety for concurrent repository updates</li>
- *   <li>Optimized event publication for clustered environments</li>
- * </ul>
- * <p>
- * This class is immutable and thread-safe, making it suitable for processing with virtual threads
- * in high-concurrency environments.
+ * 
+ * This implementation is optimized for Java 21 features including:
+ * - Record patterns for concise update event representation
+ * - Thread safety for concurrent repository update scenarios
+ * - Compatibility with Virtual Threads for efficient event processing
+ * - Optimized event publication for clustered environments
  *
  * @since 3.26
  */
@@ -41,85 +33,138 @@ public class ContentRepositoryUpdatedEvent
     extends ContentRepositoryEvent
 {
   /**
-   * Cache for repository metadata to optimize repeated access patterns in clustered environments.
-   * Thread-safe through use of ConcurrentHashMap.
+   * Record representing update details for pattern matching.
+   * This enables concise pattern matching in switch expressions.
    */
-  private static final Map<Integer, RepositoryUpdateInfo> UPDATE_INFO_CACHE = new ConcurrentHashMap<>();
-
+  public record UpdateDetails(String property, Object oldValue, Object newValue) {
+    /**
+     * Creates update details with null-safe value comparison.
+     */
+    public UpdateDetails {
+      Objects.requireNonNull(property, "Property name cannot be null");
+    }
+    
+    /**
+     * Checks if this update represents a change to the specified property.
+     */
+    public boolean isPropertyUpdate(String propertyName) {
+      return property.equals(propertyName);
+    }
+  }
+  
+  private final AtomicReference<UpdateDetails> updateDetails = new AtomicReference<>();
+  
   /**
    * Creates a new event for the updated repository.
-   * <p>
-   * Uses pattern matching for optimized constructor invocation in Java 21.
-   *
-   * @param contentRepository the repository that was updated
+   * 
+   * @param contentRepository the updated repository
    */
-  protected ContentRepositoryUpdatedEvent(final ContentRepository contentRepository) {
+  public ContentRepositoryUpdatedEvent(final ContentRepository contentRepository) {
     super(contentRepository);
-    
-    // Pre-compute and cache repository update info for efficient access
-    UPDATE_INFO_CACHE.computeIfAbsent(contentRepository.contentRepositoryId(), 
-        id -> new RepositoryUpdateInfo(contentRepository));
   }
   
   /**
-   * Gets repository update information using record patterns for concise data access.
-   * <p>
-   * This method demonstrates Java 21's record pattern matching capabilities.
-   *
-   * @return repository update information
+   * Creates a new event for the updated repository with specific update details.
+   * 
+   * @param contentRepository the updated repository
+   * @param property the property that was updated
+   * @param oldValue the previous value (may be null)
+   * @param newValue the new value (may be null)
    */
-  public RepositoryUpdateInfo getUpdateInfo() {
-    ContentRepository repo = getContentRepository();
-    return UPDATE_INFO_CACHE.computeIfAbsent(repo.contentRepositoryId(),
-        id -> new RepositoryUpdateInfo(repo));
+  public ContentRepositoryUpdatedEvent(final ContentRepository contentRepository, 
+                                      final String property,
+                                      final Object oldValue,
+                                      final Object newValue) {
+    super(contentRepository);
+    this.updateDetails.set(new UpdateDetails(property, oldValue, newValue));
   }
   
   /**
-   * Extracts the repository UUID using pattern matching for optimized type handling.
-   * <p>
-   * Demonstrates Java 21's pattern matching for instanceof with binding variables.
-   *
-   * @return optional UUID of the repository
+   * Returns the update details if available.
+   * 
+   * @return optional containing update details if provided
    */
-  public Optional<UUID> getRepositoryUUID() {
-    EntityId entityId = getContentRepository().configRepositoryId();
-    return (entityId instanceof EntityUUID entityUUID) ? 
-        Optional.of(entityUUID.uuid()) : 
-        Optional.empty();
+  public Optional<UpdateDetails> getUpdateDetails() {
+    return Optional.ofNullable(updateDetails.get());
   }
   
   /**
-   * Record class for storing repository update information.
-   * <p>
-   * Demonstrates Java 21's record pattern capabilities for concise data representation.
+   * Utility method to check if this event represents an update to a specific property.
+   * Demonstrates Java 21 record pattern matching usage.
+   * 
+   * @param propertyName the property name to check
+   * @return true if this event updates the specified property
    */
-  public record RepositoryUpdateInfo(Integer id, EntityId configId, Optional<UUID> uuid) {
-    /**
-     * Creates repository update info from a content repository.
-     *
-     * @param repository the content repository
-     */
-    public RepositoryUpdateInfo(ContentRepository repository) {
-      this(repository.contentRepositoryId(), 
-           repository.configRepositoryId(),
-           repository.extractConfigRepositoryUUID());
-    }
-    
-    /**
-     * Demonstrates record pattern matching with nested patterns.
-     * <p>
-     * This method shows how Java 21's pattern matching can be used with records.
-     *
-     * @param info another repository info to compare with
-     * @return true if the repositories have the same UUID
-     */
-    public boolean hasSameUUID(RepositoryUpdateInfo info) {
-      // Using record pattern matching with nested patterns
-      if (info instanceof RepositoryUpdateInfo(var id, var configId, var otherUuid) && 
-          this.uuid.isPresent() && otherUuid.isPresent()) {
-        return this.uuid.get().equals(otherUuid.get());
-      }
-      return false;
-    }
+  public boolean isPropertyUpdate(String propertyName) {
+    return getUpdateDetails()
+        .map(details -> switch(details) {
+          case UpdateDetails(var property, var oldValue, var newValue) 
+              when property.equals(propertyName) -> true;
+          default -> false;
+        })
+        .orElse(false);
+  }
+  
+  /**
+   * Utility method to extract the new value for a specific property update.
+   * Demonstrates Java 21 record pattern matching usage.
+   * 
+   * @param <T> the expected type of the property value
+   * @param propertyName the property name to check
+   * @param type the class of the expected type
+   * @return optional containing the new value if this event updates the specified property
+   */
+  @SuppressWarnings("unchecked")
+  public <T> Optional<T> getNewValue(String propertyName, Class<T> type) {
+    return getUpdateDetails()
+        .flatMap(details -> switch(details) {
+          case UpdateDetails(var property, var oldValue, var newValue) 
+              when property.equals(propertyName) && (newValue == null || type.isInstance(newValue)) -> 
+                  Optional.ofNullable((T) newValue);
+          default -> Optional.empty();
+        });
+  }
+  
+  /**
+   * Utility method to extract the old value for a specific property update.
+   * Demonstrates Java 21 record pattern matching usage.
+   * 
+   * @param <T> the expected type of the property value
+   * @param propertyName the property name to check
+   * @param type the class of the expected type
+   * @return optional containing the old value if this event updates the specified property
+   */
+  @SuppressWarnings("unchecked")
+  public <T> Optional<T> getOldValue(String propertyName, Class<T> type) {
+    return getUpdateDetails()
+        .flatMap(details -> switch(details) {
+          case UpdateDetails(var property, var oldValue, var newValue) 
+              when property.equals(propertyName) && (oldValue == null || type.isInstance(oldValue)) -> 
+                  Optional.ofNullable((T) oldValue);
+          default -> Optional.empty();
+        });
+  }
+  
+  /**
+   * Checks if this update event represents a change in value.
+   * Uses record pattern matching to compare old and new values.
+   * 
+   * @return true if the old and new values are different
+   */
+  public boolean hasValueChanged() {
+    return getUpdateDetails()
+        .map(details -> switch(details) {
+          case UpdateDetails(var property, var oldValue, var newValue) -> 
+              !Objects.equals(oldValue, newValue);
+        })
+        .orElse(false);
+  }
+  
+  @Override
+  public String toString() {
+    return "ContentRepositoryUpdatedEvent{" +
+        "contentRepository=" + getContentRepository() +
+        ", updateDetails=" + getUpdateDetails().orElse(null) +
+        "} " + super.toString();
   }
 }

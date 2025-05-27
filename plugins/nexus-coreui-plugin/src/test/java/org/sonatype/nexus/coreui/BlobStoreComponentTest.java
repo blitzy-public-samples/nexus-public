@@ -17,6 +17,19 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobStoreDescriptor;
@@ -35,14 +48,6 @@ import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
 import static java.lang.Math.pow;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
@@ -51,19 +56,16 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link BlobStoreComponent}.
- * 
- * Updated to use JUnit Jupiter (JUnit 5) and Mockito 4.11.0 for Java 21 compatibility.
- */
 @ExtendWith(MockitoExtension.class)
 public class BlobStoreComponentTest
     extends TestSupport
@@ -103,7 +105,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testReadTypesReturnsDescriptorData() {
+  public void readTypesShouldReturnDescriptorData() {
     BlobStoreDescriptor descriptor = mock(BlobStoreDescriptor.class);
     when(descriptor.getName()).thenReturn("MyType");
     when(descriptor.getFormFields()).thenReturn(Collections.emptyList());
@@ -124,7 +126,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testCreateBlobstoreCreatesAndReturnsNewBlobstore() throws Exception {
+  public void createBlobstoreShouldCreateAndReturnNewBlobstore() throws Exception {
     Map<String, Map<String, Object>> attributes = new HashMap<>();
     Map<String, Object> fileAttributes = new HashMap<>();
     fileAttributes.put("path", "path/to/blobs/myblobs");
@@ -160,7 +162,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testRemoveBlobstoreOnlyRemovesUnusedBlobstores() throws Exception {
+  public void removeBlobstoreShouldOnlyRemoveUnusedBlobstores() throws Exception {
     when(repositoryManager.isBlobstoreUsed("not-used")).thenReturn(false);
 
     underTest.remove("not-used");
@@ -173,7 +175,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testDefaultWorkDirectoryReturnsTheBlobsDirectory() {
+  public void defaultWorkDirectoryShouldReturnTheBlobsDirectory() {
     File blobDirectory = new File("path/to/blobs");
     when(applicationDirectories.getWorkDirectory("blobs")).thenReturn(blobDirectory);
 
@@ -184,7 +186,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testCreateBlobStoreXOWithQuota() {
+  public void createBlobStoreXOWithQuotaShouldSetCorrectValues() {
     long quotaLimitBytes = (long) (10 * pow(10, 6));
     MockBlobStoreConfiguration config = mockConfig(quotaLimitBytes);
 
@@ -205,7 +207,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testCreateBlobStoreConfigWithQuota() {
+  public void createBlobStoreConfigWithQuotaShouldSetCorrectValues() {
     BlobStoreConfiguration blobStoreConfig = mock(BlobStoreConfiguration.class);
     BlobStoreXO blobStoreXO = mock(BlobStoreXO.class);
     when(blobStoreXO.getName()).thenReturn("xoTest");
@@ -230,7 +232,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testRequestingBlobstoreNamesOnlyDoesNotSetOtherProperties() {
+  public void requestingBlobstoreNamesOnlyShouldNotSetOtherProperties() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration().withName("test")
         .withAttributes(
             Map.of("file", Map.of("path", "path"), "blobStoreQuotaConfig",
@@ -247,7 +249,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testUpdatingS3BlobstoreWithPasswordPlaceholderDoesNotAlterSecretAccessKey() throws Exception {
+  public void updatingS3BlobstoreWithPasswordPlaceholderShouldNotAlterSecretAccessKey() throws Exception {
     Map<String, Map<String, Object>> attributes = new HashMap<>();
     Map<String, Object> s3Attributes = new HashMap<>();
     s3Attributes.put("access", "test");
@@ -285,7 +287,7 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testUpdatingAzureBlobstoreWithPasswordPlaceholderDoesNotAlterAccountKey() throws Exception {
+  public void updatingAzureBlobstoreWithPasswordPlaceholderShouldNotAlterAccountKey() throws Exception {
     String originalSecret = "hello";
     Map<String, Map<String, Object>> attributes = new HashMap<>();
     Map<String, Object> azureAttributes = new HashMap<>();
@@ -319,26 +321,104 @@ public class BlobStoreComponentTest
   }
 
   @Test
-  public void testRemoveBlobstoreDoesNotRemoveBlobstoresPartOfMoveRepositoryTask() throws Exception {
+  public void removeBlobstoreShouldNotRemoveBlobstoresPartOfMoveRepositoryTask() throws Exception {
     when(blobStoreTaskService.countTasksInUseForBlobStore("used_in_move")).thenReturn(2);
 
-    BlobStoreException exception = assertThrows(BlobStoreException.class, () -> underTest.remove("used_in_move"));
-    assertThat(exception, is(instanceOf(BlobStoreException.class)));
+    assertThrows(BlobStoreException.class, () -> underTest.remove("used_in_move"));
 
     verify(blobStoreManager, never()).delete("used_in_move");
   }
   
-  /**
-   * Test to verify that BlobStoreComponent can handle concurrent operations using virtual threads.
-   * This test simulates multiple concurrent requests to create blob stores.
-   */
   @Test
-  public void testConcurrentOperationsWithVirtualThreads() throws Exception {
-    // This test would be implemented to verify that BlobStoreComponent works correctly
-    // with Java 21 virtual threads. In a real implementation, it would use Thread.ofVirtual()
-    // to create virtual threads and test concurrent operations.
-    // 
-    // For now, this is a placeholder to demonstrate where virtual thread testing would be added.
+  public void blobStoreOperationsWithVirtualThreadsShouldPerformEfficiently() throws Exception {
+    // Configure mock blob store for testing
+    BlobStore blobStore = mock(BlobStore.class);
+    BlobStoreMetrics metrics = mock(BlobStoreMetrics.class);
+    when(metrics.getBlobCount()).thenReturn(1000L);
+    when(metrics.getTotalSize()).thenReturn(1024L * 1024L * 100L); // 100MB
+    when(blobStore.getMetrics()).thenReturn(metrics);
+    
+    MockBlobStoreConfiguration config = new MockBlobStoreConfiguration()
+        .withName("virtual-thread-test")
+        .withType("File")
+        .withAttributes(Map.of("file", Map.of("path", "/tmp/virtual-thread-test")));
+    when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
+    
+    // Setup blob store manager to return our test blob store
+    when(blobStoreManager.get("virtual-thread-test")).thenReturn(blobStore);
+    when(blobStoreManager.getByName()).thenReturn(Collections.singletonMap("virtual-thread-test", blobStore));
+    
+    // Create virtual thread executor
+    ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    ExecutorService platformThreadExecutor = Executors.newFixedThreadPool(100);
+    
+    try {
+      // Test with a large number of concurrent operations
+      int operationCount = 1000;
+      CountDownLatch virtualLatch = new CountDownLatch(operationCount);
+      CountDownLatch platformLatch = new CountDownLatch(operationCount);
+      AtomicInteger virtualErrors = new AtomicInteger(0);
+      AtomicInteger platformErrors = new AtomicInteger(0);
+      
+      // Measure time for virtual threads
+      long virtualStartTime = System.nanoTime();
+      for (int i = 0; i < operationCount; i++) {
+        virtualThreadExecutor.submit(() -> {
+          try {
+            // Simulate blob store operation
+            BlobStoreXO blobStoreXO = underTest.asBlobStoreXO(config);
+          } 
+          catch (Exception e) {
+            virtualErrors.incrementAndGet();
+          }
+          finally {
+            virtualLatch.countDown();
+          }
+        });
+      }
+      virtualLatch.await(30, TimeUnit.SECONDS);
+      long virtualDuration = System.nanoTime() - virtualStartTime;
+      
+      // Measure time for platform threads
+      long platformStartTime = System.nanoTime();
+      for (int i = 0; i < operationCount; i++) {
+        platformThreadExecutor.submit(() -> {
+          try {
+            // Simulate blob store operation
+            BlobStoreXO blobStoreXO = underTest.asBlobStoreXO(config);
+          } 
+          catch (Exception e) {
+            platformErrors.incrementAndGet();
+          }
+          finally {
+            platformLatch.countDown();
+          }
+        });
+      }
+      platformLatch.await(30, TimeUnit.SECONDS);
+      long platformDuration = System.nanoTime() - platformStartTime;
+      
+      // Verify results
+      assertThat(virtualErrors.get(), is(0));
+      assertThat(platformErrors.get(), is(0));
+      
+      // Virtual threads should be more efficient for I/O-bound operations
+      // This is a soft assertion as the actual performance depends on the environment
+      log.info("Virtual thread duration: {} ns, Platform thread duration: {} ns", 
+          virtualDuration, platformDuration);
+      
+      // In most cases, virtual threads should be faster for this I/O-bound workload
+      // but we don't want the test to be flaky, so we just log the results
+      // and only assert if virtual threads are significantly slower
+      if (virtualDuration > platformDuration * 1.5) {
+        assertThat("Virtual threads should not be significantly slower than platform threads",
+            virtualDuration, lessThan(platformDuration * 1.5));
+      }
+    } 
+    finally {
+      virtualThreadExecutor.shutdown();
+      platformThreadExecutor.shutdown();
+    }
   }
 
   private static MockBlobStoreConfiguration mockConfig(final long quotaLimitBytes) {

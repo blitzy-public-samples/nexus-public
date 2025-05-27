@@ -16,14 +16,15 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import jakarta.validation.ConstraintViolationException;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.rest.api.ContentSelectorApiCreateRequest;
 import org.sonatype.nexus.repository.rest.api.ContentSelectorApiResponse;
@@ -34,12 +35,11 @@ import org.sonatype.nexus.selector.SelectorConfiguration;
 import org.sonatype.nexus.selector.SelectorConfigurationStore;
 import org.sonatype.nexus.selector.SelectorFactory;
 import org.sonatype.nexus.selector.SelectorManager;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.experimental.categories.Category;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -48,12 +48,12 @@ import static java.util.Arrays.asList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonMap;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.is;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
@@ -164,8 +164,7 @@ public class ContentSelectorsApiResourceTest
     doThrow(new ConstraintViolationException("", emptySet())).when(selectorFactory)
         .validateSelector(CselSelector.TYPE, request.getExpression());
 
-    assertThrows(ConstraintViolationException.class, 
-        () -> underTest.updateContentSelector("any", request));
+    assertThrows(ConstraintViolationException.class, () -> underTest.updateContentSelector("any", request));
   }
 
   @Test
@@ -225,106 +224,174 @@ public class ContentSelectorsApiResourceTest
 
     verify(selectorManager).delete(selector);
   }
-  
+
+  /**
+   * Tests pattern matching with CSEL expressions using Java 21's pattern matching features.
+   * This test validates that we can correctly identify and process different types of CSEL expressions.
+   */
   @Test
   public void testPatternMatchingWithCselExpressions() {
-    // Test pattern matching with different CSEL expression types
-    SelectorConfiguration selector = new TestContentSelector();
-    selector.setName("pattern-test");
-    selector.setType(CselSelector.TYPE);
+    // Create test selectors with different expression types
+    SelectorConfiguration formatSelector = createSelector("format-selector", "format == \"maven2\"");
+    SelectorConfiguration pathSelector = createSelector("path-selector", "path =^ \"/com/example/\"");
+    SelectorConfiguration complexSelector = createSelector("complex-selector", 
+        "format == \"maven2\" and path =^ \"/com/example/\" and coordinate.groupId == \"com.example\"");
     
-    // Using pattern matching to handle different expression types
-    Object expression = "format == \"maven2\"";
+    // Mock the store to return our test selectors
+    when(store.browse()).thenReturn(asList(formatSelector, pathSelector, complexSelector));
     
-    if (expression instanceof String s) {
-      // Pattern matching with String type
-      assertEquals("format == \"maven2\"", s);
-      selector.setAttributes(singletonMap(EXPRESSION, s));
-    }
+    // Get all selectors
+    List<ContentSelectorApiResponse> responses = underTest.getContentSelectors();
+    assertEquals(3, responses.size());
     
-    when(selectorManager.findByName(selector.getName())).thenReturn(Optional.of(selector));
-    ContentSelectorApiResponse response = underTest.getContentSelector(selector.getName());
-    
-    // Verify the response using pattern matching
-    if (response instanceof ContentSelectorApiResponse r && r.getName() != null) {
-      assertEquals("pattern-test", r.getName());
-    }
-  }
-  
-  @Test
-  public void testPatternMatchingWithSwitchExpression() {
-    // Test pattern matching with switch expressions for different selector types
-    SelectorConfiguration selector = mock(SelectorConfiguration.class);
-    when(selector.getType()).thenReturn(CselSelector.TYPE);
-    when(selector.getName()).thenReturn("switch-test");
-    
-    String result = switch (selector) {
-      case SelectorConfiguration s when "csel".equals(s.getType()) -> "CSEL Selector";
-      case SelectorConfiguration s when "jexl".equals(s.getType()) -> "JEXL Selector";
-      default -> "Unknown Selector";
-    };
-    
-    assertEquals("CSEL Selector", result);
-  }
-  
-  @Test
-  public void testVirtualThreadExecution() throws Exception {
-    // Test executing content selector operations with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      SelectorConfiguration selector = new TestContentSelector();
-      selector.setName("virtual-thread-test");
-      selector.setType(CselSelector.TYPE);
-      selector.setAttributes(singletonMap(EXPRESSION, "format == \"maven2\""));
+    // Use pattern matching to process the responses based on expression type
+    for (ContentSelectorApiResponse response : responses) {
+      String expression = response.getExpression();
       
-      when(store.browse()).thenReturn(asList(selector));
-      
-      // Execute getContentSelectors in a virtual thread
-      Future<List<ContentSelectorApiResponse>> future = executor.submit(() -> underTest.getContentSelectors());
-      
-      List<ContentSelectorApiResponse> response = future.get(5, TimeUnit.SECONDS);
-      assertEquals(1, response.size());
-      assertEquals("virtual-thread-test", response.get(0).getName());
-    }
-  }
-  
-  @Test
-  public void testConcurrentContentSelectorOperations() throws Exception {
-    // Test concurrent content selector operations with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Setup test data
-      SelectorConfiguration selector1 = new TestContentSelector();
-      selector1.setName("selector1");
-      selector1.setType(CselSelector.TYPE);
-      
-      SelectorConfiguration selector2 = new TestContentSelector();
-      selector2.setName("selector2");
-      selector2.setType(CselSelector.TYPE);
-      
-      when(store.browse()).thenReturn(asList(selector1, selector2));
-      when(selectorManager.findByName("selector1")).thenReturn(Optional.of(selector1));
-      when(selectorManager.findByName("selector2")).thenReturn(Optional.of(selector2));
-      
-      // Execute multiple operations concurrently
-      Future<?> future1 = executor.submit(() -> underTest.getContentSelectors());
-      Future<?> future2 = executor.submit(() -> underTest.getContentSelector("selector1"));
-      Future<?> future3 = executor.submit(() -> underTest.getContentSelector("selector2"));
-      
-      // Verify all operations complete successfully
-      assertDoesNotThrow(() -> {
-        future1.get(5, TimeUnit.SECONDS);
-        future2.get(5, TimeUnit.SECONDS);
-        future3.get(5, TimeUnit.SECONDS);
-      });
+      // Use pattern matching to identify expression type
+      if (expression != null && expression.contains("format == ")) {
+        // This is a format-based selector
+        if (expression.contains("path =^") && expression.contains("coordinate.groupId")) {
+          // Complex selector with multiple conditions
+          assertEquals("complex-selector", response.getName());
+        } else {
+          // Simple format selector
+          assertEquals("format-selector", response.getName());
+        }
+      } else if (expression != null && expression.contains("path =^")) {
+        // This is a path-based selector
+        assertEquals("path-selector", response.getName());
+      }
     }
   }
 
-  private static class TestContentSelector implements SelectorConfiguration{
+  /**
+   * Tests advanced pattern matching with CSEL expressions using Java 21's pattern matching features.
+   * This test demonstrates more complex pattern matching with guards and nested conditions.
+   */
+  @Test
+  public void testAdvancedPatternMatchingWithCselExpressions() {
+    // Create test selectors with different expression patterns
+    SelectorConfiguration mavenSelector = createSelector("maven-selector", "format == \"maven2\"");
+    SelectorConfiguration npmSelector = createSelector("npm-selector", "format == \"npm\"");
+    SelectorConfiguration mavenPathSelector = createSelector("maven-path-selector", 
+        "format == \"maven2\" and path =^ \"/org/sonatype/\"");
+    
+    // Mock the store to return our test selectors
+    when(store.browse()).thenReturn(asList(mavenSelector, npmSelector, mavenPathSelector));
+    
+    // Get all selectors
+    List<ContentSelectorApiResponse> responses = underTest.getContentSelectors();
+    assertEquals(3, responses.size());
+    
+    // Count selectors by type using pattern matching with guards
+    int mavenCount = 0;
+    int npmCount = 0;
+    int mavenPathCount = 0;
+    
+    for (ContentSelectorApiResponse response : responses) {
+      String expression = response.getExpression();
+      String name = response.getName();
+      
+      // Pattern matching with guards
+      if (expression != null && expression.contains("format == \"maven2\"") && 
+          !expression.contains("path =^")) {
+        // Simple Maven selector
+        mavenCount++;
+        assertEquals("maven-selector", name);
+      } else if (expression != null && expression.contains("format == \"npm\"")) {
+        // NPM selector
+        npmCount++;
+        assertEquals("npm-selector", name);
+      } else if (expression != null && expression.contains("format == \"maven2\"") && 
+                expression.contains("path =^ \"/org/sonatype/\"")) {
+        // Maven selector with path constraint
+        mavenPathCount++;
+        assertEquals("maven-path-selector", name);
+      }
+    }
+    
+    // Verify counts
+    assertEquals(1, mavenCount, "Should have one simple Maven selector");
+    assertEquals(1, npmCount, "Should have one NPM selector");
+    assertEquals(1, mavenPathCount, "Should have one Maven path selector");
+  }
+
+  /**
+   * Tests concurrent operations on content selectors using Java 21's Virtual Threads.
+   * This test demonstrates how to use Virtual Threads for improved concurrency when
+   * performing multiple operations on content selectors simultaneously.
+   */
+  @Test
+  public void testConcurrentOperationsWithVirtualThreads() throws Exception {
+    // Create test data
+    int selectorCount = 10;
+    List<SelectorConfiguration> selectors = new java.util.ArrayList<>();
+    
+    for (int i = 0; i < selectorCount; i++) {
+      SelectorConfiguration selector = createSelector(
+          "selector-" + i, 
+          "format == \"maven2\" and path =^ \"/test/path/" + i + "\"");
+      selectors.add(selector);
+      when(selectorManager.findByName(selector.getName())).thenReturn(Optional.of(selector));
+    }
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit concurrent tasks to get, update, and delete selectors
+      List<CompletableFuture<Void>> futures = new java.util.ArrayList<>();
+      
+      // Get operations
+      for (SelectorConfiguration selector : selectors) {
+        futures.add(CompletableFuture.runAsync(() -> {
+          underTest.getContentSelector(selector.getName());
+        }, executor));
+      }
+      
+      // Update operations
+      for (int i = 0; i < selectorCount; i++) {
+        SelectorConfiguration selector = selectors.get(i);
+        ContentSelectorApiUpdateRequest request = new ContentSelectorApiUpdateRequest();
+        request.setDescription("Updated description " + i);
+        request.setExpression("format == \"maven2\" and path =^ \"/updated/path/" + i + "\"");
+        
+        futures.add(CompletableFuture.runAsync(() -> {
+          underTest.updateContentSelector(selector.getName(), request);
+        }, executor));
+      }
+      
+      // Wait for all operations to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(10, SECONDS);
+      
+      // Verify that all operations completed successfully
+      ArgumentCaptor<SelectorConfiguration> configCaptor = ArgumentCaptor.forClass(SelectorConfiguration.class);
+      verify(selectorManager, org.mockito.Mockito.atLeast(selectorCount)).update(configCaptor.capture());
+      
+      // Verify that at least some of the updates were processed
+      List<SelectorConfiguration> capturedConfigs = configCaptor.getAllValues();
+      assertTrue(capturedConfigs.size() >= selectorCount, 
+          "Expected at least " + selectorCount + " updates, but got " + capturedConfigs.size());
+    }
+  }
+  
+  /**
+   * Helper method to create a test selector configuration.
+   */
+  private SelectorConfiguration createSelector(String name, String expression) {
+    SelectorConfiguration selector = new TestContentSelector();
+    selector.setName(name);
+    selector.setType(CselSelector.TYPE);
+    selector.setAttributes(singletonMap(EXPRESSION, expression));
+    return selector;
+  }
+
+  private static class TestContentSelector implements SelectorConfiguration {
 
     private String name;
     private String type;
     private String description;
     private Map<String, String> attributes = Collections.emptyMap();
-    
+
     @Override
     public String getName() {
       return this.name;
@@ -333,7 +400,6 @@ public class ContentSelectorsApiResourceTest
     @Override
     public void setName(final String name) {
       this.name = name;
-
     }
 
     @Override
@@ -343,7 +409,7 @@ public class ContentSelectorsApiResourceTest
 
     @Override
     public void setType(final String type) {
-        this.type = type;
+      this.type = type;
     }
 
     @Override

@@ -12,236 +12,334 @@
  */
 package org.sonatype.stringtemplates;
 
-import static org.junit.Assert.assertEquals;
+import java.util.Map;
 
-import org.junit.Test;
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobMetrics;
 
-import static java.lang.StringTemplate.STR;
-import static java.lang.StringTemplate.FMT;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.Mock;
+
+import static java.lang.String.format;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests for validating Java 21 String Templates in metrics reporting messages.
- * 
- * This test class validates that metrics-related messages are correctly formatted using
- * Java 21 String Templates, ensuring proper variable interpolation, consistent formatting
- * of numeric values, and improved readability. The tests verify that metrics messages
- * maintain their semantic meaning while benefiting from the more concise and maintainable
- * String Template syntax, particularly for messages that include formatted numbers, units,
- * and calculated values.
- * 
- * Java 21 String Templates provide a more readable and maintainable way to format strings
- * compared to traditional String.format() or concatenation approaches. This is especially
- * valuable for metrics reporting where messages often include multiple numeric values with
- * specific formatting requirements.
- * 
+ *
  * @since 3.60
  */
 public class BlobStoreMetricsStringTemplatesTest
     extends TestSupport
 {
   private static final String BLOBSTORE_NAME = "test-blobstore";
+
+  @Mock
+  private Blob blob;
+
+  @Mock
+  private BlobMetrics blobMetrics;
   
-  /**
-   * Tests that String Templates can be used for simple metrics messages.
-   */
-  @Test
-  public void testSimpleMetricsStringTemplates() {
-    // Simple metrics message with a single variable
-    String traditionalFormat = String.format("Blob store '%s' metrics initialized", BLOBSTORE_NAME);
-    String templateFormat = STR."Blob store '\{BLOBSTORE_NAME}' metrics initialized";
-    
-    assertEquals("String Template should produce equivalent output for simple messages", 
-        traditionalFormat, templateFormat);
-    
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+  @Before
+  public void setUp() {
+    when(blob.getMetrics()).thenReturn(blobMetrics);
   }
-  
-  /**
-   * Tests that String Templates produce equivalent output to traditional String.format() for read metrics.
-   * This test validates the metrics message format used in PerformanceLogger.logRead().
-   */
+
   @Test
-  public void testReadMetricsStringTemplates() {
-    long bytes = 1024 * 1024; // 1 MB
-    long nanos = 500_000_000; // 500 ms
+  public void testReadMetricsStringTemplate() {
+    // Test parameters
+    long bytes = 1024 * 1024; // 1MB
+    long nanos = 500_000_000; // 500ms
     double millis = ((double) nanos) / 1e6d;
     double mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
-    
-    // Traditional format string approach (as used in PerformanceLogger)
-    String traditionalFormat = String.format("blobstore %s: %d bytes read in %g ms (%g mb/s)", 
+
+    // Traditional format string
+    String traditional = format("blobstore %s: %d bytes read in %g ms (%g mb/s)", 
         BLOBSTORE_NAME, bytes, millis, mbPerSecond);
-    
-    // Java 21 String Template approach
-    String templateFormat = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)";
-    
-    assertEquals("String Template should produce equivalent output to String.format", 
-        traditionalFormat, templateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+
+    // Java 21 String Template equivalent
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
   }
-  
-  /**
-   * Tests that String Templates produce equivalent output to traditional String.format() for write metrics.
-   * This test validates the metrics message format used in PerformanceLogger.logCreate().
-   */
+
   @Test
-  public void testWriteMetricsStringTemplates() {
-    long bytes = 2 * 1024 * 1024; // 2 MB
-    long nanos = 750_000_000; // 750 ms
+  public void testWriteMetricsStringTemplate() {
+    // Test parameters
+    long bytes = 2048 * 1024; // 2MB
+    long nanos = 750_000_000; // 750ms
     double millis = ((double) nanos) / 1e6d;
     double mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
-    
-    // Traditional format string approach (as used in PerformanceLogger)
-    String traditionalFormat = String.format("blobstore %s: %d bytes written in %g ms (%g mb/s)", 
+
+    // Setup mock
+    when(blob.getMetrics()).thenReturn(blobMetrics);
+    when(blobMetrics.getContentSize()).thenReturn(bytes);
+
+    // Traditional format string
+    String traditional = format("blobstore %s: %d bytes written in %g ms (%g mb/s)", 
         BLOBSTORE_NAME, bytes, millis, mbPerSecond);
-    
-    // Java 21 String Template approach
-    String templateFormat = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s)";
-    
-    assertEquals("String Template should produce equivalent output to String.format", 
-        traditionalFormat, templateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+
+    // Java 21 String Template equivalent
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes written in \{millis} ms (\{mbPerSecond} mb/s)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
   }
-  
-  /**
-   * Tests that String Templates produce equivalent output to traditional String.format() for delete metrics.
-   * This test validates the metrics message format used in PerformanceLogger.logDelete().
-   */
+
   @Test
-  public void testDeleteMetricsStringTemplates() {
-    long nanos = 250_000_000; // 250 ms
+  public void testDeleteMetricsStringTemplate() {
+    // Test parameters
+    long nanos = 100_000_000; // 100ms
     double millis = ((double) nanos) / 1e6d;
-    
-    // Traditional format string approach (as used in PerformanceLogger)
-    String traditionalFormat = String.format("blobstore %s: blob deleted in %g ms", 
-        BLOBSTORE_NAME, millis);
-    
-    // Java 21 String Template approach
-    String templateFormat = STR."blobstore \{BLOBSTORE_NAME}: blob deleted in \{millis} ms";
-    
-    assertEquals("String Template should produce equivalent output to String.format", 
-        traditionalFormat, templateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+
+    // Traditional format string
+    String traditional = format("blobstore %s: blob deleted in %g ms", BLOBSTORE_NAME, millis);
+
+    // Java 21 String Template equivalent
+    String template = STR."blobstore \{BLOBSTORE_NAME}: blob deleted in \{millis} ms";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
   }
-  
-  /**
-   * Tests that String Templates produce equivalent output to traditional String.format() for task progress metrics.
-   * This test validates the metrics message format used in RecalculateBlobStoreSizeTask progress logging.
-   */
+
   @Test
-  public void testTaskProgressMetricsStringTemplates() {
-    long totalSize = 1024 * 1024 * 1024; // 1 GB
+  public void testRecalculateTaskProgressStringTemplate() {
+    // Test parameters
+    String blobStoreName = "test-blobstore";
+    long totalSize = 1024 * 1024 * 1024; // 1GB
+    long totalCount = 1000;
+
+    // Traditional format string (using SLF4J style)
+    String traditional = format("Re-calculating size metrics on blob store '%s', size : %d - blobs count : %d", 
+        blobStoreName, totalSize, totalCount);
+
+    // Java 21 String Template equivalent
+    String template = STR."Re-calculating size metrics on blob store '\{blobStoreName}', size : \{totalSize} - blobs count : \{totalCount}";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testZeroValuesStringTemplate() {
+    // Test parameters with zero values
+    long bytes = 0;
+    long nanos = 0;
+    double millis = 0d;
+    double mbPerSecond = Double.NaN;
+
+    // Traditional format string
+    String traditional = format("blobstore %s: %d bytes read in %g ms (%g mb/s)", 
+        BLOBSTORE_NAME, bytes, millis, mbPerSecond);
+
+    // Java 21 String Template equivalent
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testLargeValuesStringTemplate() {
+    // Test parameters with large values
+    long bytes = 1024L * 1024L * 1024L * 10L; // 10GB
+    long nanos = 5_000_000_000L; // 5 seconds
+    double millis = ((double) nanos) / 1e6d;
+    double mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
+
+    // Traditional format string
+    String traditional = format("blobstore %s: %d bytes read in %g ms (%g mb/s)", 
+        BLOBSTORE_NAME, bytes, millis, mbPerSecond);
+
+    // Java 21 String Template equivalent
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes read in \{millis} ms (\{mbPerSecond} mb/s)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testFormattedNumericValuesStringTemplate() {
+    // Test parameters
+    long bytes = 1024 * 1024; // 1MB
+    long nanos = 500_000_000; // 500ms
+    double millis = ((double) nanos) / 1e6d;
+    double mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
+
+    // Traditional format string with explicit formatting
+    String traditional = format("blobstore %s: %d bytes read in %.2f ms (%.2f mb/s)", 
+        BLOBSTORE_NAME, bytes, millis, mbPerSecond);
+
+    // Java 21 String Template equivalent with explicit formatting
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes read in \{String.format("%.2f", millis)} ms (\{String.format("%.2f", mbPerSecond)} mb/s)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testMultipleOccurrencesStringTemplate() {
+    // Test string with multiple occurrences of the same variable
+    String blobStoreName = "test-blobstore";
+    
+    // Traditional format string
+    String traditional = format("Blob store '%s' is processing metrics. Blob store '%s' has completed.", 
+        blobStoreName, blobStoreName);
+
+    // Java 21 String Template equivalent
+    String template = STR."Blob store '\{blobStoreName}' is processing metrics. Blob store '\{blobStoreName}' has completed.";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testComplexExpressionStringTemplate() {
+    // Test parameters
+    long bytes = 1536 * 1024; // 1.5MB
+    long nanos = 250_000_000; // 250ms
+    
+    // Traditional format string with calculation in the format
+    String traditional = format("blobstore %s: %d bytes (%.2f MB) processed in %.2f seconds", 
+        BLOBSTORE_NAME, bytes, bytes / (1024.0 * 1024.0), nanos / 1_000_000_000.0);
+
+    // Java 21 String Template equivalent with inline expressions
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes (\{String.format("%.2f", bytes / (1024.0 * 1024.0))} MB) processed in \{String.format("%.2f", nanos / 1_000_000_000.0)} seconds";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testStringTemplateWithConditionalExpression() {
+    // Test parameters
+    long bytes = 1024 * 1024; // 1MB
+    long nanos = 500_000_000; // 500ms
+    double millis = ((double) nanos) / 1e6d;
+    double mbPerSecond = ((double) bytes) / ((double) nanos) * 1e3d;
+    boolean isRead = true;
+
+    // Traditional format string with conditional logic
+    String operation = isRead ? "read" : "written";
+    String traditional = format("blobstore %s: %d bytes %s in %g ms (%g mb/s)", 
+        BLOBSTORE_NAME, bytes, operation, millis, mbPerSecond);
+
+    // Java 21 String Template equivalent with conditional expression
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes \{isRead ? "read" : "written"} in \{millis} ms (\{mbPerSecond} mb/s)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testStringTemplateWithMethodCall() {
+    // Test parameters
+    long bytes = 1024 * 1024 * 5; // 5MB
+    
+    // Traditional format string with method call
+    String traditional = format("blobstore %s: %d bytes (%s)", 
+        BLOBSTORE_NAME, bytes, formatSize(bytes));
+
+    // Java 21 String Template equivalent with method call
+    String template = STR."blobstore \{BLOBSTORE_NAME}: \{bytes} bytes (\{formatSize(bytes)})";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  @Test
+  public void testStringTemplateWithNestedTemplates() {
+    // Test parameters
+    String blobStoreName = "test-blobstore";
+    long totalSize = 1024 * 1024 * 1024; // 1GB
     long totalCount = 1000;
     
-    // Traditional format string approach (as used in RecalculateBlobStoreSizeTask)
-    String traditionalFormat = String.format("Re-calculating size metrics on blob store '%s', size : %d - blobs count : %d",
-        BLOBSTORE_NAME, totalSize, totalCount);
+    // Create nested template for the size part
+    String sizeInfo = STR."size : \{totalSize} - blobs count : \{totalCount}";
     
-    // Java 21 String Template approach
-    String templateFormat = STR."Re-calculating size metrics on blob store '\{BLOBSTORE_NAME}', size : \{totalSize} - blobs count : \{totalCount}";
-    
-    assertEquals("String Template should produce equivalent output to String.format", 
-        traditionalFormat, templateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+    // Traditional format string
+    String traditional = format("Re-calculating size metrics on blob store '%s', %s", 
+        blobStoreName, String.format("size : %d - blobs count : %d", totalSize, totalCount));
+
+    // Java 21 String Template with nested template
+    String template = STR."Re-calculating size metrics on blob store '\{blobStoreName}', \{sizeInfo}";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
   }
   
-  /**
-   * Tests that String Templates handle numeric formatting correctly for large values.
-   * This test validates that String Templates can correctly format large numeric values
-   * that are common in blobstore metrics (GB-sized storage, millions of blobs).
-   */
   @Test
-  public void testLargeNumericValuesInTemplates() {
-    long largeBytes = 1024L * 1024L * 1024L * 10L; // 10 GB
-    long largeCount = 1_000_000; // 1 million
+  public void testStringTemplateWithMultilineOutput() {
+    // Test parameters
+    String blobStoreName = "test-blobstore";
+    long totalSize = 1024 * 1024 * 1024; // 1GB
+    long totalCount = 1000;
     
-    // Traditional format string approach
-    String traditionalFormat = String.format("blobstore %s: processed %d bytes across %d blobs", 
-        BLOBSTORE_NAME, largeBytes, largeCount);
-    
-    // Java 21 String Template approach
-    String templateFormat = STR."blobstore \{BLOBSTORE_NAME}: processed \{largeBytes} bytes across \{largeCount} blobs";
-    
-    assertEquals("String Template should handle large numeric values correctly", 
-        traditionalFormat, templateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+    // Traditional multi-line format string
+    String traditional = format("Blob Store: %s\n" +
+                              "Total Size: %d bytes\n" +
+                              "Total Count: %d items", 
+                              blobStoreName, totalSize, totalCount);
+
+    // Java 21 String Template equivalent with multi-line output
+    String template = STR."Blob Store: \{blobStoreName}\n" + 
+                     STR."Total Size: \{totalSize} bytes\n" +
+                     STR."Total Count: \{totalCount} items";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
   }
-  
-  /**
-   * Tests that String Templates handle floating point values with proper precision.
-   * This test validates that String Templates with the FMT processor can correctly format
-   * floating point values with specific precision, which is common in metrics reporting.
-   */
+
   @Test
-  public void testFloatingPointPrecisionInTemplates() {
-    double percentage = 99.9876;
-    double ratio = 0.12345;
+  public void testStringTemplateWithEscapedBraces() {
+    // Test parameters
+    String blobStoreName = "test-blobstore";
     
-    // Traditional format string approach with specific precision
-    String traditionalFormat = String.format("blobstore %s: completed %.2f%% with efficiency ratio of %.4f", 
-        BLOBSTORE_NAME, percentage, ratio);
-    
-    // Java 21 String Template approach with FMT processor for formatting
-    String templateFormat = FMT."blobstore \{BLOBSTORE_NAME}: completed %.2f\{percentage}% with efficiency ratio of %.4f\{ratio}";
-    
-    assertEquals("String Template with FMT processor should handle floating point precision correctly", 
-        traditionalFormat, templateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
+    // Traditional format string with braces
+    String traditional = format("Blob store '%s' {contains braces} in the message", blobStoreName);
+
+    // Java 21 String Template equivalent with escaped braces
+    String template = STR."Blob store '\{blobStoreName}' {contains braces} in the message";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
   }
-  
-  /**
-   * Tests that String Templates can be used for complex metrics messages with multiple variables and calculations.
-   * This test validates that String Templates can handle complex metrics reporting scenarios with
-   * multiple variables, calculations, and formatting requirements.
-   */
+
   @Test
-  public void testComplexMetricsMessageTemplates() {
-    long totalBytes = 5 * 1024 * 1024 * 1024L; // 5 GB
-    long usedBytes = 3 * 1024 * 1024 * 1024L; // 3 GB
-    long availableBytes = totalBytes - usedBytes;
-    double usagePercentage = ((double) usedBytes / totalBytes) * 100.0;
+  public void testStringTemplateWithSpecialCharacters() {
+    // Test parameters
+    String blobStoreName = "test-blobstore";
+    long bytes = 1024;
     
-    // Traditional format string approach
-    String traditionalFormat = String.format(
-        "blobstore %s: total capacity: %d bytes, used: %d bytes (%.2f%%), available: %d bytes", 
-        BLOBSTORE_NAME, totalBytes, usedBytes, usagePercentage, availableBytes);
-    
-    // Java 21 String Template approach with inline calculation
-    String templateFormat = STR."blobstore \{BLOBSTORE_NAME}: total capacity: \{totalBytes} bytes, " + 
-        "used: \{usedBytes} bytes (\{String.format("%.2f", usagePercentage)}%), available: \{availableBytes} bytes";
-    
-    assertEquals("String Template should handle complex metrics messages with calculations", 
-        traditionalFormat, templateFormat);
-    
-    // Alternative approach using FMT processor
-    String fmtTemplateFormat = FMT."blobstore \{BLOBSTORE_NAME}: total capacity: \{totalBytes} bytes, " + 
-        "used: \{usedBytes} bytes (%.2f\{usagePercentage}%), available: \{availableBytes} bytes";
-    
-    assertEquals("FMT processor should handle complex metrics messages with formatting", 
-        traditionalFormat, fmtTemplateFormat);
-    
-    // Log the formatted strings for visual comparison
-    log.info("Traditional format: {}", traditionalFormat);
-    log.info("Template format: {}", templateFormat);
-    log.info("FMT template format: {}", fmtTemplateFormat);
+    // Traditional format string with special characters
+    String traditional = format("blobstore %s: %d bytes (100%% complete)", blobStoreName, bytes);
+
+    // Java 21 String Template equivalent with special characters
+    String template = STR."blobstore \{blobStoreName}: \{bytes} bytes (100% complete)";
+
+    // Verify equivalence
+    assertThat(template, equalTo(traditional));
+  }
+
+  /**
+   * Helper method to format size in human-readable form
+   */
+  private String formatSize(long bytes) {
+    if (bytes < 1024) {
+      return bytes + " B";
+    }
+    else if (bytes < 1024 * 1024) {
+      return String.format("%.2f KB", bytes / 1024.0);
+    }
+    else if (bytes < 1024 * 1024 * 1024) {
+      return String.format("%.2f MB", bytes / (1024.0 * 1024.0));
+    }
+    else {
+      return String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0));
+    }
   }
 }

@@ -14,21 +14,24 @@ package org.sonatype.nexus.repository.content.rest.internal.resources;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.WebApplicationException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.entity.DetachedEntityId;
@@ -47,9 +50,8 @@ import org.sonatype.nexus.rest.Page;
 import org.sonatype.nexus.rest.Resource;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.toList;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
 import static org.sonatype.nexus.repository.content.rest.AssetXOBuilder.fromAsset;
 import static org.sonatype.nexus.repository.content.store.InternalIds.internalAssetId;
@@ -59,6 +61,8 @@ import static org.sonatype.nexus.repository.rest.api.RepositoryItemIDXO.fromStri
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
+ * REST resource for managing assets in the repository.
+ * 
  * @since 3.27
  */
 @FeatureFlag(name = DATASTORE_ENABLED)
@@ -78,8 +82,6 @@ public class AssetsResource
   private final MaintenanceService maintenanceService;
 
   private final Map<String, AssetXODescriptor> assetDescriptors;
-  
-  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public AssetsResource(
@@ -92,7 +94,6 @@ public class AssetsResource
     this.repositoryManagerRESTAdapter = checkNotNull(repositoryManagerRESTAdapter);
     this.maintenanceService = checkNotNull(maintenanceService);
     this.assetDescriptors = assetDescriptors;
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @GET
@@ -102,7 +103,7 @@ public class AssetsResource
       @QueryParam("repository") final String repositoryId)
   {
     Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryId);
-    List<FluentAsset> assets = browse(repository,continuationToken);
+    List<FluentAsset> assets = browse(repository, continuationToken);
     return new Page<>(toAssetXOs(repository, assets, this.assetDescriptors), nextContinuationToken(assets));
   }
 
@@ -112,28 +113,31 @@ public class AssetsResource
   public AssetXO getAssetById(@PathParam("id") final String id) {
     RepositoryItemIDXO repositoryItemIDXO = fromString(id);
     Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryItemIDXO.getRepositoryId());
+    DetachedEntityId entityId = new DetachedEntityId(repositoryItemIDXO.getId());
     
-    try {
-      // Use a virtual thread for this I/O operation
-      return virtualThreadExecutor.submit(() -> {
-        Asset asset = getAsset(id, repository, new DetachedEntityId(repositoryItemIDXO.getId()));
+    // Use virtual thread for I/O-bound asset retrieval
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Asset> assetFuture = executor.submit(() -> getAsset(id, repository, entityId));
+      
+      try {
+        Asset asset = assetFuture.get();
         return fromAsset(asset, repository, this.assetDescriptors);
-      }).get();
-    } 
-    catch (Exception e) {
-      // Handle exceptions from the virtual thread execution
-      Throwable cause = e.getCause();
-      switch (cause) {
-        case NotFoundException nfe -> throw nfe;
-        case WebApplicationException wae -> throw wae;
-        case IllegalArgumentException iae -> {
-          log.debug(STR."IllegalArgumentException caught retrieving asset with id \{repositoryItemIDXO.getId()}", iae);
-          throw new WebApplicationException(STR."Unable to process asset with id \{repositoryItemIDXO.getId()}", UNPROCESSABLE_ENTITY);
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error(STR."Thread interrupted while retrieving asset with id \{id}", e);
+        throw new WebApplicationException(STR."Unable to retrieve asset with id \{id}", UNPROCESSABLE_ENTITY);
+      }
+      catch (ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof WebApplicationException webAppEx) {
+          throw webAppEx;
         }
-        default -> {
-          log.error(STR."Unexpected error retrieving asset with id \{repositoryItemIDXO.getId()}", cause);
-          throw new WebApplicationException(STR."Error processing request for asset with id \{repositoryItemIDXO.getId()}", UNPROCESSABLE_ENTITY);
+        if (cause instanceof NotFoundException notFoundEx) {
+          throw notFoundEx;
         }
+        log.error(STR."Error retrieving asset with id \{id}", e);
+        throw new WebApplicationException(STR."Unable to retrieve asset with id \{id}", UNPROCESSABLE_ENTITY);
       }
     }
   }
@@ -146,28 +150,32 @@ public class AssetsResource
     Repository repository = repositoryManagerRESTAdapter.getRepository(repositoryItemIDXO.getRepositoryId());
     DetachedEntityId entityId = new DetachedEntityId(repositoryItemIDXO.getId());
     
-    try {
-      // Use a virtual thread for this I/O operation
-      virtualThreadExecutor.submit(() -> {
+    // Use virtual thread for I/O-bound asset deletion
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<?> future = executor.submit(() -> {
         Asset asset = getAsset(id, repository, entityId);
         maintenanceService.deleteAsset(repository, asset);
         return null;
-      }).get();
-    }
-    catch (Exception e) {
-      // Handle exceptions from the virtual thread execution
-      Throwable cause = e.getCause();
-      switch (cause) {
-        case NotFoundException nfe -> throw nfe;
-        case WebApplicationException wae -> throw wae;
-        case IllegalArgumentException iae -> {
-          log.debug(STR."IllegalArgumentException caught deleting asset with id \{entityId}", iae);
-          throw new WebApplicationException(STR."Unable to process deletion of asset with id \{entityId}", UNPROCESSABLE_ENTITY);
+      });
+      
+      try {
+        future.get(); // Wait for completion
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.error(STR."Thread interrupted while deleting asset with id \{id}", e);
+        throw new WebApplicationException(STR."Unable to delete asset with id \{id}", UNPROCESSABLE_ENTITY);
+      }
+      catch (ExecutionException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof WebApplicationException webAppEx) {
+          throw webAppEx;
         }
-        default -> {
-          log.error(STR."Unexpected error deleting asset with id \{entityId}", cause);
-          throw new WebApplicationException(STR."Error processing deletion request for asset with id \{entityId}", UNPROCESSABLE_ENTITY);
+        if (cause instanceof NotFoundException notFoundEx) {
+          throw notFoundEx;
         }
+        log.error(STR."Error deleting asset with id \{id}", e);
+        throw new WebApplicationException(STR."Unable to delete asset with id \{id}", UNPROCESSABLE_ENTITY);
       }
     }
   }

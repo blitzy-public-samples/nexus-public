@@ -20,6 +20,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
@@ -40,6 +41,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
@@ -71,13 +73,10 @@ public class CleanupPolicyDAOTest
 
     // it is read
     Optional<CleanupPolicy> readOptional = dao.read(policy.getName());
-    
-    // Using pattern matching with instanceof for cleaner optional value handling
     assertTrue(readOptional.isPresent(), "Policy should be present after creation");
     
-    // Implementing assertAll for more comprehensive failure reporting
-    if (readOptional instanceof Optional<CleanupPolicy> opt && opt.isPresent()) {
-      CleanupPolicy read = opt.get();
+    // Using pattern matching with instanceof for cleaner optional value handling
+    if (readOptional.isPresent() && readOptional.get() instanceof CleanupPolicy read) {
       // it matches the original policy
       assertAll("Policy should match the original policy",
           () -> assertThat(read.getName(), is(policy.getName())),
@@ -97,12 +96,10 @@ public class CleanupPolicyDAOTest
     
     // it is read
     Optional<CleanupPolicy> updateOptional = dao.read(policy.getName());
+    assertTrue(updateOptional.isPresent(), "Policy should be present after update");
     
     // Using pattern matching with instanceof for cleaner optional value handling
-    assertTrue(updateOptional.isPresent(), "Updated policy should be present");
-    
-    if (updateOptional instanceof Optional<CleanupPolicy> opt && opt.isPresent()) {
-      CleanupPolicy update = opt.get();
+    if (updateOptional.isPresent() && updateOptional.get() instanceof CleanupPolicy update) {
       // it matches the updated policy
       assertAll("Policy should match the updated policy",
           () -> assertThat(update.getName(), is(policy.getName())),
@@ -110,8 +107,8 @@ public class CleanupPolicyDAOTest
           () -> assertThat(update.getFormat(), is(policy.getFormat())),
           () -> assertThat(update.getMode(), is(policy.getMode()))
       );
-      policy.setCriteria(Map.of("one", "baz", "two", "bar"));
     }
+    policy.setCriteria(Map.of("one", "baz", "two", "bar"));
 
     // the policy is deleted
     dao.delete(policy.getName());
@@ -135,6 +132,7 @@ public class CleanupPolicyDAOTest
     assertThat(policies, hasSize(1));
 
     CleanupPolicy found = Iterables.getFirst(policies, null);
+    assertNotNull(found, "Found policy should not be null");
     assertAll("Found policy should match expected values",
         () -> assertThat(found.getName(), is("foo5")),
         () -> assertThat(found.getNotes(), is("some text 5")),
@@ -146,60 +144,116 @@ public class CleanupPolicyDAOTest
   
   @Test
   @Tag("VirtualThreadTestGroup")
-  public void testConcurrentCRUD() throws InterruptedException {
-    int numThreads = 10;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(numThreads);
+  public void testConcurrentCRUDWithVirtualThreads() throws Exception {
+    // Use Virtual Threads for concurrent operations
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
-    // Create a thread pool with virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to create, read, update, and delete policies concurrently
-      for (int i = 0; i < numThreads; i++) {
-        final int threadId = i;
+    int threadCount = 50;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    try {
+      // Perform concurrent CRUD operations
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
         executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
-            
             // Create a policy
-            String policyName = "concurrent-" + threadId;
-            CleanupPolicyData policy = policy(policyName, "concurrent test", "format-" + threadId, 
-                "mode-" + threadId, Map.of("key", "value-" + threadId));
+            String name = "vt-policy-" + index;
+            CleanupPolicyData policy = policy(name, "VT test " + index, "format" + index, 
+                "mode" + index, Map.of("key", "value" + index));
             dao.create(policy);
             
             // Read the policy
-            Optional<CleanupPolicy> readOptional = dao.read(policyName);
-            assertTrue(readOptional.isPresent(), "Policy should be present after creation");
-            
-            // Update the policy
-            policy.setNotes("updated notes");
-            dao.update(policy);
-            
-            // Verify update
-            Optional<CleanupPolicy> updatedOptional = dao.read(policyName);
-            assertTrue(updatedOptional.isPresent(), "Updated policy should be present");
-            if (updatedOptional.isPresent()) {
-              CleanupPolicy updated = updatedOptional.get();
-              assertThat(updated.getNotes(), is("updated notes"));
+            Optional<CleanupPolicy> readOptional = dao.read(name);
+            if (readOptional.isPresent() && readOptional.get().getName().equals(name)) {
+              // Update the policy
+              policy.setNotes("Updated VT test " + index);
+              dao.update(policy);
+              
+              // Verify update
+              Optional<CleanupPolicy> updatedOptional = dao.read(name);
+              if (updatedOptional.isPresent() && 
+                  updatedOptional.get().getNotes().equals("Updated VT test " + index)) {
+                // Delete the policy
+                dao.delete(name);
+                
+                // Verify deletion
+                if (!dao.read(name).isPresent()) {
+                  successCount.incrementAndGet();
+                }
+              }
             }
-            
-            // Delete the policy
-            dao.delete(policyName);
-            assertFalse(dao.read(policyName).isPresent(), "Policy should not be present after deletion");
-            
           } catch (Exception e) {
-            throw new RuntimeException("Error in concurrent test thread " + threadId, e);
+            // Log exception but don't fail the test
+            System.err.println("Error in virtual thread operation: " + e.getMessage());
           } finally {
-            completionLatch.countDown();
+            latch.countDown();
           }
         });
       }
       
-      // Start all threads simultaneously
-      startLatch.countDown();
+      // Wait for all threads to complete (with timeout)
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      
+      // Verify all operations completed successfully
+      assertThat(successCount.get(), is(threadCount));
+    } finally {
+      executor.shutdown();
+    }
+  }
+  
+  @Test
+  @Tag("VirtualThreadTestGroup")
+  public void testConcurrentReadWithVirtualThreads() throws Exception {
+    // Create test data
+    for (int i = 1; i <= 10; i++) {
+      dao.create(policy("concurrent-" + i, "Concurrent test " + i, "format", "mode", 
+          Map.of("index", String.valueOf(i))));
+    }
+    
+    // Use Virtual Threads for concurrent reads
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    try {
+      // Perform concurrent read operations
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Read all policies
+            Collection<CleanupPolicyData> allPolicies = collect(dao.browse());
+            if (allPolicies.size() == 10) {
+              // Read a specific policy
+              int policyNum = (int)(Math.random() * 10) + 1;
+              Optional<CleanupPolicy> policy = dao.read("concurrent-" + policyNum);
+              if (policy.isPresent()) {
+                successCount.incrementAndGet();
+              }
+            }
+          } catch (Exception e) {
+            System.err.println("Error in concurrent read: " + e.getMessage());
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
       
       // Wait for all threads to complete
-      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-      assertTrue(completed, "All concurrent operations should complete within timeout");
+      assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      
+      // Verify all operations completed successfully
+      assertThat(successCount.get(), is(threadCount));
+      
+      // Clean up test data
+      for (int i = 1; i <= 10; i++) {
+        dao.delete("concurrent-" + i);
+      }
+    } finally {
+      executor.shutdown();
     }
   }
 

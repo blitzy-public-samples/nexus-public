@@ -19,41 +19,36 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marker annotation indicating that a method or class is designed to be safely executed
+ * Marker annotation that indicates a method or class is designed to be safely executed
  * within Java 21 Virtual Threads.
  * <p>
- * Virtual Threads (JEP 444) are lightweight threads that significantly reduce the overhead of
- * managing millions of concurrent operations, particularly for I/O-bound workloads. Methods
- * marked with this annotation are guaranteed not to perform operations that would cause
- * "thread pinning" or use thread-local storage in ways that would degrade Virtual Thread performance.
- * <p>
- * Methods and classes marked with this annotation should adhere to the following guidelines:
+ * Methods or classes marked with this annotation guarantee that they:
  * <ul>
- *   <li>Avoid synchronized blocks or methods on objects that might be contended</li>
- *   <li>Avoid native methods that might block the carrier thread</li>
- *   <li>Avoid operations that pin the thread for extended periods</li>
- *   <li>Use non-blocking I/O operations where possible</li>
- *   <li>Avoid ThreadLocal usage that assumes a long-lived thread identity</li>
- *   <li>Prefer java.util.concurrent non-blocking APIs over blocking alternatives</li>
+ *   <li>Do not perform thread-pinning operations (e.g., synchronized blocks/methods)</li>
+ *   <li>Do not use thread-local storage in ways that would cause performance issues with virtual threads</li>
+ *   <li>Do not call native methods that would block the carrier thread</li>
+ *   <li>Are generally suitable for I/O-bound rather than CPU-bound operations</li>
  * </ul>
  * <p>
  * This annotation serves both as documentation and as a potential hook for static analysis tools
- * to verify virtual thread compatibility. It is particularly useful for I/O-bound operations such as:
+ * to verify virtual thread compatibility. It helps identify methods that have been optimized for
+ * the Virtual Threads execution model introduced in Java 21.
+ * <p>
+ * Usage guidelines:
  * <ul>
- *   <li>Network operations (HTTP requests, remote repository access)</li>
- *   <li>File system operations (blob storage, file reading/writing)</li>
- *   <li>Database access (JDBC operations with proper configuration)</li>
- *   <li>Any operation that might otherwise block a platform thread</li>
+ *   <li>Apply to I/O-bound methods that would benefit from Virtual Threads' efficiency</li>
+ *   <li>Apply to classes where all methods are Virtual Thread compatible</li>
+ *   <li>Do not apply to methods that use synchronized blocks or methods</li>
+ *   <li>Do not apply to methods that perform heavy CPU computation</li>
+ *   <li>Consider carefully when applying to methods that use third-party libraries</li>
  * </ul>
  * <p>
  * Example usage:
  * <pre>
  * {@code
  * @VirtualThreadFriendly
- * public InputStream getBlobData(BlobId blobId) {
- *     // Implementation uses non-blocking I/O or properly configured
- *     // operations that work well with Virtual Threads
- *     ...
+ * public Blob get(BlobId blobId) {
+ *     // I/O-bound implementation suitable for Virtual Threads
  * }
  * }
  * </pre>

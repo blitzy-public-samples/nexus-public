@@ -23,12 +23,13 @@ import java.util.zip.ZipOutputStream;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.nexus.java21.Java21TestGroup;
 
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -44,7 +45,7 @@ import static org.mockito.Mockito.when;
  * @since 3.21
  */
 @ExtendWith(MockitoExtension.class)
-@org.junit.experimental.categories.Category(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class DataStoreRestorerLocalImplTest
     extends TestSupport
 {
@@ -119,3 +120,4 @@ public class DataStoreRestorerLocalImplTest
       out.closeEntry();
     }
   }
+}

@@ -13,19 +13,22 @@
 package org.sonatype.nexus.repository.security.rest;
 
 import java.util.Collection;
+import java.util.Map;
+import java.util.Objects;
 
 import org.sonatype.nexus.repository.security.RepositoryContentSelectorPrivilegeDescriptor;
 import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModelProperty;
 import jakarta.validation.constraints.NotBlank;
 
 /**
+ * Repository Content Selector Privilege Request model.
+ * 
  * @since 3.19
  */
 public class ApiPrivilegeRepositoryContentSelectorRequest
@@ -35,18 +38,19 @@ public class ApiPrivilegeRepositoryContentSelectorRequest
 
   @NotBlank
   @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_CONTENT_SELECTOR_DESCRIPTION)
-  @JsonProperty("contentSelector")
-  @JsonInclude(JsonInclude.Include.ALWAYS)
   private String contentSelector;
 
   /**
-   * for deserialization
+   * Default constructor for deserialization
    */
   @JsonCreator
   private ApiPrivilegeRepositoryContentSelectorRequest() {
     super();
   }
 
+  /**
+   * Constructor for creating a new request with all fields
+   */
   public ApiPrivilegeRepositoryContentSelectorRequest(final String name,
                                                       final String description,
                                                       final String format,
@@ -55,42 +59,58 @@ public class ApiPrivilegeRepositoryContentSelectorRequest
                                                       final Collection<PrivilegeAction> actions)
   {
     super(name, description, format, repository, actions);
-    this.contentSelector = contentSelector;
+    this.contentSelector = Objects.requireNonNull(contentSelector, "Content selector cannot be null");
   }
 
   /**
-   * Creates a request from a privilege using pattern matching to extract properties
+   * Constructor that creates a request from an existing privilege using Record Pattern matching
    */
   public ApiPrivilegeRepositoryContentSelectorRequest(final Privilege privilege) {
     super(privilege);
-    // Using enhanced pattern matching to extract property
-    switch (privilege) {
-      case Privilege p when p.getPrivilegeProperty(CSEL_KEY) != null -> 
-        contentSelector = p.getPrivilegeProperty(CSEL_KEY);
-      default -> 
-        contentSelector = null;
+    
+    // Use pattern matching to extract properties from the privilege
+    if (privilege != null && privilege.getProperties() instanceof Map<String, String> properties) {
+      this.contentSelector = properties.get(CSEL_KEY);
+    } else {
+      this.contentSelector = privilege != null ? privilege.getPrivilegeProperty(CSEL_KEY) : null;
     }
   }
 
+  /**
+   * Sets the content selector value
+   */
+  @JsonProperty
   public void setContentSelector(final String contentSelector) {
     this.contentSelector = contentSelector;
   }
 
+  /**
+   * Gets the content selector value
+   */
   public String getContentSelector() {
     return contentSelector;
   }
 
+  /**
+   * Converts this request to a Privilege domain object using pattern matching for validation
+   */
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
-    // Using pattern matching for switch to validate and set properties
-    return switch (privilege) {
-      case Privilege p -> {
-        super.doAsPrivilege(p);
-        p.setType(RepositoryContentSelectorPrivilegeDescriptor.TYPE);
-        p.addProperty(CSEL_KEY, contentSelector);
-        yield p;
-      }
-      default -> privilege;
-    };
+    super.doAsPrivilege(privilege);
+    
+    // Set the privilege type and add content selector property
+    privilege.setType(RepositoryContentSelectorPrivilegeDescriptor.TYPE);
+    
+    // Use pattern matching to validate contentSelector before adding it to the privilege
+    switch (contentSelector) {
+      case String selector when selector != null && !selector.isBlank() -> 
+        privilege.addProperty(CSEL_KEY, selector);
+      case null -> 
+        throw new IllegalArgumentException("Content selector cannot be null");
+      default -> 
+        throw new IllegalArgumentException("Content selector cannot be blank");
+    }
+    
+    return privilege;
   }
 }

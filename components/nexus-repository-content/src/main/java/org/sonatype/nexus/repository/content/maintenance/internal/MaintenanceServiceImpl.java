@@ -36,6 +36,7 @@ import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
 import org.sonatype.nexus.repository.security.VariableResolverAdapterManager;
 import org.sonatype.nexus.selector.VariableSource;
+import org.sonatype.nexus.thread.NexusExecutorService;
 
 import org.apache.shiro.authz.AuthorizationException;
 
@@ -43,7 +44,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
 import static java.time.OffsetDateTime.now;
 import static org.sonatype.nexus.security.BreadActions.DELETE;
-import static org.sonatype.nexus.thread.NexusExecutorService.forCurrentSubject;
 
 /**
  * @since 3.26
@@ -81,7 +81,7 @@ public class MaintenanceServiceImpl
     this.deleteFolderService = checkNotNull(deleteFolderService);
     this.databaseCheck = checkNotNull(databaseCheck);
 
-    this.executorService = forCurrentSubject(Executors.newVirtualThreadPerTaskExecutor());
+    this.executorService = NexusExecutorService.forCurrentSubject(Executors.newVirtualThreadPerTaskExecutor());
   }
 
   @Override

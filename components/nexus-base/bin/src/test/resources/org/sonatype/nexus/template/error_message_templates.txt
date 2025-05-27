@@ -1,0 +1,224 @@
+# Nexus Repository Error Message Templates
+# Java 21 String Template patterns for standardized error messages
+
+# =============================================================================
+# BASIC ERROR MESSAGES
+# =============================================================================
+
+# Simple error message with a single variable
+String errorCode = "404";
+String message = STR."Error \{errorCode}: Resource not found";
+
+# Error message with multiple variables
+String operation = "upload";
+String resource = "artifact";
+String reason = "insufficient permissions";
+String message = STR."Failed to \{operation} \{resource} due to \{reason}";
+
+# Error message with conditional content
+boolean isRetryable = true;
+String errorType = "connection";
+String message = STR."\{errorType} error occurred\{isRetryable ? ", retry is possible" : ", cannot retry"}";
+
+# =============================================================================
+# EXCEPTION HANDLING TEMPLATES
+# =============================================================================
+
+# Basic exception message
+Exception e = new RuntimeException("Database connection failed");
+String message = STR."An error occurred: \{e.getMessage()}";
+
+# Exception with class name
+String message = STR."\{e.getClass().getSimpleName()}: \{e.getMessage()}";
+
+# Exception with timestamp
+String timestamp = LocalDateTime.now().toString();
+String message = STR."[\{timestamp}] Exception: \{e.getMessage()}";
+
+# Exception with stack trace (first element)
+StackTraceElement[] stackTrace = e.getStackTrace();
+String message = stackTrace.length > 0 
+    ? STR."\{e.getMessage()} at \{stackTrace[0].getClassName()}.\{stackTrace[0].getMethodName()}(\{stackTrace[0].getFileName()}:\{stackTrace[0].getLineNumber()})" 
+    : STR."\{e.getMessage()} (no stack trace available)";
+
+# Formatted exception with multiple stack trace elements
+String message = STR."""
+    Exception: \{e.getClass().getName()}
+    Message: \{e.getMessage()}
+    Stack trace: 
+    \{Arrays.stream(e.getStackTrace())
+            .limit(5)
+            .map(ste -> STR."    at \{ste.getClassName()}.\{ste.getMethodName()}(\{ste.getFileName()}:\{ste.getLineNumber()})")
+            .collect(Collectors.joining("\n"))}
+    \{e.getStackTrace().length > 5 ? STR."    ... \{e.getStackTrace().length - 5} more" : ""}
+    """;
+
+# Nested exception handling
+Throwable cause = e.getCause();
+String message = cause != null 
+    ? STR."\{e.getMessage()} caused by: \{cause.getClass().getSimpleName()}: \{cause.getMessage()}" 
+    : STR."\{e.getMessage()}";
+
+# =============================================================================
+# VALIDATION ERROR TEMPLATES
+# =============================================================================
+
+# Field validation error
+String fieldName = "username";
+String validationRule = "must be between 3 and 20 characters";
+String message = STR."Validation error: Field '\{fieldName}' \{validationRule}";
+
+# Multiple validation errors
+Map<String, String> validationErrors = Map.of(
+    "username", "is required",
+    "email", "must be a valid email address",
+    "password", "must be at least 8 characters"
+);
+String message = STR."""
+    Validation failed with \{validationErrors.size()} errors:
+    \{validationErrors.entrySet().stream()
+            .map(entry -> STR."  - \{entry.getKey()}: \{entry.getValue()}")
+            .collect(Collectors.joining("\n"))}
+    """;
+
+# Form validation with field references
+String formName = "registration";
+List<String> invalidFields = List.of("email", "password");
+String message = STR."Form '\{formName}' has \{invalidFields.size()} invalid fields: \{String.join(", ", invalidFields)}";
+
+# Constraint violation template
+String constraint = "uniqueness";
+String entity = "User";
+String field = "email";
+String value = "john.doe@example.com";
+String message = STR."\{constraint} constraint violated for \{entity}.\{field} with value '\{value}'";
+
+# =============================================================================
+# HTTP ERROR TEMPLATES
+# =============================================================================
+
+# HTTP error response
+int statusCode = 403;
+String path = "/api/resources/123";
+String message = STR."HTTP Error \{statusCode}: Access denied for resource at \{path}";
+
+# REST API error with details
+String endpoint = "/api/users";
+String method = "POST";
+String errorDetail = "Malformed JSON in request body";
+String message = STR."REST API error on \{method} \{endpoint}: \{errorDetail}";
+
+# =============================================================================
+# SECURITY ERROR TEMPLATES
+# =============================================================================
+
+# Authentication error
+String username = "admin";
+String reason = "invalid credentials";
+String message = STR."Authentication failed for user '\{username}': \{reason}";
+
+# Authorization error
+String user = "john.doe";
+String resource = "reports";
+String action = "delete";
+String message = STR."User '\{user}' is not authorized to \{action} \{resource}";
+
+# Security audit log
+String user = "admin";
+String action = "password reset";
+String target = "user:john.doe";
+String timestamp = LocalDateTime.now().toString();
+String clientIp = "192.168.1.100";
+String message = STR."[\{timestamp}] SECURITY: User '\{user}' performed '\{action}' on '\{target}' from IP \{clientIp}";
+
+# =============================================================================
+# INTERNATIONALIZED ERROR TEMPLATES
+# =============================================================================
+
+# Locale-aware error message (using ResourceBundle)
+Locale locale = Locale.getDefault();
+ResourceBundle bundle = ResourceBundle.getBundle("messages", locale);
+String errorKey = "file.not.found";
+String filename = "config.xml";
+String message = STR."\{bundle.getString(errorKey)}: \{filename}";
+
+# Parameterized i18n message
+String pattern = bundle.getString("validation.range");
+String field = "age";
+int min = 18;
+int max = 65;
+String value = "16";
+String message = STR."\{MessageFormat.format(pattern, field, min, max, value)}";
+
+# =============================================================================
+# REPOSITORY-SPECIFIC ERROR TEMPLATES
+# =============================================================================
+
+# BlobStore error template
+String blobStoreId = "default";
+String blobId = "a1b2c3d4";
+String operation = "read";
+String reason = "blob not found";
+String message = STR."BlobStore '\{blobStoreId}' failed to \{operation} blob '\{blobId}': \{reason}";
+
+# Repository error template
+String repositoryName = "maven-central";
+String repositoryType = "proxy";
+String errorDetails = "connection timeout after 30s";
+String message = STR."Repository '\{repositoryName}' (\{repositoryType}) error: \{errorDetails}";
+
+# Component error template
+String componentId = "org.example:myapp:1.0.0";
+String repositoryName = "maven-releases";
+String operation = "deploy";
+String reason = "checksum mismatch";
+String message = STR."Failed to \{operation} component '\{componentId}' to repository '\{repositoryName}': \{reason}";
+
+# =============================================================================
+# SYSTEM ERROR TEMPLATES
+# =============================================================================
+
+# System resource error
+String resource = "disk space";
+String threshold = "95%";
+String current = "97%";
+String message = STR."System \{resource} exceeded threshold of \{threshold} (current: \{current})";
+
+# Configuration error
+String configFile = "nexus.properties";
+String property = "nexus.http.port";
+String invalidValue = "invalid";
+String message = STR."Invalid configuration in \{configFile}: property '\{property}' has invalid value '\{invalidValue}'";
+
+# Startup error
+String component = "ElasticSearch";
+String phase = "initialization";
+String details = "failed to bind to port 9200";
+String message = STR."Failed to start \{component} during \{phase}: \{details}";
+
+# =============================================================================
+# LOGGING TEMPLATES
+# =============================================================================
+
+# Debug log template
+String operation = "cache refresh";
+Map<String, Object> params = Map.of("cacheSize", 1024, "timeToLive", "10m");
+String message = STR."DEBUG: Executing \{operation} with parameters: \{params}";
+
+# Info log with context
+String component = "UserManager";
+String action = "createUser";
+String user = "john.doe";
+String message = STR."INFO [\{component}] \{action}: Created user '\{user}'";
+
+# Warning log with conditional details
+boolean isRetryable = true;
+int attemptCount = 3;
+int maxAttempts = 5;
+String operation = "remote fetch";
+String message = STR."WARN: \{operation} failed (attempt \{attemptCount}/\{maxAttempts})\{isRetryable ? ", will retry" : ", giving up"}";
+
+# Error log with exception reference
+Exception e = new IOException("Network connection reset");
+String context = "file upload";
+String message = STR."ERROR during \{context}: \{e.getClass().getSimpleName()}: \{e.getMessage()}";

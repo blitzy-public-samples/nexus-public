@@ -12,12 +12,8 @@
  */
 package org.apache.virtualthread;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -28,356 +24,323 @@ import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.SimpleAuthenticationInfo;
 import org.apache.shiro.authc.UsernamePasswordToken;
-import org.apache.shiro.authc.credential.PasswordService;
-import org.apache.shiro.authc.event.AuthenticationEvent;
-import org.apache.shiro.authc.event.AuthenticationListener;
-import org.apache.shiro.authc.event.SuccessfulAuthenticationEvent;
-import org.apache.shiro.authz.AuthorizationInfo;
-import org.apache.shiro.authz.SimpleAuthorizationInfo;
+import org.apache.shiro.authc.credential.CredentialsMatcher;
+import org.apache.shiro.cache.Cache;
+import org.apache.shiro.cache.CacheManager;
 import org.apache.shiro.mgt.DefaultSecurityManager;
-import org.apache.shiro.realm.AuthorizingRealm;
-import org.apache.shiro.subject.PrincipalCollection;
-import org.apache.shiro.subject.SimplePrincipalCollection;
+import org.apache.shiro.realm.AuthenticatingRealm;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.goodies.testsupport.TestSupport;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.Mock;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests Apache Shiro's authentication mechanisms under Java 21 virtual threads.
- * Ensures correct behavior when authenticating users concurrently using virtual threads.
- * Validates that realm authentication, token validation, and authentication caching
- * work correctly without thread interference or pinning issues.
+ * 
+ * This test verifies that realm authentication, token validation, and authentication caching
+ * work correctly without thread interference or pinning issues when using virtual threads.
  */
-@ExtendWith(MockitoExtension.class)
 public class ShiroVirtualThreadAuthenticationTest
+    extends TestSupport
 {
-  private DefaultSecurityManager securityManager;
+  private static final String USERNAME = "admin";
+  private static final String PASSWORD = "password";
+  private static final int CONCURRENT_USERS = 100;
+  private static final int AUTHENTICATION_ATTEMPTS = 5;
   
+  private DefaultSecurityManager securityManager;
   private TestRealm testRealm;
   
-  private TestAuthenticationListener authenticationListener;
+  @Mock
+  private CacheManager cacheManager;
   
   @Mock
-  private PasswordService passwordService;
+  private Cache<Object, AuthenticationInfo> authenticationCache;
   
-  @BeforeEach
+  @Before
   public void setUp() {
-    // Create and configure the security manager
-    securityManager = new DefaultSecurityManager();
-    
-    // Create and configure the test realm
+    // Set up the test realm
     testRealm = new TestRealm();
-    testRealm.setPasswordService(passwordService);
-    securityManager.setRealm(testRealm);
     
-    // Add authentication listener
-    authenticationListener = new TestAuthenticationListener();
-    securityManager.getEventBus().register(authenticationListener);
-    
-    // Enable authentication caching
-    testRealm.setCachingEnabled(true);
+    // Configure cache manager and authentication cache
+    when(cacheManager.getCache(anyString())).thenReturn(authenticationCache);
+    testRealm.setCacheManager(cacheManager);
     testRealm.setAuthenticationCachingEnabled(true);
     
-    // Set up mock password service
-    when(passwordService.passwordsMatch("password", "password")).thenReturn(true);
+    // Set up security manager with the test realm
+    securityManager = new DefaultSecurityManager(testRealm);
+    ThreadContext.bind(securityManager);
   }
   
-  @AfterEach
+  @After
   public void tearDown() {
-    // Clear any thread bound subjects
-    ThreadContext.remove();
-    
-    // Clean up the security manager
-    if (securityManager != null) {
-      securityManager.destroy();
-    }
+    ThreadContext.unbindSecurityManager();
+    ThreadContext.unbindSubject();
+    securityManager.destroy();
   }
   
   /**
-   * Tests that a single virtual thread can authenticate successfully.
+   * Tests that basic authentication works with virtual threads.
    */
   @Test
-  public void testSingleVirtualThreadAuthentication() throws Exception {
-    Thread.startVirtualThread(() -> {
+  public void testBasicAuthenticationWithVirtualThread() throws Exception {
+    Thread virtualThread = Thread.ofVirtual().name("auth-test-thread").start(() -> {
       // Create a subject and authenticate
       Subject subject = new Subject.Builder(securityManager).buildSubject();
-      subject.login(new UsernamePasswordToken("user1", "password"));
+      subject.login(new UsernamePasswordToken(USERNAME, PASSWORD));
       
-      // Verify authentication was successful
+      // Verify the subject is authenticated
       assertTrue(subject.isAuthenticated());
-      assertEquals("user1", subject.getPrincipal());
-      
-      // Verify authentication event was fired
-      assertEquals(1, authenticationListener.getSuccessCount());
+      assertEquals(USERNAME, subject.getPrincipal());
       
       // Logout
       subject.logout();
       assertFalse(subject.isAuthenticated());
-    }).join();
+    });
+    
+    // Wait for the virtual thread to complete
+    virtualThread.join();
+    
+    // Verify the authentication cache was used
+    verify(authenticationCache).get(any());
+    verify(authenticationCache).put(any(), any());
   }
   
   /**
    * Tests concurrent authentication with multiple virtual threads.
-   * Each thread authenticates a different user to verify thread isolation.
    */
   @Test
-  public void testConcurrentVirtualThreadAuthentication() throws Exception {
-    final int threadCount = 100;
+  public void testConcurrentAuthenticationWithVirtualThreads() throws Exception {
     final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    final CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_USERS);
     final AtomicInteger successCount = new AtomicInteger(0);
-    final ConcurrentHashMap<String, String> threadPrincipals = new ConcurrentHashMap<>();
+    final AtomicInteger failureCount = new AtomicInteger(0);
     
-    // Create and start virtual threads
-    for (int i = 0; i < threadCount; i++) {
-      final int userId = i;
-      Thread.startVirtualThread(() -> {
-        try {
-          // Wait for all threads to be ready
-          startLatch.await();
-          
-          // Create a unique username for this thread
-          String username = "vuser" + userId;
-          
-          // Create a subject and authenticate
-          Subject subject = new Subject.Builder(securityManager).buildSubject();
-          subject.login(new UsernamePasswordToken(username, "password"));
-          
-          // Record the principal and thread info
-          threadPrincipals.put(Thread.currentThread().toString(), (String) subject.getPrincipal());
-          
-          // Verify authentication was successful
-          if (subject.isAuthenticated() && username.equals(subject.getPrincipal())) {
-            successCount.incrementAndGet();
-          }
-          
-          // Logout
-          subject.logout();
-        }
-        catch (Exception e) {
-          e.printStackTrace();
-        }
-        finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Start all threads simultaneously
-    startLatch.countDown();
-    
-    // Wait for all threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Verify all authentications were successful
-    assertEquals(threadCount, successCount.get());
-    assertEquals(threadCount, threadPrincipals.size());
-    
-    // Verify each thread had its own unique principal
-    Set<String> uniquePrincipals = new HashSet<>(threadPrincipals.values());
-    assertEquals(threadCount, uniquePrincipals.size());
-  }
-  
-  /**
-   * Tests authentication caching with virtual threads.
-   * Verifies that authentication cache works correctly when accessed from multiple virtual threads.
-   */
-  @Test
-  public void testAuthenticationCachingWithVirtualThreads() throws Exception {
-    final int threadCount = 10;
-    final int authAttemptsPerThread = 5;
-    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    
-    // Reset authentication count in the realm
-    testRealm.resetAuthenticationCount();
-    
-    // Create a virtual thread executor
+    // Create virtual threads for concurrent authentication
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks for each thread
-      for (int i = 0; i < threadCount; i++) {
-        final String username = "cacheUser";
-        
+      for (int i = 0; i < CONCURRENT_USERS; i++) {
+        final int userId = i;
         executor.submit(() -> {
           try {
-            for (int j = 0; j < authAttemptsPerThread; j++) {
-              // Create a subject and authenticate
-              Subject subject = new Subject.Builder(securityManager).buildSubject();
-              subject.login(new UsernamePasswordToken(username, "password"));
-              
-              // Verify authentication was successful
-              assertTrue(subject.isAuthenticated());
-              assertEquals(username, subject.getPrincipal());
-              
-              // Logout
-              subject.logout();
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Create a subject and authenticate
+            Subject subject = new Subject.Builder(securityManager).buildSubject();
+            subject.login(new UsernamePasswordToken(USERNAME + userId, PASSWORD));
+            
+            // Verify the subject is authenticated
+            if (subject.isAuthenticated() && USERNAME.equals(subject.getPrincipal().toString().replace(String.valueOf(userId), ""))) {
+              successCount.incrementAndGet();
             }
-          }
+            
+            // Logout
+            subject.logout();
+          } 
+          catch (Exception e) {
+            failureCount.incrementAndGet();
+            log.error("Authentication failed", e);
+          } 
           finally {
             completionLatch.countDown();
           }
         });
       }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      assertTrue("Authentication threads did not complete in time", 
+          completionLatch.await(30, TimeUnit.SECONDS));
     }
     
-    // Wait for all threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Verify the realm was only called once per user due to caching
-    // The first authentication attempt should hit the realm, subsequent attempts should use the cache
-    assertEquals(1, testRealm.getAuthenticationCount());
+    // Verify all authentications were successful
+    assertEquals("All authentications should succeed", CONCURRENT_USERS, successCount.get());
+    assertEquals("No authentications should fail", 0, failureCount.get());
   }
   
   /**
-   * Tests that authentication events are properly published when using virtual threads.
+   * Tests authentication caching with virtual threads.
    */
   @Test
-  public void testAuthenticationEventsWithVirtualThreads() throws Exception {
-    final int threadCount = 50;
-    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
+  public void testAuthenticationCachingWithVirtualThreads() throws Exception {
+    final CyclicBarrier barrier = new CyclicBarrier(CONCURRENT_USERS);
+    final CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_USERS);
     
-    // Reset the authentication listener
-    authenticationListener.reset();
+    // Create virtual threads for concurrent authentication of the same user
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < CONCURRENT_USERS; i++) {
+        executor.submit(() -> {
+          try {
+            // Synchronize all threads to start at the same time
+            barrier.await();
+            
+            // Perform multiple authentication attempts for the same user
+            for (int attempt = 0; attempt < AUTHENTICATION_ATTEMPTS; attempt++) {
+              Subject subject = new Subject.Builder(securityManager).buildSubject();
+              subject.login(new UsernamePasswordToken(USERNAME, PASSWORD));
+              assertTrue(subject.isAuthenticated());
+              subject.logout();
+            }
+          } 
+          catch (Exception e) {
+            log.error("Authentication failed", e);
+            fail("Authentication should not fail: " + e.getMessage());
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      assertTrue("Authentication threads did not complete in time", 
+          completionLatch.await(30, TimeUnit.SECONDS));
+    }
     
-    // Create and start virtual threads
-    for (int i = 0; i < threadCount; i++) {
-      final int userId = i;
-      Thread.startVirtualThread(() -> {
-        try {
-          // Create a unique username for this thread
-          String username = "eventUser" + userId;
-          
-          // Create a subject and authenticate
-          Subject subject = new Subject.Builder(securityManager).buildSubject();
-          subject.login(new UsernamePasswordToken(username, "password"));
-          
-          // Verify authentication was successful
-          assertTrue(subject.isAuthenticated());
-          
-          // Logout
-          subject.logout();
-        }
-        catch (Exception e) {
-          e.printStackTrace();
-        }
-        finally {
-          completionLatch.countDown();
+    // Verify the authentication cache was used
+    // The cache should be accessed at least once for the get operation
+    verify(authenticationCache, times(1)).get(any());
+    // The cache should be accessed exactly once for the put operation (first authentication)
+    verify(authenticationCache, times(1)).put(any(), any());
+  }
+  
+  /**
+   * Tests failed authentication with virtual threads.
+   */
+  @Test
+  public void testFailedAuthenticationWithVirtualThreads() throws Exception {
+    final CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_USERS);
+    final AtomicInteger correctFailureCount = new AtomicInteger(0);
+    
+    // Configure the realm to fail authentication
+    testRealm.setShouldFailAuthentication(true);
+    
+    // Create virtual threads for concurrent authentication
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < CONCURRENT_USERS; i++) {
+        executor.submit(() -> {
+          try {
+            Subject subject = new Subject.Builder(securityManager).buildSubject();
+            subject.login(new UsernamePasswordToken(USERNAME, "wrong_password"));
+            fail("Authentication should have failed");
+          } 
+          catch (AuthenticationException e) {
+            // This is the expected outcome
+            correctFailureCount.incrementAndGet();
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      assertTrue("Authentication threads did not complete in time", 
+          completionLatch.await(30, TimeUnit.SECONDS));
+    }
+    
+    // Verify all authentications failed as expected
+    assertEquals("All authentications should fail", CONCURRENT_USERS, correctFailureCount.get());
+  }
+  
+  /**
+   * Tests authentication with thread-local state in virtual threads.
+   */
+  @Test
+  public void testThreadLocalStateWithVirtualThreads() throws Exception {
+    final CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_USERS);
+    final AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create virtual threads for concurrent authentication
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < CONCURRENT_USERS; i++) {
+        final int userId = i;
+        executor.submit(() -> {
+          try {
+            // Set thread-local state
+            ThreadContext.put("userId", "user-" + userId);
+            
+            // Create a subject and authenticate
+            Subject subject = new Subject.Builder(securityManager).buildSubject();
+            subject.login(new UsernamePasswordToken(USERNAME, PASSWORD));
+            
+            // Verify thread-local state is preserved
+            String userIdFromContext = (String) ThreadContext.get("userId");
+            if (userIdFromContext != null && userIdFromContext.equals("user-" + userId)) {
+              successCount.incrementAndGet();
+            }
+            
+            // Logout and clean up
+            subject.logout();
+            ThreadContext.remove("userId");
+          } 
+          catch (Exception e) {
+            log.error("Authentication failed", e);
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all threads to complete
+      assertTrue("Authentication threads did not complete in time", 
+          completionLatch.await(30, TimeUnit.SECONDS));
+    }
+    
+    // Verify thread-local state was preserved for all threads
+    assertEquals("Thread-local state should be preserved in all virtual threads", 
+        CONCURRENT_USERS, successCount.get());
+  }
+  
+  /**
+   * A test realm implementation for authentication testing.
+   */
+  private static class TestRealm extends AuthenticatingRealm {
+    private boolean shouldFailAuthentication = false;
+    
+    public TestRealm() {
+      setCredentialsMatcher(new CredentialsMatcher() {
+        @Override
+        public boolean doCredentialsMatch(AuthenticationToken token, AuthenticationInfo info) {
+          return !shouldFailAuthentication;
         }
       });
     }
     
-    // Wait for all threads to complete
-    completionLatch.await(5, TimeUnit.SECONDS);
-    
-    // Verify all authentication events were received
-    assertEquals(threadCount, authenticationListener.getSuccessCount());
-    assertEquals(threadCount, authenticationListener.getSuccessEvents().size());
-    
-    // Verify each event has a unique principal
-    Set<String> eventPrincipals = new HashSet<>();
-    for (SuccessfulAuthenticationEvent event : authenticationListener.getSuccessEvents()) {
-      eventPrincipals.add((String) event.getSubject().getPrincipal());
-    }
-    assertEquals(threadCount, eventPrincipals.size());
-  }
-  
-  /**
-   * Test realm implementation that supports authentication and authorization.
-   */
-  private static class TestRealm extends AuthorizingRealm
-  {
-    private PasswordService passwordService;
-    private AtomicInteger authenticationCount = new AtomicInteger(0);
-    
-    public void setPasswordService(PasswordService passwordService) {
-      this.passwordService = passwordService;
-    }
-    
-    public int getAuthenticationCount() {
-      return authenticationCount.get();
-    }
-    
-    public void resetAuthenticationCount() {
-      authenticationCount.set(0);
+    public void setShouldFailAuthentication(boolean shouldFail) {
+      this.shouldFailAuthentication = shouldFail;
     }
     
     @Override
     protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) {
-      // Increment authentication count
-      authenticationCount.incrementAndGet();
+      if (shouldFailAuthentication) {
+        return null;
+      }
       
-      // Get username and password from token
       UsernamePasswordToken upToken = (UsernamePasswordToken) token;
-      String username = upToken.getUsername();
-      String password = new String(upToken.getPassword());
-      
-      // Create authentication info with the same password for simplicity
-      // In a real application, you would look up the user and verify credentials
-      SimplePrincipalCollection principals = new SimplePrincipalCollection(username, getName());
-      return new SimpleAuthenticationInfo(principals, password);
-    }
-    
-    @Override
-    protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
-      // Create a simple authorization info with a role and permission
-      SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
-      info.addRole("user");
-      info.addStringPermission("read");
-      return info;
-    }
-    
-    @Override
-    public boolean supports(AuthenticationToken token) {
-      return token instanceof UsernamePasswordToken;
-    }
-  }
-  
-  /**
-   * Authentication listener that tracks authentication events.
-   */
-  private static class TestAuthenticationListener implements AuthenticationListener
-  {
-    private final AtomicInteger successCount = new AtomicInteger(0);
-    private final List<SuccessfulAuthenticationEvent> successEvents = new CopyOnWriteArrayList<>();
-    
-    public void reset() {
-      successCount.set(0);
-      successEvents.clear();
-    }
-    
-    public int getSuccessCount() {
-      return successCount.get();
-    }
-    
-    public List<SuccessfulAuthenticationEvent> getSuccessEvents() {
-      return successEvents;
-    }
-    
-    @Override
-    public void onSuccess(AuthenticationToken token, AuthenticationInfo info, Subject subject) {
-      successCount.incrementAndGet();
-      successEvents.add(new SuccessfulAuthenticationEvent(subject, token, info));
-    }
-    
-    @Override
-    public void onFailure(AuthenticationToken token, AuthenticationException ae) {
-      // Not tracking failures in this test
-    }
-    
-    @Override
-    public void onLogout(Subject subject) {
-      // Not tracking logouts in this test
+      return new SimpleAuthenticationInfo(upToken.getUsername(), upToken.getPassword(), getName());
     }
   }
 }

@@ -18,16 +18,14 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
 /**
- * Mock implementation of a UserManager for testing purposes.
+ * Mock user manager implementation for testing purposes.
+ * Updated for Java 21 compatibility with thread-safe initialization for virtual thread execution.
  * <p>
- * This implementation is optimized for Java 21 virtual threads by leveraging the thread-safe
- * implementation of its parent class {@link MockUserManagerSupport}. It initializes a set of
- * test users in its constructor using the thread-safe {@code addUser} method from the parent class.
- * </p>
+ * This implementation ensures proper JSR-330 annotation usage (@Singleton, @Named) compatible with
+ * Java 21 and Eclipse Sisu 0.10.0/Google Guice 7.0.0 dependency injection framework.
  * <p>
- * The JSR-330 annotations (@Named, @Singleton) ensure proper dependency injection in the Java 21
- * environment, allowing this mock to be properly discovered and instantiated as a singleton.
- * </p>
+ * Thread safety is ensured through the parent class's thread-safe collections and proper
+ * initialization sequence in the constructor.  
  */
 @Singleton
 @Named("MockUserManagerB")
@@ -35,65 +33,72 @@ public class MockUserManagerB
     extends MockUserManagerSupport
 {
   /**
-   * Constructs a new instance with a predefined set of users.
-   * <p>
-   * This constructor is thread-safe because it uses the thread-safe {@code addUser} method
-   * from the parent class, which uses ConcurrentHashMap's non-blocking operations.
-   * </p>
+   * Constructor initializes mock users in a thread-safe manner.
+   * The initialization is performed once during singleton instantiation,
+   * and the parent class's thread-safe collections ensure proper visibility
+   * across virtual threads.
    */
   public MockUserManagerB() {
-    // Create and initialize user objects
-    // Each user is created independently and then added to the thread-safe storage
+    // Create and initialize users in a thread-safe manner
+    // Since this is a singleton, this initialization happens only once during application startup
+    // The parent class's thread-safe collections (ConcurrentHashMap.newKeySet) ensure proper visibility
+    initializeUsers();
+  }
+
+  /**
+   * Initialize mock users with test data.
+   * This method is called once during singleton instantiation.
+   */
+  private void initializeUsers() {
     User a = createUser(
-        "bburton",
-        "Brenda D. Burton",
-        "bburton@sonatype.org",
-        UserStatus.active,
+        "Brenda D. Burton", 
+        "bburton@sonatype.org", 
+        "bburton", 
+        UserStatus.active, 
         new String[]{"RoleA", "RoleB", "RoleC"}
     );
 
     User b = createUser(
-        "jblevins",
-        "Julian R. Blevins",
-        "jblevins@sonatype.org",
-        UserStatus.active,
+        "Julian R. Blevins", 
+        "jblevins@sonatype.org", 
+        "jblevins", 
+        UserStatus.active, 
         new String[]{"RoleA", "RoleB"}
     );
 
     User c = createUser(
-        "ksimmons",
-        "Kathryn J. Simmons",
-        "ksimmons@sonatype.org",
-        UserStatus.active,
+        "Kathryn J. Simmons", 
+        "ksimmons@sonatype.org", 
+        "ksimmons", 
+        UserStatus.active, 
         new String[]{"RoleA", "RoleB"}
     );
 
     User d = createUser(
-        "fdahmen",
-        "Florence T. Dahmen",
-        "fdahmen@sonatype.org",
-        UserStatus.active,
+        "Florence T. Dahmen", 
+        "fdahmen@sonatype.org", 
+        "fdahmen", 
+        UserStatus.active, 
         new String[]{"RoleA", "RoleB"}
     );
 
     User e = createUser(
-        "jcodar",
-        "Jill Codar",
-        "jcodar@sonatype.org",
-        UserStatus.active,
+        "Jill  Codar", 
+        "jcodar@sonatype.org", 
+        "jcodar", 
+        UserStatus.active, 
         new String[]{}
     );
 
     User f = createUser(
-        "jcoder",
-        "Joe Coder",
-        "jcoder@sonatype.org",
-        UserStatus.active,
+        "Joe Coder", 
+        "jcoder@sonatype.org", 
+        "jcoder", 
+        UserStatus.active, 
         new String[]{"Role1", "Role2", "Role3"}
     );
 
-    // Add users to the thread-safe storage using the parent class's addUser method
-    // which uses ConcurrentHashMap's putIfAbsent for thread-safety
+    // Add users to the thread-safe collection in the parent class
     this.addUser(a, a.getUserId());
     this.addUser(b, b.getUserId());
     this.addUser(c, c.getUserId());
@@ -103,20 +108,17 @@ public class MockUserManagerB
   }
 
   /**
-   * Helper method to create a user with the specified properties.
-   * <p>
-   * This method encapsulates the user creation logic to improve readability and maintainability.
-   * Each user is created independently, making this process thread-safe.
-   * </p>
+   * Helper method to create a user with the specified attributes.
+   * This improves code readability and maintainability while ensuring consistent user creation.  
    *
-   * @param userId the user ID
-   * @param name the user's name
-   * @param email the user's email address
-   * @param status the user's status
-   * @param roleIds the role IDs to assign to the user
-   * @return the created user
+   * @param name User's full name
+   * @param email User's email address
+   * @param userId User's ID
+   * @param status User's status
+   * @param roles Array of role names to assign to the user
+   * @return The created User object
    */
-  private User createUser(String userId, String name, String email, UserStatus status, String[] roleIds) {
+  private User createUser(String name, String email, String userId, UserStatus status, String[] roles) {
     User user = new User();
     user.setName(name);
     user.setEmailAddress(email);
@@ -124,18 +126,16 @@ public class MockUserManagerB
     user.setUserId(userId);
     user.setStatus(status);
     
-    // Add roles if specified
-    for (String roleId : roleIds) {
-      user.addRole(new RoleIdentifier(this.getSource(), roleId));
+    // Add roles if provided
+    for (String role : roles) {
+      user.addRole(new RoleIdentifier(this.getSource(), role));
     }
     
     return user;
   }
 
   /**
-   * Gets the source identifier for this user manager.
-   *
-   * @return the source identifier
+   * {@inheritDoc}
    */
   @Override
   public String getSource() {
@@ -143,9 +143,7 @@ public class MockUserManagerB
   }
 
   /**
-   * Gets the authentication realm name for this user manager.
-   *
-   * @return the authentication realm name
+   * {@inheritDoc}
    */
   @Override
   public String getAuthenticationRealmName() {

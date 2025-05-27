@@ -31,10 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link CommunityDiscoverOnboardingItem} to verify the onboarding item
- * appears correctly based on edition and EULA acceptance status.
- */
 @ExtendWith(MockitoExtension.class)
 public class CommunityDiscoverOnboardingItemTest
     extends TestSupport
@@ -53,34 +49,22 @@ public class CommunityDiscoverOnboardingItemTest
     when(mockApplicationVersion.getEdition()).thenReturn("COMMUNITY");
   }
 
-  /**
-   * Verifies that the onboarding item applies when using Community Edition
-   * and the EULA has not been accepted yet.
-   */
   @Test
-  public void shouldApplyWhenCommunityAndEulaNotAccepted() {
+  public void appliesWhenCommunityAndEulaNotAccepted() {
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.empty());
     assertTrue(underTest.applies());
   }
 
-  /**
-   * Verifies that the onboarding item does not apply when using Community Edition
-   * but the EULA has already been accepted.
-   */
   @Test
-  public void shouldNotApplyWhenCommunityAndEulaAccepted() {
+  public void appliesWhenCommunityAndEulaAccepted() {
     NexusKeyValue eulaStatus = new NexusKeyValue();
     eulaStatus.setValue(Map.of("accepted", true));
     when(mockGlobalKeyValueStore.getKey("nexus.community.eula.accepted")).thenReturn(Optional.of(eulaStatus));
     assertFalse(underTest.applies());
   }
 
-  /**
-   * Verifies that the onboarding item does not apply when using any edition
-   * other than Community Edition, regardless of EULA status.
-   */
   @Test
-  public void shouldNotApplyWhenNotCommunity() {
+  public void appliesWhenNotCommunity() {
     when(mockApplicationVersion.getEdition()).thenReturn("PRO");
     assertFalse(underTest.applies());
   }

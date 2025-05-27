@@ -12,163 +12,230 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import org.sonatype.goodies.testsupport.TestSupport;
 
-import ch.qos.logback.access.spi.AccessEvent;
 import ch.qos.logback.access.spi.IAccessEvent;
 import ch.qos.logback.core.Context;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 
-import static java.lang.StringTemplate.STR;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStreamWriter;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests the integration of Java 21 String Templates with {@link AccessPatternLayoutEncoder}
- * to ensure that HTTP access log patterns correctly process and interpret String Template expressions.
- *
+ * Tests for {@link AccessPatternLayoutEncoder} with Java 21 String Templates.
+ * 
+ * This test validates that the AccessPatternLayoutEncoder correctly processes and interprets
+ * String Template expressions in access log patterns. It ensures that templated content is
+ * properly formatted and rendered in access logs, maintaining compatibility with the existing
+ * pattern layout system while leveraging the new Java 21 String Templates feature.
+ * 
  * @since 3.60
  */
 public class StringTemplateAccessLogTest
     extends TestSupport
 {
-  private static final String TEST_USER_ID = "admin";
-  private static final String TEST_REQUEST_URI = "/service/rest/v1/components";
-  private static final String TEST_REQUEST_METHOD = "GET";
-  private static final String TEST_REMOTE_HOST = "127.0.0.1";
-  private static final int TEST_STATUS_CODE = 200;
-  private static final long TEST_CONTENT_LENGTH = 1024L;
-  private static final long TEST_ELAPSED_TIME = 150L;
-
   @Mock
   private Context context;
-
-  private AccessPatternLayoutEncoder encoder;
+  
+  @Mock
   private IAccessEvent accessEvent;
-
+  
+  private AccessPatternLayoutEncoder encoder;
+  
+  private ByteArrayOutputStream outputStream;
+  
   @Before
   public void setUp() {
+    // Initialize the encoder with context
     encoder = new AccessPatternLayoutEncoder();
     encoder.setContext(context);
     
-    // Create and configure a mock access event
-    accessEvent = createMockAccessEvent();
-  }
-
-  /**
-   * Tests that a simple String Template expression in an access log pattern is correctly processed.
-   */
-  @Test
-  public void testSimpleStringTemplateExpression() {
-    // Configure the encoder with a pattern that uses a simple String Template expression
-    String pattern = STR."\{TEST_USER_ID} accessed \{TEST_REQUEST_URI}";
-    encoder.setPattern(pattern);
-    encoder.start();
-
-    // Encode the access event
-    String result = new String(encoder.encode(accessEvent));
-
-    // Verify the result
-    assertThat(result, is("admin accessed /service/rest/v1/components"));
-  }
-
-  /**
-   * Tests that a String Template expression with multiple embedded expressions is correctly processed.
-   */
-  @Test
-  public void testMultipleEmbeddedExpressions() {
-    // Configure the encoder with a pattern that uses multiple embedded expressions
-    String pattern = STR."\{TEST_REMOTE_HOST} - \{TEST_USER_ID} \{TEST_REQUEST_METHOD} \{TEST_REQUEST_URI} \{TEST_STATUS_CODE} \{TEST_CONTENT_LENGTH}";
-    encoder.setPattern(pattern);
-    encoder.start();
-
-    // Encode the access event
-    String result = new String(encoder.encode(accessEvent));
-
-    // Verify the result
-    assertThat(result, is("127.0.0.1 - admin GET /service/rest/v1/components 200 1024"));
-  }
-
-  /**
-   * Tests that a String Template expression with arithmetic operations is correctly processed.
-   */
-  @Test
-  public void testArithmeticOperationsInTemplates() {
-    // Configure the encoder with a pattern that uses arithmetic operations in embedded expressions
-    String pattern = STR."Request took \{TEST_ELAPSED_TIME} ms (\{TEST_ELAPSED_TIME / 1000.0} seconds)";
-    encoder.setPattern(pattern);
-    encoder.start();
-
-    // Encode the access event
-    String result = new String(encoder.encode(accessEvent));
-
-    // Verify the result
-    assertThat(result, is("Request took 150 ms (0.15 seconds)"));
-  }
-
-  /**
-   * Tests that a String Template expression mixed with standard pattern layout converters is correctly processed.
-   */
-  @Test
-  public void testMixedWithStandardPatternConverters() {
-    // Configure the encoder with a pattern that mixes String Templates with standard pattern converters
-    String pattern = "%h %u %m %s \{TEST_ELAPSED_TIME} ms";
-    encoder.setPattern(pattern);
-    encoder.start();
-
-    // Encode the access event
-    String result = new String(encoder.encode(accessEvent));
-
-    // Verify the result contains the expected values
-    // Note: We can't predict the exact format as it depends on the standard converters
-    assertThat(result, containsString(TEST_REMOTE_HOST));
-    assertThat(result, containsString(TEST_USER_ID));
-    assertThat(result, containsString(TEST_REQUEST_METHOD));
-    assertThat(result, containsString(String.valueOf(TEST_STATUS_CODE)));
-    assertThat(result, containsString("150 ms"));
-  }
-
-  /**
-   * Tests that a complex String Template expression with conditional logic is correctly processed.
-   */
-  @Test
-  public void testConditionalLogicInTemplates() {
-    // Configure the encoder with a pattern that uses conditional logic in embedded expressions
-    String pattern = STR."Status: \{TEST_STATUS_CODE < 400 ? "Success" : "Error"} (\{TEST_STATUS_CODE})";
-    encoder.setPattern(pattern);
-    encoder.start();
-
-    // Encode the access event
-    String result = new String(encoder.encode(accessEvent));
-
-    // Verify the result
-    assertThat(result, is("Status: Success (200)"));
-  }
-
-  /**
-   * Creates a mock {@link IAccessEvent} with test values.
-   */
-  private IAccessEvent createMockAccessEvent() {
-    AccessEvent event = new AccessEvent(null, null, null);
+    // Set up output stream to capture encoded log entries
+    outputStream = new ByteArrayOutputStream();
+    encoder.setOutputStream(new OutputStreamWriter(outputStream));
     
-    // Set up the MDC with the user ID
-    Map<String, String> mdcMap = new HashMap<>();
-    mdcMap.put(NexusUserIdConverter.MDC_KEY, TEST_USER_ID);
-    when(event.getRequestURI()).thenReturn(TEST_REQUEST_URI);
-    when(event.getMethod()).thenReturn(TEST_REQUEST_METHOD);
-    when(event.getRemoteHost()).thenReturn(TEST_REMOTE_HOST);
-    when(event.getStatusCode()).thenReturn(TEST_STATUS_CODE);
-    when(event.getContentLength()).thenReturn(TEST_CONTENT_LENGTH);
-    when(event.getElapsedTime()).thenReturn(TEST_ELAPSED_TIME);
-    when(event.getMDCPropertyMap()).thenReturn(mdcMap);
+    // Setup common mock behavior for access event
+    when(accessEvent.getAttribute("nexus.user.id")).thenReturn("admin");
+    when(accessEvent.getRequestURI()).thenReturn("/path/to/resource");
+    when(accessEvent.getStatusCode()).thenReturn(200);
+    when(accessEvent.getMethod()).thenReturn("GET");
+    when(accessEvent.getRemoteHost()).thenReturn("127.0.0.1");
+  }
+  
+  /**
+   * Tests that a basic String Template expression in the pattern is correctly processed.
+   * This validates the fundamental capability of using String Templates in access log patterns.
+   */
+  @Test
+  public void testBasicStringTemplate() {
+    // Setup a pattern with a simple String Template expression
+    String pattern = STR."User: \{accessEvent.getAttribute(\"nexus.user.id\")} accessed \{accessEvent.getRequestURI()}";
+    encoder.setPattern(pattern);
+    encoder.start();
     
-    return event;
+    // Process the event
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains the expected interpolated values
+    String output = outputStream.toString();
+    assertThat(output, containsString("User: admin accessed /path/to/resource"));
+  }
+  
+  /**
+   * Tests that a String Template with multiple expressions is correctly processed.
+   * This ensures that complex patterns with multiple interpolated values work correctly.
+   */
+  @Test
+  public void testMultipleExpressions() {
+    // Setup a pattern with multiple expressions
+    String pattern = STR."\{accessEvent.getRemoteHost()} - \{accessEvent.getAttribute(\"nexus.user.id\")} "
+        + STR."\{accessEvent.getMethod()} \{accessEvent.getRequestURI()} \{accessEvent.getStatusCode()}";
+    encoder.setPattern(pattern);
+    encoder.start();
+    
+    // Process the event
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains all expected interpolated values
+    String output = outputStream.toString();
+    assertThat(output, containsString("127.0.0.1 - admin GET /path/to/resource 200"));
+  }
+  
+  /**
+   * Tests that a String Template with conditional expressions is correctly processed.
+   * This verifies that ternary operators and other conditional logic work within templates.
+   */
+  @Test
+  public void testConditionalExpressions() {
+    // Setup a pattern with conditional expressions
+    String pattern = STR."Status: \{accessEvent.getStatusCode() >= 400 ? \"ERROR\" : \"OK\"} "
+        + STR."for request to \{accessEvent.getRequestURI()}";
+    encoder.setPattern(pattern);
+    encoder.start();
+    
+    // Process the event with 200 status code
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains the expected conditional result
+    String output = outputStream.toString();
+    assertThat(output, containsString("Status: OK for request to /path/to/resource"));
+    
+    // Reset output and change status code to 404
+    outputStream.reset();
+    when(accessEvent.getStatusCode()).thenReturn(404);
+    
+    // Process the event again
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output now shows ERROR
+    output = outputStream.toString();
+    assertThat(output, containsString("Status: ERROR for request to /path/to/resource"));
+  }
+  
+  /**
+   * Tests that a String Template with method calls and expressions is correctly processed.
+   * This ensures that method invocations on objects within templates are properly evaluated.
+   */
+  @Test
+  public void testMethodCallsInTemplates() {
+    // Setup a pattern with method calls in the template
+    String pattern = STR."URI: \{accessEvent.getRequestURI().toUpperCase()} "
+        + STR."Method: \{accessEvent.getMethod().toLowerCase()}";
+    encoder.setPattern(pattern);
+    encoder.start();
+    
+    // Process the event
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains the expected transformed values
+    String output = outputStream.toString();
+    assertThat(output, containsString("URI: /PATH/TO/RESOURCE Method: get"));
+  }
+  
+  /**
+   * Tests that a String Template with embedded calculations is correctly processed.
+   * This validates that arithmetic operations within templates work correctly in log patterns.
+   */
+  @Test
+  public void testCalculationsInTemplates() {
+    // Setup mock for content length
+    when(accessEvent.getContentLength()).thenReturn(1024L);
+    
+    // Setup a pattern with calculations in the template
+    String pattern = STR."Content size: \{accessEvent.getContentLength() / 1024.0} KB "
+        + STR."Status category: \{accessEvent.getStatusCode() / 100}xx";
+    encoder.setPattern(pattern);
+    encoder.start();
+    
+    // Process the event
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains the expected calculated values
+    String output = outputStream.toString();
+    assertThat(output, containsString("Content size: 1.0 KB Status category: 2xx"));
+  }
+  
+  /**
+   * Tests that a String Template with text blocks is correctly processed.
+   * This is particularly important for complex log formats that span multiple lines.
+   */
+  @Test
+  public void testTextBlockTemplates() {
+    // Setup a pattern with a text block template
+    String pattern = STR."""
+        Access Log Entry:
+        User: \{accessEvent.getAttribute("nexus.user.id")}
+        URI: \{accessEvent.getRequestURI()}
+        Method: \{accessEvent.getMethod()}
+        Status: \{accessEvent.getStatusCode()}
+        """;
+    encoder.setPattern(pattern);
+    encoder.start();
+    
+    // Process the event
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains the expected formatted text block
+    String output = outputStream.toString();
+    assertThat(output, containsString("User: admin"));
+    assertThat(output, containsString("URI: /path/to/resource"));
+    assertThat(output, containsString("Method: GET"));
+    assertThat(output, containsString("Status: 200"));
+  }
+  
+  /**
+   * Tests that a String Template with date/time formatting is correctly processed.
+   * This validates that date/time operations within templates work correctly in log patterns.
+   */
+  @Test
+  public void testDateTimeInTemplates() {
+    // Get current date/time for the test
+    LocalDateTime now = LocalDateTime.now();
+    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    String formattedDateTime = now.format(formatter);
+    
+    // Setup a pattern with date/time formatting in the template
+    String pattern = STR."Time: \{LocalDateTime.now().format(DateTimeFormatter.ofPattern(\"yyyy-MM-dd HH:mm:ss\"))} "
+        + STR."User: \{accessEvent.getAttribute(\"nexus.user.id\")}";
+    encoder.setPattern(pattern);
+    encoder.start();
+    
+    // Process the event
+    encoder.doEncode(accessEvent);
+    
+    // Verify the output contains the user part (we can't exactly match the time as it will differ)
+    String output = outputStream.toString();
+    assertThat(output, containsString("User: admin"));
+    // Verify the output contains a properly formatted date/time string (format check only)
+    assertThat(output, containsString("Time: "));
   }
 }

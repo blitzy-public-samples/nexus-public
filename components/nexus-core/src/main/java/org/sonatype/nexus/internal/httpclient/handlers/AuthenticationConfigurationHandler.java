@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.internal.httpclient.handlers;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.crypto.secrets.SecretsFactory;
 import org.sonatype.nexus.httpclient.config.AuthenticationConfiguration;
@@ -23,8 +23,6 @@ import org.apache.ibatis.type.TypeHandler;
 
 /**
  * MyBatis {@link TypeHandler} that maps an {@link AuthenticationConfiguration} to/from JSON.
- * 
- * Updated for Java 21 with improved type handling.
  *
  * @since 3.21
  */
@@ -33,13 +31,9 @@ import org.apache.ibatis.type.TypeHandler;
 public class AuthenticationConfigurationHandler
     extends HttpClientConfigurationHandler<AuthenticationConfiguration>
 {
-  /**
-   * Creates a new AuthenticationConfigurationHandler with the given secrets factory.
-   * 
-   * @param secretsFactory the factory for creating secrets
-   */
   @Inject
   public AuthenticationConfigurationHandler(final SecretsFactory secretsFactory) {
+    // Using Java 21 pattern for constructor with parent class delegation
     super(secretsFactory);
   }
 }

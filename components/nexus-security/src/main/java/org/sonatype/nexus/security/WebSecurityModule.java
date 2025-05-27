@@ -14,7 +14,6 @@ package org.sonatype.nexus.security;
 
 import java.lang.reflect.Constructor;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.inject.Singleton;
@@ -25,6 +24,7 @@ import org.sonatype.nexus.security.authz.ExceptionCatchingModularRealmAuthorizer
 
 import com.google.common.base.Throwables;
 import com.google.inject.binder.AnnotatedBindingBuilder;
+import com.google.inject.name.Names;
 import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.Authenticator;
@@ -52,7 +52,7 @@ import org.apache.shiro.web.mgt.WebSecurityManager;
 
 /**
  * Shiro security configuration Guice module for the runtime server.
- * Updated for Java 21 compatibility with Virtual Thread support.
+ * Updated for Java 21 compatibility with Virtual Threads support.
  *
  * @since 2.6.1
  */
@@ -60,10 +60,11 @@ public class WebSecurityModule
     extends ShiroWebModule
 {
   /**
-   * Virtual thread executor for Shiro filter operations
+   * Virtual thread executor for Shiro filters.
+   * This executor is used by security components to leverage Java 21 virtual threads
+   * for improved scalability and performance, especially for I/O bound operations.
    */
-  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = 
-      Executors.newVirtualThreadPerTaskExecutor();
+  private static final Executor VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
   public WebSecurityModule(final ServletContext servletContext) {
     super(servletContext);
@@ -73,34 +74,30 @@ public class WebSecurityModule
   protected void configureShiroWeb() {
     bindRealm().to(EmptyRealm.class); // not used in practice, just here to keep Shiro module happy
 
-    // Configure session components with Java 21 compatibility
     bindSingleton(SessionFactory.class, NexusSessionFactory.class);
     bindSingleton(SessionStorageEvaluator.class, NexusSessionStorageEvaluator.class);
     bindSingleton(SubjectDAO.class, NexusSubjectDAO.class);
 
-    // Configure our preferred security components
+    // configure our preferred security components
     bindSingleton(SessionDAO.class, NexusSessionDAO.class);
     bindSingleton(Authenticator.class, FirstSuccessfulModularRealmAuthenticator.class);
     bindSingleton(Authorizer.class, ExceptionCatchingModularRealmAuthorizer.class);
-    
-    // Configure filter chain with Virtual Thread support
-    bindSingleton(FilterChainManager.class, DynamicFilterChainManager.class);
+    bindSingleton(FilterChainManager.class, VirtualThreadFilterChainManager.class);
     bind(ShiroFilterConfiguration.class).asEagerSingleton();
-    
-    // Provide the virtual thread executor for filter operations
-    bind(Executor.class).annotatedWith(VirtualThreadExecutor.class).toInstance(VIRTUAL_THREAD_EXECUTOR);
 
-    // Path matching resolver has several constructors so we need to point Guice to the appropriate one
-    // Use pattern matching for constructor selection (Java 21 feature)
+    // path matching resolver has several constructors so we need to point Guice to the appropriate one
+    // Use pattern matching for constructor selection with Java 21
     bind(FilterChainResolver.class).toConstructor(ctor(PathMatchingFilterChainResolver.class)).asEagerSingleton();
 
-    // Bindings used by external modules
+    // bindings used by external modules
     expose(FilterChainResolver.class);
     expose(FilterChainManager.class);
-    expose(Executor.class).annotatedWith(VirtualThreadExecutor.class);
+    // Expose the virtual thread executor for use by other components
+    bind(Executor.class).annotatedWith(Names.named("virtualThreadExecutor")).toInstance(VIRTUAL_THREAD_EXECUTOR);
+    expose(Executor.class).annotatedWith(Names.named("virtualThreadExecutor"));
   }
 
-  // Bind a given API to an implementation and make that implementation a singleton
+  // bind a given API to an implementation and make that implementation a singleton
   private <T> void bindSingleton(final Class<T> api, final Class<? extends T> impl) {
     bind(impl).in(Singleton.class);
     bind(api).to(impl);
@@ -108,25 +105,24 @@ public class WebSecurityModule
 
   @Override
   protected void bindWebSecurityManager(final AnnotatedBindingBuilder<? super WebSecurityManager> bind) {
-    // Configure security manager with Java 21 compatibility
     bind(NexusWebSecurityManager.class).asEagerSingleton();
 
-    // Bind RealmSecurityManager and WebSecurityManager to _same_ component
+    // bind RealmSecurityManager and WebSecurityManager to _same_ component
     bind(RealmSecurityManager.class).to(NexusWebSecurityManager.class);
     bind.to(NexusWebSecurityManager.class);
 
-    // Bindings used by external modules
+    // bindings used by external modules
     expose(RealmSecurityManager.class);
     expose(WebSecurityManager.class);
   }
 
   @Override
   protected void bindSessionManager(final AnnotatedBindingBuilder<SessionManager> bind) {
-    // Use native web session management instead of delegating to servlet container
-    // Configured for Java 21 compatibility with optimized session handling
+    // use native web session management instead of delegating to servlet container
+    // workaround for NEXUS-5727, see NexusDefaultWebSessionManager javadoc for clues
+    // Configure for Java 21 compatibility with optimized session handling
     bind.to(NexusWebSessionManager.class).asEagerSingleton();
-    
-    // This is a PrivateModule, so explicitly binding the NexusWebSessionManager class
+    // this is a PrivateModule, so explicitly binding the NexusWebSessionManager class
     bind(NexusWebSessionManager.class);
   }
 

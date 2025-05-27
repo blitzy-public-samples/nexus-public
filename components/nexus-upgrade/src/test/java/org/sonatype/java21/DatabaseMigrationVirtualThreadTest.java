@@ -14,6 +14,8 @@ package org.sonatype.java21;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -21,224 +23,329 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 import org.sonatype.nexus.testdb.DataSessionRule;
+import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
+import org.sonatype.nexus.testsuite.testsupport.VirtualThreadTestGroup;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
-import org.junit.Rule;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.experimental.categories.Category;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTORE_NAME;
 
 /**
- * Tests for validating Java 21 Virtual Thread compatibility with the Nexus database migration framework.
+ * Tests to validate Java 21 Virtual Thread compatibility with the Nexus database migration framework.
+ * 
+ * This test class verifies that database migrations can be executed concurrently using virtual threads,
+ * ensuring that JDBC operations work correctly with Java 21's lightweight thread implementation.
  */
-@Category({PostgresTestGroup.class, Java21TestGroup.class, VirtualThreadTestGroup.class})
+@Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
+@org.junit.jupiter.api.Tag("Java21")
+@org.junit.jupiter.api.Tag("VirtualThread")
 public class DatabaseMigrationVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
-  private static final String CUSTOM_SQL = "CREATE TABLE IF NOT EXISTS custom.test (\n"
-      + "      domain            VARCHAR(200)   NOT NULL,\n"
-      + "      token             VARCHAR(200)   NOT NULL,\n"
-      + "      CONSTRAINT pk_domain PRIMARY KEY (domain)\n"
-      + "    );\n"
-      + "";
-
-  // Using both JUnit 4 @Rule and JUnit 5 @RegisterExtension for compatibility during migration
-  @Rule
-  @RegisterExtension
-  public DataSessionRule customSessionRule = new DataSessionRule(DEFAULT_DATASTORE_NAME);
-
+  private static final String TEST_SCHEMA = "vt_test";
+  
+  private static final String CREATE_SCHEMA_SQL = "CREATE SCHEMA IF NOT EXISTS " + TEST_SCHEMA + " AUTHORIZATION test";
+  
+  private static final String DROP_SCHEMA_SQL = "DROP SCHEMA IF EXISTS " + TEST_SCHEMA + " CASCADE";
+  
+  private static final String CREATE_TABLE_SQL = 
+      "CREATE TABLE IF NOT EXISTS " + TEST_SCHEMA + ".migration_test (\n" +
+      "      id                INTEGER       NOT NULL,\n" +
+      "      name              VARCHAR(200)  NOT NULL,\n" +
+      "      status            VARCHAR(50)   NOT NULL,\n" +
+      "      CONSTRAINT pk_migration_test PRIMARY KEY (id)\n" +
+      "    );";
+  
+  private static final String INSERT_DATA_SQL = 
+      "INSERT INTO " + TEST_SCHEMA + ".migration_test (id, name, status) VALUES (?, ?, ?)";
+  
+  private static final String SELECT_COUNT_SQL = 
+      "SELECT COUNT(*) FROM " + TEST_SCHEMA + ".migration_test";
+  
+  private static final int CONCURRENT_MIGRATIONS = 50;
+  private static final int TIMEOUT_SECONDS = 30;
+  
+  @org.junit.jupiter.api.extension.RegisterExtension
+  public DataSessionRule dataSessionRule = new DataSessionRule(DEFAULT_DATASTORE_NAME);
+  
   private ExecutorService virtualThreadExecutor;
-
+  
   @BeforeEach
-  void setUp() {
-    ThreadFactory factory = Thread.ofVirtual().factory();
-    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(factory);
-  }
-
-  @AfterEach
-  void tearDown() throws Exception {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
+  public void setUp() throws Exception {
+    // Create a virtual thread per task executor
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    // Initialize test schema
+    try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+      conn.createStatement().execute(DROP_SCHEMA_SQL);
+      conn.createStatement().execute(CREATE_SCHEMA_SQL);
+      conn.createStatement().execute(CREATE_TABLE_SQL);
+      conn.commit();
     }
   }
-
-  @Test
-  @DisplayName("Test schema creation with virtual threads")
-  void testSchemaCreationWithVirtualThreads() throws Exception {
-    AtomicBoolean success = new AtomicBoolean(false);
-    
-    virtualThreadExecutor.submit(() -> {
-      try (Connection conn = customSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
-        underTest.runStatement(conn, "drop schema if exists custom");
-        underTest.runStatement(conn, "create schema custom authorization test");
-        underTest.runStatement(conn, CUSTOM_SQL);
-        
-        // Verify index doesn't exist in public schema
-        assertFalse(underTest.indexExists(conn, "pk_domain"), "index should not exist in public schema");
-        
-        // Switch to custom schema and verify index exists
-        underTest.runStatement(conn, "SET search_path TO custom");
-        assertTrue(underTest.indexExists(conn, "pk_domain"), "index should exist in custom schema");
-        
-        success.set(true);
-      } catch (SQLException e) {
-        fail("Failed to execute database operations with virtual thread: " + e.getMessage());
+  
+  @AfterEach
+  public void tearDown() throws Exception {
+    // Clean up executor
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+      if (!virtualThreadExecutor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        virtualThreadExecutor.shutdownNow();
       }
-    }).get(); // Wait for completion
+    }
     
-    assertTrue(success.get(), "Virtual thread database operations should complete successfully");
+    // Clean up schema
+    try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+      conn.createStatement().execute(DROP_SCHEMA_SQL);
+      conn.commit();
+    }
   }
-
+  
+  /**
+   * Tests that a single database migration can be executed in a virtual thread.
+   */
   @Test
-  @DisplayName("Test concurrent migrations with virtual threads")
-  void testConcurrentMigrationsWithVirtualThreads() throws Exception {
-    final int threadCount = 5;
-    final CountDownLatch startLatch = new CountDownLatch(1);
-    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    final AtomicBoolean[] successes = new AtomicBoolean[threadCount];
+  public void testSingleMigrationInVirtualThread() throws Exception {
+    AtomicBoolean migrationCompleted = new AtomicBoolean(false);
     
-    for (int i = 0; i < threadCount; i++) {
-      final int threadIndex = i;
-      successes[threadIndex] = new AtomicBoolean(false);
+    // Create a test migration step
+    DatabaseMigrationStep migrationStep = new DatabaseMigrationStep() {
+      @Override
+      public Optional<String> version() {
+        return Optional.of("1.0");
+      }
       
-      virtualThreadExecutor.submit(() -> {
-        try {
-          // Wait for all threads to be ready
+      @Override
+      public void migrate(Connection connection) throws Exception {
+        // Execute a simple migration that creates a record
+        try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+          stmt.setInt(1, 1);
+          stmt.setString(2, "Test Migration");
+          stmt.setString(3, "Completed");
+          stmt.executeUpdate();
+        }
+        migrationCompleted.set(true);
+      }
+    };
+    
+    // Execute the migration in a virtual thread
+    virtualThreadExecutor.submit(() -> {
+      try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+        migrationStep.migrate(conn);
+        conn.commit();
+      } catch (Exception e) {
+        fail("Migration failed with exception: " + e.getMessage());
+      }
+    }).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    
+    // Verify migration was completed
+    assertTrue(migrationCompleted.get(), "Migration should have completed successfully");
+    
+    // Verify data was inserted
+    try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(1));
+    }
+  }
+  
+  /**
+   * Tests that multiple database migrations can be executed concurrently using virtual threads.
+   */
+  @Test
+  public void testConcurrentMigrationsWithVirtualThreads() throws Exception {
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_MIGRATIONS);
+    AtomicInteger successCount = new AtomicInteger(0);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    List<DatabaseMigrationStep> migrations = new ArrayList<>();
+    
+    // Create multiple migration steps
+    for (int i = 0; i < CONCURRENT_MIGRATIONS; i++) {
+      final int migrationId = i;
+      migrations.add(new DatabaseMigrationStep() {
+        @Override
+        public Optional<String> version() {
+          return Optional.of("1." + migrationId);
+        }
+        
+        @Override
+        public void migrate(Connection connection) throws Exception {
+          // Wait for all migrations to start at the same time
           startLatch.await();
           
-          // Each thread creates its own schema
-          String schemaName = "custom_" + threadIndex;
-          
-          try (Connection conn = customSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
-            underTest.runStatement(conn, "drop schema if exists " + schemaName);
-            underTest.runStatement(conn, "create schema " + schemaName + " authorization test");
-            
-            // Create table in the schema
-            String sql = "CREATE TABLE IF NOT EXISTS " + schemaName + ".test (\n"
-                + "      domain            VARCHAR(200)   NOT NULL,\n"
-                + "      token             VARCHAR(200)   NOT NULL,\n"
-                + "      CONSTRAINT pk_domain_" + threadIndex + " PRIMARY KEY (domain)\n"
-                + "    );\n";
-            
-            underTest.runStatement(conn, sql);
-            
-            // Switch to schema and verify index exists
-            underTest.runStatement(conn, "SET search_path TO " + schemaName);
-            assertTrue(underTest.indexExists(conn, "pk_domain_" + threadIndex), 
-                "index should exist in " + schemaName + " schema");
-            
-            successes[threadIndex].set(true);
+          // Execute migration
+          try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+            stmt.setInt(1, migrationId);
+            stmt.setString(2, "Migration " + migrationId);
+            stmt.setString(3, "Completed");
+            stmt.executeUpdate();
+            successCount.incrementAndGet();
+          } catch (SQLException e) {
+            errorCount.incrementAndGet();
+            throw e;
+          } finally {
+            completionLatch.countDown();
           }
-        } catch (Exception e) {
-          fail("Thread " + threadIndex + " failed: " + e.getMessage());
-        } finally {
-          completionLatch.countDown();
         }
       });
     }
     
-    // Start all threads simultaneously
+    // Submit all migrations to be executed concurrently with virtual threads
+    for (DatabaseMigrationStep migration : migrations) {
+      virtualThreadExecutor.submit(() -> {
+        try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+          migration.migrate(conn);
+          conn.commit();
+        } catch (Exception e) {
+          log.error("Migration failed", e);
+        }
+      });
+    }
+    
+    // Start all migrations simultaneously
     startLatch.countDown();
     
-    // Wait for all threads to complete
-    assertTrue(completionLatch.await(30, TimeUnit.SECONDS), "All virtual threads should complete in time");
+    // Wait for all migrations to complete
+    assertTrue(completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), 
+        "All migrations should complete within the timeout period");
     
-    // Verify all threads succeeded
-    for (int i = 0; i < threadCount; i++) {
-      assertTrue(successes[i].get(), "Virtual thread " + i + " should complete successfully");
+    // Verify all migrations completed successfully
+    assertThat(errorCount.get(), is(0));
+    assertThat(successCount.get(), is(CONCURRENT_MIGRATIONS));
+    
+    // Verify all data was inserted
+    try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(CONCURRENT_MIGRATIONS));
     }
   }
-
+  
+  /**
+   * Tests that transaction boundaries are properly maintained when using virtual threads.
+   */
   @Test
-  @DisplayName("Test transaction boundaries with virtual threads")
-  void testTransactionBoundariesWithVirtualThreads() throws Exception {
-    AtomicBoolean success = new AtomicBoolean(false);
+  public void testTransactionIntegrityWithVirtualThreads() throws Exception {
+    AtomicBoolean transactionRolledBack = new AtomicBoolean(false);
     
-    virtualThreadExecutor.submit(() -> {
-      Connection conn = null;
-      try {
-        conn = customSessionRule.openConnection(DEFAULT_DATASTORE_NAME);
-        conn.setAutoCommit(false); // Start transaction
-        
-        underTest.runStatement(conn, "drop schema if exists transaction_test");
-        underTest.runStatement(conn, "create schema transaction_test authorization test");
-        
-        // Create table in the schema
-        String sql = "CREATE TABLE IF NOT EXISTS transaction_test.data (\n"
-            + "      id               VARCHAR(200)   NOT NULL,\n"
-            + "      value            VARCHAR(200)   NOT NULL,\n"
-            + "      CONSTRAINT pk_id PRIMARY KEY (id)\n"
-            + "    );\n";
-        
-        underTest.runStatement(conn, sql);
-        
-        // Insert data
-        underTest.runStatement(conn, "INSERT INTO transaction_test.data VALUES ('1', 'test')");
-        
-        // Commit transaction
-        conn.commit();
-        
-        // Verify data exists
-        underTest.runStatement(conn, "SET search_path TO transaction_test");
-        assertTrue(underTest.tableExists(conn, "data"), "table should exist");
-        
-        success.set(true);
-      } catch (SQLException e) {
-        if (conn != null) {
-          try {
-            conn.rollback();
-          } catch (SQLException ex) {
-            // Ignore
-          }
+    // Create a test migration step that will fail
+    DatabaseMigrationStep failingMigration = new DatabaseMigrationStep() {
+      @Override
+      public Optional<String> version() {
+        return Optional.of("2.0");
+      }
+      
+      @Override
+      public void migrate(Connection connection) throws Exception {
+        // Insert a valid record
+        try (var stmt = connection.prepareStatement(INSERT_DATA_SQL)) {
+          stmt.setInt(1, 100);
+          stmt.setString(2, "Before Failure");
+          stmt.setString(3, "Completed");
+          stmt.executeUpdate();
         }
-        fail("Failed to execute transaction with virtual thread: " + e.getMessage());
-      } finally {
-        if (conn != null) {
-          try {
-            conn.close();
-          } catch (SQLException e) {
-            // Ignore
+        
+        // Throw an exception to cause rollback
+        throw new SQLException("Simulated failure to test transaction rollback");
+      }
+    };
+    
+    // Execute the migration in a virtual thread
+    virtualThreadExecutor.submit(() -> {
+      try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+        try {
+          failingMigration.migrate(conn);
+          conn.commit();
+        } catch (Exception e) {
+          // Expected exception, rollback the transaction
+          conn.rollback();
+          transactionRolledBack.set(true);
+        }
+      } catch (Exception e) {
+        fail("Unexpected exception: " + e.getMessage());
+      }
+    }).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    
+    // Verify transaction was rolled back
+    assertTrue(transactionRolledBack.get(), "Transaction should have been rolled back");
+    
+    // Verify no data was inserted (transaction was rolled back)
+    try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+      var stmt = conn.createStatement();
+      var rs = stmt.executeQuery(SELECT_COUNT_SQL);
+      assertTrue(rs.next(), "Result set should have at least one row");
+      assertThat(rs.getInt(1), is(0));
+    }
+  }
+  
+  /**
+   * Tests that database schema operations work correctly with virtual threads.
+   */
+  @Test
+  public void testSchemaOperationsWithVirtualThreads() throws Exception {
+    final String testIndexName = "idx_vt_test";
+    final String createIndexSql = "CREATE INDEX " + testIndexName + " ON " + TEST_SCHEMA + ".migration_test(name)";
+    
+    // Create a test migration step that performs schema operations
+    DatabaseMigrationStep schemaMigration = new DatabaseMigrationStep() {
+      @Override
+      public Optional<String> version() {
+        return Optional.of("3.0");
+      }
+      
+      @Override
+      public void migrate(Connection connection) throws Exception {
+        // Create an index
+        connection.createStatement().execute(createIndexSql);
+      }
+      
+      /**
+       * Helper method to check if an index exists
+       */
+      public boolean indexExists(Connection connection, String indexName) throws SQLException {
+        try (var rs = connection.getMetaData().getIndexInfo(null, TEST_SCHEMA, "migration_test", false, false)) {
+          while (rs.next()) {
+            if (indexName.equalsIgnoreCase(rs.getString("INDEX_NAME"))) {
+              return true;
+            }
           }
+          return false;
         }
       }
-    }).get(); // Wait for completion
+    };
     
-    assertTrue(success.get(), "Virtual thread transaction should complete successfully");
+    // Execute the migration in a virtual thread
+    virtualThreadExecutor.submit(() -> {
+      try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+        schemaMigration.migrate(conn);
+        conn.commit();
+      } catch (Exception e) {
+        fail("Schema migration failed with exception: " + e.getMessage());
+      }
+    }).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    
+    // Verify index was created
+    try (Connection conn = dataSessionRule.openConnection(DEFAULT_DATASTORE_NAME)) {
+      assertTrue(schemaMigration.indexExists(conn, testIndexName), 
+          "Index should have been created successfully");
+    }
   }
-
-  private final DatabaseMigrationStep underTest = new DatabaseMigrationStep() {
-    public Optional<String> version() {
-      return Optional.of("0.0");
-    }
-    
-    @Override
-    public void migrate(final Connection connection) {
-      // Not used in these tests
-    }
-    
-    // Expose protected methods for testing
-    @Override
-    public boolean indexExists(Connection connection, String indexName) throws SQLException {
-      return super.indexExists(connection, indexName);
-    }
-    
-    @Override
-    public boolean tableExists(Connection connection, String tableName) throws SQLException {
-      return super.tableExists(connection, tableName);
-    }
-  };
 }

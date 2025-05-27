@@ -15,8 +15,8 @@ package com.sonatype.nexus.ssl.plugin.internal.ui;
 import java.io.IOException;
 import java.net.UnknownHostException;
 import java.security.cert.Certificate;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -48,8 +48,6 @@ import static org.sonatype.nexus.ssl.CertificateUtil.decodePEMFormattedCertifica
 
 /**
  * SSL Certificate {@link DirectComponent}.
- * 
- * Updated for Java 21 compatibility with string templates and virtual threads.
  */
 @Named
 @Singleton
@@ -60,15 +58,11 @@ public class CertificateComponent
   private final TrustStore trustStore;
 
   private final CertificateRetriever certificateRetriever;
-  
-  // Using virtual threads executor for I/O operations
-  private final ExecutorService executor;
 
   @Inject
   public CertificateComponent(final TrustStore trustStore, final CertificateRetriever certificateRetriever) {
     this.trustStore = checkNotNull(trustStore);
     this.certificateRetriever = checkNotNull(certificateRetriever);
-    this.executor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -92,19 +86,50 @@ public class CertificateComponent
   {
     Certificate[] chain;
     try {
-      chain = certificateRetriever.retrieveCertificates(host, port, protocolHint);
+      // Use a CompletableFuture to handle the result of the virtual thread operation
+      CompletableFuture<Certificate[]> future = new CompletableFuture<>();
+      
+      // Create and start a virtual thread for the certificate retrieval operation
+      Thread.ofVirtual().name(STR."certificate-retriever-\{host}-\{port}").start(() -> {
+        try {
+          future.complete(certificateRetriever.retrieveCertificates(host, port, protocolHint));
+        }
+        catch (Exception e) {
+          future.completeExceptionally(e);
+        }
+      });
+      
+      // Get the result from the CompletableFuture
+      chain = future.get();
+    }
+    catch (ExecutionException e) {
+      Throwable cause = e.getCause();
+      String errorMessage;
+      
+      if (cause instanceof UnknownHostException) {
+        errorMessage = STR."Unknown host \{host}";
+      } else {
+        errorMessage = cause.getMessage();
+        if (errorMessage == null || errorMessage.isEmpty()) {
+          errorMessage = STR."Error retrieving certificate from \{host}: \{cause.getClass().getSimpleName()}";
+        }
+      }
+      
+      throw new IOException(errorMessage, cause);
     }
     catch (Exception e) {
       String errorMessage = e.getMessage();
-      if (e instanceof UnknownHostException) {
-        errorMessage = STR."Unknown host \{host}";
+      if (errorMessage == null || errorMessage.isEmpty()) {
+        errorMessage = STR."Unexpected error retrieving certificate from \{host}: \{e.getClass().getSimpleName()}";
       }
-      throw new IOException(errorMessage);
+      throw new IOException(errorMessage, e);
     }
+    
     if (chain == null || chain.length == 0) {
       int actualPort = port == null ? 443 : port;
       throw new IOException(STR."Could not retrieve an SSL certificate from '\{host}:\{actualPort}'");
     }
+    
     return asCertificateXO(chain[0], isInTrustStore(chain[0]));
   }
 

@@ -73,8 +73,8 @@ public class SelectorComponent
   private final SecuritySystem securitySystem;
 
   private final SelectorConfigurationStore store;
-  
-  private final ExecutorService validationExecutor;
+
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public SelectorComponent(
@@ -89,8 +89,7 @@ public class SelectorComponent
     this.selectorFactory = checkNotNull(selectorFactory);
     this.securitySystem = checkNotNull(securitySystem);
     this.store = checkNotNull(store);
-    // Create a virtual thread per task executor for validation operations
-    this.validationExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -101,14 +100,14 @@ public class SelectorComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:selectors:read")
   public List<SelectorXO> read() {
-    // Use CompletableFuture to handle the read operation asynchronously
+    // Using CompletableFuture with virtual threads for I/O-bound operations
     return CompletableFuture.supplyAsync(() -> {
       Set<Privilege> privileges = securitySystem.listPrivileges();
       return store.browse()
           .stream()
           .map(config -> asSelector(config, privileges))
           .collect(Collectors.toList()); // NOSONAR
-    }, validationExecutor).join();
+    }, virtualThreadExecutor).join();
   }
 
   /**
@@ -120,16 +119,15 @@ public class SelectorComponent
   @RequiresPermissions("nexus:selectors:create")
   @Validate(groups = {Create.class, Default.class})
   public SelectorXO create(@NotNull @Valid final SelectorXO selectorXO) {
-    // Use virtual threads for validation which can be I/O bound
-    CompletableFuture.runAsync(() -> 
-        selectorFactory.validateSelector(selectorXO.getType(), selectorXO.getExpression()), 
-        validationExecutor).join();
+    return CompletableFuture.supplyAsync(() -> {
+      selectorFactory.validateSelector(selectorXO.getType(), selectorXO.getExpression());
 
-    SelectorConfiguration configuration = selectorManager.newSelectorConfiguration(
-        selectorXO.getName(), selectorXO.getType(), selectorXO.getDescription(),
-        Collections.singletonMap(EXPRESSION_KEY, selectorXO.getExpression()));
-    selectorManager.create(configuration);
-    return asSelector(configuration, securitySystem.listPrivileges());
+      SelectorConfiguration configuration = selectorManager.newSelectorConfiguration(
+          selectorXO.getName(), selectorXO.getType(), selectorXO.getDescription(),
+          Collections.singletonMap(EXPRESSION_KEY, selectorXO.getExpression()));
+      selectorManager.create(configuration);
+      return asSelector(configuration, securitySystem.listPrivileges());
+    }, virtualThreadExecutor).join();
   }
 
   /**
@@ -141,16 +139,14 @@ public class SelectorComponent
   @RequiresPermissions("nexus:selectors:update")
   @Validate(groups = {Update.class, Default.class})
   public SelectorXO update(@NotNull @Valid final SelectorXO selectorXO) {
-    // Use virtual threads for validation which can be I/O bound
-    CompletableFuture.runAsync(() -> 
-        selectorFactory.validateSelector(selectorXO.getType(), selectorXO.getExpression()), 
-        validationExecutor).join();
-        
-    SelectorConfiguration config = selectorManager.readByName(selectorXO.getName());
-    config.setDescription(selectorXO.getDescription());
-    config.setAttributes(Collections.singletonMap(EXPRESSION_KEY, selectorXO.getExpression()));
-    selectorManager.update(config);
-    return selectorXO;
+    return CompletableFuture.supplyAsync(() -> {
+      selectorFactory.validateSelector(selectorXO.getType(), selectorXO.getExpression());
+      SelectorConfiguration config = selectorManager.readByName(selectorXO.getName());
+      config.setDescription(selectorXO.getDescription());
+      config.setAttributes(Collections.singletonMap(EXPRESSION_KEY, selectorXO.getExpression()));
+      selectorManager.update(config);
+      return selectorXO;
+    }, virtualThreadExecutor).join();
   }
 
   /**
@@ -162,17 +158,15 @@ public class SelectorComponent
   @RequiresPermissions("nexus:selectors:delete")
   @Validate
   public void remove(@NotEmpty final String name) {
-    try {
-      // Use CompletableFuture to handle the deletion operation asynchronously
-      CompletableFuture.runAsync(() -> {
-        SelectorConfiguration config = selectorManager.readByName(name);
-        selectorManager.delete(config);
-      }, validationExecutor).join();
-    }
-    catch (IllegalStateException e) {
-      throw new ConstraintViolationException(e.getMessage(),
-          Collections.singleton(constraintViolationFactory.createViolation("*", e.getMessage())));
-    }
+    CompletableFuture.runAsync(() -> {
+      try {
+        selectorManager.delete(selectorManager.readByName(name));
+      }
+      catch (IllegalStateException e) {
+        throw new ConstraintViolationException(e.getMessage(),
+            Collections.singleton(constraintViolationFactory.createViolation("*", e.getMessage())));
+      }
+    }, virtualThreadExecutor).join();
   }
 
   /**
@@ -183,13 +177,12 @@ public class SelectorComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:selectors:read")
   public List<ReferenceXO> readReferences() {
-    // Use CompletableFuture to handle the browse operation asynchronously
-    return CompletableFuture.supplyAsync(() -> 
-        selectorManager.browse()
-            .stream()
-            .map(config -> new ReferenceXO(config.getName(), config.getName()))
-            .collect(Collectors.toList()), // NOSONAR
-        validationExecutor).join();
+    return CompletableFuture.supplyAsync(() -> {
+      return selectorManager.browse()
+          .stream()
+          .map(config -> new ReferenceXO(config.getName(), config.getName()))
+          .collect(Collectors.toList()); // NOSONAR
+    }, virtualThreadExecutor).join();
   }
 
   private SelectorXO asSelector(final SelectorConfiguration configuration, final Set<Privilege> privilegeSet) {
@@ -211,15 +204,12 @@ public class SelectorComponent
       final SelectorConfiguration selectorConfiguration,
       final Set<Privilege> privileges)
   {
-    // Use CompletableFuture to process privilege filtering asynchronously
-    return CompletableFuture.supplyAsync(() ->
-        privileges.stream()
-            .filter(privilege -> RepositoryContentSelectorPrivilegeDescriptor.TYPE.equals(privilege.getType()))
-            .filter(privilege -> selectorConfiguration.getName()
-                .equals(privilege.getProperties().get(RepositoryContentSelectorPrivilegeDescriptor.P_CONTENT_SELECTOR)))
-            .map(Privilege::getName)
-            .collect(Collectors.toList()), // NOSONAR
-        validationExecutor).join();
+    return privileges.stream()
+        .filter(privilege -> RepositoryContentSelectorPrivilegeDescriptor.TYPE.equals(privilege.getType()))
+        .filter(privilege -> selectorConfiguration.getName()
+            .equals(privilege.getProperties().get(RepositoryContentSelectorPrivilegeDescriptor.P_CONTENT_SELECTOR)))
+        .map(Privilege::getName)
+        .collect(Collectors.toList()); // NOSONAR
   }
 
   private static boolean canReadPrivileges() {

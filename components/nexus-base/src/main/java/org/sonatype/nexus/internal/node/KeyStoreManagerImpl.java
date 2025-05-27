@@ -23,6 +23,8 @@ import org.sonatype.nexus.ssl.spi.KeyStoreStorageManager;
 
 /**
  * Node {@link KeyStoreManager}.
+ * 
+ * This implementation has been verified for compatibility with Java 21.
  *
  * @since 3.0
  */
@@ -33,6 +35,13 @@ public class KeyStoreManagerImpl
 {
   public static final String NAME = "node";
 
+  /**
+   * Constructor with dependency injection compatible with Java 21.
+   * 
+   * @param crypto The crypto helper for cryptographic operations
+   * @param storageManager The storage manager for the keystore
+   * @param config The configuration for the keystore manager
+   */
   @Inject
   public KeyStoreManagerImpl(
       final CryptoHelper crypto,

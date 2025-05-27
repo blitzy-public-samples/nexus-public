@@ -19,7 +19,10 @@ import org.sonatype.nexus.rest.WebApplicationMessageException;
 
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,149 +30,153 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests {@link WebApplicationMessageException} behavior in virtual threads.
- * Ensures that exception mapping to HTTP status codes, validation error wrapping,
- * and error response generation function correctly when executed in virtual threads.
+ * Tests {@link WebApplicationMessageException} behavior when executed in virtual threads.
+ * Validates that exception handling, HTTP status code mapping, and error response generation
+ * work correctly in the Java 21 virtual thread model.
  */
 public class WebApplicationMessageExceptionVirtualThreadTest
 {
   /**
-   * Tests the constructor that takes a Response.Status, a message, and a MediaType
-   * when executed in a virtual thread.
+   * Tests the constructor with media type when executed in a virtual thread.
    */
   @Test
-  public void testConstructorInVirtualThread() throws ExecutionException, InterruptedException {
-    AtomicReference<Response> responseRef = new AtomicReference<>();
-    AtomicReference<Object> entityRef = new AtomicReference<>();
-    
-    Thread virtualThread = Thread.ofVirtual().name("constructor-test").start(() -> {
+  public void testConstructorInVirtualThread() throws Exception {
+    executeInVirtualThread(() -> {
       WebApplicationMessageException exception = new WebApplicationMessageException(
           Response.Status.BAD_REQUEST, "Message", MediaType.APPLICATION_JSON);
       Response response = exception.getResponse();
-      responseRef.set(response);
-      entityRef.set(response.getEntity());
+
+      assertEquals(400, response.getStatus());
+
+      Object entity = response.getEntity();
+
+      assertInstanceOf(ValidationErrorXO.class, entity);
+      assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
+      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+      assertEquals(ImmutableList.of(MediaType.APPLICATION_JSON), response.getHeaders().get("Content-Type"));
     });
-    
-    virtualThread.join();
-    
-    Response response = responseRef.get();
-    Object entity = entityRef.get();
-    
-    assertEquals(400, response.getStatus());
-    assertInstanceOf(ValidationErrorXO.class, entity);
-    assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
-    assertEquals(ImmutableList.of(MediaType.APPLICATION_JSON), response.getHeaders().get("Content-Type"));
   }
 
   /**
-   * Tests the constructor that takes only a Response.Status and a message (no MediaType)
-   * when executed in a virtual thread.
+   * Tests the constructor without media type when executed in a virtual thread.
    */
   @Test
-  public void testConstructorNoMediaTypeInVirtualThread() throws InterruptedException {
-    AtomicReference<Response> responseRef = new AtomicReference<>();
-    AtomicReference<Object> entityRef = new AtomicReference<>();
-    
-    Thread virtualThread = Thread.ofVirtual().name("no-media-type-test").start(() -> {
+  public void testConstructorNoMediaTypeInVirtualThread() throws Exception {
+    executeInVirtualThread(() -> {
       WebApplicationMessageException exception = new WebApplicationMessageException(
           Response.Status.NOT_FOUND, "Message");
       Response response = exception.getResponse();
-      responseRef.set(response);
-      entityRef.set(response.getEntity());
+
+      assertEquals(404, response.getStatus());
+
+      Object entity = response.getEntity();
+
+      assertInstanceOf(ValidationErrorXO.class, entity);
+      assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
+      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+      assertEquals(ImmutableList.of(MediaType.TEXT_PLAIN), response.getHeaders().get("Content-Type"));
     });
-    
-    virtualThread.join();
-    
-    Response response = responseRef.get();
-    Object entity = entityRef.get();
-    
-    assertEquals(404, response.getStatus());
-    assertInstanceOf(ValidationErrorXO.class, entity);
-    assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
-    assertEquals(ImmutableList.of(MediaType.TEXT_PLAIN), response.getHeaders().get("Content-Type"));
   }
 
   /**
-   * Tests error message formatting with String Templates in virtual threads.
-   * This test verifies that String Templates work correctly with WebApplicationMessageException
-   * when executed in a virtual thread context.
+   * Tests exception handling with String Templates (Java 21 feature) in virtual threads.
    */
   @Test
-  public void testStringTemplateErrorMessageInVirtualThread() throws InterruptedException {
-    AtomicReference<Response> responseRef = new AtomicReference<>();
-    AtomicReference<Object> entityRef = new AtomicReference<>();
-    
-    String resourceId = "test-resource-123";
-    int errorCode = 404;
-    
-    Thread virtualThread = Thread.ofVirtual().name("string-template-test").start(() -> {
+  public void testStringTemplateErrorMessageInVirtualThread() throws Exception {
+    executeInVirtualThread(() -> {
+      String resourceId = "test-resource-123";
+      String action = "update";
+      
       // Using Java 21 String Template feature
-      String errorMessage = STR."Resource with ID \{resourceId} not found (error code: \{errorCode})";
+      String errorMessage = STR."Resource \{resourceId} cannot be \{action}d";
       
       WebApplicationMessageException exception = new WebApplicationMessageException(
-          Response.Status.NOT_FOUND, errorMessage);
+          Response.Status.FORBIDDEN, errorMessage, MediaType.APPLICATION_JSON);
       Response response = exception.getResponse();
-      responseRef.set(response);
-      entityRef.set(response.getEntity());
+
+      assertEquals(403, response.getStatus());
+
+      Object entity = response.getEntity();
+
+      assertInstanceOf(ValidationErrorXO.class, entity);
+      assertEquals("Resource test-resource-123 cannot be updated", ((ValidationErrorXO) entity).getMessage());
+      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
     });
-    
-    virtualThread.join();
-    
-    Response response = responseRef.get();
-    Object entity = entityRef.get();
-    
-    assertEquals(404, response.getStatus());
-    assertInstanceOf(ValidationErrorXO.class, entity);
-    assertEquals("Resource with ID test-resource-123 not found (error code: 404)", 
-        ((ValidationErrorXO) entity).getMessage());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
   }
 
   /**
-   * Tests concurrent exception creation in multiple virtual threads.
-   * Verifies that WebApplicationMessageException can be safely used in a highly concurrent
-   * environment with many virtual threads.
+   * Tests concurrent exception creation and handling in multiple virtual threads.
    */
   @Test
-  public void testConcurrentExceptionCreationInVirtualThreads() throws InterruptedException {
-    final int threadCount = 100;
-    Thread[] threads = new Thread[threadCount];
-    AtomicReference<Boolean> success = new AtomicReference<>(true);
-    
-    for (int i = 0; i < threadCount; i++) {
-      final int threadId = i;
-      threads[i] = Thread.ofVirtual().name("concurrent-test-" + i).start(() -> {
-        try {
-          WebApplicationMessageException exception = new WebApplicationMessageException(
-              Response.Status.BAD_REQUEST, "Message from thread " + threadId, MediaType.APPLICATION_JSON);
-          Response response = exception.getResponse();
-          
-          // Verify basic properties
-          if (response.getStatus() != 400) {
-            success.set(false);
+  public void testConcurrentExceptionHandlingInVirtualThreads() throws Exception {
+    int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 0; i < threadCount; i++) {
+        final int statusCode = 400 + (i % 5); // Generate different status codes
+        final String message = "Error message " + i;
+        
+        executor.submit(() -> {
+          try {
+            Response.Status status = Response.Status.fromStatusCode(statusCode);
+            WebApplicationMessageException exception = new WebApplicationMessageException(
+                status, message, MediaType.APPLICATION_JSON);
+            Response response = exception.getResponse();
+
+            // Verify the response has the correct status code
+            assertEquals(statusCode, response.getStatus());
+
+            // Verify the entity is a ValidationErrorXO with the correct message
+            Object entity = response.getEntity();
+            assertInstanceOf(ValidationErrorXO.class, entity);
+            assertEquals(message, ((ValidationErrorXO) entity).getMessage());
+          } 
+          catch (Throwable t) {
+            failure.set(t);
+          } 
+          finally {
+            latch.countDown();
           }
-          
-          Object entity = response.getEntity();
-          if (!(entity instanceof ValidationErrorXO)) {
-            success.set(false);
-          }
-          
-          if (!((ValidationErrorXO) entity).getMessage().equals("Message from thread " + threadId)) {
-            success.set(false);
-          }
-        } catch (Exception e) {
-          success.set(false);
-        }
-      });
+        });
+      }
+
+      // Wait for all threads to complete
+      assertTrue(latch.await(10, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
+      
+      // Check if any thread failed
+      if (failure.get() != null) {
+        throw new AssertionError("Test failed in virtual thread", failure.get());
+      }
     }
+  }
+
+  /**
+   * Helper method to execute a runnable in a virtual thread and wait for its completion.
+   */
+  private void executeInVirtualThread(Runnable task) throws Exception {
+    AtomicReference<Throwable> exception = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
+
+    Thread virtualThread = Thread.ofVirtual().name("virtual-test-thread").start(() -> {
+      try {
+        task.run();
+      } 
+      catch (Throwable t) {
+        exception.set(t);
+      } 
+      finally {
+        latch.countDown();
+      }
+    });
+
+    // Wait for the virtual thread to complete
+    assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for virtual thread to complete");
     
-    // Wait for all threads to complete
-    for (Thread thread : threads) {
-      thread.join();
+    // If an exception occurred in the virtual thread, rethrow it
+    if (exception.get() != null) {
+      throw new AssertionError("Test failed in virtual thread", exception.get());
     }
-    
-    assertTrue(success.get(), "All virtual threads should successfully create and validate exceptions");
   }
 }

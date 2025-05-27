@@ -16,6 +16,8 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.util.concurrent.Executors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -55,32 +57,64 @@ public class FileContentSourceSupport
   }
 
   /**
-   * Returns an input stream for the file content.
+   * Gets the content of the file using Java 21 Virtual Threads for improved I/O performance.
    * 
-   * Uses Java 21 Virtual Threads for file streaming operations to improve I/O performance
-   * and reduce resource consumption. Virtual Threads are lightweight threads managed by the JVM
-   * that are particularly well-suited for I/O-bound operations like file streaming.
-   * 
-   * The implementation maintains backward compatibility while leveraging Virtual Threads
-   * for improved scalability when handling multiple concurrent file operations.
+   * Virtual Threads are lightweight threads that are particularly well-suited for I/O-bound operations.
+   * When a virtual thread performs a blocking I/O operation (like reading from a file), it gets suspended
+   * and doesn't block the underlying OS thread (carrier thread), allowing the carrier thread to be used
+   * for other tasks. This results in better resource utilization and improved performance in high-concurrency
+   * scenarios.
    *
-   * @return The input stream for the file content
-   * @throws Exception if an error occurs
-   * @since 3.0
+   * @return An InputStream containing the file content
+   * @throws Exception if an error occurs during file reading
+   * @since 3.60
    */
   @Override
   public InputStream getContent() throws Exception {
     checkState(file.exists());
     log.debug("Reading: {}", file);
     
-    // Use Virtual Threads for file streaming operations
-    // This allows for more efficient I/O operations without blocking platform threads
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+    // For small files or when virtual threads aren't available, use the direct approach
+    if (file.length() < 1024 * 1024) { // 1MB threshold
       return new BufferedInputStream(new FileInputStream(file));
-    }).get();
+    }
+    
+    // For larger files, use virtual threads to handle the I/O operation
+    try {
+      // Create piped streams to transfer data between threads
+      PipedInputStream inputStream = new PipedInputStream(8192);
+      PipedOutputStream outputStream = new PipedOutputStream(inputStream);
+      
+      // Use a virtual thread to read the file and write to the pipe
+      Executors.newVirtualThreadPerTaskExecutor().execute(() -> {
+        try (FileInputStream fileIn = new FileInputStream(file);
+             BufferedInputStream bufferedIn = new BufferedInputStream(fileIn)) {
+          byte[] buffer = new byte[8192];
+          int bytesRead;
+          while ((bytesRead = bufferedIn.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, bytesRead);
+          }
+        } catch (Exception e) {
+          log.error("Error reading file with virtual thread: {}", file, e);
+        } finally {
+          try {
+            outputStream.close();
+          } catch (Exception e) {
+            log.debug("Error closing output stream", e);
+          }
+        }
+      });
+      
+      return new BufferedInputStream(inputStream);
+    } catch (UnsupportedOperationException e) {
+      // Fall back to direct approach if virtual threads aren't available
+      log.debug("Virtual threads not available, falling back to direct file access", e);
+      return new BufferedInputStream(new FileInputStream(file));
+    }
   }
 
   @Override
   public void cleanup() throws Exception {
     // nothing
   }
+}

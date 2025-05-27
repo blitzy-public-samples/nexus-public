@@ -18,18 +18,19 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.rest.SearchMapping;
 import org.sonatype.nexus.repository.rest.SearchMappings;
 import org.sonatype.nexus.repository.rest.api.RepositoryManagerRESTAdapter;
 import org.sonatype.nexus.repository.rest.sql.SearchField;
-import org.sonatype.nexus.virtualthread.VirtualThreadTestGroup;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -41,7 +42,7 @@ import org.jboss.resteasy.spi.ResteasyUriInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.Tag;
+
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -54,10 +55,9 @@ import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @ExtendWith(MockitoExtension.class)
-@Tag("Java21TestGroup")
+@org.junit.Category(Java21TestGroup.class)
 public class ElasticSearchUtilsTest
     extends TestSupport
 {
@@ -83,7 +83,7 @@ public class ElasticSearchUtilsTest
   ElasticSearchUtils underTest;
 
   @BeforeEach
-  public void setup() {
+  void setup() {
 
     Map<String, SearchMappings> searchMappings = ImmutableMap.of(
         "default", () -> ImmutableList.of(
@@ -400,68 +400,90 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  @Tag("VirtualThreadTestGroup")
-  void concurrentQueriesWithVirtualThreads() throws Exception {
-    int numThreads = 10;
-    CountDownLatch latch = new CountDownLatch(numThreads);
-    List<String> results = new ArrayList<>();
-
-    // Create and start virtual threads for concurrent queries
-    for (int i = 0; i < numThreads; i++) {
-      final int threadNum = i;
-      Thread.ofVirtual().name("virtual-query-" + threadNum).start(() -> {
-        try {
-          Collection<SearchFilter> searchFilters = new ArrayList<>();
-          searchFilters.add(new SearchFilter("keyword", "org.junit-" + threadNum));
-          searchFilters.add(new SearchFilter("repository", "maven_central"));
-          
-          QueryBuilder queryBuilder = underTest.buildQuery(searchFilters);
-          results.add(queryBuilder.toString());
-        } finally {
-          latch.countDown();
-        }
-      });
-    }
-
-    // Wait for all virtual threads to complete
-    latch.await(5, TimeUnit.SECONDS);
-
-    // Verify results
-    assertEquals(numThreads, results.size());
-    for (int i = 0; i < numThreads; i++) {
-      String result = results.get(i);
-      assertThat(result, containsString("org.junit-"));
-      assertThat(result, containsString("maven_central"));
+  @org.junit.Category(VirtualThreadTestGroup.class)
+  void concurrentQueryBuildingWithVirtualThreads() throws Exception {
+    int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    try {
+      // Submit multiple concurrent tasks using virtual threads
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Create a unique set of search filters for each thread
+            Collection<SearchFilter> searchFilters = new ArrayList<>();
+            searchFilters.add(new SearchFilter("keyword", "org.junit" + index));
+            searchFilters.add(new SearchFilter("repository", "maven_central"));
+            
+            // Build query and verify it's not null
+            QueryBuilder queryBuilder = underTest.buildQuery(searchFilters);
+            if (queryBuilder == null || !queryBuilder.toString().contains("org.junit" + index)) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      latch.await();
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), is(0));
+    } finally {
+      executor.shutdown();
     }
   }
 
   @Test
-  @Tag("VirtualThreadTestGroup")
-  void virtualThreadExecutorForElasticSearchQueries() throws Exception {
-    int numQueries = 5;
+  @org.junit.Category(VirtualThreadTestGroup.class)
+  void concurrentSortBuilderCreationWithVirtualThreads() throws Exception {
+    int threadCount = 100;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
     
     // Create a virtual thread per task executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<String>> futures = new ArrayList<>();
+      // Create CompletableFuture tasks
+      CompletableFuture<?>[] futures = new CompletableFuture<?>[threadCount];
       
-      // Submit multiple query tasks
-      for (int i = 0; i < numQueries; i++) {
-        final int queryNum = i;
-        futures.add(executor.submit(() -> {
-          Collection<SearchFilter> searchFilters = new ArrayList<>();
-          searchFilters.add(new SearchFilter("format", "maven"));
-          searchFilters.add(new SearchFilter("version", "1." + queryNum));
-          
-          return underTest.buildQuery(searchFilters).toString();
-        }));
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i % 4; // Cycle through different sort fields
+        String sortField = switch(index) {
+          case 0 -> "name";
+          case 1 -> "group";
+          case 2 -> "version";
+          case 3 -> "repository";
+          default -> "name";
+        };
+        
+        futures[i] = CompletableFuture.runAsync(() -> {
+          try {
+            List<SortBuilder> sortBuilders = underTest.getSortBuilders(sortField, "asc");
+            if (sortBuilders == null || sortBuilders.isEmpty()) {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        }, executor);
       }
       
-      // Verify all queries completed successfully
-      for (int i = 0; i < numQueries; i++) {
-        String result = futures.get(i).get(2, TimeUnit.SECONDS);
-        assertThat(result, containsString("maven"));
-        assertThat(result, containsString("1." + i));
-      }
+      // Wait for all futures to complete
+      CompletableFuture.allOf(futures).join();
+      
+      // Verify no errors occurred
+      assertThat(errorCount.get(), is(0));
     }
   }
 

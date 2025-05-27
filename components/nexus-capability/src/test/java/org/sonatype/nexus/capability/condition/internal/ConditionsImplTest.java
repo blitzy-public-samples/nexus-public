@@ -24,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * {@link ConditionsImpl} UTs.
@@ -50,13 +51,18 @@ public class ConditionsImplTest
    * Passed in factories are returned.
    */
   @Test
-  void and01() {
+  public void and01() {
+    // Using String Template for improved test logging
+    String testName = STR."Testing ConditionsImpl with mocked dependencies: \{logicalConditions.getClass().getSimpleName()}";
+    log(testName);
+    
     final ConditionsImpl underTest = new ConditionsImpl(
         logicalConditions, capabilityConditions, nexusConditions, cryptoConditions
     );
-    assertEquals(logicalConditions, underTest.logical(), STR."Expected logical conditions to match \{logicalConditions}");
-    assertEquals(capabilityConditions, underTest.capabilities(), STR."Expected capability conditions to match \{capabilityConditions}");
-    assertEquals(nexusConditions, underTest.nexus(), STR."Expected nexus conditions to match \{nexusConditions}");
+    
+    // Using JUnit 5 assertions instead of Hamcrest
+    assertSame(logicalConditions, underTest.logical(), "Logical conditions should be the same instance");
+    assertSame(capabilityConditions, underTest.capabilities(), "Capability conditions should be the same instance");
+    assertSame(nexusConditions, underTest.nexus(), "Nexus conditions should be the same instance");
   }
-
 }

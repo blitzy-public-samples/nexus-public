@@ -12,395 +12,415 @@
  */
 package org.sonatype.nexus.pattern;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.test.Java21TestGroup;
+
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetBlob;
-import org.sonatype.nexus.repository.content.Component;
-import org.sonatype.nexus.repository.content.RepositoryContent;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * Tests for Java 21 pattern matching against repository content type hierarchies.
  * 
- * This test validates that pattern matching can be used to handle format-specific content types
- * more cleanly than traditional type casting approaches.
+ * This test validates that pattern matching correctly distinguishes between different content types
+ * in the type hierarchy and applies appropriate processing logic. It demonstrates how pattern matching
+ * can be used to handle format-specific content types more elegantly than traditional type casting
+ * and instanceof checks.
+ * 
+ * The test compares traditional type checking approaches with Java 21 pattern matching features:
+ * 1. Pattern matching in if statements (instanceof with binding variable)
+ * 2. Pattern matching in switch statements (type patterns)
+ * 3. Pattern matching with guard conditions (when clauses)
  *
- * @since 3.60
+ * These patterns are particularly useful for repository format handlers where different content types
+ * require format-specific processing logic.
  */
 @Category(Java21TestGroup.class)
 public class ContentTypeHierarchyPatternTest
     extends TestSupport
 {
   /**
-   * Test interface hierarchy to demonstrate pattern matching.
+   * Define a simple content type hierarchy for testing that mimics the repository content types.
+   * This hierarchy represents a simplified version of the actual content types used in
+   * Nexus Repository Manager, with format-specific implementations for Maven, NPM, Docker, and Raw.
    */
-  interface FormatContent extends RepositoryContent {
-    String getFormat();
+  interface Content {
+    String getPath();
   }
-
-  interface MavenContent extends FormatContent {
-    String getGroupId();
-    String getArtifactId();
-    String getVersion();
-  }
-
-  interface NpmContent extends FormatContent {
-    String getScope();
-    String getPackageName();
-  }
-
-  interface DockerContent extends FormatContent {
-    String getImageName();
-    String getTag();
-  }
-
+  
   /**
-   * Test implementation classes for the content hierarchy.
+   * Base abstract class for all content types, providing common path functionality.
    */
-  static class MavenAsset implements Asset, MavenContent {
+  abstract static class AbstractContent implements Content {
+    private final String path;
+    
+    protected AbstractContent(String path) {
+      this.path = path;
+    }
+    
+    @Override
+    public String getPath() {
+      return path;
+    }
+  }
+  
+  /**
+   * Maven-specific content type with Maven coordinates (groupId, artifactId, version).
+   * This represents Maven artifacts in the repository.
+   */
+  static class MavenContent extends AbstractContent {
     private final String groupId;
     private final String artifactId;
     private final String version;
-    private final String path;
-
-    public MavenAsset(String groupId, String artifactId, String version, String path) {
+    
+    public MavenContent(String path, String groupId, String artifactId, String version) {
+      super(path);
       this.groupId = groupId;
       this.artifactId = artifactId;
       this.version = version;
-      this.path = path;
     }
-
-    @Override
+    
     public String getGroupId() {
       return groupId;
     }
-
-    @Override
+    
     public String getArtifactId() {
       return artifactId;
     }
-
-    @Override
+    
     public String getVersion() {
       return version;
     }
-
-    @Override
-    public String getFormat() {
-      return "maven";
-    }
-
-    @Override
-    public String path() {
-      return path;
-    }
-
-    // Stub implementations for Asset interface
-    @Override public String kind() { return "maven"; }
-    @Override public java.util.Optional<Component> component() { return java.util.Optional.empty(); }
-    @Override public boolean blob() { return false; }
-    @Override public java.util.Optional<AssetBlob> blob(boolean includeDeleted) { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<java.time.OffsetDateTime> lastDownloaded() { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<String> blobStoreName() { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<Long> blobSize() { return java.util.Optional.empty(); }
-    @Override public java.time.OffsetDateTime created() { return java.time.OffsetDateTime.now(); }
-    @Override public java.time.OffsetDateTime lastUpdated() { return java.time.OffsetDateTime.now(); }
-    @Override public org.sonatype.nexus.common.collect.NestedAttributesMap attributes() { return null; }
-    @Override public org.sonatype.nexus.common.collect.NestedAttributesMap attributes(String key) { return null; }
   }
-
-  static class NpmAsset implements Asset, NpmContent {
-    private final String scope;
+  
+  /**
+   * NPM-specific content type with package name and version.
+   * This represents NPM packages in the repository.
+   */
+  static class NpmContent extends AbstractContent {
     private final String packageName;
-    private final String path;
-
-    public NpmAsset(String scope, String packageName, String path) {
-      this.scope = scope;
+    private final String packageVersion;
+    
+    public NpmContent(String path, String packageName, String packageVersion) {
+      super(path);
       this.packageName = packageName;
-      this.path = path;
+      this.packageVersion = packageVersion;
     }
-
-    @Override
-    public String getScope() {
-      return scope;
-    }
-
-    @Override
+    
     public String getPackageName() {
       return packageName;
     }
-
-    @Override
-    public String getFormat() {
-      return "npm";
+    
+    public String getPackageVersion() {
+      return packageVersion;
     }
-
-    @Override
-    public String path() {
-      return path;
-    }
-
-    // Stub implementations for Asset interface
-    @Override public String kind() { return "npm"; }
-    @Override public java.util.Optional<Component> component() { return java.util.Optional.empty(); }
-    @Override public boolean blob() { return false; }
-    @Override public java.util.Optional<AssetBlob> blob(boolean includeDeleted) { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<java.time.OffsetDateTime> lastDownloaded() { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<String> blobStoreName() { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<Long> blobSize() { return java.util.Optional.empty(); }
-    @Override public java.time.OffsetDateTime created() { return java.time.OffsetDateTime.now(); }
-    @Override public java.time.OffsetDateTime lastUpdated() { return java.time.OffsetDateTime.now(); }
-    @Override public org.sonatype.nexus.common.collect.NestedAttributesMap attributes() { return null; }
-    @Override public org.sonatype.nexus.common.collect.NestedAttributesMap attributes(String key) { return null; }
   }
-
-  static class DockerAsset implements Asset, DockerContent {
-    private final String imageName;
+  
+  /**
+   * Docker-specific content type with repository name and tag.
+   * This represents Docker images in the repository.
+   */
+  static class DockerContent extends AbstractContent {
+    private final String repository;
     private final String tag;
-    private final String path;
-
-    public DockerAsset(String imageName, String tag, String path) {
-      this.imageName = imageName;
+    
+    public DockerContent(String path, String repository, String tag) {
+      super(path);
+      this.repository = repository;
       this.tag = tag;
-      this.path = path;
     }
-
-    @Override
-    public String getImageName() {
-      return imageName;
+    
+    public String getRepository() {
+      return repository;
     }
-
-    @Override
+    
     public String getTag() {
       return tag;
     }
-
-    @Override
-    public String getFormat() {
-      return "docker";
-    }
-
-    @Override
-    public String path() {
-      return path;
-    }
-
-    // Stub implementations for Asset interface
-    @Override public String kind() { return "docker"; }
-    @Override public java.util.Optional<Component> component() { return java.util.Optional.empty(); }
-    @Override public boolean blob() { return false; }
-    @Override public java.util.Optional<AssetBlob> blob(boolean includeDeleted) { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<java.time.OffsetDateTime> lastDownloaded() { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<String> blobStoreName() { return java.util.Optional.empty(); }
-    @Override public java.util.Optional<Long> blobSize() { return java.util.Optional.empty(); }
-    @Override public java.time.OffsetDateTime created() { return java.time.OffsetDateTime.now(); }
-    @Override public java.time.OffsetDateTime lastUpdated() { return java.time.OffsetDateTime.now(); }
-    @Override public org.sonatype.nexus.common.collect.NestedAttributesMap attributes() { return null; }
-    @Override public org.sonatype.nexus.common.collect.NestedAttributesMap attributes(String key) { return null; }
   }
-
+  
   /**
-   * Test that demonstrates pattern matching for content type hierarchy.
-   * This shows how Java 21 pattern matching can be used to handle different content types
-   * in a more concise and type-safe way compared to traditional instanceof + casting.
+   * Raw content type with MIME type information.
+   * This represents generic files in the repository that aren't associated with
+   * a specific package format.
+   */
+  static class RawContent extends AbstractContent {
+    private final String contentType;
+    
+    public RawContent(String path, String contentType) {
+      super(path);
+      this.contentType = contentType;
+    }
+    
+    public String getContentType() {
+      return contentType;
+    }
+  }
+  
+  // Test content instances representing different repository formats
+  private MavenContent mavenContent;
+  private NpmContent npmContent;
+  private DockerContent dockerContent;
+  private RawContent rawContent;
+  private Map<String, Content> contentMap; // Map of format to content instance
+  
+  @Before
+  public void setUp() {
+    mavenContent = new MavenContent("/com/example/app/1.0/app-1.0.jar", "com.example", "app", "1.0");
+    npmContent = new NpmContent("/example-package/-/example-package-2.0.0.tgz", "example-package", "2.0.0");
+    dockerContent = new DockerContent("/v2/example-image/manifests/latest", "example-image", "latest");
+    rawContent = new RawContent("/example/file.txt", "text/plain");
+    
+    contentMap = new HashMap<>();
+    contentMap.put("maven", mavenContent);
+    contentMap.put("npm", npmContent);
+    contentMap.put("docker", dockerContent);
+    contentMap.put("raw", rawContent);
+  }
+  
+  /**
+   * Test traditional approach using instanceof and casting.
+   * 
+   * This represents the pre-Java 21 approach where instanceof checks are followed by explicit casting.
+   * This pattern is verbose and error-prone, as the cast operation could fail at runtime if the
+   * instanceof check is modified without updating the corresponding cast.
    */
   @Test
-  public void testPatternMatchingForContentTypes() {
-    // Create test assets of different types
-    Asset mavenAsset = new MavenAsset("org.example", "example-lib", "1.0.0", "/org/example/example-lib/1.0.0/example-lib-1.0.0.jar");
-    Asset npmAsset = new NpmAsset("@scope", "package", "/@scope/package/1.2.3/package-1.2.3.tgz");
-    Asset dockerAsset = new DockerAsset("nginx", "latest", "/v2/nginx/manifests/latest");
-
-    // Test pattern matching with switch expression
-    String formatInfo = switch (mavenAsset) {
-      case MavenContent maven -> String.format("Maven: %s:%s:%s", 
-          maven.getGroupId(), maven.getArtifactId(), maven.getVersion());
-      case NpmContent npm -> String.format("NPM: %s/%s", 
-          npm.getScope(), npm.getPackageName());
-      case DockerContent docker -> String.format("Docker: %s:%s", 
-          docker.getImageName(), docker.getTag());
-      case Asset asset -> String.format("Unknown asset: %s", asset.path());
-      default -> "Not a recognized content type";
-    };
-
-    assertThat(formatInfo, is(equalTo("Maven: org.example:example-lib:1.0.0")));
-
-    // Test NPM asset with pattern matching
-    String npmInfo = switch (npmAsset) {
-      case MavenContent maven -> String.format("Maven: %s:%s:%s", 
-          maven.getGroupId(), maven.getArtifactId(), maven.getVersion());
-      case NpmContent npm -> String.format("NPM: %s/%s", 
-          npm.getScope(), npm.getPackageName());
-      case DockerContent docker -> String.format("Docker: %s:%s", 
-          docker.getImageName(), docker.getTag());
-      case Asset asset -> String.format("Unknown asset: %s", asset.path());
-      default -> "Not a recognized content type";
-    };
-
-    assertThat(npmInfo, is(equalTo("NPM: @scope/package")));
-
-    // Test Docker asset with pattern matching
-    String dockerInfo = switch (dockerAsset) {
-      case MavenContent maven -> String.format("Maven: %s:%s:%s", 
-          maven.getGroupId(), maven.getArtifactId(), maven.getVersion());
-      case NpmContent npm -> String.format("NPM: %s/%s", 
-          npm.getScope(), npm.getPackageName());
-      case DockerContent docker -> String.format("Docker: %s:%s", 
-          docker.getImageName(), docker.getTag());
-      case Asset asset -> String.format("Unknown asset: %s", asset.path());
-      default -> "Not a recognized content type";
-    };
-
-    assertThat(dockerInfo, is(equalTo("Docker: nginx:latest")));
+  public void testTraditionalTypeChecking() {
+    for (Content content : contentMap.values()) {
+      String formatSpecificInfo = getFormatSpecificInfoTraditional(content);
+      assertFormatSpecificInfo(content, formatSpecificInfo);
+    }
   }
-
+  
   /**
-   * Test that demonstrates pattern matching with guard conditions.
-   * This shows how pattern matching can be combined with additional conditions
-   * to create more specific matching rules.
+   * Test Java 21 pattern matching in if statements.
+   * 
+   * This demonstrates the Java 21 pattern matching feature in if statements, where the instanceof
+   * check and variable binding are combined in a single operation. This eliminates the need for
+   * explicit casting and reduces the risk of runtime ClassCastExceptions.
+   * 
+   * This approach is particularly useful for repository format handlers that need to apply
+   * format-specific logic based on content type.
+   */
+  @Test
+  public void testPatternMatchingInIfStatements() {
+    for (Content content : contentMap.values()) {
+      String formatSpecificInfo = getFormatSpecificInfoWithPatternMatchingIf(content);
+      assertFormatSpecificInfo(content, formatSpecificInfo);
+    }
+  }
+  
+  /**
+   * Test Java 21 pattern matching in switch statements.
+   * 
+   * This demonstrates Java 21's pattern matching for switch, which allows for concise and type-safe
+   * handling of different content types. The switch expression directly matches against types and
+   * binds variables in a single step, making the code more readable and maintainable.
+   * 
+   * This pattern is ideal for repository managers and format handlers that need to process
+   * different content types with format-specific logic, such as in RepositoryManagerImpl.
+   */
+  @Test
+  public void testPatternMatchingInSwitchStatements() {
+    for (Content content : contentMap.values()) {
+      String formatSpecificInfo = getFormatSpecificInfoWithPatternMatchingSwitch(content);
+      assertFormatSpecificInfo(content, formatSpecificInfo);
+    }
+  }
+  
+  /**
+   * Test Java 21 pattern matching with guard conditions.
+   * 
+   * This demonstrates the most powerful form of Java 21 pattern matching, combining type patterns
+   * with conditional guards (when clauses). This allows for highly specific matching based on both
+   * the type and the content of objects, enabling precise control flow based on complex conditions.
+   * 
+   * This approach is particularly valuable for repository format handlers that need to apply different
+   * processing logic based on both content type and specific attributes of the content, such as
+   * version numbers, paths, or other metadata.
    */
   @Test
   public void testPatternMatchingWithGuards() {
-    // Create test assets
-    Asset mavenSnapshotAsset = new MavenAsset("org.example", "example-lib", "1.0.0-SNAPSHOT", 
-        "/org/example/example-lib/1.0.0-SNAPSHOT/example-lib-1.0.0-SNAPSHOT.jar");
-    Asset mavenReleaseAsset = new MavenAsset("org.example", "example-lib", "1.0.0", 
-        "/org/example/example-lib/1.0.0/example-lib-1.0.0.jar");
-
-    // Test pattern matching with guards for snapshot vs release versions
-    String versionType = switch (mavenSnapshotAsset) {
-      case MavenContent maven when maven.getVersion().endsWith("-SNAPSHOT") -> 
-          String.format("Snapshot version: %s", maven.getVersion());
-      case MavenContent maven -> 
-          String.format("Release version: %s", maven.getVersion());
-      default -> "Not a Maven asset";
-    };
-
-    assertThat(versionType, is(equalTo("Snapshot version: 1.0.0-SNAPSHOT")));
-
-    // Test with release version
-    String releaseVersionType = switch (mavenReleaseAsset) {
-      case MavenContent maven when maven.getVersion().endsWith("-SNAPSHOT") -> 
-          String.format("Snapshot version: %s", maven.getVersion());
-      case MavenContent maven -> 
-          String.format("Release version: %s", maven.getVersion());
-      default -> "Not a Maven asset";
-    };
-
-    assertThat(releaseVersionType, is(equalTo("Release version: 1.0.0")));
-  }
-
-  /**
-   * Test that compares traditional instanceof approach with pattern matching.
-   * This demonstrates how pattern matching reduces boilerplate and improves readability.
-   */
-  @Test
-  public void testComparisonWithTraditionalApproach() {
-    // Create test asset
-    Asset mavenAsset = new MavenAsset("org.example", "example-lib", "1.0.0", 
-        "/org/example/example-lib/1.0.0/example-lib-1.0.0.jar");
-
-    // Traditional approach with instanceof and casting
-    String traditionalResult;
-    if (mavenAsset instanceof MavenContent) {
-      MavenContent maven = (MavenContent) mavenAsset;
-      traditionalResult = String.format("Maven: %s:%s:%s", 
-          maven.getGroupId(), maven.getArtifactId(), maven.getVersion());
-    } else if (mavenAsset instanceof NpmContent) {
-      NpmContent npm = (NpmContent) mavenAsset;
-      traditionalResult = String.format("NPM: %s/%s", 
-          npm.getScope(), npm.getPackageName());
-    } else if (mavenAsset instanceof DockerContent) {
-      DockerContent docker = (DockerContent) mavenAsset;
-      traditionalResult = String.format("Docker: %s:%s", 
-          docker.getImageName(), docker.getTag());
-    } else {
-      traditionalResult = String.format("Unknown asset: %s", mavenAsset.path());
+    for (Content content : contentMap.values()) {
+      String formatSpecificInfo = getFormatSpecificInfoWithGuards(content);
+      assertFormatSpecificInfo(content, formatSpecificInfo);
     }
-
-    // Pattern matching approach
-    String patternMatchingResult = switch (mavenAsset) {
-      case MavenContent maven -> String.format("Maven: %s:%s:%s", 
-          maven.getGroupId(), maven.getArtifactId(), maven.getVersion());
-      case NpmContent npm -> String.format("NPM: %s/%s", 
-          npm.getScope(), npm.getPackageName());
-      case DockerContent docker -> String.format("Docker: %s:%s", 
-          docker.getImageName(), docker.getTag());
-      case Asset asset -> String.format("Unknown asset: %s", asset.path());
-      default -> "Not a recognized content type";
-    };
-
-    // Both approaches should yield the same result
-    assertThat(traditionalResult, is(equalTo("Maven: org.example:example-lib:1.0.0")));
-    assertThat(patternMatchingResult, is(equalTo(traditionalResult)));
   }
-
+  
   /**
-   * Test pattern matching with nested patterns.
-   * This demonstrates how pattern matching can be used to extract data from nested structures.
+   * Traditional approach using instanceof and casting.
+   * 
+   * This method demonstrates the pre-Java 21 approach to type checking and casting.
+   * It requires separate instanceof checks and explicit casts, leading to more verbose
+   * and potentially error-prone code.
    */
-  @Test
-  public void testNestedPatternMatching() {
-    // Create a mock component with a nested asset
-    Component component = mock(Component.class);
-    MavenAsset mavenAsset = new MavenAsset("org.example", "example-lib", "1.0.0", 
-        "/org/example/example-lib/1.0.0/example-lib-1.0.0.jar");
-    
-    // Set up the component to return the asset
-    when(component.kind()).thenReturn("maven");
-    java.util.Optional<Asset> optionalAsset = java.util.Optional.of(mavenAsset);
-    
-    // Test nested pattern matching with component and asset
-    String result = switch (component) {
-      case Component c when c.kind().equals("maven") && optionalAsset.isPresent() -> {
-        Asset asset = optionalAsset.get();
-        yield switch (asset) {
-          case MavenContent maven -> String.format("Maven component with artifact: %s:%s:%s", 
-              maven.getGroupId(), maven.getArtifactId(), maven.getVersion());
-          default -> "Maven component with non-Maven asset";
-        };
-      }
-      default -> "Non-Maven component";
-    };
-
-    assertThat(result, is(equalTo("Maven component with artifact: org.example:example-lib:1.0.0")));
+  private String getFormatSpecificInfoTraditional(Content content) {
+    if (content instanceof MavenContent) {
+      MavenContent mavenContent = (MavenContent) content;
+      return String.format("Maven: %s:%s:%s", 
+          mavenContent.getGroupId(), mavenContent.getArtifactId(), mavenContent.getVersion());
+    } 
+    else if (content instanceof NpmContent) {
+      NpmContent npmContent = (NpmContent) content;
+      return String.format("NPM: %s@%s", 
+          npmContent.getPackageName(), npmContent.getPackageVersion());
+    } 
+    else if (content instanceof DockerContent) {
+      DockerContent dockerContent = (DockerContent) content;
+      return String.format("Docker: %s:%s", 
+          dockerContent.getRepository(), dockerContent.getTag());
+    } 
+    else if (content instanceof RawContent) {
+      RawContent rawContent = (RawContent) content;
+      return String.format("Raw: %s (%s)", 
+          content.getPath(), rawContent.getContentType());
+    } 
+    else {
+      return String.format("Unknown: %s", content.getPath());
+    }
   }
-
+  
   /**
-   * Test pattern matching with exhaustive cases.
-   * This demonstrates how pattern matching ensures all possible cases are handled.
+   * Java 21 pattern matching in if statements.
+   * 
+   * This method demonstrates pattern matching in if statements, which combines
+   * the instanceof check and variable binding in a single operation. This eliminates
+   * the need for explicit casting and makes the code more concise and type-safe.
    */
-  @Test
-  public void testExhaustivePatternMatching() {
-    // Create an array of different asset types
-    Asset[] assets = new Asset[] {
-      new MavenAsset("org.example", "example-lib", "1.0.0", "/org/example/example-lib/1.0.0/example-lib-1.0.0.jar"),
-      new NpmAsset("@scope", "package", "/@scope/package/1.2.3/package-1.2.3.tgz"),
-      new DockerAsset("nginx", "latest", "/v2/nginx/manifests/latest")
+  private String getFormatSpecificInfoWithPatternMatchingIf(Content content) {
+    if (content instanceof MavenContent mavenContent) {
+      return String.format("Maven: %s:%s:%s", 
+          mavenContent.getGroupId(), mavenContent.getArtifactId(), mavenContent.getVersion());
+    } 
+    else if (content instanceof NpmContent npmContent) {
+      return String.format("NPM: %s@%s", 
+          npmContent.getPackageName(), npmContent.getPackageVersion());
+    } 
+    else if (content instanceof DockerContent dockerContent) {
+      return String.format("Docker: %s:%s", 
+          dockerContent.getRepository(), dockerContent.getTag());
+    } 
+    else if (content instanceof RawContent rawContent) {
+      return String.format("Raw: %s (%s)", 
+          content.getPath(), rawContent.getContentType());
+    } 
+    else {
+      return String.format("Unknown: %s", content.getPath());
+    }
+  }
+  
+  /**
+   * Java 21 pattern matching in switch statements.
+   * 
+   * This method demonstrates pattern matching for switch, which allows for concise
+   * and type-safe handling of different content types. The switch expression directly
+   * matches against types and binds variables in a single step, making the code more
+   * readable and maintainable.
+   */
+  private String getFormatSpecificInfoWithPatternMatchingSwitch(Content content) {
+    return switch (content) {
+      case MavenContent mavenContent -> 
+          String.format("Maven: %s:%s:%s", 
+              mavenContent.getGroupId(), mavenContent.getArtifactId(), mavenContent.getVersion());
+      case NpmContent npmContent -> 
+          String.format("NPM: %s@%s", 
+              npmContent.getPackageName(), npmContent.getPackageVersion());
+      case DockerContent dockerContent -> 
+          String.format("Docker: %s:%s", 
+              dockerContent.getRepository(), dockerContent.getTag());
+      case RawContent rawContent -> 
+          String.format("Raw: %s (%s)", 
+              content.getPath(), rawContent.getContentType());
+      default -> 
+          String.format("Unknown: %s", content.getPath());
     };
-
-    // Process each asset with pattern matching
-    for (Asset asset : assets) {
-      String format = switch (asset) {
-        case MavenContent ignored -> "maven";
-        case NpmContent ignored -> "npm";
-        case DockerContent ignored -> "docker";
-        default -> "unknown";
-      };
-
-      // Verify that the format matches the asset's actual format
-      if (asset instanceof FormatContent) {
-        FormatContent formatContent = (FormatContent) asset;
-        assertThat(format, is(equalTo(formatContent.getFormat())));
+  }
+  
+  /**
+   * Java 21 pattern matching with guard conditions.
+   * 
+   * This method demonstrates the most powerful form of Java 21 pattern matching,
+   * combining type patterns with conditional guards (when clauses). This allows for
+   * highly specific matching based on both the type and the content of objects,
+   * enabling precise control flow based on complex conditions.
+   */
+  private String getFormatSpecificInfoWithGuards(Content content) {
+    return switch (content) {
+      case MavenContent mavenContent when "com.example".equals(mavenContent.getGroupId()) -> 
+          String.format("Example Maven: %s:%s", 
+              mavenContent.getArtifactId(), mavenContent.getVersion());
+      case MavenContent mavenContent -> 
+          String.format("Maven: %s:%s:%s", 
+              mavenContent.getGroupId(), mavenContent.getArtifactId(), mavenContent.getVersion());
+      case NpmContent npmContent when npmContent.getPackageVersion().startsWith("2.") -> 
+          String.format("NPM v2: %s", 
+              npmContent.getPackageName());
+      case NpmContent npmContent -> 
+          String.format("NPM: %s@%s", 
+              npmContent.getPackageName(), npmContent.getPackageVersion());
+      case DockerContent dockerContent when "latest".equals(dockerContent.getTag()) -> 
+          String.format("Docker latest: %s", 
+              dockerContent.getRepository());
+      case DockerContent dockerContent -> 
+          String.format("Docker: %s:%s", 
+              dockerContent.getRepository(), dockerContent.getTag());
+      case RawContent rawContent when rawContent.getContentType().startsWith("text/") -> 
+          String.format("Text: %s", 
+              content.getPath());
+      case RawContent rawContent -> 
+          String.format("Raw: %s (%s)", 
+              content.getPath(), rawContent.getContentType());
+      default -> 
+          String.format("Unknown: %s", content.getPath());
+    };
+  }
+  
+  /**
+   * Helper method to assert that format-specific info is correct for each content type.
+   * 
+   * This method validates that the output from each pattern matching approach is consistent
+   * and correct for the given content type. It uses traditional instanceof checks for validation
+   * to ensure that the pattern matching implementations produce the expected results.
+   */
+  private void assertFormatSpecificInfo(Content content, String formatSpecificInfo) {
+    if (content instanceof MavenContent) {
+      if ("com.example".equals(((MavenContent) content).getGroupId())) {
+        assertThat(formatSpecificInfo, is(equalTo("Example Maven: app:1.0")));
+      } else {
+        assertThat(formatSpecificInfo, is(equalTo("Maven: com.example:app:1.0")));
       }
+    } 
+    else if (content instanceof NpmContent) {
+      if (((NpmContent) content).getPackageVersion().startsWith("2.")) {
+        assertThat(formatSpecificInfo, is(equalTo("NPM v2: example-package")));
+      } else {
+        assertThat(formatSpecificInfo, is(equalTo("NPM: example-package@2.0.0")));
+      }
+    } 
+    else if (content instanceof DockerContent) {
+      if ("latest".equals(((DockerContent) content).getTag())) {
+        assertThat(formatSpecificInfo, is(equalTo("Docker latest: example-image")));
+      } else {
+        assertThat(formatSpecificInfo, is(equalTo("Docker: example-image:latest")));
+      }
+    } 
+    else if (content instanceof RawContent) {
+      if (((RawContent) content).getContentType().startsWith("text/")) {
+        assertThat(formatSpecificInfo, is(equalTo("Text: /example/file.txt")));
+      } else {
+        assertThat(formatSpecificInfo, is(equalTo("Raw: /example/file.txt (text/plain)")));
+      }
+    } 
+    else {
+      assertThat(formatSpecificInfo, is(equalTo("Unknown: " + content.getPath())));
     }
   }
 }

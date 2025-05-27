@@ -27,15 +27,27 @@ public class Response<T>
 
   private T data;
 
+  /**
+   * Constructor for creating a response with success status and data.
+   * 
+   * @param success whether the operation was successful
+   * @param data the data to include in the response
+   */
   public Response(boolean success, T data) {
     this.success = success;
     this.data = data;
   }
 
+  /**
+   * @return whether the operation was successful
+   */
   public boolean isSuccess() {
     return success;
   }
 
+  /**
+   * @return the data included in the response
+   */
   public T getData() {
     return data;
   }

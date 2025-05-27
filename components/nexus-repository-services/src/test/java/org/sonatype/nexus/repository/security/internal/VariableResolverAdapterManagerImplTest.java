@@ -17,7 +17,6 @@ import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -30,7 +29,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
 @ExtendWith(MockitoExtension.class)
-@Tag("Java21")
+@Tag("java21")
 public class VariableResolverAdapterManagerImplTest
     extends TestSupport
 {
@@ -44,9 +43,10 @@ public class VariableResolverAdapterManagerImplTest
 
   @BeforeEach
   public void setUp() {
-    Map<String, VariableResolverAdapter> adaptersByFormat = new HashMap<>();
-    adaptersByFormat.put("special", specializedAdapter);
-    adaptersByFormat.put(VariableResolverAdapterManagerImpl.DEFAULT_ADAPTER_NAME, defaultAdapter);
+    // Using Java 21 concise Map initialization syntax
+    Map<String, VariableResolverAdapter> adaptersByFormat = HashMap.newHashMap(
+        Map.of("special", specializedAdapter, 
+               VariableResolverAdapterManagerImpl.DEFAULT_ADAPTER_NAME, defaultAdapter));
     manager = new VariableResolverAdapterManagerImpl(adaptersByFormat);
   }
 

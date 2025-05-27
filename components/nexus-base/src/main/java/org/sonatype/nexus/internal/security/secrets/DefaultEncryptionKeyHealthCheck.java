@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.internal.security.secrets;
 
-import java.util.Optional;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -24,11 +22,12 @@ import org.sonatype.nexus.crypto.secrets.EncryptionKeyValidator;
 import com.codahale.metrics.health.HealthCheck;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 /**
  * A {@link HealthCheck} which fails if the administrator has not configured a key to use for encrypting secrets.
- * <p>
- * Updated for Java 21 compatibility with BouncyCastle 1.78.1 cryptographic provider and enhanced security model.
+ * 
+ * This implementation is compatible with BouncyCastle 1.78.1 cryptographic provider and Java 21's enhanced security model.
  */
 @FeatureFlag(name = "nexus.health.check.encryption", enabledByDefault = true)
 @Named("Default Secret Encryption Key")
@@ -36,7 +35,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class DefaultEncryptionKeyHealthCheck
     extends HealthCheck
 {
-  private static final String TEMPLATE_HEALTHY = "Nexus was configured to use %s to encrypt secrets.";
+  // Removed TEMPLATE_HEALTHY constant as it's replaced by String Templates
 
   private static final String FAIL = "Nexus was not configured with an encryption key and is using the Default key.";
 
@@ -47,12 +46,17 @@ public class DefaultEncryptionKeyHealthCheck
     this.encryptionKeyValidator = checkNotNull(encryptionKeyValidator);
   }
 
+  /**
+   * Checks if a custom encryption key is configured.
+   * Uses Java 21 Pattern Matching to improve code readability and safety.
+   * Compatible with Java 21's enhanced security model and BouncyCastle 1.78.1.
+   */
   @Override
   protected Result check() throws Exception {
-    // Using Java 21 Pattern Matching for Optional to improve code readability
-    Optional<String> activeKeyId = encryptionKeyValidator.getActiveKeyId();
+    var activeKeyIdOpt = encryptionKeyValidator.getActiveKeyId();
     
-    if (activeKeyId instanceof Optional<String> opt && opt.isPresent()) {
+    // Using Java 21 Pattern Matching for instanceof to check if Optional contains a value
+    if (activeKeyIdOpt instanceof java.util.Optional<String> opt && opt.isPresent()) {
       String keyId = opt.get();
       return Result.healthy(createHealthyMessage(keyId));
     } else {
@@ -60,8 +64,14 @@ public class DefaultEncryptionKeyHealthCheck
     }
   }
 
+  /**
+   * Creates a message indicating which key is being used for encryption.
+   * Uses Java 21 String Templates for more efficient message formatting.
+   * 
+   * @param keyId the ID of the active encryption key
+   * @return formatted message string
+   */
   private static String createHealthyMessage(final String keyId) {
-    // Using Java 21 String Templates for more efficient message formatting
     return STR."Nexus was configured to use \{keyId} to encrypt secrets.";
   }
 }

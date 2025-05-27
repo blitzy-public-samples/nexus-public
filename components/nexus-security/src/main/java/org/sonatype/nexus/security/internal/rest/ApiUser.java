@@ -14,22 +14,24 @@
 package org.sonatype.nexus.security.internal.rest;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
-import jakarta.annotation.Nullable;
-import jakarta.validation.constraints.NotNull;
+import javax.annotation.Nullable;
+import javax.validation.constraints.NotNull;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.User;
 import org.sonatype.nexus.security.user.UserManager;
 
 import io.swagger.annotations.ApiModelProperty;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
+import javax.validation.constraints.Email;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotEmpty;
 
 /**
  * REST API representation of a user.
+ * Enhanced with Java 21 pattern matching for improved data handling and type safety.
  *
  * @since 3.17
  */
@@ -81,17 +83,17 @@ public class ApiUser
   }
 
   /**
-   * Constructs a new ApiUser with all required fields
+   * Constructor with all fields for creating a new ApiUser
    * 
-   * @param userId the user ID
-   * @param firstName the user's first name
-   * @param lastName the user's last name
-   * @param emailAddress the user's email address
-   * @param source the source of the user
-   * @param status the user's status
-   * @param readOnly whether the user is read-only
-   * @param roles the user's roles
-   * @param externalRoles the user's external roles
+   * @param userId User ID
+   * @param firstName First name
+   * @param lastName Last name
+   * @param emailAddress Email address
+   * @param source Source
+   * @param status User status
+   * @param readOnly Whether user is read-only
+   * @param roles User roles
+   * @param externalRoles External roles
    */
   ApiUser(
       final String userId,
@@ -104,15 +106,58 @@ public class ApiUser
       final Set<String> roles,
       final Set<String> externalRoles) // NOSONAR
   {
-    this.userId = userId;
-    this.firstName = firstName;
-    this.lastName = lastName;
-    this.emailAddress = emailAddress;
-    this.source = source;
-    this.status = status;
+    this.userId = Objects.requireNonNull(userId, "userId cannot be null");
+    this.firstName = Objects.requireNonNull(firstName, "firstName cannot be null");
+    this.lastName = Objects.requireNonNull(lastName, "lastName cannot be null");
+    this.emailAddress = Objects.requireNonNull(emailAddress, "emailAddress cannot be null");
+    this.source = Objects.requireNonNull(source, "source cannot be null");
+    this.status = Objects.requireNonNull(status, "status cannot be null");
     this.readOnly = readOnly;
-    this.roles = roles;
+    this.roles = Objects.requireNonNull(roles, "roles cannot be null");
     this.externalRoles = externalRoles;
+  }
+  
+  /**
+   * Factory method to create an ApiUser from a User object using pattern matching
+   * 
+   * @param user The User object to convert
+   * @return A new ApiUser instance
+   */
+  public static ApiUser fromUser(User user) {
+    if (user instanceof User u) {
+      ApiUser apiUser = new ApiUser();
+      apiUser.setUserId(u.getUserId());
+      apiUser.setFirstName(u.getFirstName());
+      apiUser.setLastName(u.getLastName());
+      apiUser.setEmailAddress(u.getEmailAddress());
+      apiUser.setSource(u.getSource());
+      apiUser.setStatus(ApiUserStatus.fromStatus(u.getStatus()));
+      apiUser.setReadOnly(u.isReadOnly());
+      
+      // Extract roles using pattern matching
+      Set<String> defaultRoles = new HashSet<>();
+      Set<String> extRoles = new HashSet<>();
+      
+      if (u.getRoles() != null) {
+        for (RoleIdentifier role : u.getRoles()) {
+          if (role instanceof RoleIdentifier(var source, var roleId)) {
+            if (UserManager.DEFAULT_SOURCE.equals(source)) {
+              defaultRoles.add(roleId);
+            } else if (u.getSource().equals(source)) {
+              extRoles.add(roleId);
+            }
+          }
+        }
+      }
+      
+      apiUser.setRoles(defaultRoles);
+      if (!extRoles.isEmpty()) {
+        apiUser.setExternalRoles(extRoles);
+      }
+      
+      return apiUser;
+    }
+    throw new IllegalArgumentException("Input must be a User instance");
   }
 
   public String getUserId() {
@@ -187,41 +232,89 @@ public class ApiUser
   public void setRoles(final Set<String> roles) {
     this.roles = roles;
   }
+  
+  /**
+   * Validates that this ApiUser has all required fields using pattern matching
+   * 
+   * @return true if all required fields are present and valid
+   */
+  public boolean isValid() {
+    return this instanceof ApiUser(var id, var first, var last, var email, var src, var stat, var ro, var r, var _) 
+        && id != null && !id.isBlank()
+        && first != null && !first.isEmpty()
+        && last != null && !last.isEmpty()
+        && email != null && !email.isEmpty()
+        && src != null && !src.isBlank()
+        && stat != null
+        && r != null && !r.isEmpty();
+  }
 
   /**
-   * Converts this ApiUser to a User entity
+   * Converts this ApiUser to a User object using pattern matching for more robust type handling
    * 
-   * @return the converted User entity
+   * @return A new User instance populated with data from this ApiUser
    */
   User toUser() {
+    // Create a new User instance and populate it with data from this ApiUser
     User user = new User();
+    
+    // Using pattern matching to ensure this ApiUser has all required fields
+    if (this instanceof ApiUser(var id, var first, var last, var email, var src, var stat, var ro, var r, var extR)) {
+      user.setUserId(id);
+      user.setFirstName(first);
+      user.setLastName(last);
+      user.setEmailAddress(email);
+      user.setSource(src);
+      user.setStatus(stat.getStatus());
+      user.setReadOnly(ro);
+      user.setVersion(1);
+      
+      // Process roles using pattern matching for more robust handling
+      Set<RoleIdentifier> roleIdentifiers = new HashSet<>();
+      
+      // Process regular roles
+      if (r != null) {
+        r.stream()
+            .filter(Objects::nonNull)
+            .map(role -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, role))
+            .forEach(roleIdentifiers::add);
+      }
+      
+      // Process external roles if present
+      if (extR != null) {
+        extR.stream()
+            .filter(Objects::nonNull)
+            .map(role -> new RoleIdentifier(src, role))
+            .forEach(roleIdentifiers::add);
+      }
+      
+      user.setRoles(roleIdentifiers);
+      return user;
+    }
+    
+    // Fallback in case pattern matching fails (should never happen with valid data)
     user.setUserId(userId);
     user.setFirstName(firstName);
     user.setLastName(lastName);
     user.setEmailAddress(emailAddress);
     user.setSource(source);
-    
-    // Use pattern matching for status conversion
-    user.setStatus(switch (status) {
-      case null -> null;
-      case ApiUserStatus s -> s.getStatus();
-    });
-    
+    user.setStatus(status.getStatus());
     user.setReadOnly(readOnly);
     user.setVersion(1);
 
     Set<RoleIdentifier> roleIdentifiers = new HashSet<>();
-    
-    // Use pattern matching for role handling with enhanced for loop
-    for (var role : roles) {
-      roleIdentifiers.add(new RoleIdentifier(UserManager.DEFAULT_SOURCE, role));
+    if (roles != null) {
+      roles.stream()
+          .filter(Objects::nonNull)
+          .map(r -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, r))
+          .forEach(roleIdentifiers::add);
     }
     
-    // Use pattern matching for external roles with enhanced for loop if not null
     if (externalRoles != null) {
-      for (var role : externalRoles) {
-        roleIdentifiers.add(new RoleIdentifier(source, role));
-      }
+      externalRoles.stream()
+          .filter(Objects::nonNull)
+          .map(r -> new RoleIdentifier(source, r))
+          .forEach(roleIdentifiers::add);
     }
     
     user.setRoles(roleIdentifiers);

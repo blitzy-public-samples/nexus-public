@@ -1,0 +1,220 @@
+{
+  "simpleRecords": [
+    {
+      "type": "Point",
+      "x": 10,
+      "y": 20
+    },
+    {
+      "type": "ColorPoint",
+      "x": 15,
+      "y": 25,
+      "color": "red"
+    },
+    {
+      "type": "LabeledPoint",
+      "x": 5,
+      "y": 15,
+      "label": "origin"
+    },
+    {
+      "type": "ColorLabeledPoint",
+      "x": 8,
+      "y": 12,
+      "color": "blue",
+      "label": "start"
+    }
+  ],
+  "nestedRecords": [
+    {
+      "type": "Rectangle",
+      "topLeft": {
+        "x": 0,
+        "y": 0
+      },
+      "bottomRight": {
+        "x": 100,
+        "y": 50
+      }
+    },
+    {
+      "type": "Circle",
+      "center": {
+        "x": 50,
+        "y": 50
+      },
+      "radius": 25
+    },
+    {
+      "type": "ColoredRectangle",
+      "topLeft": {
+        "x": 10,
+        "y": 10
+      },
+      "bottomRight": {
+        "x": 60,
+        "y": 40
+      },
+      "color": "green"
+    }
+  ],
+  "repositoryRecords": [
+    {
+      "type": "MavenRepository",
+      "name": "maven-central",
+      "format": "maven",
+      "online": true,
+      "metadata": {
+        "layoutPolicy": "STRICT",
+        "contentDisposition": "ATTACHMENT"
+      }
+    },
+    {
+      "type": "NpmRepository",
+      "name": "npm-proxy",
+      "format": "npm",
+      "online": true,
+      "registryUrl": "https://registry.npmjs.org"
+    },
+    {
+      "type": "DockerRepository",
+      "name": "docker-hub",
+      "format": "docker",
+      "online": false,
+      "v1Enabled": false,
+      "forceBasicAuth": true
+    },
+    {
+      "type": "RawRepository",
+      "name": "raw-hosted",
+      "format": "raw",
+      "online": true,
+      "contentDisposition": "INLINE"
+    },
+    {
+      "type": "GroupRepository",
+      "name": "maven-public",
+      "format": "maven",
+      "online": true,
+      "members": ["maven-central", "maven-releases", "maven-snapshots"]
+    }
+  ],
+  "componentRecords": [
+    {
+      "type": "SimpleComponent",
+      "group": "org.sonatype.nexus",
+      "name": "nexus-core",
+      "version": "3.42.0"
+    },
+    {
+      "type": "VersionedComponent",
+      "group": "org.sonatype.nexus",
+      "name": "nexus-repository",
+      "version": "3.42.0",
+      "snapshot": true,
+      "timestamp": "20230615.123456"
+    },
+    {
+      "type": "AssetComponent",
+      "group": "org.sonatype.nexus",
+      "name": "nexus-common",
+      "version": "3.42.0",
+      "assets": [
+        {
+          "name": "nexus-common-3.42.0.jar",
+          "size": 1024000,
+          "contentType": "application/java-archive"
+        },
+        {
+          "name": "nexus-common-3.42.0-sources.jar",
+          "size": 2048000,
+          "contentType": "application/java-archive"
+        }
+      ]
+    }
+  ],
+  "blobStoreRecords": [
+    {
+      "type": "FileBlobStore",
+      "name": "default",
+      "path": "/nexus-data/blobs/default",
+      "metrics": {
+        "totalSize": 1073741824,
+        "blobCount": 5000
+      }
+    },
+    {
+      "type": "S3BlobStore",
+      "name": "s3-store",
+      "bucketName": "nexus-blobs",
+      "region": "us-west-2",
+      "prefix": "nexus/",
+      "metrics": {
+        "totalSize": 5368709120,
+        "blobCount": 25000
+      },
+      "encryption": {
+        "enabled": true,
+        "encryptionType": "SSE_S3"
+      }
+    },
+    {
+      "type": "GroupBlobStore",
+      "name": "blob-group",
+      "members": ["default", "s3-store"],
+      "fillPolicy": "ROUND_ROBIN"
+    }
+  ],
+  "mixedRecords": [
+    {
+      "type": "Empty"
+    },
+    {
+      "type": "SingleValue",
+      "value": 42
+    },
+    {
+      "type": "Pair",
+      "first": "hello",
+      "second": "world"
+    },
+    {
+      "type": "Triple",
+      "first": 1,
+      "second": "two",
+      "third": true
+    },
+    {
+      "type": "Nested",
+      "outer": {
+        "inner": {
+          "value": "deeply nested"
+        }
+      }
+    },
+    {
+      "type": "WithArray",
+      "values": [1, 2, 3, 4, 5]
+    },
+    {
+      "type": "WithMap",
+      "properties": {
+        "key1": "value1",
+        "key2": "value2"
+      }
+    },
+    {
+      "type": "ComplexNested",
+      "id": "complex-1",
+      "data": {
+        "type": "Point",
+        "x": 100,
+        "y": 200
+      },
+      "metadata": {
+        "created": "2023-06-15T12:30:45Z",
+        "tags": ["test", "java21", "pattern-matching"]
+      }
+    }
+  ]
+}

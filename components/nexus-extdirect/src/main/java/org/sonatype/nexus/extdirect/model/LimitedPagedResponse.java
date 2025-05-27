@@ -30,13 +30,15 @@ public class LimitedPagedResponse<T>
 
   /**
    * Constructor for a limited paged response.
+   * Uses Java 21's Math.clamp method to ensure the total is within the specified limit.
    *
    * @param limit the maximum number of results to return
    * @param total the actual total number of results
    * @param data the collection of data to include in the response
    */
   public LimitedPagedResponse(long limit, long total, Collection<T> data) {
-    super(Math.min(limit, total), data);
+    // Use Math.clamp to ensure total is between 0 and limit
+    super(Math.clamp(total, 0, limit), data);
     this.unlimitedTotal = total;
     this.limited = total != getTotal();
   }
@@ -55,14 +57,14 @@ public class LimitedPagedResponse<T>
   }
 
   /**
-   * @return the actual total number of results (unlimited)
+   * @return the actual total number of results before limiting
    */
   public long getUnlimitedTotal() {
     return unlimitedTotal;
   }
 
   /**
-   * @return whether the results were limited
+   * @return whether the total was limited
    */
   public boolean isLimited() {
     return limited;

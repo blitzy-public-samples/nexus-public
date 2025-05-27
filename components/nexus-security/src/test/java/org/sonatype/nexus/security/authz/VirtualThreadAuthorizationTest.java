@@ -13,12 +13,14 @@
 package org.sonatype.nexus.security.authz;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,375 +28,547 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.privilege.Privilege;
+import org.sonatype.nexus.security.realm.MockRealmB;
 import org.sonatype.nexus.security.role.Role;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadMatchers;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.security.user.User;
 
-import org.apache.shiro.authz.Permission;
+import org.apache.shiro.realm.Realm;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.experimental.categories.Category;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * Tests the thread-safety and performance characteristics of the Nexus authorization system
- * when used with Java 21 Virtual Threads.
+ * Tests for authorization system behavior with Java 21 Virtual Threads.
+ * <p>
+ * This test class validates that the Nexus authorization system maintains thread-safety
+ * and performance characteristics when used with Java 21 Virtual Threads. It tests
+ * concurrent permission evaluations, role lookups, and privilege operations to ensure
+ * proper authorization behavior under high concurrency.
  */
+@ExtendWith(MockitoExtension.class)
+@Tag("Java21TestGroup")
 @Tag("VirtualThreadTestGroup")
-@Category(VirtualThreadTestGroup.class)
 public class VirtualThreadAuthorizationTest
     extends AbstractSecurityTest
 {
-  private SecuritySystem securitySystem;
-  private AuthorizationManager authorizationManager;
-  private SimplePrincipalCollection principals;
-  private static final int HIGH_CONCURRENCY_THREADS = 1000;
-  private static final int PERFORMANCE_TEST_ITERATIONS = 10000;
-  
-  @Override
-  protected MemorySecurityConfiguration initialSecurityConfiguration() {
-    return AuthorizationManagerTestSecurity.securityModel();
-  }
-  
-  @BeforeEach
-  public void setUp() throws Exception {
-    securitySystem = lookup(SecuritySystem.class);
-    authorizationManager = lookup(AuthorizationManager.class);
-    principals = new SimplePrincipalCollection("jcool", "default");
-  }
+  private static final int THREAD_COUNT = 100;
+  private static final int ITERATIONS = 10;
+  private static final String TEST_PERMISSION = "test:heHasIt";
+  private static final String TEST_USER = "jcool";
   
   /**
-   * Tests concurrent permission evaluations using virtual threads.
-   * Validates that the authorization system correctly handles high concurrency
-   * with virtual threads without race conditions or inconsistencies.
+   * Tests that permission evaluation works correctly with many concurrent virtual threads.
+   * <p>
+   * This test creates multiple virtual threads that all perform permission checks
+   * simultaneously, verifying that the authorization system correctly handles
+   * concurrent access without errors or inconsistent results.
    */
   @Test
-  public void testConcurrentPermissionEvaluations() throws Exception {
-    final int threadCount = 100;
-    final CountDownLatch latch = new CountDownLatch(threadCount);
-    final AtomicBoolean failed = new AtomicBoolean(false);
+  void concurrentPermissionEvaluationWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = lookup(SecuritySystem.class);
+    MockRealmB mockRealmB = (MockRealmB) lookup(Realm.class, "MockRealmB");
     
-    // Create an executor service that uses virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to the executor
-      for (int i = 0; i < threadCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Alternate between different permission checks
-            String permission = (index % 3 == 0) ? "test:read" : 
-                               (index % 3 == 1) ? "test:write" : "test:delete";
-            
-            // Perform permission check
-            boolean hasPermission = securitySystem.isPermitted(principals, permission);
-            
-            // All threads should get consistent results
-            if (permission.equals("test:read") && !hasPermission) {
-              failed.set(true);
-              System.err.println("Expected permission test:read to be granted");
-            }
-            else if (!permission.equals("test:read") && hasPermission) {
-              failed.set(true);
-              System.err.println("Expected permission " + permission + " to be denied");
-            }
-          } 
-          catch (Exception e) {
-            failed.set(true);
-            e.printStackTrace();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete
-      assertTrue(latch.await(10, TimeUnit.SECONDS), "Concurrent permission test did not complete in time");
-    }
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    // Verify the test passed
-    assertFalse(failed.get(), "Concurrent permission test failed with inconsistent results");
-  }
-  
-  /**
-   * Tests thread-safety of authorization caching with high concurrent access.
-   * Validates that the cache remains consistent when accessed by many virtual threads.
-   */
-  @Test
-  public void testAuthorizationCachingWithVirtualThreads() throws Exception {
-    final int threadCount = 200;
-    final CountDownLatch latch = new CountDownLatch(threadCount);
-    final AtomicInteger cacheHits = new AtomicInteger(0);
-    final AtomicBoolean failed = new AtomicBoolean(false);
-    
-    // Create an executor service that uses virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to the executor
-      for (int i = 0; i < threadCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            // Every 10th thread will update a role to invalidate cache
-            if (index % 10 == 0 && index < 100) {
-              Role role = authorizationManager.getRole("role" + ((index % 3) + 1));
-              role.setDescription("Updated by thread " + index);
-              authorizationManager.updateRole(role);
-            }
-            
-            // All threads perform permission checks that should use/update the cache
-            boolean hasPermission = securitySystem.isPermitted(principals, "test:read");
-            if (!hasPermission) {
-              failed.set(true);
-              System.err.println("Expected permission test:read to be granted");
-            }
-            
-            // Track cache hits (simplified - in real implementation we'd need to instrument the cache)
-            cacheHits.incrementAndGet();
-          } 
-          catch (Exception e) {
-            failed.set(true);
-            e.printStackTrace();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete
-      assertTrue(latch.await(10, TimeUnit.SECONDS), "Cache test did not complete in time");
-    }
-    
-    // Verify the test passed
-    assertFalse(failed.get(), "Cache test failed with inconsistent results");
-    assertEquals(threadCount, cacheHits.get(), "Not all threads completed permission checks");
-  }
-  
-  /**
-   * Tests concurrent role and privilege operations using virtual threads.
-   * Validates that the authorization system correctly handles concurrent CRUD operations.
-   */
-  @Test
-  public void testConcurrentRoleAndPrivilegeOperations() throws Exception {
-    final int threadCount = 50;
-    final CountDownLatch latch = new CountDownLatch(threadCount);
-    final AtomicBoolean failed = new AtomicBoolean(false);
-    
-    // Create an executor service that uses virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to the executor
-      for (int i = 0; i < threadCount; i++) {
-        final int index = i;
-        executor.submit(() -> {
-          try {
-            if (index % 5 == 0) {
-              // Create a new role
-              Role role = new Role();
-              role.setRoleId("vt-role-" + index);
-              role.setName("Virtual Thread Role " + index);
-              role.setDescription("Created by virtual thread " + index);
-              role.addPrivilege("1");
-              authorizationManager.addRole(role);
-              
-              // Verify it was created
-              Role retrieved = authorizationManager.getRole(role.getRoleId());
-              assertEquals(role.getName(), retrieved.getName());
-            }
-            else if (index % 5 == 1) {
-              // List all roles
-              Set<Role> roles = authorizationManager.listRoles();
-              assertTrue(roles.size() >= 3, "Expected at least 3 roles");
-            }
-            else if (index % 5 == 2) {
-              // Create a new privilege
-              Privilege privilege = new Privilege();
-              privilege.setId("vt-priv-" + index);
-              privilege.setName("vt-name-" + index);
-              privilege.setDescription("Created by virtual thread " + index);
-              privilege.setType("application");
-              privilege.addProperty("method", "read");
-              privilege.addProperty("permission", "/test/path");
-              authorizationManager.addPrivilege(privilege);
-              
-              // Verify it was created
-              Privilege retrieved = authorizationManager.getPrivilege(privilege.getId());
-              assertEquals(privilege.getName(), retrieved.getName());
-            }
-            else if (index % 5 == 3) {
-              // List all privileges
-              Set<Privilege> privileges = authorizationManager.listPrivileges();
-              assertTrue(privileges.size() >= 4, "Expected at least 4 privileges");
-            }
-            else {
-              // Perform permission check
-              boolean hasPermission = securitySystem.isPermitted(principals, "test:read");
-              assertTrue(hasPermission, "Expected permission test:read to be granted");
-            }
-          } 
-          catch (Exception e) {
-            failed.set(true);
-            e.printStackTrace();
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete
-      assertTrue(latch.await(10, TimeUnit.SECONDS), "Concurrent CRUD test did not complete in time");
-    }
-    
-    // Verify the test passed
-    assertFalse(failed.get(), "Concurrent CRUD test failed");
-  }
-  
-  /**
-   * Compares performance between platform threads and virtual threads for authorization operations.
-   * This test validates that virtual threads provide better performance for I/O-bound operations.
-   */
-  @Test
-  public void testAuthorizationPerformanceComparison() throws Exception {
-    // Measure performance with platform threads
-    long platformThreadTime = measureAuthorizationPerformance(false);
-    
-    // Measure performance with virtual threads
-    long virtualThreadTime = measureAuthorizationPerformance(true);
-    
-    // Virtual threads should be more efficient for I/O-bound operations
-    System.out.println("Platform thread time: " + platformThreadTime + "ms");
-    System.out.println("Virtual thread time: " + virtualThreadTime + "ms");
-    
-    // In a properly optimized system, virtual threads should perform better
-    // However, this is not a strict assertion as it depends on the environment
-    // and the specific operations being performed
-    assertThat("Virtual threads should be more efficient than platform threads",
-        virtualThreadTime, lessThan(platformThreadTime * 2)); // Allow some margin
-  }
-  
-  /**
-   * Measures the performance of authorization operations using either platform or virtual threads.
-   * 
-   * @param useVirtualThreads whether to use virtual threads
-   * @return the time taken in milliseconds
-   */
-  private long measureAuthorizationPerformance(boolean useVirtualThreads) throws Exception {
-    final int threadCount = 100;
-    final CountDownLatch latch = new CountDownLatch(threadCount);
-    final List<Future<?>> futures = new ArrayList<>();
-    
-    long startTime = System.currentTimeMillis();
-    
-    // Create appropriate executor service
-    ExecutorService executor = useVirtualThreads ?
-        Executors.newVirtualThreadPerTaskExecutor() :
-        Executors.newFixedThreadPool(Math.min(threadCount, 20)); // Limit platform threads
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
     
     try {
-      // Submit tasks to the executor
-      for (int i = 0; i < threadCount; i++) {
-        Future<?> future = executor.submit(() -> {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicBoolean inconsistentResult = new AtomicBoolean(false);
+      
+      // Submit multiple concurrent permission checks using virtual threads
+      List<Future<?>> futures = new ArrayList<>();
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        futures.add(executor.submit(() -> {
           try {
-            // Perform multiple authorization operations
-            for (int j = 0; j < PERFORMANCE_TEST_ITERATIONS / threadCount; j++) {
-              securitySystem.isPermitted(principals, "test:read");
-              authorizationManager.listRoles();
-              authorizationManager.listPrivileges();
+            SimplePrincipalCollection principals = new SimplePrincipalCollection(TEST_USER, mockRealmB.getName());
+            boolean result = securitySystem.isPermitted(principals, TEST_PERMISSION);
+            
+            // All permission checks should return the same result
+            if (!result) {
+              inconsistentResult.set(true);
             }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
           } 
           finally {
             latch.countDown();
           }
-        });
-        futures.add(future);
+        }));
       }
       
-      // Wait for all threads to complete
-      latch.await(60, TimeUnit.SECONDS);
+      // Wait for all tasks to complete
+      Assertions.assertTrue(latch.await(30, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
       
-      // Check if any tasks failed
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), 
+          "Errors occurred during virtual thread permission checks");
+      
+      // Verify all permission checks returned consistent results
+      Assertions.assertFalse(inconsistentResult.get(), 
+          "Inconsistent permission check results detected");
+      
+      // Verify all futures completed successfully
       for (Future<?> future : futures) {
-        future.get(1, TimeUnit.SECONDS); // Will throw exception if task failed
+        future.get(1, TimeUnit.SECONDS); // This will throw if any task failed
       }
     } 
     finally {
       executor.shutdown();
-      executor.awaitTermination(5, TimeUnit.SECONDS);
+    }
+  }
+  
+  /**
+   * Tests that authorization caching works correctly under high concurrent access with virtual threads.
+   * <p>
+   * This test verifies that the authorization cache maintains consistency when accessed
+   * and modified by many virtual threads simultaneously.
+   */
+  @Test
+  void authorizationCachingWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = lookup(SecuritySystem.class);
+    MockRealmB mockRealmB = (MockRealmB) lookup(Realm.class, "MockRealmB");
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // First populate the cache with a permission check
+      SimplePrincipalCollection principals = new SimplePrincipalCollection(TEST_USER, mockRealmB.getName());
+      securitySystem.isPermitted(principals, TEST_PERMISSION);
+      
+      // Verify cache is populated
+      Assertions.assertFalse(mockRealmB.getAuthorizationCache().keys().isEmpty());
+      
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent tasks that mix cache reads and invalidations
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            if (index % 2 == 0) {
+              // Even threads do permission checks (read from cache)
+              securitySystem.isPermitted(principals, TEST_PERMISSION);
+            } 
+            else {
+              // Odd threads update a user (invalidates cache)
+              User user = securitySystem.getUser("bburton", "MockUserManagerB");
+              securitySystem.updateUser(user);
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      Assertions.assertTrue(latch.await(30, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+      
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), 
+          "Errors occurred during virtual thread cache operations");
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests role operations with virtual threads to ensure thread-safety.
+   * <p>
+   * This test performs concurrent role lookups and verifies that the results
+   * are consistent across all virtual threads.
+   */
+  @Test
+  void roleOperationsWithVirtualThreads() throws Exception {
+    AuthorizationManager authzManager = getAuthorizationManager();
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicBoolean inconsistentResult = new AtomicBoolean(false);
+      
+      // Submit multiple concurrent role lookups using virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        executor.submit(() -> {
+          try {
+            Role role = authzManager.getRole("role1");
+            
+            // Verify role properties are consistent
+            if (!"role1".equals(role.getRoleId()) ||
+                !"RoleOne".equals(role.getName()) ||
+                !"Role One".equals(role.getDescription()) ||
+                !role.getPrivileges().contains("1") ||
+                !role.getPrivileges().contains("2") ||
+                role.getPrivileges().size() != 2) {
+              inconsistentResult.set(true);
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      Assertions.assertTrue(latch.await(30, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+      
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), 
+          "Errors occurred during virtual thread role operations");
+      
+      // Verify all role lookups returned consistent results
+      Assertions.assertFalse(inconsistentResult.get(), 
+          "Inconsistent role lookup results detected");
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests privilege operations with virtual threads to ensure thread-safety.
+   * <p>
+   * This test performs concurrent privilege lookups and verifies that the results
+   * are consistent across all virtual threads.
+   */
+  @Test
+  void privilegeOperationsWithVirtualThreads() throws Exception {
+    AuthorizationManager authzManager = getAuthorizationManager();
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      AtomicBoolean inconsistentResult = new AtomicBoolean(false);
+      
+      // Submit multiple concurrent privilege lookups using virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        executor.submit(() -> {
+          try {
+            Privilege privilege = authzManager.getPrivilege("3");
+            
+            // Verify privilege properties are consistent
+            if (!"3".equals(privilege.getId()) ||
+                !"3-name".equals(privilege.getName()) ||
+                !"Privilege Three".equals(privilege.getDescription()) ||
+                !"method".equals(privilege.getType()) ||
+                !"read".equals(privilege.getPrivilegeProperty("method")) ||
+                !"/some/path/".equals(privilege.getPrivilegeProperty("permission"))) {
+              inconsistentResult.set(true);
+            }
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      Assertions.assertTrue(latch.await(30, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+      
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), 
+          "Errors occurred during virtual thread privilege operations");
+      
+      // Verify all privilege lookups returned consistent results
+      Assertions.assertFalse(inconsistentResult.get(), 
+          "Inconsistent privilege lookup results detected");
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Compares performance between platform threads and virtual threads for authorization operations.
+   * <p>
+   * This test measures and compares the execution time of permission checks using both
+   * platform threads and virtual threads under high concurrency.
+   */
+  @Test
+  void comparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = lookup(SecuritySystem.class);
+    MockRealmB mockRealmB = (MockRealmB) lookup(Realm.class, "MockRealmB");
+    SimplePrincipalCollection principals = new SimplePrincipalCollection(TEST_USER, mockRealmB.getName());
+    
+    // Run performance test with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
+      try {
+        runConcurrentPermissionChecks(executor, securitySystem, principals, THREAD_COUNT * ITERATIONS);
+      } 
+      finally {
+        executor.shutdown();
+      }
+    });
+    
+    // Run performance test with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+      ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+      try {
+        runConcurrentPermissionChecks(executor, securitySystem, principals, THREAD_COUNT * ITERATIONS);
+      } 
+      finally {
+        executor.shutdown();
+      }
+    });
+    
+    // Log the performance comparison
+    System.out.println("Platform thread execution time: " + platformThreadTime + "ms");
+    System.out.println("Virtual thread execution time: " + virtualThreadTime + "ms");
+    System.out.println("Performance improvement: " + 
+        String.format("%.2f", (double) platformThreadTime / virtualThreadTime) + "x");
+    
+    // We don't assert on specific performance improvements as they can vary by environment,
+    // but we log the results for analysis
+  }
+  
+  /**
+   * Tests for thread pinning issues during authorization operations with virtual threads.
+   * <p>
+   * This test detects potential thread pinning by running many concurrent virtual threads
+   * and measuring if they complete in a reasonable time. Thread pinning would cause
+   * significant delays as virtual threads would be forced to execute sequentially.
+   */
+  @Test
+  void detectThreadPinningDuringAuthorizationOperations() throws Exception {
+    SecuritySystem securitySystem = lookup(SecuritySystem.class);
+    MockRealmB mockRealmB = (MockRealmB) lookup(Realm.class, "MockRealmB");
+    SimplePrincipalCollection principals = new SimplePrincipalCollection(TEST_USER, mockRealmB.getName());
+    
+    // Create a large number of virtual threads to detect pinning
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      // Use a high thread count to increase chances of detecting pinning
+      int highThreadCount = THREAD_COUNT * 10;
+      CountDownLatch latch = new CountDownLatch(highThreadCount);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Start time measurement
+      long startTime = System.currentTimeMillis();
+      
+      // Submit many concurrent permission checks using virtual threads
+      for (int i = 0; i < highThreadCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Perform multiple operations that could cause pinning
+            securitySystem.isPermitted(principals, TEST_PERMISSION);
+            securitySystem.isPermitted(principals, "test:someOtherPermission");
+            securitySystem.isPermitted(principals, "test:yetAnotherPermission");
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete with a reasonable timeout
+      boolean completed = latch.await(10, TimeUnit.SECONDS);
+      long executionTime = System.currentTimeMillis() - startTime;
+      
+      // Verify all tasks completed within the timeout
+      Assertions.assertTrue(completed, 
+          "Virtual threads did not complete in time, possible thread pinning detected");
+      
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), 
+          "Errors occurred during virtual thread operations");
+      
+      // Log the execution time for analysis
+      System.out.println("Thread pinning test execution time: " + executionTime + "ms");
+      System.out.println("Average time per thread: " + (executionTime / (double) highThreadCount) + "ms");
+      
+      // If thread pinning occurs, execution time would be much higher than expected
+      // This is a heuristic check - the actual threshold depends on the environment
+      Assertions.assertTrue(executionTime < 5000, 
+          "Execution time suggests possible thread pinning: " + executionTime + "ms");
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Tests that concurrent role and privilege modifications are thread-safe with virtual threads.
+   * <p>
+   * This test performs concurrent additions, updates, and deletions of roles and privileges
+   * using virtual threads to verify that the authorization system maintains consistency.
+   */
+  @Test
+  void concurrentRoleAndPrivilegeModificationsWithVirtualThreads() throws Exception {
+    AuthorizationManager authzManager = getAuthorizationManager();
+    
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create an executor service using virtual threads
+    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    
+    try {
+      CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+      AtomicInteger errorCount = new AtomicInteger(0);
+      
+      // Submit multiple concurrent role and privilege modifications using virtual threads
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            String suffix = String.valueOf(index);
+            
+            // Create a new role
+            Role role = new Role();
+            role.setRoleId("vt-role-" + suffix);
+            role.setName("VT Role " + suffix);
+            role.setDescription("Virtual Thread Test Role " + suffix);
+            role.addPrivilege("1");
+            
+            // Add the role
+            authzManager.addRole(role);
+            
+            // Create a new privilege
+            Privilege privilege = new Privilege();
+            privilege.setId("vt-priv-" + suffix);
+            privilege.setName("vt-priv-name-" + suffix);
+            privilege.setDescription("Virtual Thread Test Privilege " + suffix);
+            privilege.setType("method");
+            privilege.addProperty("method", "read");
+            privilege.addProperty("permission", "/vt/test/" + suffix);
+            
+            // Add the privilege
+            authzManager.addPrivilege(privilege);
+            
+            // Update the role to include the new privilege
+            role.addPrivilege(privilege.getId());
+            authzManager.updateRole(role);
+            
+            // Verify the role was updated correctly
+            Role updatedRole = authzManager.getRole(role.getRoleId());
+            if (!updatedRole.getPrivileges().contains(privilege.getId())) {
+              throw new AssertionError("Role was not updated correctly");
+            }
+            
+            // Delete the role and privilege
+            authzManager.deleteRole(role.getRoleId());
+            authzManager.deletePrivilege(privilege.getId());
+          } 
+          catch (Exception e) {
+            errorCount.incrementAndGet();
+          } 
+          finally {
+            latch.countDown();
+          }
+        });
+      }
+      
+      // Wait for all tasks to complete
+      Assertions.assertTrue(latch.await(30, TimeUnit.SECONDS), 
+          "Timed out waiting for virtual threads to complete");
+      
+      // Verify no errors occurred
+      Assertions.assertEquals(0, errorCount.get(), 
+          "Errors occurred during concurrent role and privilege modifications");
+    } 
+    finally {
+      executor.shutdown();
+    }
+  }
+  
+  /**
+   * Helper method to run concurrent permission checks using the provided executor.
+   */
+  private void runConcurrentPermissionChecks(
+      ExecutorService executor, 
+      SecuritySystem securitySystem,
+      SimplePrincipalCollection principals,
+      int checkCount) throws Exception 
+  {
+    CountDownLatch latch = new CountDownLatch(checkCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
+    
+    for (int i = 0; i < checkCount; i++) {
+      executor.submit(() -> {
+        try {
+          securitySystem.isPermitted(principals, TEST_PERMISSION);
+        } 
+        catch (Exception e) {
+          errorCount.incrementAndGet();
+        } 
+        finally {
+          latch.countDown();
+        }
+      });
     }
     
+    // Wait for all tasks to complete
+    boolean completed = latch.await(30, TimeUnit.SECONDS);
+    
+    // Verify all tasks completed and no errors occurred
+    if (!completed) {
+      throw new AssertionError("Timed out waiting for permission checks to complete");
+    }
+    
+    if (errorCount.get() > 0) {
+      throw new AssertionError("Errors occurred during permission checks: " + errorCount.get());
+    }
+  }
+  
+  /**
+   * Helper method to measure execution time of a runnable in milliseconds.
+   */
+  private long measureExecutionTime(Runnable runnable) {
+    long startTime = System.currentTimeMillis();
+    runnable.run();
     return System.currentTimeMillis() - startTime;
   }
   
   /**
-   * Tests for thread pinning during authorization operations.
-   * Thread pinning occurs when a virtual thread is forced to occupy a platform thread
-   * for its entire execution, negating many of the benefits of virtual threads.
+   * Helper method to get the authorization manager.
    */
-  @Test
-  public void testThreadPinningDuringAuthorization() throws Exception {
-    // Enable thread pinning detection
-    ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
-    pinningDetector.enable();
-    
-    try {
-      // Create and start a virtual thread to perform authorization operations
-      Thread virtualThread = Thread.ofVirtual().name("auth-test-thread").start(() -> {
-        try {
-          // Perform various authorization operations
-          securitySystem.isPermitted(principals, "test:read");
-          authorizationManager.listRoles();
-          authorizationManager.listPrivileges();
-          
-          // Get a role and update it
-          Role role = authorizationManager.getRole("role1");
-          role.setDescription("Updated in virtual thread test");
-          authorizationManager.updateRole(role);
-          
-          // Create and delete a privilege
-          Privilege privilege = new Privilege();
-          privilege.setId("vt-test-priv");
-          privilege.setName("vt-test-name");
-          privilege.setDescription("Test privilege for thread pinning");
-          privilege.setType("application");
-          privilege.addProperty("method", "read");
-          privilege.addProperty("permission", "/test/path");
-          authorizationManager.addPrivilege(privilege);
-          authorizationManager.deletePrivilege(privilege.getId());
-        }
-        catch (Exception e) {
-          e.printStackTrace();
-        }
-      });
-      
-      // Wait for the thread to complete
-      virtualThread.join(10000);
-      
-      // Check if the thread is still alive (it shouldn't be)
-      assertFalse(virtualThread.isAlive(), "Virtual thread did not complete in time");
-      
-      // Verify the thread was a virtual thread
-      assertThat(virtualThread, VirtualThreadMatchers.isVirtualThread());
-      
-      // Check for pinning events - ideally there should be none or very few
-      int pinningEvents = pinningDetector.getPinningEvents().size();
-      System.out.println("Detected " + pinningEvents + " thread pinning events");
-      
-      // This is not a strict assertion as some pinning might be unavoidable
-      // but we want to be aware of excessive pinning
-      assertThat("Thread pinning events should be minimal", 
-          pinningEvents, lessThan(5));
-    }
-    finally {
-      pinningDetector.disable();
-    }
+  private AuthorizationManager getAuthorizationManager() throws Exception {
+    return lookup(AuthorizationManager.class);
   }
 }

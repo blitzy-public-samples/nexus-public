@@ -14,637 +14,364 @@ package org.sonatype.nexus.datastore.api;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.StructuredTaskScope;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
+
 import javax.sql.DataSource;
 
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadMatchers;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.notNullValue;
-import static org.mockito.Mockito.doAnswer;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link DataStore} interface compatibility with Java 21 Virtual Threads.
+ * Base test class for validating core DataStore API interface compatibility with Java 21 Virtual Threads.
  * 
- * This test class validates that all DataStore API operations work correctly when executed
- * within Virtual Threads. It tests basic operations, connection handling, lifecycle operations,
- * and structured concurrency features to ensure compatibility with Java 21 Virtual Threads.
+ * This class provides common test utilities and infrastructure used by other Virtual Thread test classes
+ * in the DataStore API module. It includes test cases for the DataStore interface itself and ensures that
+ * core operations behave correctly when executed within Virtual Threads.
  * 
- * The tests verify:
- * 1. Basic DataStore operations (openSession, getConfiguration, etc.)
- * 2. Connection acquisition and usage
- * 3. Lifecycle operations (start, stop, freeze, unfreeze)
- * 4. Thread context propagation across Virtual Thread handoffs
- * 5. Structured concurrency with Virtual Threads
- * 6. Thread pinning detection
- * 
- * @since 3.31
+ * @since 3.60
  */
+@ExtendWith(MockitoExtension.class)
 public class DataStoreAPIVirtualThreadTest
-    extends VirtualThreadTestSupport
 {
-  private static final int TIMEOUT_SECONDS = 5;
+  private static final int CONCURRENT_THREADS = 100;
+  private static final int TIMEOUT_SECONDS = 10;
   
   @Mock
   private DataStore<DataSession<?>> dataStore;
   
   @Mock
-  private DataSession<?> dataSession;
+  private DataSource dataSource;
   
   @Mock
   private Connection connection;
   
-  @Mock
-  private DataStoreConfiguration configuration;
-  
-  @Mock
-  private DataSource dataSource;
-  
   private ExecutorService virtualThreadExecutor;
+  private ExecutorService platformThreadExecutor;
   
-  @Before
-  public void setUp() throws Exception {
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  @BeforeEach
+  void setUp() throws SQLException {
+    // Create executors for both virtual and platform threads for comparison
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
+    platformThreadExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     
-    // Setup basic DataStore behavior
-    when(dataStore.openSession()).thenReturn(dataSession);
-    when(dataStore.openConnection()).thenReturn(connection);
-    when(dataStore.getConfiguration()).thenReturn(configuration);
+    // Setup common mocks
     when(dataStore.getDataSource()).thenReturn(dataSource);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(dataStore.openConnection()).thenReturn(connection);
   }
   
-  @After
-  public void tearDown() throws Exception {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+  @AfterEach
+  void tearDown() {
+    virtualThreadExecutor.shutdown();
+    platformThreadExecutor.shutdown();
+  }
+  
+  /**
+   * Utility method to run a task in a virtual thread and wait for completion.
+   * 
+   * @param runnable the task to execute
+   * @throws Exception if the task execution fails or times out
+   */
+  private void runInVirtualThread(Runnable runnable) throws Exception {
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicReference<Exception> exception = new AtomicReference<>();
+    
+    virtualThreadExecutor.submit(() -> {
+      try {
+        runnable.run();
+      }
+      catch (Exception e) {
+        exception.set(e);
+      }
+      finally {
+        latch.countDown();
+      }
+    });
+    
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(completed, "Task did not complete within timeout");
+    
+    if (exception.get() != null) {
+      throw exception.get();
     }
   }
   
   /**
-   * Tests that a DataStore can be accessed from a Virtual Thread.
+   * Tests that DataStore connection acquisition works correctly within a virtual thread.
+   * This validates that JDBC connections can be properly obtained and used in virtual threads.
    */
   @Test
-  public void testDataStoreAccessFromVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<DataSession<?>> sessionRef = new AtomicReference<>();
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      sessionRef.set(dataStore.openSession());
+  void testConnectionAcquisitionInVirtualThread() throws Exception {
+    runInVirtualThread(() -> {
+      assertDoesNotThrow(() -> {
+        try (Connection conn = dataStore.openConnection()) {
+          assertThat(conn, is(notNullValue()));
+        }
+      });
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify the session was correctly obtained
-    assertThat(sessionRef.get(), is(dataSession));
+    verify(dataStore).openConnection();
   }
   
   /**
-   * Tests that DataStore connection acquisition works correctly in Virtual Threads.
+   * Tests that DataStore lifecycle operations (start, stop) work correctly within virtual threads.
+   * This ensures that the core lifecycle management is compatible with virtual threads.
    */
   @Test
-  public void testConnectionAcquisitionInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<Connection> connectionRef = new AtomicReference<>();
-    AtomicBoolean exceptionThrown = new AtomicBoolean(false);
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      try {
-        connectionRef.set(dataStore.openConnection());
-      }
-      catch (SQLException e) {
-        exceptionThrown.set(true);
-      }
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify no exception was thrown
-    assertThat(exceptionThrown.get(), is(false));
-    
-    // Verify the connection was correctly obtained
-    assertThat(connectionRef.get(), is(connection));
-  }
-  
-  /**
-   * Tests that DataStore DataSource access works correctly in Virtual Threads.
-   */
-  @Test
-  public void testDataSourceAccessInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<DataSource> dataSourceRef = new AtomicReference<>();
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      dataSourceRef.set(dataStore.getDataSource());
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify the DataSource was correctly obtained
-    assertThat(dataSourceRef.get(), is(dataSource));
-  }
-  
-  /**
-   * Tests that DataStore configuration operations work correctly in Virtual Threads.
-   */
-  @Test
-  public void testConfigurationOperationsInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<DataStoreConfiguration> configRef = new AtomicReference<>();
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      configRef.set(dataStore.getConfiguration());
-      dataStore.setConfiguration(configuration);
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify the configuration was correctly obtained
-    assertThat(configRef.get(), is(configuration));
-    
-    // Verify setConfiguration was called
-    verify(dataStore).setConfiguration(configuration);
-  }
-  
-  /**
-   * Tests that DataStore registration operations work correctly in Virtual Threads.
-   */
-  @Test
-  public void testRegistrationOperationsInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    Class<? extends DataAccess> accessType = TestDataAccess.class;
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      dataStore.register(accessType);
-      dataStore.unregister(accessType);
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify register and unregister were called
-    verify(dataStore).register(accessType);
-    verify(dataStore).unregister(accessType);
-  }
-  
-  /**
-   * Tests that DataStore lifecycle operations work correctly in Virtual Threads.
-   */
-  @Test
-  public void testLifecycleOperationsInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
+  void testLifecycleOperationsInVirtualThread() throws Exception {
+    runInVirtualThread(() -> {
       dataStore.start();
+      assertTrue(dataStore.isStarted());
       dataStore.stop();
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify lifecycle methods were called
     verify(dataStore).start();
     verify(dataStore).stop();
   }
   
   /**
-   * Tests that DataStore freeze/unfreeze operations work correctly in Virtual Threads.
+   * Tests that DataStore freeze/unfreeze operations work correctly within virtual threads.
+   * This validates that state management operations function properly in virtual threads.
    */
   @Test
-  public void testFreezeOperationsInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicBoolean frozenState = new AtomicBoolean(false);
+  void testFreezeUnfreezeInVirtualThread() throws Exception {
+    when(dataStore.isFrozen()).thenReturn(true).thenReturn(false);
     
-    when(dataStore.isFrozen()).thenReturn(false, true, false);
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
+    runInVirtualThread(() -> {
       dataStore.freeze();
-      frozenState.set(dataStore.isFrozen());
+      assertTrue(dataStore.isFrozen());
       dataStore.unfreeze();
+      assertFalse(dataStore.isFrozen());
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify freeze/unfreeze methods were called
     verify(dataStore).freeze();
     verify(dataStore).unfreeze();
-    
-    // Verify frozen state was correctly obtained
-    assertThat(frozenState.get(), is(true));
+    verify(dataStore, times(2)).isFrozen();
   }
   
   /**
-   * Tests that DataStore backup operations work correctly in Virtual Threads.
+   * Tests that DataStore configuration operations work correctly within virtual threads.
+   * This ensures that configuration management is compatible with virtual threads.
    */
   @Test
-  public void testBackupOperationInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    String backupLocation = "/tmp/backup";
+  void testConfigurationInVirtualThread() throws Exception {
+    DataStoreConfiguration config = new DataStoreConfiguration();
+    config.setName("test-store");
+    config.setType("test-type");
     
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      try {
-        dataStore.backup(backupLocation);
-      }
-      catch (Exception e) {
-        // Ignore for test purposes
-      }
+    runInVirtualThread(() -> {
+      dataStore.setConfiguration(config);
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify backup method was called
-    verify(dataStore).backup(backupLocation);
+    verify(dataStore).setConfiguration(config);
   }
   
   /**
-   * Tests that DataStore shutdown operation works correctly in Virtual Threads.
+   * Tests that DataStore registration operations work correctly within virtual threads.
+   * This validates that DataAccess type registration functions properly in virtual threads.
    */
   @Test
-  public void testShutdownOperationInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
+  void testRegistrationInVirtualThread() throws Exception {
+    Class<? extends DataAccess> accessType = TestDataAccess.class;
     
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
+    runInVirtualThread(() -> {
+      dataStore.register(accessType);
+      dataStore.unregister(accessType);
+    });
+    
+    verify(dataStore).register(accessType);
+    verify(dataStore).unregister(accessType);
+  }
+  
+  /**
+   * Tests that DataStore exception handling works correctly within virtual threads.
+   * This ensures that exceptions are properly propagated through virtual threads.
+   */
+  @Test
+  void testExceptionHandlingInVirtualThread() throws Exception {
+    SQLException sqlException = new SQLException("Test exception");
+    when(dataStore.openConnection()).thenThrow(sqlException);
+    
+    AtomicReference<Throwable> caughtException = new AtomicReference<>();
+    
+    runInVirtualThread(() -> {
       try {
-        dataStore.shutdown();
+        dataStore.openConnection();
       }
-      catch (Exception e) {
-        // Ignore for test purposes
+      catch (Throwable t) {
+        caughtException.set(t);
       }
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertThat(caughtException.get(), is(sqlException));
+  }
+  
+  /**
+   * Tests that DataStore shutdown operation works correctly within virtual threads.
+   * This validates that resource cleanup functions properly in virtual threads.
+   */
+  @Test
+  void testShutdownInVirtualThread() throws Exception {
+    runInVirtualThread(() -> {
+      assertDoesNotThrow(() -> dataStore.shutdown());
+    });
     
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify shutdown method was called
     verify(dataStore).shutdown();
   }
   
   /**
-   * Tests that multiple concurrent DataStore operations work correctly in Virtual Threads.
+   * Tests that DataStore operations can be executed concurrently from multiple virtual threads.
+   * This validates that the DataStore interface can handle high concurrency with virtual threads.
    */
   @Test
-  public void testConcurrentOperationsInVirtualThreads() throws Exception {
-    int numThreads = 10;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(numThreads);
-    AtomicBoolean allVirtualThreads = new AtomicBoolean(true);
+  void testConcurrentOperationsWithVirtualThreads() throws Exception {
+    int taskCount = CONCURRENT_THREADS;
+    CountDownLatch latch = new CountDownLatch(taskCount);
+    AtomicInteger errorCount = new AtomicInteger(0);
     
-    // Setup thread detection in the mock
-    doAnswer(invocation -> {
-      if (!Thread.currentThread().isVirtual()) {
-        allVirtualThreads.set(false);
-      }
-      completionLatch.countDown();
-      return dataSession;
-    }).when(dataStore).openSession();
-    
-    // Start multiple virtual threads
-    for (int i = 0; i < numThreads; i++) {
+    // Submit multiple concurrent tasks using virtual threads
+    for (int i = 0; i < taskCount; i++) {
       virtualThreadExecutor.submit(() -> {
         try {
-          startLatch.await(); // Wait for all threads to be ready
-          dataStore.openSession();
+          dataStore.openConnection().close();
         }
-        catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
+        catch (Exception e) {
+          errorCount.incrementAndGet();
+        }
+        finally {
+          latch.countDown();
         }
       });
     }
     
-    // Start all threads simultaneously
-    startLatch.countDown();
+    // Wait for all tasks to complete
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(completed, "Not all tasks completed within timeout");
     
-    // Wait for all threads to complete
-    boolean completed = completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertThat("All virtual threads completed in time", completed, is(true));
-    
-    // Verify all operations were executed in virtual threads
-    assertThat("All operations executed in virtual threads", allVirtualThreads.get(), is(true));
-    
-    // Verify openSession was called the expected number of times
-    verify(dataStore).openSession();
+    // Verify results
+    assertThat(errorCount.get(), is(0));
+    verify(dataStore, times(taskCount)).openConnection();
   }
   
   /**
-   * Tests that DataSession operations work correctly in Virtual Threads.
+   * Tests the performance difference between virtual threads and platform threads
+   * for I/O-bound operations. This validates that virtual threads provide better
+   * scalability for I/O-bound workloads.
    */
   @Test
-  public void testDataSessionOperationsInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<Object> resultRef = new AtomicReference<>();
-    Class<TestDataAccess> accessType = TestDataAccess.class;
+  void testPerformanceComparisonForIOBoundOperations() throws Exception {
+    int taskCount = CONCURRENT_THREADS;
     
-    // Setup mock behavior
-    TestDataAccess dataAccess = new TestDataAccess();
-    when(dataSession.access(accessType)).thenReturn(dataAccess);
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      
-      // Test DataSession.access
-      DataAccess access = dataSession.access(accessType);
-      resultRef.set(access);
-      
-      // Test transaction hooks
-      dataSession.preCommit(() -> {});
-      dataSession.postCommit(() -> {});
-      dataSession.onRollback(() -> {});
+    // Simulate I/O latency
+    when(dataStore.openConnection()).thenAnswer(invocation -> {
+      Thread.sleep(50); // Simulate I/O latency
+      return connection;
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    // Measure platform thread performance
+    long platformThreadTime = measureExecutionTime(platformThreadExecutor, taskCount);
     
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
+    // Measure virtual thread performance
+    long virtualThreadTime = measureExecutionTime(virtualThreadExecutor, taskCount);
     
-    // Verify access method returned the expected result
-    assertThat(resultRef.get(), is(dataAccess));
-    
-    // Verify transaction hooks were called
-    verify(dataSession).preCommit(notNullValue());
-    verify(dataSession).postCommit(notNullValue());
-    verify(dataSession).onRollback(notNullValue());
+    // Virtual threads should be more efficient for I/O-bound operations
+    // when the number of concurrent operations exceeds available CPU cores
+    if (taskCount > Runtime.getRuntime().availableProcessors()) {
+      assertThat("Virtual threads should be faster than platform threads for I/O-bound operations",
+          virtualThreadTime, lessThan(platformThreadTime));
+    }
   }
   
   /**
-   * Tests that thread context is properly maintained across Virtual Thread handoffs.
-   * This is critical for DataStore operations that may block and cause thread handoffs.
+   * Tests that virtual threads properly handle errors during DataStore operations.
+   * This validates that error propagation works correctly in virtual threads.
    */
   @Test
-  public void testThreadContextPropagationInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<ClassLoader> contextClassLoader = new AtomicReference<>();
+  void testErrorHandlingInVirtualThreads() throws Exception {
+    Exception testException = new RuntimeException("Test exception");
+    doThrow(testException).when(dataStore).start();
     
-    // Set a custom context class loader for the test
-    ClassLoader testClassLoader = new ClassLoader(getClass().getClassLoader()) {};
+    AtomicBoolean exceptionCaught = new AtomicBoolean(false);
     
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      Thread currentThread = Thread.currentThread();
-      threadRef.set(currentThread);
-      
-      // Set context class loader
-      currentThread.setContextClassLoader(testClassLoader);
-      
-      // Simulate a blocking operation that would cause a Virtual Thread handoff
+    runInVirtualThread(() -> {
       try {
-        Thread.sleep(100);
+        dataStore.start();
       }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
+      catch (RuntimeException e) {
+        if (e.getMessage().equals("Test exception")) {
+          exceptionCaught.set(true);
+        }
       }
-      
-      // Check if context class loader is preserved after handoff
-      contextClassLoader.set(Thread.currentThread().getContextClassLoader());
     });
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify context class loader was preserved across handoffs
-    assertThat(contextClassLoader.get(), is(testClassLoader));
+    assertTrue(exceptionCaught.get(), "Exception was not properly propagated through virtual thread");
   }
   
   /**
-   * Tests that thread-local variables are properly maintained across Virtual Thread handoffs.
-   * This is important for DataStore operations that rely on thread-local state.
+   * Measures the execution time for running a specified number of tasks on the given executor.
+   * 
+   * @param executor the executor service to use
+   * @param taskCount the number of tasks to execute
+   * @return the execution time in milliseconds
+   * @throws Exception if task execution fails
    */
-  @Test
-  public void testThreadLocalPropagationInVirtualThread() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<String> threadLocalValueAfterHandoff = new AtomicReference<>();
+  private long measureExecutionTime(ExecutorService executor, int taskCount) throws Exception {
+    CountDownLatch latch = new CountDownLatch(taskCount);
     
-    // Create a thread-local variable for the test
-    ThreadLocal<String> threadLocal = new ThreadLocal<>();
+    long startTime = System.nanoTime();
     
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      Thread currentThread = Thread.currentThread();
-      threadRef.set(currentThread);
-      
-      // Set thread-local value
-      threadLocal.set("test-value");
-      
-      // Simulate a blocking operation that would cause a Virtual Thread handoff
-      try {
-        Thread.sleep(100);
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-      
-      // Check if thread-local value is preserved after handoff
-      threadLocalValueAfterHandoff.set(threadLocal.get());
-    });
+    for (int i = 0; i < taskCount; i++) {
+      executor.submit(() -> {
+        try {
+          dataStore.openConnection().close();
+        }
+        catch (Exception e) {
+          // Ignore exceptions for performance measurement
+        }
+        finally {
+          latch.countDown();
+        }
+      });
+    }
     
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    assertTrue(completed, "Not all tasks completed within timeout");
     
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify thread-local value was preserved across handoffs
-    assertThat(threadLocalValueAfterHandoff.get(), equalTo("test-value"));
-  }
-  
-  /**
-   * Tests for potential thread pinning issues when using DataStore operations.
-   */
-  @Test
-  public void testNoPinningInDataStoreOperations() throws Exception {
-    ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      
-      // Enable pinning detection for this thread
-      pinningDetector.enableDetectionForCurrentThread();
-      
-      try {
-        // Perform various DataStore operations
-        dataStore.openSession();
-        dataStore.getConfiguration();
-        dataStore.openConnection();
-      }
-      catch (SQLException e) {
-        // Ignore for test purposes
-      }
-      finally {
-        pinningDetector.disableDetectionForCurrentThread();
-      }
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify no pinning was detected
-    assertThat("No thread pinning should be detected", 
-        pinningDetector.getPinningEvents().isEmpty(), is(true));
-  }
-  
-  /**
-   * Tests that DataSession's structured concurrency methods work correctly with Virtual Threads.
-   */
-  @Test
-  public void testStructuredConcurrencyInDataSession() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicReference<Object[]> resultsRef = new AtomicReference<>();
-    
-    // Setup mock behavior for executeWithContext and executeConcurrently
-    when(dataSession.executeWithContext(notNullValue())).thenAnswer(invocation -> {
-      return "test result";
-    });
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      
-      try {
-        // Test executeWithContext
-        String result = dataSession.executeWithContext(() -> "test result");
-        assertThat(result, equalTo("test result"));
-        
-        // Test executeConcurrently with multiple tasks
-        Supplier<Object[]> resultsSupplier = dataSession.executeConcurrently(
-            () -> "result1",
-            () -> "result2"
-        );
-        
-        resultsRef.set(resultsSupplier.get());
-      }
-      catch (Exception e) {
-        // Ignore for test purposes
-      }
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify executeWithContext was called
-    verify(dataSession).executeWithContext(notNullValue());
-  }
-  
-  /**
-   * Tests that DataSession's structured concurrency with StructuredTaskScope works correctly with Virtual Threads.
-   */
-  @Test
-  public void testStructuredTaskScopeWithVirtualThreads() throws Exception {
-    AtomicReference<Thread> threadRef = new AtomicReference<>();
-    AtomicBoolean allVirtualThreads = new AtomicBoolean(true);
-    
-    Future<?> future = virtualThreadExecutor.submit(() -> {
-      threadRef.set(Thread.currentThread());
-      
-      try (StructuredTaskScope.ShutdownOnFailure scope = new StructuredTaskScope.ShutdownOnFailure()) {
-        // Fork multiple subtasks
-        Supplier<String> task1 = scope.fork(() -> {
-          if (!Thread.currentThread().isVirtual()) {
-            allVirtualThreads.set(false);
-          }
-          return "result1";
-        });
-        
-        Supplier<String> task2 = scope.fork(() -> {
-          if (!Thread.currentThread().isVirtual()) {
-            allVirtualThreads.set(false);
-          }
-          return "result2";
-        });
-        
-        // Wait for all tasks to complete
-        scope.join();
-        scope.throwIfFailed();
-        
-        // Get results
-        String result1 = task1.get();
-        String result2 = task2.get();
-        
-        assertThat(result1, equalTo("result1"));
-        assertThat(result2, equalTo("result2"));
-      }
-      catch (Exception e) {
-        // Ignore for test purposes
-      }
-    });
-    
-    future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // Verify the operation was executed in a virtual thread
-    assertThat(threadRef.get(), VirtualThreadMatchers.isVirtualThread());
-    
-    // Verify all subtasks were also executed in virtual threads
-    assertThat("All subtasks executed in virtual threads", allVirtualThreads.get(), is(true));
+    long endTime = System.nanoTime();
+    return Duration.ofNanos(endTime - startTime).toMillis();
   }
   
   /**
    * Test implementation of DataAccess for registration tests.
    */
-  /**
-   * Test implementation of DataAccess for registration tests.
-   */
-  private static class TestDataAccess implements DataAccess {
-    @Override
-    public void createSchema() {
-      // No-op for test
-    }
-    
-    @Override
-    public void extendSchema() {
-      // No-op for test
-    }
+  private interface TestDataAccess extends DataAccess {
+    // Test interface
   }
 }

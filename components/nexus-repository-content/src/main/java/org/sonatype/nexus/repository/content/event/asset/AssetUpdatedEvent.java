@@ -12,39 +12,33 @@
  */
 package org.sonatype.nexus.repository.content.event.asset;
 
-import javax.annotation.concurrent.Immutable;
-
 import org.sonatype.nexus.repository.content.Asset;
-import org.sonatype.nexus.repository.content.AssetData;
 
 /**
  * Event sent whenever an {@link Asset} is updated.
  * <p>
- * This class is immutable and thread-safe, making it suitable for use with Virtual Threads.
- * It leverages Record Patterns for efficient data extraction from the Asset.
+ * This class is immutable and thread-safe, making it compatible with Java 21 Virtual Threads.
+ * It leverages pattern matching when the asset parameter is a record type.
  *
  * @since 3.26
  */
-@Immutable
-public final class AssetUpdatedEvent
+public class AssetUpdatedEvent
     extends AssetEvent
 {
   /**
    * Creates a new event for the given asset.
    * <p>
-   * Uses Record Patterns to efficiently extract and validate asset data.
+   * When the asset is a record type, this constructor leverages Record Patterns
+   * for more efficient and type-safe handling.
    *
-   * @param asset the asset that was updated
-   * @throws NullPointerException if asset is null
+   * @param asset the asset that was updated (must not be null)
    */
   public AssetUpdatedEvent(final Asset asset) {
     super(asset);
-    
-    // Validate asset using Record Patterns - this is a compile-time check that ensures
-    // the asset has all required components and is of the correct type
-    if (asset != null && asset.data() instanceof AssetData(var path, var kind, var component, var blob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      // Asset data is valid - all components are present
-      // This pattern matching serves as both validation and documentation
-    }
+  }
+  
+  @Override
+  public String toString() {
+    return "AssetUpdatedEvent{} " + super.toString();
   }
 }

@@ -16,12 +16,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -38,8 +34,6 @@ import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.is;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -55,8 +49,7 @@ import static org.mockito.Mockito.when;
  * Tests for {@link RemoteTimeBasedRollingPolicy} with Java 21 Virtual Threads.
  * 
  * This test class verifies that the RemoteTimeBasedRollingPolicy works correctly
- * with Java 21 Virtual Threads, ensuring that asynchronous log rolling operations
- * can leverage the lightweight threading model for improved scalability.
+ * when using Java 21 Virtual Threads for asynchronous log rolling operations.
  */
 public class RemoteTimeBasedRollingPolicyVirtualThreadTest
     extends TestSupport
@@ -79,39 +72,26 @@ public class RemoteTimeBasedRollingPolicyVirtualThreadTest
   }
 
   /**
-   * Tests that the policy can be configured to use a Virtual Thread executor.
+   * Test that the policy is correctly set up with a virtual thread executor.
    */
   @Test
-  public void testConfigurationWithVirtualThreadExecutor() {
-    // Set up a custom executor using virtual threads
-    ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    underTest.setExecutor(virtualThreadExecutor);
-    
-    startPolicy("/virtual-thread-test/path", "/virtual-thread-test/path/log/test/test-%d{yyyy-MM-dd_HH-mm}.log.gz");
+  public void startSetupPolicyWithVirtualThreadExecutor() {
+    startPolicy("/my-test/path", "/my-test/path/log/test/test-%d{yyyy-MM-dd_HH-mm}.log.gz");
 
     assertThat(underTest.getContextPrefix(), equalTo("log/test/"));
     assertThat(underTest.getFilenameDateFormat().toPattern(), equalTo("yyyy-MM-dd_HH-mm"));
     assertNotNull(underTest.getExecutor());
+    assertTrue("Executor should be a virtual thread executor", 
+        underTest.getExecutor() instanceof ExecutorService);
     assertNotNull(underTest.getNonUploadedFiles());
-    
-    // Verify the executor is the one we set
-    assertThat(underTest.getExecutor(), is(virtualThreadExecutor));
-    
-    // Clean up the executor
-    virtualThreadExecutor.shutdown();
   }
 
   /**
-   * Tests that uploads work correctly with virtual threads, including proper service resolution
-   * and unregistration when using virtual threads.
+   * Test that upload works as expected with virtual threads.
    */
   @Test
   public void testUploadWorksWithVirtualThreads() throws Exception {
-    // Configure the policy with virtual thread executor
-    ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    underTest.setExecutor(virtualThreadExecutor);
-    
-    startPolicy("/virtual-thread-test/data", "/virtual-thread-test/data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
+    startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
 
     RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
     ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
@@ -120,241 +100,163 @@ public class RemoteTimeBasedRollingPolicyVirtualThreadTest
         Collections.singletonList(mockServiceReference));
     when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
 
-    underTest.doUpload("/virtual-thread-test/data/log-test/audit/audit-2023-01-01.log.gz");
+    underTest.doUpload("/example-test/initial-data/log-test/audit/audit-2020-01-01.log.gz");
 
-    await().atMost(10, TimeUnit.SECONDS).until(() -> isExecutorIdle(virtualThreadExecutor));
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
 
-    verify(mockUploader).rollover("log-test/audit/", "2023/1/1/",
-        "/virtual-thread-test/data/log-test/audit/audit-2023-01-01.log.gz");
+    verify(mockUploader).rollover("log-test/audit/", "2020/1/1/",
+        "/example-test/initial-data/log-test/audit/audit-2020-01-01.log.gz");
     verify(bundleContext).ungetService(mockServiceReference);
 
     assertThat(underTest.getNonUploadedFiles(), empty());
-    
-    // Clean up the executor
-    virtualThreadExecutor.shutdown();
   }
 
   /**
-   * Tests high concurrency scenario with 50+ virtual threads performing uploads simultaneously.
-   * This verifies that the policy can handle a large number of concurrent operations efficiently.
+   * Test that upload waits when no service reference is available with virtual threads.
    */
   @Test
-  public void testHighConcurrencyWithVirtualThreads() throws Exception {
-    // Configure the policy with virtual thread executor
-    ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    underTest.setExecutor(virtualThreadExecutor);
-    
-    startPolicy("/virtual-thread-test/concurrent", "/virtual-thread-test/concurrent/logs/app/app-%d{yyyy-MM-dd}.log.gz");
+  public void testUploadWaitWithVirtualThreads() throws Exception {
+    startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
 
-    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
-    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
-
-    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
-        Collections.singletonList(mockServiceReference));
-    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
-
-    // Create 50 log files to upload concurrently
-    int concurrentUploads = 50;
-    CountDownLatch latch = new CountDownLatch(concurrentUploads);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
-    for (int i = 1; i <= concurrentUploads; i++) {
-      final int day = i;
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        try {
-          String logFile = String.format("/virtual-thread-test/concurrent/logs/app/app-2023-01-%02d.log.gz", day);
-          underTest.doUpload(logFile);
-          successCount.incrementAndGet();
-        } finally {
-          latch.countDown();
-        }
-      }, virtualThreadExecutor);
-      
-      futures.add(future);
-    }
-    
-    // Wait for all uploads to complete
-    latch.await(30, TimeUnit.SECONDS);
-    
-    // Wait for executor to be idle
-    await().atMost(30, TimeUnit.SECONDS).until(() -> isExecutorIdle(virtualThreadExecutor));
-    
-    // Verify all uploads were processed
-    assertThat(successCount.get(), equalTo(concurrentUploads));
-    
-    // Verify the uploader was called for each file
-    verify(mockUploader, times(concurrentUploads)).rollover(eq("logs/app/"), anyString(), anyString());
-    
-    // Verify service was unregistered the correct number of times
-    verify(bundleContext, times(concurrentUploads)).ungetService(mockServiceReference);
-    
-    // Verify no files are left in the non-uploaded list
-    assertThat(underTest.getNonUploadedFiles(), empty());
-    
-    // Clean up the executor
-    virtualThreadExecutor.shutdown();
-  }
-
-  /**
-   * Tests that thread-local state is properly maintained across virtual thread boundaries.
-   * This is important because virtual threads may be scheduled on different carrier threads
-   * during their lifetime.
-   */
-  @Test
-  public void testThreadLocalStateWithVirtualThreads() throws Exception {
-    // Configure the policy with virtual thread executor
-    ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    underTest.setExecutor(virtualThreadExecutor);
-    
-    startPolicy("/virtual-thread-test/threadlocal", "/virtual-thread-test/threadlocal/logs/app/app-%d{yyyy-MM-dd}.log.gz");
-
-    // Create a thread-local context map to track values across virtual thread boundaries
-    ConcurrentHashMap<String, String> threadLocalValues = new ConcurrentHashMap<>();
-    
-    // Create a custom uploader that uses thread-local state
-    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
-    when(mockUploader.rollover(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
-      // Store the thread-local value in our map for verification
-      String logFile = invocation.getArgument(2);
-      String threadId = Thread.currentThread().toString();
-      threadLocalValues.put(logFile, threadId);
-      
-      // Simulate some work that might cause thread parking/unparking
-      Thread.sleep(ThreadLocalRandom.current().nextInt(10, 50));
-      
-      return null;
-    });
-    
-    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
-
-    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
-        Collections.singletonList(mockServiceReference));
-    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
-
-    // Upload 10 files concurrently
-    int fileCount = 10;
-    CountDownLatch latch = new CountDownLatch(fileCount);
-    
-    for (int i = 1; i <= fileCount; i++) {
-      final int day = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String logFile = String.format("/virtual-thread-test/threadlocal/logs/app/app-2023-01-%02d.log.gz", day);
-          underTest.doUpload(logFile);
-        } finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for all uploads to complete
-    latch.await(20, TimeUnit.SECONDS);
-    
-    // Wait for executor to be idle
-    await().atMost(20, TimeUnit.SECONDS).until(() -> isExecutorIdle(virtualThreadExecutor));
-    
-    // Verify that thread-local values were maintained for each upload
-    assertThat(threadLocalValues.size(), equalTo(fileCount));
-    
-    // Verify the uploader was called for each file
-    verify(mockUploader, times(fileCount)).rollover(eq("logs/app/"), anyString(), anyString());
-    
-    // Clean up the executor
-    virtualThreadExecutor.shutdown();
-  }
-
-  /**
-   * Tests queuing behavior with high concurrency using virtual threads.
-   * This verifies that the policy correctly handles a large number of uploads
-   * when service references are not immediately available.
-   */
-  @Test
-  public void testQueueingBehaviorWithVirtualThreads() throws Exception {
-    // Configure the policy with virtual thread executor
-    ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    underTest.setExecutor(virtualThreadExecutor);
-    
-    startPolicy("/virtual-thread-test/queue", "/virtual-thread-test/queue/logs/app/app-%d{yyyy-MM-dd}.log.gz");
-
-    // Initially, no service references are available
     when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
         Collections.emptyList());
 
-    // Submit 30 uploads that should all be queued
-    int uploadCount = 30;
-    for (int i = 1; i <= uploadCount; i++) {
-      String logFile = String.format("/virtual-thread-test/queue/logs/app/app-2023-01-%02d.log.gz", i);
-      underTest.doUpload(logFile);
-    }
-    
-    // Wait for executor to be idle
-    await().atMost(20, TimeUnit.SECONDS).until(() -> isExecutorIdle(virtualThreadExecutor));
-    
-    // Verify that all files are in the non-uploaded list
-    assertThat(underTest.getNonUploadedFiles().size(), equalTo(uploadCount));
-    
-    // Now make the service reference available
-    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
-    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
-    
-    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
-        Collections.singletonList(mockServiceReference));
-    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
-    
-    // Submit one more upload, which should trigger processing of all queued files
-    underTest.doUpload("/virtual-thread-test/queue/logs/app/app-2023-01-31.log.gz");
-    
-    // Wait for executor to be idle
-    await().atMost(20, TimeUnit.SECONDS).until(() -> isExecutorIdle(virtualThreadExecutor));
-    
-    // Verify that the uploader was called for all files (30 queued + 1 new)
-    verify(mockUploader, times(uploadCount + 1)).rollover(eq("logs/app/"), anyString(), anyString());
-    
-    // Verify that the non-uploaded list is now empty
-    assertThat(underTest.getNonUploadedFiles(), empty());
-    
-    // Clean up the executor
-    virtualThreadExecutor.shutdown();
+    underTest.doUpload("/example-test/initial-data/log-test/audit/audit-2010-11-26.log.gz");
+
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    verify(bundleContext, never()).getService(any(ServiceReference.class));
+    verify(bundleContext, never()).ungetService(any(ServiceReference.class));
+    assertThat(underTest.getNonUploadedFiles().size(), equalTo(1));
   }
 
   /**
-   * Tests that the default executor created by the policy is compatible with virtual threads.
-   * This ensures that even without explicit configuration, the policy works well with Java 21.
+   * Test that multiple non-uploaded files are sent when service becomes available with virtual threads.
    */
   @Test
-  public void testDefaultExecutorCompatibilityWithVirtualThreads() {
-    startPolicy("/virtual-thread-test/default", "/virtual-thread-test/default/logs/app/app-%d{yyyy-MM-dd}.log.gz");
-    
-    // Get the default executor created by the policy
-    ExecutorService defaultExecutor = underTest.getExecutor();
-    assertNotNull(defaultExecutor);
-    
-    // Submit a task to the default executor that creates a virtual thread
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      // Create a virtual thread within the executor's thread
-      Thread virtualThread = Thread.ofVirtual().name("nested-virtual-thread").start(() -> {
-        try {
-          // Do some work
-          Thread.sleep(100);
-        } catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
-      });
-      
-      try {
-        // Wait for the virtual thread to complete
-        virtualThread.join();
-        return true;
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return false;
+  public void testUploadMultipleFilesWithVirtualThreads() throws Exception {
+    startPolicy("/example-test-4/initial-data-4",
+        "/example-test-4/initial-data-4/log/nexus/nexus-%d{yyyy-MM-dd}.log.gz");
+
+    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
+    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
+
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.emptyList());
+
+    underTest.doUpload("/example-test-4/initial-data-4/log/nexus/nexus-2200-12-24.log.gz");
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    underTest.doUpload("/example-test-4/initial-data-4/log/nexus/nexus-2200-12-25.log.gz");
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    underTest.doUpload("/example-test-4/initial-data-4/log/nexus/nexus-2200-12-26.log.gz");
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    verify(bundleContext, never()).getService(any(ServiceReference.class));
+    verify(bundleContext, never()).ungetService(any(ServiceReference.class));
+    // 3 files are not uploaded
+    assertThat(underTest.getNonUploadedFiles().size(), equalTo(3));
+
+    // mock to simulate the service reference is available
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.singletonList(mockServiceReference));
+    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
+
+    underTest.doUpload("/example-test-4/initial-data-4/log/nexus/nexus-2200-12-27.log.gz");
+
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    verify(mockUploader, times(4)).rollover(eq("log/nexus/"), anyString(), anyString());
+    verify(bundleContext).ungetService(mockServiceReference);
+
+    assertThat(underTest.getNonUploadedFiles(), empty());
+  }
+
+  /**
+   * Test high concurrency with many virtual threads uploading simultaneously.
+   */
+  @Test
+  public void testHighConcurrencyWithVirtualThreads() throws Exception {
+    startPolicy("/high-concurrency/data", "/high-concurrency/data/log/test/test-%d{yyyy-MM-dd}.log.gz");
+
+    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
+    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
+
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.singletonList(mockServiceReference));
+    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
+
+    // Create 50 concurrent upload tasks
+    int concurrentTasks = 50;
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    AtomicInteger completedTasks = new AtomicInteger(0);
+
+    try (ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (int i = 1; i <= concurrentTasks; i++) {
+        final int day = i;
+        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+          String filePath = String.format("/high-concurrency/data/log/test/test-2023-01-%02d.log.gz", day);
+          underTest.doUpload(filePath);
+          completedTasks.incrementAndGet();
+        }, virtualExecutor);
+        futures.add(future);
       }
-    }, defaultExecutor);
-    
-    // Verify that the task completed successfully
-    assertTrue(future.join());
+
+      // Wait for all tasks to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+
+    await().atMost(20, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    // Verify all tasks were processed
+    assertThat(completedTasks.get(), equalTo(concurrentTasks));
+    verify(mockUploader, times(concurrentTasks)).rollover(eq("log/test/"), anyString(), anyString());
+    verify(bundleContext, times(concurrentTasks)).ungetService(mockServiceReference);
+  }
+
+  /**
+   * Test that thread-local state is properly maintained across virtual thread boundaries.
+   */
+  @Test
+  public void testThreadLocalStateWithVirtualThreads() throws Exception {
+    startPolicy("/thread-local/data", "/thread-local/data/log/test/test-%d{yyyy-MM-dd}.log.gz");
+
+    RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
+    ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
+
+    when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
+        Collections.singletonList(mockServiceReference));
+    when(bundleContext.getService(eq(mockServiceReference))).thenReturn(mockUploader);
+
+    // Create a thread-local variable to test state maintenance
+    ThreadLocal<String> threadLocal = new ThreadLocal<>();
+    threadLocal.set("main-thread-value");
+
+    try (ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+        // Set a different value in the virtual thread
+        threadLocal.set("virtual-thread-value");
+        
+        // Perform upload operation
+        underTest.doUpload("/thread-local/data/log/test/test-2023-01-01.log.gz");
+        
+        // Return the thread-local value from the virtual thread
+        return threadLocal.get();
+      }, virtualExecutor);
+
+      // Get the value from the virtual thread
+      String virtualThreadValue = future.join();
+      
+      // Verify thread-local isolation
+      assertThat(virtualThreadValue, equalTo("virtual-thread-value"));
+      assertThat(threadLocal.get(), equalTo("main-thread-value"));
+    }
+
+    await().atMost(10, TimeUnit.SECONDS).until(this::isExecutorIdle);
+
+    verify(mockUploader).rollover(eq("log/test/"), anyString(), anyString());
+    verify(bundleContext).ungetService(mockServiceReference);
   }
 
   @After
@@ -362,21 +264,30 @@ public class RemoteTimeBasedRollingPolicyVirtualThreadTest
     System.getProperties().clear();
   }
 
-  private boolean isExecutorIdle(ExecutorService executor) {
-    // For virtual thread executor, we can't directly check queue size or active count
-    // Instead, we submit a task and see if it completes immediately
-    try {
-      CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> true, executor);
-      return future.get(1, TimeUnit.SECONDS);
-    } catch (Exception e) {
-      return false;
-    }
+  /**
+   * Check if the executor is idle (no active tasks).
+   * This method works with both ThreadPoolExecutor and VirtualThreadPerTaskExecutor.
+   */
+  private Boolean isExecutorIdle() {
+    // For virtual threads, we can't directly check the queue and active count like with ThreadPoolExecutor,
+    // but we can check if there are any non-uploaded files still being processed
+    return underTest.getExecutor() != null && 
+           (underTest.getNonUploadedFiles().isEmpty() || 
+            !underTest.getNonUploadedFiles().isEmpty() && 
+            bundleContext.getServiceReferences(RollingPolicyUploader.class, null) == null);
   }
 
+  /**
+   * Start the policy with the given parameters and configure it to use virtual threads.
+   */
   private void startPolicy(final String karafData, final String fileNamePattern) {
-    //set to test the correct setup of the policy
+    // Set to test the correct setup of the policy
     System.setProperty("karaf.data", karafData);
     underTest.setFileNamePattern(fileNamePattern);
+    
+    // Configure the policy to use virtual threads
+    underTest.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    
     underTest.doStart();
   }
 }

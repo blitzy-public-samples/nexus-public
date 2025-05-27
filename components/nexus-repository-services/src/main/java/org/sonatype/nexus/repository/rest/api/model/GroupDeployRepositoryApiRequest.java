@@ -12,83 +12,40 @@
  */
 package org.sonatype.nexus.repository.rest.api.model;
 
-import java.util.Collection;
-import jakarta.annotation.Nullable;
-
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * REST API model for group deploy repository requests.
- * 
+ * REST API model for group repository requests with deployment capabilities.
+ *
  * @since 3.28
  */
 @JsonIgnoreProperties({"type"})
 public class GroupDeployRepositoryApiRequest
     extends GroupRepositoryApiRequest
 {
-  /**
-   * Creates a new GroupDeployRepositoryApiRequest.
-   *
-   * @param name the repository name
-   * @param format the repository format
-   * @param online whether the repository is online
-   * @param storage the storage attributes
-   * @param group the group deploy attributes
-   */
   public GroupDeployRepositoryApiRequest(
       @JsonProperty("name") final String name,
       @JsonProperty("format") final String format,
       @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final StorageAttributes storage,
-      @JsonProperty("group") final GroupDeployAttributes group)
+      @JsonProperty("storage") final Object storage,
+      @JsonProperty("group") final Object group)
   {
     super(name, format, online, storage, group);
   }
 
-  /**
-   * Returns the group deploy attributes for this repository.
-   *
-   * @return the group deploy attributes record
-   */
   @Override
-  public GroupDeployAttributes getGroup() {
-    return (GroupDeployAttributes) super.getGroup();
-  }
-  
-  /**
-   * Extracts the writable member from the group deploy attributes using record pattern matching.
-   * 
-   * @return the writable member name or null if not set
-   */
-  @Nullable
-  public String getWritableMember() {
-    if (getGroup() instanceof GroupDeployAttributes(var memberNames, var writableMember)) {
-      return writableMember;
-    }
-    return null;
-  }
-  
-  /**
-   * Extracts the member names from the group deploy attributes using record pattern matching.
-   * 
-   * @return the collection of member names
-   */
-  public Collection<String> getMemberNames() {
-    if (getGroup() instanceof GroupDeployAttributes(var memberNames, var _)) {
-      return memberNames;
-    }
-    return getGroup().getMemberNames();
-  }
-  
-  /**
-   * Checks if this repository has a specific writable member using record pattern matching.
-   * 
-   * @param memberName the member name to check
-   * @return true if this repository has the specified writable member
-   */
-  public boolean hasWritableMember(String memberName) {
-    return getGroup() instanceof GroupDeployAttributes(var _, var writableMember) && 
-           memberName.equals(writableMember);
+  public GroupDeployAttributesRecord getGroup() {
+    // Use pattern matching to handle the group object appropriately
+    return switch (super.getGroup()) {
+      case GroupDeployAttributesRecord record -> record;
+      case GroupAttributesRecord record -> {
+        // If it's a regular GroupAttributesRecord, we need to convert it to a GroupDeployAttributesRecord
+        // with a null writableMember
+        yield new GroupDeployAttributesRecord(record.memberNames(), null);
+      }
+      default -> throw new IllegalArgumentException("Invalid group attributes type: " + 
+          super.getGroup().getClass().getName());
+    };
   }
 }

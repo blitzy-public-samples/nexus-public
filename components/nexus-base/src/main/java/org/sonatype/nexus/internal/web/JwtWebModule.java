@@ -12,11 +12,10 @@
  */
 package org.sonatype.nexus.internal.web;
 
-import jakarta.inject.Named;
+import javax.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.internal.metrics.JwtMetricsModule;
-
 import com.google.inject.Binder;
 
 import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
@@ -34,9 +33,14 @@ import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 public class JwtWebModule
     extends WebModule
 {
+  /**
+   * Installs the JWT metrics module which is compatible with Java 21 Virtual Threads.
+   * The metrics collection will work efficiently with both platform threads and virtual threads.
+   * 
+   * @param highPriorityBinder the binder to use for installing the metrics module
+   */
   @Override
   protected void installMetricsModule(final Binder highPriorityBinder) {
-    // Install JWT metrics module with support for Java 21 Virtual Threads
     highPriorityBinder.install(new JwtMetricsModule());
   }
 }

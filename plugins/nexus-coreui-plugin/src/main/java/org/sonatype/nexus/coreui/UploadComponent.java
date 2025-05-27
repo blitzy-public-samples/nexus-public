@@ -32,7 +32,11 @@ import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
+
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -56,24 +60,22 @@ public class UploadComponent
     this.configuration = checkNotNull(configuration);
   }
 
-  /**
-   * Retrieves upload definitions that are available for UI upload.
-   * 
-   * This method uses a Virtual Thread for execution as it involves I/O operations
-   * when retrieving definitions from the upload service.
-   *
-   * @return Collection of upload definitions available for UI upload
-   */
   @DirectMethod
   @Timed
   @ExceptionMetered
+  @RequiresPermissions("nexus:upload:read")
   public Collection<UploadDefinition> getUploadDefinitions() {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        uploadService.getAvailableDefinitions()
-            .stream()
-            .filter(UploadDefinition::isUiUpload)
-            .collect(Collectors.toList()) // NOSONAR
-    ).join();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Collection<UploadDefinition>> future = executor.submit(() -> 
+          uploadService.getAvailableDefinitions()
+              .stream()
+              .filter(UploadDefinition::isUiUpload)
+              .collect(Collectors.toList())); // NOSONAR
+      return future.get();
+    } catch (Exception e) {
+      log.error("Error retrieving upload definitions", e);
+      throw new RuntimeException("Failed to retrieve upload definitions", e);
+    }
   }
 
   @Override

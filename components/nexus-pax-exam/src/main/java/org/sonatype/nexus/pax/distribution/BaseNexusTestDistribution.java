@@ -12,17 +12,34 @@
  */
 package org.sonatype.nexus.pax.distribution;
 
-import static org.ops4j.pax.exam.CoreOptions.composite;
-import static org.ops4j.pax.exam.CoreOptions.mavenBundle;
-import static org.ops4j.pax.exam.CoreOptions.propagateSystemProperty;
-import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
-import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFileExtend;
-import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.features;
+import java.io.File;
+import java.net.URI;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.ops4j.pax.exam.Option;
+import org.ops4j.pax.exam.options.MavenUrlReference;
+import org.sonatype.nexus.pax.exam.NexusPaxExamSupport;
+import org.sonatype.nexus.pax.exam.TestDatabase;
+
+import static org.ops4j.pax.exam.CoreOptions.composite;
+import static org.ops4j.pax.exam.CoreOptions.maven;
+import static org.ops4j.pax.exam.CoreOptions.mavenBundle;
+import static org.ops4j.pax.exam.CoreOptions.propagateSystemProperty;
+import static org.ops4j.pax.exam.CoreOptions.systemProperty;
+import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFile;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFileExtend;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFilePut;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.features;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.replaceConfigurationFile;
+import static org.sonatype.nexus.pax.exam.NexusPaxExamSupport.NEXUS_PAX_EXAM_TIMEOUT_KEY;
+import static org.sonatype.nexus.pax.exam.NexusPaxExamSupport.NEXUS_PAX_EXAM_TIMEOUT_DEFAULT;
+import static org.sonatype.nexus.pax.exam.NexusPaxExamSupport.resolveBaseFile;
 
 /**
- * Base implementation of {@link NexusTestDistribution} that provides core Nexus functionality.
+ * Base {@link NexusTestDistribution} implementation.
  *
  * @since 3.0
  */
@@ -30,41 +47,47 @@ public class BaseNexusTestDistribution
     implements NexusTestDistribution
 {
   @Override
-  public int priority(final TestDatabase database, final Distribution distribution) {
-    return distribution == Distribution.BASE ? 0 : -1;
+  public int priority(final TestDatabase database, final Distribution variant) {
+    return variant == Distribution.BASE ? 0 : -1;
   }
 
   @Override
-  public Option[] distribution(final Distribution distribution) {
-    return new Option[] {
-        // Configure Nexus for testing
-        configureNexus(),
-        
-        // Provision core bundles
-        mavenBundle("org.sonatype.nexus", "nexus-base-template"),
-        
-        // Edit configuration files
-        editConfigurationFileExtend("etc/system.properties", "nexus.loadAsOSS", "true"),
-        
-        // Install features
-        features("mvn:org.sonatype.nexus/nexus-repository-content-testsupport/*/xml/features"),
-        features("mvn:org.sonatype.nexus/nexus-repository-testsupport/*/xml/features"),
-        
-        // Enable Virtual Thread support in tests
-        propagateSystemProperty("test.virtual.threads"),
-        
-        // Apply Java 21 compatible VM options
-        javaVMCompositeOption()
-    };
-  }
-  
-  @Override
-  public Option javaVMCompositeOption() {
-    return composite(
-        // Java 21 specific VM options
-        propagateSystemProperty("java.version"),
-        propagateSystemProperty("java.vm.version"),
-        propagateSystemProperty("java.vm.vendor")
-    );
+  public Option[] distribution(final Distribution variant) {
+    List<Option> options = new ArrayList<>();
+
+    // add standard configuration
+    options.add(configureNexus());
+
+    // add common distribution options
+    options.add(systemProperty("nexus-base-template", resolveBaseFile("target/nexus-base-template").getAbsolutePath()));
+
+    // add nexus-base-template bundle
+    options.add(mavenBundle("org.sonatype.nexus.assemblies", "nexus-base-template").versionAsInProject().type("zip"));
+
+    // add repository content and repository test-support features
+    MavenUrlReference nexusFeatures = maven("org.sonatype.nexus.assemblies", "nexus-base-template")
+        .versionAsInProject().classifier("features").type("xml");
+    options.add(features(nexusFeatures, "nexus-repository-content", "nexus-repository-test-support"));
+
+    // add test-specific configuration
+    options.add(editConfigurationFileExtend("etc/nexus-default.properties", "nexus.loadAsOSS", "true"));
+    options.add(editConfigurationFileExtend("etc/nexus-default.properties", "nexus.security.randompassword", "false"));
+    options.add(editConfigurationFileExtend("etc/nexus-default.properties", "nexus.scripts.allowCreation", "true"));
+    options.add(editConfigurationFileExtend("etc/nexus-default.properties", "nexus.onboarding.enabled", "false"));
+    options.add(editConfigurationFileExtend("etc/nexus-default.properties", "nexus.react.enabled", "false"));
+
+    // add PAX-EXAM configuration
+    options.add(systemProperty(NEXUS_PAX_EXAM_TIMEOUT_KEY).value(NEXUS_PAX_EXAM_TIMEOUT_DEFAULT));
+
+    // add JVM options
+    options.add(NexusPaxExamSupport.javaVMOption());
+    
+    // add propagation of test.virtual.threads system property to enable Virtual Thread support in tests
+    options.add(propagateSystemProperty("test.virtual.threads"));
+    
+    // ensure javaVMCompositeOption() is properly called for Java 21 compatibility
+    options.add(javaVMCompositeOption());
+
+    return options.toArray(new Option[options.size()]);
   }
 }

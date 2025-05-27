@@ -15,7 +15,7 @@ package org.sonatype.nexus.internal.security.model;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -29,7 +29,9 @@ import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 
 /**
  * Write/Read {@link CRole} data to/from a JSON file using Java 21 features.
- * Implements Virtual Threads for I/O operations during export/import.
+ * <p>
+ * Implements Virtual Threads for I/O operations during export/import to improve performance
+ * and scalability when handling large datasets.
  *
  * @since 3.29
  */
@@ -48,62 +50,68 @@ public class RoleExport
 
   /**
    * Export CRole data to a JSON file using Virtual Threads for I/O operations.
-   * 
-   * @param file the file to export to
+   * <p>
+   * This implementation leverages Java 21 Virtual Threads to handle the I/O-bound
+   * export operation without blocking platform threads, allowing for better scalability
+   * when exporting large datasets.
+   *
+   * @param file The file to export data to
    * @throws IOException if an I/O error occurs
    */
   @Override
   public void export(final File file) throws IOException {
-    log.debug("Export CRole data to {} using Virtual Thread", file);
+    log.debug("Export CRole data to {}", file);
     
-    // Use CompletableFuture to run the export operation asynchronously in a virtual thread
+    // Use Virtual Thread for I/O-bound operation
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
     try {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      executor.submit(() -> {
         try {
           List<CRole> roles = configuration.getRoles();
           exportToJson(roles, file);
         } catch (IOException e) {
-          throw new RuntimeException("Error exporting CRole data", e);
+          log.error("Failed to export CRole data to {}: {}", file, e.getMessage(), e);
+          throw new RuntimeException("Failed to export CRole data", e);
         }
-      }, Thread.ofVirtual().name("role-export-").factory());
-      
-      // Wait for the operation to complete
-      future.join();
-    } catch (RuntimeException e) {
-      if (e.getCause() instanceof IOException) {
-        throw (IOException) e.getCause();
-      }
-      throw e;
+        return null;
+      }).get(); // Wait for completion
+    } catch (Exception e) {
+      throw new IOException("Error during CRole export", e);
+    } finally {
+      executor.close();
     }
   }
 
   /**
    * Restore CRole data from a JSON file using Virtual Threads for I/O operations.
-   * 
-   * @param file the file to restore from
+   * <p>
+   * This implementation leverages Java 21 Virtual Threads to handle the I/O-bound
+   * import operation without blocking platform threads, allowing for better scalability
+   * when importing large datasets.
+   *
+   * @param file The file to import data from
    * @throws IOException if an I/O error occurs
    */
   @Override
   public void restore(final File file) throws IOException {
-    log.debug("Restoring CRole data from {} using Virtual Thread", file);
+    log.debug("Restoring CRole data from {}", file);
     
-    // Use CompletableFuture to run the restore operation asynchronously in a virtual thread
+    // Use Virtual Thread for I/O-bound operation
+    var executor = Executors.newVirtualThreadPerTaskExecutor();
     try {
-      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      executor.submit(() -> {
         try {
           importFromJson(file, CRoleData.class).forEach(configuration::addRole);
         } catch (IOException e) {
-          throw new RuntimeException("Error restoring CRole data", e);
+          log.error("Failed to restore CRole data from {}: {}", file, e.getMessage(), e);
+          throw new RuntimeException("Failed to restore CRole data", e);
         }
-      }, Thread.ofVirtual().name("role-restore-").factory());
-      
-      // Wait for the operation to complete
-      future.join();
-    } catch (RuntimeException e) {
-      if (e.getCause() instanceof IOException) {
-        throw (IOException) e.getCause();
-      }
-      throw e;
+        return null;
+      }).get(); // Wait for completion
+    } catch (Exception e) {
+      throw new IOException("Error during CRole import", e);
+    } finally {
+      executor.close();
     }
   }
 }

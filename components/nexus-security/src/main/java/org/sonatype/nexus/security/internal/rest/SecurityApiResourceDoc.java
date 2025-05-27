@@ -14,35 +14,31 @@ package org.sonatype.nexus.security.internal.rest;
 
 import java.util.List;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 
 /**
  * Swagger documentation for {@link SecurityApiResource}
  *
  * @since 3.17
  */
-@Tag(name = "Security management")
+@Api(value = "Security management")
 public interface SecurityApiResourceDoc
 {
   /**
    * Retrieves a list of the available user sources.
-   * <p>
-   * This operation is optimized for Virtual Threads in Java 21, providing improved
-   * concurrency and resource utilization when handling multiple concurrent requests.
-   * </p>
+   * This operation benefits from Java 21 Virtual Threads for improved concurrency and responsiveness,
+   * especially under high load conditions.
    *
    * @return List of available user sources
    */
-  @Operation(
-      summary = "Retrieve a list of the available user sources.",
-      description = "Returns a list of all configured user sources in the system. "
-          + "This operation benefits from Java 21 Virtual Threads for improved concurrency.")
+  @ApiOperation(value = "Retrieve a list of the available user sources.", 
+      notes = "Returns all configured user sources with optimized performance using Java 21 Virtual Threads.")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "200", description = "Successful retrieval of user sources"),
-      @ApiResponse(responseCode = "403", description = NexusSecurityApiConstants.INVALID_PERMISSIONS)
+      @ApiResponse(code = 200, message = "Successfully retrieved list of user sources"),
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   })
   List<ApiUserSource> getUserSources();
 }

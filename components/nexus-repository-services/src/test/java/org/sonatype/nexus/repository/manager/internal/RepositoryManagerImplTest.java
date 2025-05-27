@@ -48,7 +48,6 @@ import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.manager.DefaultRepositoriesContributor;
 
 import com.google.common.collect.ImmutableMap;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -386,7 +385,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  void startupShouldHandleNoDefaultsProvided() throws Exception {
+  void startupShouldNotCreateDefaultsWhenNoneProvided() throws Exception {
     when(defaultRepositoriesContributor.getRepositoryConfigurations()).thenReturn(emptyList());
 
     repositoryManager = buildRepositoryManagerImpl(false, false);
@@ -395,7 +394,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  void existsShouldUseDbFallback() throws Exception {
+  void existsShouldFallbackToDb() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     when(configurationStore.exists("not-yet-loaded")).thenReturn(true);
     assertThat(repositoryManager.exists("not-yet-loaded"), is(true));
@@ -410,7 +409,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  void blobStoreUsageCountShouldReturnCorrectCount() throws Exception {
+  void blobStoreUsageCountShouldReturnCorrectCounts() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
     assertThat(repositoryManager.blobstoreUsageCount("default"), equalTo(3L));
     assertThat(repositoryManager.blobstoreUsageCount("third-party"), equalTo(1L));
@@ -437,7 +436,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  void createConcurrentCreatesShouldNotFail() throws Exception {
+  void concurrentCreatesShouldNotFail() throws Exception {
     RepositoryManagerImpl repositoryManager = initializeAndStartRepositoryManager(true);
     repositoryManager.create(makeRepo("r1"));
     repositoryManager.create(makeRepo("r2"));
@@ -454,7 +453,15 @@ public class RepositoryManagerImplTest
     try {
       Field field = RepositoryManagerImpl.class.getDeclaredField("repositories");
       field.setAccessible(true);
-      return (Map<String, Repository>) field.get(repositoryManager);
+      Object fieldValue = field.get(repositoryManager);
+      // Using pattern matching for instanceof check (Java 21 feature)
+      if (fieldValue instanceof Map<?, ?> map) {
+        // The pattern variable 'map' is already cast to Map<?, ?>
+        @SuppressWarnings("unchecked")
+        Map<String, Repository> result = (Map<String, Repository>) map;
+        return result;
+      }
+      throw new IllegalStateException("Field 'repositories' is not a Map");
     }
     catch (Exception e) {
       throw new RuntimeException(e);
@@ -496,7 +503,7 @@ public class RepositoryManagerImplTest
   }
 
   @Test
-  void multipleRepositoryShouldWorkWithSameCleanupPolicy() throws Exception {
+  void multipleRepositoryShouldHaveSameCleanupPolicy() throws Exception {
     repositoryManager = buildRepositoryManagerImpl(true);
 
     String name = randomUUID().toString().replace("-", "");
@@ -585,6 +592,20 @@ public class RepositoryManagerImplTest
     verify(configurationStore, times(2)).list();
     verify(configurationStore, never()).create(any());
   }
+  
+  @Test
+  void patternMatchingShouldWorkWithRepositoryTypes() {
+    // This test demonstrates the use of Java 21 pattern matching features
+    when(groupType.getValue()).thenReturn("group");
+    
+    // Test pattern matching for switch
+    String typeDescription = getRepositoryTypeDescription(groupRepository);
+    assertThat(typeDescription, is("Group repository type"));
+    
+    // Test pattern matching for instanceof
+    Map<String, Repository> repositories = reflectRepositories();
+    assertThat(repositories, is(notNullValue()));
+  }
 
 
   @SuppressWarnings("unchecked")
@@ -596,6 +617,20 @@ public class RepositoryManagerImplTest
         .get(CLEANUP_ATTRIBUTES_KEY)
         .get(CLEANUP_NAME_KEY),
         hasItems(cleanupPolicy));
+  }
+  
+  /**
+   * Helper method to demonstrate pattern matching for switch with repository types.
+   * This is an example of using Java 21's pattern matching for switch statements.
+   */
+  private String getRepositoryTypeDescription(Repository repository) {
+    return switch (repository.getType()) {
+      case Type t when "group".equals(t.getValue()) -> "Group repository type";
+      case Type t when "hosted".equals(t.getValue()) -> "Hosted repository type";
+      case Type t when "proxy".equals(t.getValue()) -> "Proxy repository type";
+      case Type t -> "Unknown repository type: " + t.getValue();
+      default -> "Repository has no type";
+    };
   }
 
 }

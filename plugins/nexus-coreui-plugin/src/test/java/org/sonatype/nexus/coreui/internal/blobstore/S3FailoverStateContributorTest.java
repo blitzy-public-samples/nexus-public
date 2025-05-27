@@ -27,11 +27,8 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link S3FailoverStateContributor} with Java 21 and JUnit Jupiter.
- */
 @ExtendWith(MockitoExtension.class)
-class S3FailoverStateContributorTest
+public class S3FailoverStateContributorTest
     extends TestSupport
 {
   @Mock
@@ -40,14 +37,14 @@ class S3FailoverStateContributorTest
   private S3FailoverStateContributor underTest;
 
   @Test
-  void failoverAvailableNotZdu() {
+  void failoverShouldBeAvailableWhenNotZdu() {
     underTest = new S3FailoverStateContributor(databaseCheck, false);
     assertThat(underTest.getState(), hasEntry("S3FailoverEnabled", true));
     verifyNoInteractions(databaseCheck);
   }
 
   @Test
-  void failoverNotAvailableZduAndNotInVersion() {
+  void failoverShouldNotBeAvailableWhenZduAndNotInVersion() {
     when(databaseCheck.isAtLeast("2.6")).thenReturn(false);
     underTest = new S3FailoverStateContributor(databaseCheck, true);
     assertThat(underTest.getState(), hasEntry("S3FailoverEnabled", false));
@@ -56,7 +53,7 @@ class S3FailoverStateContributorTest
   }
 
   @Test
-  void failoverAvailableZduAndMinimumVersion() {
+  void failoverShouldBeAvailableWhenZduAndMinimumVersion() {
     when(databaseCheck.isAtLeast("2.6")).thenReturn(true);
     underTest = new S3FailoverStateContributor(databaseCheck, true);
     assertThat(underTest.getState(), hasEntry("S3FailoverEnabled", true));

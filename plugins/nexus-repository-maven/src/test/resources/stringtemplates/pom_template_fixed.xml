@@ -1,0 +1,86 @@
+<!--
+
+    Sonatype Nexus (TM) Open Source Version
+    Copyright (c) 2008-present Sonatype, Inc.
+    All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+    This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+    which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+    Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+    of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+    Eclipse Foundation. All other trademarks are the property of their respective owners.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Parent POM information with String Template placeholders -->
+  <parent>
+    <groupId>\{parentGroupId}</groupId>
+    <artifactId>\{parentArtifactId}</artifactId>
+    <version>\{parentVersion}</version>
+  </parent>
+
+  <!-- Artifact coordinates with String Template placeholders -->
+  <groupId>\{groupId}</groupId>
+  <artifactId>\{artifactId}</artifactId>
+  <version>\{version}</version>
+  <packaging>\{packaging}</packaging>
+  
+  <name>\{name}</name>
+  <description>\{description}</description>
+
+  <!-- Properties section with String Template placeholders -->
+  <properties>
+    <java.version>\{javaVersion}</java.version>
+    <project.build.sourceEncoding>\{encoding}</project.build.sourceEncoding>
+    <maven.compiler.source>\{compilerSource}</maven.compiler.source>
+    <maven.compiler.target>\{compilerTarget}</maven.compiler.target>
+  </properties>
+
+  <!-- Dependencies section with String Template placeholders -->
+  <dependencies>
+    <!-- Template for a dependency -->
+    <dependency>
+      <groupId>\{dependencyGroupId}</groupId>
+      <artifactId>\{dependencyArtifactId}</artifactId>
+      <version>\{dependencyVersion}</version>
+      <scope>\{dependencyScope}</scope>
+    </dependency>
+    
+    <!-- Template for multiple dependencies using String Templates -->
+    \{additionalDependencies}
+  </dependencies>
+
+  <!-- Build section with String Template placeholders -->
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>\{pluginGroupId}</groupId>
+        <artifactId>\{pluginArtifactId}</artifactId>
+        <version>\{pluginVersion}</version>
+        <configuration>
+          \{pluginConfiguration}
+        </configuration>
+      </plugin>
+      
+      <!-- Template for multiple plugins using String Templates -->
+      \{additionalPlugins}
+    </plugins>
+  </build>
+
+  <!-- Repositories section with String Template placeholders -->
+  <repositories>
+    <repository>
+      <id>\{repositoryId}</id>
+      <name>\{repositoryName}</name>
+      <url>\{repositoryUrl}</url>
+    </repository>
+    
+    <!-- Template for multiple repositories using String Templates -->
+    \{additionalRepositories}
+  </repositories>
+</project>

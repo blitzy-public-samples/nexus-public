@@ -16,38 +16,35 @@ import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.common.entity.ContinuationAware;
 
 /**
- * Record for asset reconciliation data, leveraging Java 21 record patterns for efficient data encapsulation.
- * 
- * @since 3.20
+ * Record for asset reconciliation data that encapsulates information needed for blob reconciliation.
+ * Implements {@link ContinuationAware} to support pagination in queries.
+ *
+ * @since 3.21
  */
-public record AssetReconcileData(BlobRef blobRef, String repository, String path, Integer assetBlobId)
-    implements ContinuationAware
+public record AssetReconcileData(
+    BlobRef blobRef,
+    String repository,
+    String path,
+    Integer assetBlobId
+) implements ContinuationAware
 {
   /**
-   * Creates a continuation token using Java 21 String Templates for improved token generation.
-   * 
-   * @return the token to use when requesting the next set of results
+   * Returns the continuation token for pagination, using the assetBlobId as the token.
+   * Leverages Java 21 String templates for more efficient string handling.
+   *
+   * @return the continuation token as a string
    */
   @Override
   public String nextContinuationToken() {
-    return STR."asset_blob_\{assetBlobId}";
+    return STR."{assetBlobId}";
   }
   
   /**
-   * Pattern matching utility method to extract the asset blob ID from a token.
-   * 
-   * @param token the continuation token
-   * @return the extracted asset blob ID, or null if the token doesn't match the expected pattern
+   * Factory method to create an instance with null values, useful for MyBatis.
+   *
+   * @return a new instance with null values
    */
-  public static Integer extractAssetBlobId(String token) {
-    if (token != null && token.startsWith("asset_blob_")) {
-      try {
-        return Integer.parseInt(token.substring(11));
-      }
-      catch (NumberFormatException e) {
-        return null;
-      }
-    }
-    return null;
+  public static AssetReconcileData empty() {
+    return new AssetReconcileData(null, null, null, null);
   }
 }

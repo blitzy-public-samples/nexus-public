@@ -1,0 +1,144 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Test data for Java 21 Record Pattern matching",
+    "created": "2023-09-19T10:15:30Z"
+  },
+  "person": {
+    "id": 1001,
+    "name": "John Doe",
+    "email": "john.doe@example.com",
+    "active": true,
+    "address": {
+      "street": "123 Main Street",
+      "city": "Springfield",
+      "state": "IL",
+      "zipCode": "62701",
+      "coordinates": {
+        "latitude": 39.78373,
+        "longitude": -89.65031,
+        "elevation": 170.5
+      }
+    },
+    "phoneNumbers": [
+      {
+        "type": "HOME",
+        "number": "555-123-4567",
+        "verified": true
+      },
+      {
+        "type": "WORK",
+        "number": "555-987-6543",
+        "verified": false
+      }
+    ]
+  },
+  "repository": {
+    "name": "maven-central",
+    "type": "proxy",
+    "online": true,
+    "storage": {
+      "blobStoreName": "default",
+      "strictContentTypeValidation": true,
+      "writePolicy": "ALLOW",
+      "metrics": {
+        "totalSize": 1073741824,
+        "availableSpace": 536870912,
+        "blobCount": 10240
+      }
+    },
+    "cleanup": {
+      "policyNames": ["weekly-cleanup", "monthly-cleanup"],
+      "lastRun": "2023-09-15T00:00:00Z"
+    }
+  },
+  "assets": [
+    {
+      "id": "asset1",
+      "path": "/com/example/app/1.0.0/app-1.0.0.jar",
+      "contentType": "application/java-archive",
+      "size": 1048576,
+      "attributes": {
+        "checksum": {
+          "sha1": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+          "md5": "a1b2c3d4e5f6a1b2c3d4e5f6",
+          "sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        },
+        "lastDownloaded": "2023-09-18T14:30:45Z",
+        "downloadCount": 42
+      }
+    },
+    {
+      "id": "asset2",
+      "path": "/com/example/app/1.0.0/app-1.0.0.pom",
+      "contentType": "application/xml",
+      "size": 2048,
+      "attributes": {
+        "checksum": {
+          "sha1": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+          "md5": "b2c3d4e5f6a1b2c3d4e5f6",
+          "sha256": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3"
+        },
+        "lastDownloaded": "2023-09-18T14:30:40Z",
+        "downloadCount": 37
+      }
+    }
+  ],
+  "configuration": {
+    "security": {
+      "enabled": true,
+      "anonymousAccess": false,
+      "realms": ["default", "docker"],
+      "ssl": {
+        "enabled": true,
+        "protocols": ["TLSv1.2", "TLSv1.3"],
+        "ciphers": ["TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256"],
+        "certificate": {
+          "issuer": "CN=Example CA,O=Example,C=US",
+          "subject": "CN=nexus.example.com",
+          "validFrom": "2023-01-01T00:00:00Z",
+          "validUntil": "2024-01-01T00:00:00Z",
+          "selfSigned": false
+        }
+      }
+    },
+    "network": {
+      "httpPort": 8081,
+      "httpsPort": 8443,
+      "forceBaseUrl": false,
+      "proxy": {
+        "enabled": true,
+        "host": "proxy.example.com",
+        "port": 3128,
+        "authentication": {
+          "required": true,
+          "type": "basic",
+          "domain": "EXAMPLE"
+        },
+        "nonProxyHosts": ["localhost", "127.0.0.1", ".example.com"]
+      }
+    }
+  },
+  "virtualThreads": {
+    "enabled": true,
+    "poolSize": 250,
+    "taskTypes": ["IO_BOUND", "NETWORK_BOUND"],
+    "metrics": {
+      "activeThreads": 12,
+      "completedTasks": 1024,
+      "averageExecutionTime": 45.7,
+      "historyData": [
+        {
+          "timestamp": "2023-09-19T09:00:00Z",
+          "activeThreads": 5,
+          "completedTasks": 256
+        },
+        {
+          "timestamp": "2023-09-19T10:00:00Z",
+          "activeThreads": 12,
+          "completedTasks": 768
+        }
+      ]
+    }
+  }
+}

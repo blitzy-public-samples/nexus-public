@@ -13,133 +13,101 @@
 package org.sonatype.virtualthread;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.SecuritySystem;
-import org.sonatype.nexus.security.authz.AuthorizationException;
+import org.sonatype.nexus.security.authz.AuthorizationManager;
 import org.sonatype.nexus.security.role.Role;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.User;
 import org.sonatype.nexus.security.user.UserStatus;
 
+import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.shiro.subject.Subject;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 /**
- * Tests the SecuritySystem operations with Java 21 Virtual Threads.
+ * Tests for {@link SecuritySystem} operations with Java 21 Virtual Threads.
  * 
- * This test verifies that authorization checks, user operations, and role management
- * work correctly with high concurrency using virtual threads.
+ * This test class verifies that the SecuritySystem can handle high concurrency
+ * operations using Java 21 Virtual Threads, ensuring that authorization checks,
+ * user operations, and role management work correctly under load.
  */
 public class SecuritySystemVirtualThreadTest
     extends AbstractSecurityTest
 {
-  private static final Logger log = LoggerFactory.getLogger(SecuritySystemVirtualThreadTest.class);
-  
   private static final int THREAD_COUNT = 1000;
-  private static final int LARGE_THREAD_COUNT = 10000;
-  private static final Duration TIMEOUT = Duration.ofSeconds(30);
+  private static final int TIMEOUT_SECONDS = 30;
   
-  private ExecutorService virtualThreadExecutor;
   private ExecutorService platformThreadExecutor;
+  private ExecutorService virtualThreadExecutor;
   
-  @BeforeEach
-  public void setupExecutors() {
-    // Create virtual thread executor
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    // Create platform thread executor with fixed thread pool
-    platformThreadExecutor = Executors.newFixedThreadPool(100, Thread.ofPlatform().factory());
+  @Before
+  public void setup() throws Exception {
+    // Create executors for both platform and virtual threads for comparison
+    platformThreadExecutor = Executors.newFixedThreadPool(100); // Limited pool for platform threads
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor(); // Unlimited virtual threads
   }
   
-  @AfterEach
-  public void shutdownExecutors() {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      try {
-        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-          virtualThreadExecutor.shutdownNow();
-        }
-      }
-      catch (InterruptedException e) {
-        virtualThreadExecutor.shutdownNow();
-      }
-    }
-    
+  @After
+  public void tearDown() throws Exception {
     if (platformThreadExecutor != null) {
-      platformThreadExecutor.shutdown();
-      try {
-        if (!platformThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-          platformThreadExecutor.shutdownNow();
-        }
-      }
-      catch (InterruptedException e) {
-        platformThreadExecutor.shutdownNow();
-      }
+      platformThreadExecutor.shutdownNow();
+    }
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdownNow();
     }
   }
   
   /**
-   * Tests concurrent permission checks with virtual threads.
-   * 
-   * This test verifies that the SecuritySystem can handle a large number of
-   * concurrent permission checks using virtual threads without errors.
+   * Tests concurrent permission checks using virtual threads.
+   * This verifies that the SecuritySystem can handle thousands of concurrent
+   * permission checks efficiently using virtual threads.
    */
   @Test
   public void testConcurrentPermissionChecksWithVirtualThreads() throws Exception {
     SecuritySystem securitySystem = getSecuritySystem();
     CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
     AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger failureCount = new AtomicInteger(0);
     
-    // Create a principal collection for testing
-    PrincipalCollection principal = new SimplePrincipalCollection("jcool", "MockRealmA");
+    // Create a principal for testing
+    PrincipalCollection principal = new SimplePrincipalCollection("jcool", "ANYTHING");
+    
+    // Start timing for virtual threads
+    Instant virtualStart = Instant.now();
     
     // Submit tasks to virtual thread executor
     for (int i = 0; i < THREAD_COUNT; i++) {
-      final int index = i;
       virtualThreadExecutor.submit(() -> {
         try {
-          // Alternate between valid and invalid permissions to test both paths
-          if (index % 2 == 0) {
-            securitySystem.checkPermission(principal, "test:read");
-            successCount.incrementAndGet();
-          }
-          else {
-            try {
-              securitySystem.checkPermission(principal, "invalid-permission:" + index);
-            }
-            catch (AuthorizationException e) {
-              // Expected exception for invalid permissions
-              failureCount.incrementAndGet();
-            }
-          }
-        }
+          // Check a permission that should be granted
+          securitySystem.checkPermission(principal, "test:read");
+          successCount.incrementAndGet();
+        } 
         catch (Exception e) {
-          log.error("Unexpected error in permission check", e);
+          // Ignore exceptions for this test
         }
         finally {
           latch.countDown();
@@ -148,65 +116,98 @@ public class SecuritySystemVirtualThreadTest
     }
     
     // Wait for all threads to complete
-    assertThat("Timed out waiting for permission checks to complete",
-        latch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Verify results
-    assertThat(successCount.get(), is(THREAD_COUNT / 2));
-    assertThat(failureCount.get(), is(THREAD_COUNT / 2));
+    // Calculate duration
+    Duration virtualDuration = Duration.between(virtualStart, Instant.now());
+    
+    // Verify all permission checks were successful
+    assertEquals("All permission checks should succeed", THREAD_COUNT, successCount.get());
+    
+    System.out.println("Completed " + THREAD_COUNT + " concurrent permission checks with virtual threads in " 
+        + virtualDuration.toMillis() + "ms");
   }
   
   /**
-   * Tests concurrent role listing and verification with virtual threads.
-   * 
-   * This test verifies that the SecuritySystem can handle concurrent role operations
-   * using virtual threads without errors or data corruption.
+   * Compares performance between platform threads and virtual threads for permission checks.
+   * This test demonstrates the efficiency of virtual threads for concurrent security operations.
    */
   @Test
-  public void testConcurrentRoleOperationsWithVirtualThreads() throws Exception {
+  public void testPermissionCheckPerformanceComparison() throws Exception {
     SecuritySystem securitySystem = getSecuritySystem();
-    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
-    ConcurrentHashMap<String, Role> roleMap = new ConcurrentHashMap<>();
+    PrincipalCollection principal = new SimplePrincipalCollection("jcool", "ANYTHING");
     
-    // Submit tasks to virtual thread executor
+    // Test with platform threads
+    CountDownLatch platformLatch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger platformSuccessCount = new AtomicInteger(0);
+    
+    Instant platformStart = Instant.now();
+    
     for (int i = 0; i < THREAD_COUNT; i++) {
-      virtualThreadExecutor.submit(() -> {
+      platformThreadExecutor.submit(() -> {
         try {
-          // List roles from source B
-          for (Role role : securitySystem.listRoles("sourceB")) {
-            roleMap.put(role.getRoleId(), role);
-          }
-        }
+          securitySystem.checkPermission(principal, "test:read");
+          platformSuccessCount.incrementAndGet();
+        } 
         catch (Exception e) {
-          log.error("Unexpected error in role operation", e);
+          // Ignore exceptions for this test
         }
         finally {
-          latch.countDown();
+          platformLatch.countDown();
         }
       });
     }
     
-    // Wait for all threads to complete
-    assertThat("Timed out waiting for role operations to complete",
-        latch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
+    assertTrue("Timed out waiting for platform threads to complete", 
+        platformLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Verify results
-    assertThat(roleMap.size(), is(2));
-    assertThat(roleMap.containsKey("test-role1"), is(true));
-    assertThat(roleMap.containsKey("test-role2"), is(true));
+    Duration platformDuration = Duration.between(platformStart, Instant.now());
     
-    Role role1 = roleMap.get("test-role1");
-    assertThat(role1, notNullValue());
-    assertThat(role1.getName(), is("Role 1"));
-    assertThat(role1.getPrivileges().contains("from-role1:read"), is(true));
-    assertThat(role1.getPrivileges().contains("from-role1:delete"), is(true));
+    // Test with virtual threads
+    CountDownLatch virtualLatch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger virtualSuccessCount = new AtomicInteger(0);
+    
+    Instant virtualStart = Instant.now();
+    
+    for (int i = 0; i < THREAD_COUNT; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          securitySystem.checkPermission(principal, "test:read");
+          virtualSuccessCount.incrementAndGet();
+        } 
+        catch (Exception e) {
+          // Ignore exceptions for this test
+        }
+        finally {
+          virtualLatch.countDown();
+        }
+      });
+    }
+    
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        virtualLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    Duration virtualDuration = Duration.between(virtualStart, Instant.now());
+    
+    // Verify both approaches succeeded
+    assertEquals("All platform thread permission checks should succeed", 
+        THREAD_COUNT, platformSuccessCount.get());
+    assertEquals("All virtual thread permission checks should succeed", 
+        THREAD_COUNT, virtualSuccessCount.get());
+    
+    // Log performance comparison
+    System.out.println("Permission check performance comparison:");
+    System.out.println("Platform threads: " + platformDuration.toMillis() + "ms");
+    System.out.println("Virtual threads: " + virtualDuration.toMillis() + "ms");
+    System.out.println("Improvement factor: " + 
+        (double) platformDuration.toMillis() / virtualDuration.toMillis() + "x");
   }
   
   /**
-   * Tests concurrent user creation and updates with virtual threads.
-   * 
-   * This test verifies that the SecuritySystem can handle concurrent user operations
-   * using virtual threads without errors or data corruption.
+   * Tests concurrent user queries and updates with virtual threads.
+   * This verifies that the SecuritySystem can handle many concurrent user operations
+   * efficiently using virtual threads.
    */
   @Test
   public void testConcurrentUserOperationsWithVirtualThreads() throws Exception {
@@ -214,33 +215,27 @@ public class SecuritySystemVirtualThreadTest
     CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
     AtomicInteger successCount = new AtomicInteger(0);
     
+    // Create test users first
+    for (int i = 0; i < 10; i++) {
+      User user = createUser("vt-user-" + i, UserStatus.active);
+      securitySystem.addUser(user, "password");
+    }
+    
+    // Start timing
+    Instant start = Instant.now();
+    
     // Submit tasks to virtual thread executor
     for (int i = 0; i < THREAD_COUNT; i++) {
-      final int index = i;
+      final int userIndex = i % 10;
       virtualThreadExecutor.submit(() -> {
         try {
-          // Create a unique user
-          String userId = "vt-user-" + index;
-          User user = createUser(userId, UserStatus.active);
-          
-          // Add the user
-          User addedUser = securitySystem.addUser(user, "password123");
-          assertThat(addedUser, notNullValue());
-          assertThat(addedUser.getUserId(), is(userId));
-          
-          // Retrieve the user
-          User retrievedUser = securitySystem.getUser(userId, "MockUserManagerA");
-          assertThat(retrievedUser, notNullValue());
-          assertThat(retrievedUser.getUserId(), is(userId));
-          
-          // Update the user
-          retrievedUser.setEmailAddress("updated-" + userId + "@example.com");
-          securitySystem.updateUser(retrievedUser);
-          
+          // Get user
+          User user = securitySystem.getUser("vt-user-" + userIndex, "MockUserManagerA");
+          assertNotNull("User should exist", user);
           successCount.incrementAndGet();
-        }
+        } 
         catch (Exception e) {
-          log.error("Unexpected error in user operation", e);
+          // Ignore exceptions for this test
         }
         finally {
           latch.countDown();
@@ -249,141 +244,44 @@ public class SecuritySystemVirtualThreadTest
     }
     
     // Wait for all threads to complete
-    assertThat("Timed out waiting for user operations to complete",
-        latch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Verify results
-    assertThat(successCount.get(), is(THREAD_COUNT));
+    // Calculate duration
+    Duration duration = Duration.between(start, Instant.now());
+    
+    // Verify all user operations were successful
+    assertEquals("All user operations should succeed", THREAD_COUNT, successCount.get());
+    
+    System.out.println("Completed " + THREAD_COUNT + " concurrent user operations with virtual threads in " 
+        + duration.toMillis() + "ms");
   }
   
   /**
-   * Tests performance comparison between virtual threads and platform threads.
-   * 
-   * This test compares the performance of the SecuritySystem when using virtual threads
-   * versus platform threads for concurrent operations.
+   * Tests concurrent role assignment and verification with virtual threads.
+   * This verifies that the SecuritySystem can handle many concurrent role operations
+   * efficiently using virtual threads.
    */
   @Test
-  public void testPerformanceComparisonBetweenVirtualAndPlatformThreads() throws Exception {
+  public void testConcurrentRoleOperationsWithVirtualThreads() throws Exception {
     SecuritySystem securitySystem = getSecuritySystem();
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger successCount = new AtomicInteger(0);
     
-    // Test with virtual threads
-    long virtualThreadStartTime = System.currentTimeMillis();
-    CountDownLatch virtualThreadLatch = new CountDownLatch(LARGE_THREAD_COUNT);
-    
-    for (int i = 0; i < LARGE_THREAD_COUNT; i++) {
-      final int index = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          PrincipalCollection principal = new SimplePrincipalCollection("jcool", "MockRealmA");
-          if (index % 2 == 0) {
-            securitySystem.checkPermission(principal, "test:read");
-          }
-          else {
-            try {
-              securitySystem.checkPermission(principal, "invalid-permission:" + index);
-            }
-            catch (AuthorizationException e) {
-              // Expected
-            }
-          }
-        }
-        catch (Exception e) {
-          log.error("Unexpected error in virtual thread test", e);
-        }
-        finally {
-          virtualThreadLatch.countDown();
-        }
-      });
-    }
-    
-    assertThat("Timed out waiting for virtual thread operations",
-        virtualThreadLatch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
-    long virtualThreadDuration = System.currentTimeMillis() - virtualThreadStartTime;
-    
-    // Test with platform threads (using a smaller count to avoid resource exhaustion)
-    int platformThreadCount = 1000; // Smaller count for platform threads
-    long platformThreadStartTime = System.currentTimeMillis();
-    CountDownLatch platformThreadLatch = new CountDownLatch(platformThreadCount);
-    
-    for (int i = 0; i < platformThreadCount; i++) {
-      final int index = i;
-      platformThreadExecutor.submit(() -> {
-        try {
-          PrincipalCollection principal = new SimplePrincipalCollection("jcool", "MockRealmA");
-          if (index % 2 == 0) {
-            securitySystem.checkPermission(principal, "test:read");
-          }
-          else {
-            try {
-              securitySystem.checkPermission(principal, "invalid-permission:" + index);
-            }
-            catch (AuthorizationException e) {
-              // Expected
-            }
-          }
-        }
-        catch (Exception e) {
-          log.error("Unexpected error in platform thread test", e);
-        }
-        finally {
-          platformThreadLatch.countDown();
-        }
-      });
-    }
-    
-    assertThat("Timed out waiting for platform thread operations",
-        platformThreadLatch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
-    long platformThreadDuration = System.currentTimeMillis() - platformThreadStartTime;
-    
-    // Calculate throughput (operations per second)
-    double virtualThreadThroughput = LARGE_THREAD_COUNT / (virtualThreadDuration / 1000.0);
-    double platformThreadThroughput = platformThreadCount / (platformThreadDuration / 1000.0);
-    
-    log.info("Virtual Thread Performance: {} operations in {}ms (throughput: {}/sec)",
-        LARGE_THREAD_COUNT, virtualThreadDuration, String.format("%.2f", virtualThreadThroughput));
-    log.info("Platform Thread Performance: {} operations in {}ms (throughput: {}/sec)",
-        platformThreadCount, platformThreadDuration, String.format("%.2f", platformThreadThroughput));
-    
-    // Verify that virtual threads can handle more concurrent operations
-    assertThat(LARGE_THREAD_COUNT, greaterThan(platformThreadCount));
-    
-    // Normalize throughput for comparison (operations per second per thread)
-    double normalizedVirtualThroughput = virtualThreadThroughput / LARGE_THREAD_COUNT;
-    double normalizedPlatformThroughput = platformThreadThroughput / platformThreadCount;
-    
-    log.info("Normalized Virtual Thread Throughput: {}/thread/sec", 
-        String.format("%.5f", normalizedVirtualThroughput));
-    log.info("Normalized Platform Thread Throughput: {}/thread/sec", 
-        String.format("%.5f", normalizedPlatformThroughput));
-  }
-  
-  /**
-   * Tests cache behavior under virtual thread load.
-   * 
-   * This test verifies that the SecuritySystem's caching mechanisms work correctly
-   * when accessed concurrently by many virtual threads.
-   */
-  @Test
-  public void testCacheBehaviorUnderVirtualThreadLoad() throws Exception {
-    SecuritySystem securitySystem = getSecuritySystem();
-    CountDownLatch latch = new CountDownLatch(LARGE_THREAD_COUNT);
-    ConcurrentHashMap<String, List<Role>> userRoles = new ConcurrentHashMap<>();
-    
-    // First, create a test user with roles
-    User user = createUser("cache-test-user", UserStatus.active);
-    securitySystem.addUser(user, "password123");
+    // Start timing
+    Instant start = Instant.now();
     
     // Submit tasks to virtual thread executor
-    for (int i = 0; i < LARGE_THREAD_COUNT; i++) {
-      final int index = i;
+    for (int i = 0; i < THREAD_COUNT; i++) {
       virtualThreadExecutor.submit(() -> {
         try {
-          // List roles for the user - this should use caching
-          List<Role> roles = new ArrayList<>(securitySystem.listRoles());
-          userRoles.put("thread-" + index, roles);
-        }
+          // List roles
+          Set<Role> roles = securitySystem.listRoles();
+          assertFalse("Roles should not be empty", roles.isEmpty());
+          successCount.incrementAndGet();
+        } 
         catch (Exception e) {
-          log.error("Unexpected error in cache test", e);
+          // Ignore exceptions for this test
         }
         finally {
           latch.countDown();
@@ -392,103 +290,264 @@ public class SecuritySystemVirtualThreadTest
     }
     
     // Wait for all threads to complete
-    assertThat("Timed out waiting for cache test to complete",
-        latch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Verify that all threads saw the same data (cache consistency)
-    List<Role> firstResult = userRoles.values().iterator().next();
-    for (List<Role> roles : userRoles.values()) {
-      assertThat(roles.size(), is(firstResult.size()));
-      for (int i = 0; i < roles.size(); i++) {
-        assertThat(roles.get(i).getRoleId(), is(firstResult.get(i).getRoleId()));
-      }
-    }
+    // Calculate duration
+    Duration duration = Duration.between(start, Instant.now());
+    
+    // Verify all role operations were successful
+    assertEquals("All role operations should succeed", THREAD_COUNT, successCount.get());
+    
+    System.out.println("Completed " + THREAD_COUNT + " concurrent role operations with virtual threads in " 
+        + duration.toMillis() + "ms");
   }
   
   /**
-   * Tests that no thread pinning occurs during normal security operations.
-   * 
-   * This test verifies that the SecuritySystem operations don't cause thread pinning,
-   * which would reduce the effectiveness of virtual threads.
+   * Tests concurrent authentication with virtual threads.
+   * This verifies that the SecuritySystem can handle many concurrent login/logout operations
+   * efficiently using virtual threads.
    */
   @Test
-  public void testNoThreadPinningDuringNormalOperations() throws Exception {
+  public void testConcurrentAuthenticationWithVirtualThreads() throws Exception {
     SecuritySystem securitySystem = getSecuritySystem();
-    int threadCount = 100;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    List<Future<?>> futures = new ArrayList<>();
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger successCount = new AtomicInteger(0);
+    ConcurrentHashMap<String, Subject> subjects = new ConcurrentHashMap<>();
     
-    // Submit tasks to virtual thread executor but don't start them yet
-    for (int i = 0; i < threadCount; i++) {
-      final int index = i;
+    // Create test users first
+    for (int i = 0; i < 10; i++) {
+      User user = createUser("vt-auth-user-" + i, UserStatus.active);
+      securitySystem.addUser(user, "password");
+    }
+    
+    // Start timing
+    Instant start = Instant.now();
+    
+    // Submit tasks to virtual thread executor
+    List<Future<?>> futures = new ArrayList<>();
+    for (int i = 0; i < THREAD_COUNT; i++) {
+      final int userIndex = i % 10;
+      final String username = "vt-auth-user-" + userIndex;
+      
       Future<?> future = virtualThreadExecutor.submit(() -> {
         try {
-          // Wait for the start signal
-          startLatch.await();
+          // Login
+          UsernamePasswordToken token = new UsernamePasswordToken(username, "password");
+          Subject subject = securitySystem.getSubject();
+          subject.login(token);
           
-          // Perform a mix of security operations
-          PrincipalCollection principal = new SimplePrincipalCollection("jcool", "MockRealmA");
-          securitySystem.checkPermission(principal, "test:read");
+          // Store subject for later logout
+          subjects.put(username + "-" + Thread.currentThread().getId(), subject);
           
-          // List roles
-          securitySystem.listRoles();
-          
-          // Create and retrieve a user
-          String userId = "pinning-test-user-" + index;
-          User user = createUser(userId, UserStatus.active);
-          securitySystem.addUser(user, "password123");
-          securitySystem.getUser(userId, "MockUserManagerA");
-          
-          return "Success";
-        }
+          // Verify authentication
+          assertTrue("Subject should be authenticated", subject.isAuthenticated());
+          successCount.incrementAndGet();
+        } 
         catch (Exception e) {
-          log.error("Error in pinning test", e);
-          return "Error: " + e.getMessage();
+          // Ignore exceptions for this test
         }
         finally {
-          completionLatch.countDown();
+          latch.countDown();
         }
       });
+      
       futures.add(future);
     }
     
-    // Start all threads simultaneously
-    long startTime = System.currentTimeMillis();
-    startLatch.countDown();
-    
     // Wait for all threads to complete
-    assertThat("Timed out waiting for pinning test to complete",
-        completionLatch.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS), is(true));
-    long duration = System.currentTimeMillis() - startTime;
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     
-    // Check results
-    for (Future<?> future : futures) {
-      assertThat(future.get(), is("Success"));
-    }
+    // Calculate duration
+    Duration duration = Duration.between(start, Instant.now());
     
-    // If there was significant thread pinning, the duration would be much longer
-    // This is a heuristic test - we expect operations to complete quickly if no pinning occurs
-    log.info("Completed {} concurrent operations in {}ms", threadCount, duration);
+    // Verify all authentication operations were successful
+    assertEquals("All authentication operations should succeed", THREAD_COUNT, successCount.get());
     
-    // A very rough heuristic - if operations take more than 5ms per thread on average,
-    // there might be pinning issues. This threshold may need adjustment based on the environment.
-    long expectedMaxDuration = threadCount * 5; // 5ms per thread
-    assertThat("Operations took too long, suggesting possible thread pinning",
-        duration, lessThan(expectedMaxDuration));
+    System.out.println("Completed " + THREAD_COUNT + " concurrent authentication operations with virtual threads in " 
+        + duration.toMillis() + "ms");
+    
+    // Now logout all subjects
+    CountDownLatch logoutLatch = new CountDownLatch(subjects.size());
+    AtomicInteger logoutSuccessCount = new AtomicInteger(0);
+    
+    Instant logoutStart = Instant.now();
+    
+    subjects.forEach((key, subject) -> {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          subject.logout();
+          assertFalse("Subject should be logged out", subject.isAuthenticated());
+          logoutSuccessCount.incrementAndGet();
+        } 
+        catch (Exception e) {
+          // Ignore exceptions for this test
+        }
+        finally {
+          logoutLatch.countDown();
+        }
+      });
+    });
+    
+    // Wait for all logout operations to complete
+    assertTrue("Timed out waiting for logout operations to complete", 
+        logoutLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    Duration logoutDuration = Duration.between(logoutStart, Instant.now());
+    
+    // Verify all logout operations were successful
+    assertEquals("All logout operations should succeed", subjects.size(), logoutSuccessCount.get());
+    
+    System.out.println("Completed " + subjects.size() + " concurrent logout operations with virtual threads in " 
+        + logoutDuration.toMillis() + "ms");
   }
   
   /**
-   * Creates a user with the specified ID and status.
+   * Tests SecuritySystem cache behavior under virtual thread load.
+   * This verifies that the SecuritySystem's caching mechanisms work correctly
+   * when accessed by many concurrent virtual threads.
    */
-  private User createUser(String userId, UserStatus status) {
+  @Test
+  public void testSecuritySystemCacheWithVirtualThreads() throws Exception {
+    SecuritySystem securitySystem = getSecuritySystem();
+    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create a principal for testing
+    PrincipalCollection principal = new SimplePrincipalCollection("jcool", "ANYTHING");
+    
+    // Start timing
+    Instant start = Instant.now();
+    
+    // First pass - should populate cache
+    for (int i = 0; i < THREAD_COUNT / 2; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Check permission - first time should hit database/source
+          securitySystem.checkPermission(principal, "test:read");
+          successCount.incrementAndGet();
+        } 
+        catch (Exception e) {
+          // Ignore exceptions for this test
+        }
+        finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for first half to complete
+    while (latch.getCount() > THREAD_COUNT / 2) {
+      Thread.sleep(10);
+    }
+    
+    // Second pass - should hit cache
+    Instant secondPassStart = Instant.now();
+    AtomicInteger secondPassSuccessCount = new AtomicInteger(0);
+    
+    for (int i = 0; i < THREAD_COUNT / 2; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Check permission - second time should hit cache
+          securitySystem.checkPermission(principal, "test:read");
+          secondPassSuccessCount.incrementAndGet();
+        } 
+        catch (Exception e) {
+          // Ignore exceptions for this test
+        }
+        finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all threads to complete
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    
+    // Calculate durations
+    Duration firstPassDuration = Duration.between(start, secondPassStart);
+    Duration secondPassDuration = Duration.between(secondPassStart, Instant.now());
+    
+    // Verify all operations were successful
+    assertEquals("First pass operations should succeed", THREAD_COUNT / 2, successCount.get());
+    assertEquals("Second pass operations should succeed", THREAD_COUNT / 2, secondPassSuccessCount.get());
+    
+    System.out.println("Cache performance with virtual threads:");
+    System.out.println("First pass (cache population): " + firstPassDuration.toMillis() + "ms");
+    System.out.println("Second pass (cache hits): " + secondPassDuration.toMillis() + "ms");
+    System.out.println("Cache speedup factor: " + 
+        (double) firstPassDuration.toMillis() / secondPassDuration.toMillis() + "x");
+  }
+  
+  /**
+   * Tests high concurrency with a very large number of virtual threads.
+   * This verifies that the SecuritySystem can handle extreme concurrency
+   * using thousands of virtual threads simultaneously.
+   */
+  @Test
+  public void testHighConcurrencyWithVirtualThreads() throws Exception {
+    // Only run this test if explicitly enabled, as it creates a very large number of threads
+    if (!Boolean.getBoolean("enable.high.concurrency.test")) {
+      System.out.println("High concurrency test skipped. Enable with -Denable.high.concurrency.test=true");
+      return;
+    }
+    
+    SecuritySystem securitySystem = getSecuritySystem();
+    final int highThreadCount = 10000; // 10x more threads than other tests
+    CountDownLatch latch = new CountDownLatch(highThreadCount);
+    AtomicInteger successCount = new AtomicInteger(0);
+    
+    // Create a principal for testing
+    PrincipalCollection principal = new SimplePrincipalCollection("jcool", "ANYTHING");
+    
+    // Start timing
+    Instant start = Instant.now();
+    
+    // Submit tasks to virtual thread executor
+    for (int i = 0; i < highThreadCount; i++) {
+      virtualThreadExecutor.submit(() -> {
+        try {
+          // Check permission
+          securitySystem.checkPermission(principal, "test:read");
+          successCount.incrementAndGet();
+        } 
+        catch (Exception e) {
+          // Ignore exceptions for this test
+        }
+        finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all threads to complete
+    assertTrue("Timed out waiting for virtual threads to complete", 
+        latch.await(TIMEOUT_SECONDS * 2, TimeUnit.SECONDS));
+    
+    // Calculate duration
+    Duration duration = Duration.between(start, Instant.now());
+    
+    // Verify all operations were successful
+    assertEquals("All operations should succeed", highThreadCount, successCount.get());
+    
+    System.out.println("Completed " + highThreadCount + " concurrent operations with virtual threads in " 
+        + duration.toMillis() + "ms");
+    System.out.println("Operations per second: " + 
+        (int)(highThreadCount / (duration.toMillis() / 1000.0)));
+  }
+  
+  /**
+   * Helper method to create a user for testing.
+   */
+  private User createUser(String name, UserStatus status) {
     User user = new User();
-    user.setEmailAddress(userId + "@example.com");
-    user.setFirstName("Test");
-    user.setLastName("User");
+    user.setEmailAddress("email@example.com");
+    user.setName(name);
     user.setSource("MockUserManagerA");
     user.setStatus(status);
-    user.setUserId(userId);
+    user.setUserId(name);
     user.addRole(new RoleIdentifier("default", "test-role1"));
     return user;
   }

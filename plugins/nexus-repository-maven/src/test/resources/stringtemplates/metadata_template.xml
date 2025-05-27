@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Maven metadata template using Java 21 String Templates feature.
+  This template demonstrates the use of String Templates for formatting Maven metadata XML content.
+  
+  Usage example with Java 21 String Templates:
+  
+  String groupId = "org.sonatype.nexus";
+  String artifactId = "nexus-base";
+  String version = "3.19.0-SNAPSHOT";
+  String baseVersion = "3.19.0";
+  String timestamp = "20190916.172202";
+  int buildNumber = 102;
+  String classifier = "sources";
+  String extension1 = "jar";
+  String extension2 = "jar";
+  String extension3 = "pom";
+  
+  // Using the STR processor for string interpolation
+  String result = STR."[XML content with embedded expressions]";
+  
+  // The template supports various expressions including:
+  // - Simple variable interpolation: \{groupId}
+  // - Method calls: \{timestamp.replace(".", "")}
+  // - Arithmetic operations: \{buildNumber + 1}
+  // - Conditional expressions: \{buildNumber < 100 ? "0" + buildNumber : buildNumber}
+  // - String manipulation: \{String.format("%03d", buildNumber)}
+-->
+<metadata modelVersion="1.1.0">
+  <!-- Basic variable interpolation -->
+  <groupId>\{groupId}</groupId>
+  <artifactId>\{artifactId}</artifactId>
+  <version>\{version}</version>
+  <versioning>
+    <snapshot>
+      <!-- Simple variable interpolation -->
+      <timestamp>\{timestamp}</timestamp>
+      <buildNumber>\{buildNumber}</buildNumber>
+    </snapshot>
+    <!-- Method call within expression to format timestamp -->
+    <lastUpdated>\{timestamp.replace(".", "")}</lastUpdated>
+    <snapshotVersions>
+      <snapshotVersion>
+        <!-- Conditional expression with null check -->
+        <classifier>\{classifier != null ? classifier : ""}</classifier>
+        <extension>\{extension1}</extension>
+        <!-- Complex expression combining multiple variables -->
+        <value>\{baseVersion}-\{timestamp}-\{buildNumber}</value>
+        <!-- Method call for string manipulation -->
+        <updated>\{timestamp.replace(".", "")}</updated>
+      </snapshotVersion>
+      <snapshotVersion>
+        <!-- Empty element when no classifier exists -->
+        \{classifier == null ? "" : "<classifier>" + classifier + "</classifier>"}
+        <extension>\{extension2}</extension>
+        <!-- Conditional formatting with arithmetic -->
+        <value>\{baseVersion}-\{timestamp}-\{buildNumber < 100 ? "0" + buildNumber : buildNumber}</value>
+        <!-- String formatting with arithmetic operation -->
+        <updated>\{timestamp.substring(0, 8) + String.format("%06d", Integer.parseInt(timestamp.substring(9)) + 1)}</updated>
+      </snapshotVersion>
+      <snapshotVersion>
+        <extension>\{extension3}</extension>
+        <!-- String formatting with zero-padding -->
+        <value>\{baseVersion}-\{timestamp}-\{String.format("%03d", buildNumber)}</value>
+        <!-- Complex expression with multiple operations -->
+        <updated>\{timestamp.replace(".", "").substring(0, 8) + (Integer.parseInt(timestamp.replace(".", "").substring(8)) + buildNumber % 100)}</updated>
+      </snapshotVersion>
+    </snapshotVersions>
+  </versioning>
+</metadata>

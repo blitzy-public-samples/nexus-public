@@ -58,15 +58,19 @@ public class AuthenticationConfigurationSerializer
   {
     serialize(value, jgen);
     
-    // Use pattern matching with switch expression to determine the type
-    String typeValue = switch (value) {
-      case UsernameAuthenticationConfiguration ignored -> UsernameAuthenticationConfiguration.TYPE;
-      case NtlmAuthenticationConfiguration ignored -> NtlmAuthenticationConfiguration.TYPE;
-      case BearerTokenAuthenticationConfiguration ignored -> BearerTokenAuthenticationConfiguration.TYPE;
-      case default -> throw new JsonGenerationException("Unsupported type: " + value.getClass().getName(), jgen);
-    };
+    // Using Java 21 Pattern Matching for switch to determine the type
+    switch (value) {
+      case UsernameAuthenticationConfiguration ignored -> 
+          jgen.writeStringField(typeSer.getPropertyName(), UsernameAuthenticationConfiguration.TYPE);
+      case NtlmAuthenticationConfiguration ignored -> 
+          jgen.writeStringField(typeSer.getPropertyName(), NtlmAuthenticationConfiguration.TYPE);
+      case BearerTokenAuthenticationConfiguration ignored -> 
+          jgen.writeStringField(typeSer.getPropertyName(), BearerTokenAuthenticationConfiguration.TYPE);
+      default -> 
+          // be foolproof, if new type added but this class is not updated
+          throw new JsonGenerationException("Unsupported type:" + value.getClass().getName(), jgen);
+    }
     
-    jgen.writeStringField(typeSer.getPropertyName(), typeValue);
     jgen.writeEndObject();
   }
 
@@ -75,7 +79,7 @@ public class AuthenticationConfigurationSerializer
     jgen.writeStringField("type", value.getType());
     jgen.writeBooleanField("preemptive", value.isPreemptive());
     
-    // Use pattern matching with switch expression to handle different authentication types
+    // Using Java 21 Pattern Matching for switch to handle different authentication types
     switch (value) {
       case UsernameAuthenticationConfiguration upc -> {
         jgen.writeStringField("username", upc.getUsername());
@@ -91,10 +95,11 @@ public class AuthenticationConfigurationSerializer
         jgen.writeStringField("domain", ntc.getDomain());
         jgen.writeStringField("host", ntc.getHost());
       }
-      case BearerTokenAuthenticationConfiguration btac -> {
+      case BearerTokenAuthenticationConfiguration btac -> 
         jgen.writeStringField(BearerTokenAuthenticationConfiguration.TYPE, btac.getBearerToken());
-      }
-      case default -> throw new JsonGenerationException("Unsupported type: " + value.getClass().getName(), jgen);
+      default -> 
+        // be foolproof, if new type added but this class is not updated
+        throw new JsonGenerationException("Unsupported type:" + value.getClass().getName());
     }
   }
 }

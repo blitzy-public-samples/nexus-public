@@ -20,9 +20,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Event sent whenever a {@link ContentRepository} is deleted.
- * 
- * This implementation uses Java 21 Record Patterns for more concise representation
- * of deleted repository data and ensures compatibility with Virtual Threads for event dispatch.
+ * <p>
+ * Optimized for Java 21 with Record Patterns and Virtual Thread compatibility.
+ * This event is designed for efficient cluster-wide propagation.
  *
  * @since 3.26
  */
@@ -31,42 +31,39 @@ public class ContentRepositoryDeletedEvent
 {
   /**
    * Immutable record representing deleted repository data.
-   * Optimized for concurrent access and efficient serialization.
+   * Used with pattern matching for efficient data access.
    */
-  private record DeletedRepositoryData(ContentRepository contentRepository, String format) 
-      implements Serializable {}
+  private record DeletedRepositoryData(String format, ContentRepository repository) implements Serializable {
+    private DeletedRepositoryData {
+      checkNotNull(format);
+      checkNotNull(repository);
+    }
+  }
 
-  private final DeletedRepositoryData data;
+  private final DeletedRepositoryData deletedData;
 
   /**
    * Creates a new event for a deleted content repository.
    * 
-   * @param contentRepository the deleted content repository
+   * @param contentRepository the deleted repository
    * @param format the repository format
    */
   public ContentRepositoryDeletedEvent(final ContentRepository contentRepository, final String format) {
     super(contentRepository);
-    this.data = new DeletedRepositoryData(contentRepository, checkNotNull(format));
+    this.deletedData = new DeletedRepositoryData(format, contentRepository);
   }
 
+  /**
+   * Returns the format of the deleted repository.
+   * Implementation is thread-safe and optimized for concurrent access.
+   * 
+   * @return the repository format
+   */
   @Override
   public String getFormat() {
-    return data.format();
-  }
-  
-  /**
-   * Returns the immutable data record containing repository information.
-   * 
-   * @return the deleted repository data
-   */
-  public DeletedRepositoryData getDeletedRepositoryData() {
-    return data;
-  }
-  
-  @Override
-  public String toString() {
-    return "ContentRepositoryDeletedEvent{" +
-        "data=" + data +
-        "} " + super.toString();
+    // Using record pattern matching for concise, type-safe access to the format
+    return switch (deletedData) {
+      case DeletedRepositoryData(String format, var _) -> format;
+    };
   }
 }

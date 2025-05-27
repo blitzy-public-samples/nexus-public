@@ -15,17 +15,12 @@ package org.sonatype.nexus.content.example.internal.store;
 import org.sonatype.nexus.repository.content.store.ComponentDAO;
 
 /**
- * Example component DAO interface for the example repository format.
+ * Example implementation of {@link ComponentDAO} for demonstration purposes.
  * <p>
- * This interface extends the base {@link ComponentDAO} without adding additional methods,
- * serving as a format-specific extension point for the example repository format.
- * <p>
- * Implementations of this interface can leverage Java 21 features such as:
- * <ul>
- *   <li>Virtual Threads for improved I/O operations performance</li>
- *   <li>Pattern Matching for type-safe data handling</li>
- *   <li>Record Patterns for simplified data extraction</li>
- * </ul>
+ * This interface is compatible with MyBatis 3.5.15 for Java 21 and works with
+ * updated JDBC drivers (PostgreSQL JDBC 42.7.2) for Java 21 runtime environment.
+ * The implementation relies on the core ComponentDAO functionality without adding
+ * any additional methods.
  *
  * @since 3.24
  */

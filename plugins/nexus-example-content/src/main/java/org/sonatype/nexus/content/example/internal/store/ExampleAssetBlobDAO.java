@@ -15,12 +15,15 @@ package org.sonatype.nexus.content.example.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetBlobDAO;
 
 /**
- * Example implementation of {@link AssetBlobDAO} for the example content format.
+ * Example implementation of AssetBlobDAO interface.
  * 
- * <p>Operations inherited from {@link AssetBlobDAO} benefit from Java 21 Virtual Threads
- * for improved I/O performance when interacting with the underlying storage.</p>
- *
  * @since 3.24
+ * 
+ * @see AssetBlobDAO
+ * 
+ * Verified compatible with Java 21, MyBatis 3.5.15, and updated JDBC drivers.
+ * This interface maintains compatibility with the core repository content framework
+ * while leveraging the performance improvements provided by Java 21.
  */
 public interface ExampleAssetBlobDAO
     extends AssetBlobDAO

@@ -12,8 +12,6 @@
  */
 package org.sonatype.nexus.internal.security.anonymous;
 
-import java.util.concurrent.Executors;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -44,27 +42,43 @@ public class AnonymousConfigurationStoreImpl
     return new AnonymousConfigurationData();
   }
 
+  /**
+   * Load the anonymous configuration.
+   * 
+   * With Java 21, this method benefits from Virtual Threads automatically.
+   * When running on a Virtual Thread, I/O operations will automatically unmount the thread,
+   * allowing the carrier thread to be reused for other tasks, improving performance.
+   */
   @Transactional
   @Override
   public AnonymousConfiguration load() {
+    // In Java 21, database I/O operations automatically leverage Virtual Threads
+    // when this method is called from a Virtual Thread context
     return dao().get().orElse(null);
   }
 
+  /**
+   * Save the anonymous configuration.
+   * 
+   * Uses Java 21 pattern matching for instanceof to improve code readability and flow control.
+   * With Java 21, this method benefits from Virtual Threads automatically when called from a Virtual Thread context.
+   * Ensures proper handling of post-commit events with transaction boundaries maintained.
+   */
   @Transactional
   @Override
   public void save(final AnonymousConfiguration configuration) {
-    // Use Pattern Matching for improved code readability
-    if (configuration instanceof AnonymousConfigurationData data) {
-      // Register post-commit event first to ensure it's processed after transaction completes
-      // Using Pattern Matching eliminates the need for explicit casting
-      postCommitEvent(() -> new AnonymousConfigurationUpdatedEvent(data));
+    // Use pattern matching for instanceof to improve code readability and eliminate casting
+    if (configuration instanceof AnonymousConfigurationData configData) {
+      // Register post-commit event handler that will be executed after successful transaction commit
+      // In Java 21, this properly handles Virtual Thread scheduling and continuation
+      postCommitEvent(() -> new AnonymousConfigurationUpdatedEvent(configData));
       
-      // Execute database operation using the current transaction
-      // The transaction framework will handle the database operation efficiently with Java 21's concurrency model
-      dao().set(data);
+      // In Java 21, database I/O operations automatically leverage Virtual Threads
+      // when this method is called from a Virtual Thread context
+      dao().set(configData);
     }
     else {
-      throw new IllegalArgumentException("Unsupported configuration type: " + configuration.getClass().getName());
+      throw new IllegalArgumentException("Configuration must be an instance of AnonymousConfigurationData");
     }
   }
 }

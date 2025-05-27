@@ -15,7 +15,7 @@ package org.sonatype.nexus.security.authc;
 import java.io.Serializable;
 
 /**
- * Base record for all security-related events in the Nexus security subsystem.
+ * Base record for all security-related events in the Nexus authentication subsystem.
  * Provides immutable storage of principal and realm information.
  *
  * @since 3.0
@@ -23,13 +23,30 @@ import java.io.Serializable;
 public sealed abstract record SecurityEvent(
     String principal,
     String realm
-) implements Serializable permits LoginEvent, LogoutEvent {
+) implements Serializable permits LoginEvent, LogoutEvent
+{
+  private static final long serialVersionUID = 1L;
 
   /**
-   * Returns a string representation of this security event using Java 21 String Templates.
+   * Creates a new SecurityEvent with the specified principal and realm.
+   *
+   * @param principal the user or entity principal identifier
+   * @param realm the authentication realm
+   */
+  public SecurityEvent {
+    // Validate parameters
+    if (principal == null) {
+      throw new IllegalArgumentException("Principal cannot be null");
+    }
+  }
+
+  /**
+   * Returns a formatted string representation of this security event using Java 21 String Templates.
+   *
+   * @return a string representation of this event
    */
   @Override
   public String toString() {
-    return STR."\{getClass().getSimpleName()}[principal=\{principal}, realm=\{realm}]"; 
+    return STR."\{getClass().getSimpleName()}[principal='\{principal}', realm='\{realm}']";
   }
 }

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Test file for validating Java 21's XML namespace resolution behavior.
+  This file includes multiple nested namespaces, default namespace declarations,
+  and qualified attributes to ensure proper namespace context handling in the JAXP implementation.
+-->
+<root xmlns="http://sonatype.org/nexus/default/namespace"
+      xmlns:ns1="http://sonatype.org/nexus/ns1"
+      xmlns:ns2="http://sonatype.org/nexus/ns2"
+      ns1:attr1="value1"
+      ns2:attr2="value2">
+  
+  <!-- Element in default namespace with qualified attributes -->
+  <element1 ns1:attr3="value3" ns2:attr4="value4">
+    <child1>Content in default namespace</child1>
+  </element1>
+  
+  <!-- Element with explicit namespace prefix -->
+  <ns1:element2 ns2:attr5="value5">
+    <!-- Child with different namespace prefix -->
+    <ns2:child2 ns1:attr6="value6">
+      <ns2:grandchild>Content in ns2 namespace</ns2:grandchild>
+    </ns2:child2>
+  </ns1:element2>
+  
+  <!-- Element with nested namespace declarations -->
+  <element3 xmlns:ns3="http://sonatype.org/nexus/ns3"
+            xmlns:ns4="http://sonatype.org/nexus/ns4"
+            ns3:attr7="value7">
+    <!-- Child with redefined namespace prefix (same URI) -->
+    <ns3:child3 xmlns:ns3="http://sonatype.org/nexus/ns3">
+      <ns3:grandchild>Content with redefined prefix</ns3:grandchild>
+    </ns3:child3>
+    
+    <!-- Child with namespace prefix from parent scope -->
+    <ns4:child4>
+      <ns4:grandchild>Content in ns4 namespace</ns4:grandchild>
+    </ns4:child4>
+  </element3>
+  
+  <!-- Element with overridden default namespace -->
+  <element4 xmlns="http://sonatype.org/nexus/override/default">
+    <!-- Child inherits parent's default namespace -->
+    <child5>Content in overridden default namespace</child5>
+    
+    <!-- Child with explicit namespace prefix -->
+    <ns1:child6>Content in ns1 namespace within overridden default</ns1:child6>
+  </element4>
+  
+  <!-- Element with multiple prefixes for the same namespace URI -->
+  <element5 xmlns:nsA="http://sonatype.org/nexus/duplicate"
+            xmlns:nsB="http://sonatype.org/nexus/duplicate">
+    <nsA:child7>Content with nsA prefix</nsA:child7>
+    <nsB:child8>Content with nsB prefix (same namespace)</nsB:child8>
+  </element5>
+  
+  <!-- Element using the predefined xml namespace -->
+  <element6 xml:space="preserve" xml:lang="en-US">
+    <child9>Content with xml namespace attributes</child9>
+  </element6>
+  
+  <!-- Element with empty namespace URI -->
+  <element7 xmlns:empty="">
+    <empty:child10>Content with empty namespace URI</empty:child10>
+  </element7>
+  
+  <!-- Element with namespace prefix but no attributes or child elements in that namespace -->
+  <element8 xmlns:unused="http://sonatype.org/nexus/unused">
+    <child11>Content with unused namespace declaration</child11>
+  </element8>
+  
+  <!-- Element with complex nested namespace resolution test -->
+  <ns1:element9>
+    <ns2:child12 xmlns:ns5="http://sonatype.org/nexus/ns5">
+      <ns1:grandchild1>Content in ns1 namespace</ns1:grandchild1>
+      <ns2:grandchild2>Content in ns2 namespace</ns2:grandchild2>
+      <ns5:grandchild3>Content in ns5 namespace</ns5:grandchild3>
+    </ns2:child12>
+  </ns1:element9>
+</root>

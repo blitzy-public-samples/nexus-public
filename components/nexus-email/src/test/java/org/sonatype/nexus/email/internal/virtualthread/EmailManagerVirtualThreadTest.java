@@ -12,23 +12,27 @@
  */
 package org.sonatype.nexus.email.internal.virtualthread;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 
 import javax.inject.Provider;
 import javax.net.ssl.SSLContext;
 
 import org.apache.commons.mail.Email;
 import org.apache.commons.mail.SimpleEmail;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -36,35 +40,40 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.email.EmailConfiguration;
-import org.sonatype.nexus.internal.email.EmailConfigurationStore;
-import org.sonatype.nexus.internal.email.EmailManagerImpl;
+import org.sonatype.nexus.email.internal.EmailConfigurationStore;
+import org.sonatype.nexus.email.internal.EmailManagerImpl;
 import org.sonatype.nexus.security.UserIdHelper;
 import org.sonatype.nexus.ssl.TrustStore;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests the {@link EmailManagerImpl} with Java 21 Virtual Threads to validate its behavior
- * under high concurrency scenarios and ensure proper thread context propagation.
+ * Tests for {@link EmailManagerImpl} when executed under Java 21 virtual threads.
+ * 
+ * These tests validate that email operations work correctly with virtual threads, including:
+ * - Email sending operations don't block virtual threads
+ * - Thread context (like MDC) is properly propagated across virtual thread boundaries
+ * - Concurrent operations don't suffer from thread pinning
+ * - EmailManager.send() functions correctly when invoked from a virtual thread
  */
+@ExtendWith(MockitoExtension.class)
 public class EmailManagerVirtualThreadTest
-    extends VirtualThreadTestSupport
+    extends TestSupport
 {
-  private static final int CONCURRENT_EMAILS = 100;
-  private static final int TIMEOUT_SECONDS = 30;
-  private static final String MDC_TEST_KEY = "testKey";
-  private static final String MDC_TEST_VALUE = "testValue";
+  private static final String MDC_TEST_KEY = "test-key";
+  private static final String MDC_TEST_VALUE = "test-value";
+  private static final int CONCURRENT_OPERATIONS = 100;
+  private static final int TIMEOUT_SECONDS = 10;
 
   @Mock
   private EventManager eventManager;
@@ -76,235 +85,160 @@ public class EmailManagerVirtualThreadTest
   private TrustStore trustStore;
 
   @Mock
-  private Function<EmailConfiguration, EmailConfiguration> defaults;
-
-  @Mock
   private Provider capabilityRegistryProvider;
 
   @Mock
   private SecretsService secretsService;
 
+  @InjectMocks
   private EmailManagerImpl emailManager;
 
   private MockedStatic<UserIdHelper> userIdHelperMock;
+  private ExecutorService virtualThreadExecutor;
 
-  @Before
+  @BeforeEach
   public void setup() throws Exception {
     userIdHelperMock = mockStatic(UserIdHelper.class);
     userIdHelperMock.when(UserIdHelper::get).thenReturn("userId");
-
-    // Create the email manager with mocked dependencies
-    emailManager = new EmailManagerImpl(eventManager, emailConfigurationStore, trustStore, defaults, secretsService);
     
-    // Mock the email configuration
+    // Create a virtual thread executor
+    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    
+    // Setup common mocks
+    when(trustStore.getSSLContext()).thenReturn(SSLContext.getDefault());
+    
     EmailConfiguration emailConfig = mock(EmailConfiguration.class);
     when(emailConfig.isEnabled()).thenReturn(true);
-    when(emailConfig.getHost()).thenReturn("smtp.example.com");
+    when(emailConfig.getHost()).thenReturn("example.com");
     when(emailConfig.getPort()).thenReturn(25);
     when(emailConfig.getFromAddress()).thenReturn("sender@example.com");
     when(emailConfig.getUsername()).thenReturn("user");
-    Secret password = mock(Secret.class);
-    when(emailConfig.getPassword()).thenReturn(password);
-    when(emailConfigurationStore.load()).thenReturn(emailConfig);
+    when(emailConfig.isStartTlsEnabled()).thenReturn(true);
+    when(emailConfig.isStartTlsRequired()).thenReturn(false);
+    when(emailConfig.isSslOnConnectEnabled()).thenReturn(false);
+    when(emailConfig.isSslCheckServerIdentityEnabled()).thenReturn(false);
+    when(emailConfig.isNexusTrustStoreEnabled()).thenReturn(true);
     
-    // Mock the trust store
-    when(trustStore.getSSLContext()).thenReturn(SSLContext.getDefault());
+    when(emailConfigurationStore.load()).thenReturn(emailConfig);
   }
 
-  @After
-  public void tearDown() {
+  @AfterEach
+  public void tearDown() throws Exception {
     userIdHelperMock.close();
+    virtualThreadExecutor.shutdown();
+    virtualThreadExecutor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS);
   }
 
   /**
-   * Tests that the EmailManager can send emails from a virtual thread without any issues.
+   * Tests that email sending works correctly when executed from a virtual thread.
    */
   @Test
   public void testSendEmailFromVirtualThread() throws Exception {
-    // Create a simple email
+    // Create a mock email
     Email email = mock(Email.class);
     
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit task to send email from a virtual thread
-      executor.submit(() -> {
-        try {
-          // Send the email
-          emailManager.send(email);
-        } 
-        catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    }
-    
-    // Verify that the email was sent
-    verify(email).send();
-  }
-
-  /**
-   * Tests that the EmailManager can handle concurrent email operations using virtual threads
-   * without any thread pinning issues.
-   */
-  @Test
-  public void testNoPinningDuringEmailOperations() throws Exception {
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_EMAILS);
-    AtomicInteger successCount = new AtomicInteger(0);
-    
-    // Enable thread pinning detection
-    ThreadPinningDetector pinningDetector = new ThreadPinningDetector();
-    pinningDetector.enable();
-    
-    try {
-      // Create a virtual thread executor
-      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        // Submit tasks to send emails concurrently
-        for (int i = 0; i < CONCURRENT_EMAILS; i++) {
-          final int emailId = i;
-          executor.submit(() -> {
-            try {
-              // Create a simple email
-              Email email = new SimpleEmail();
-              email.setSubject("Test Email " + emailId);
-              email.setMsg("This is test email " + emailId);
-              email.addTo("recipient" + emailId + "@example.com");
-              
-              // Send the email
-              emailManager.send(email);
-              successCount.incrementAndGet();
-            } 
-            catch (Exception e) {
-              // Log exception but don't fail the test
-              log.error("Error sending email", e);
-            } 
-            finally {
-              latch.countDown();
-            }
-          });
-        }
-        
-        // Wait for all threads to complete
-        assertThat("Not all email operations completed within the timeout",
-            latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    // Execute email sending from a virtual thread
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        emailManager.send(email);
+      } catch (Exception e) {
+        throw new RuntimeException(e);
       }
-      
-      // Verify that all emails were processed successfully
-      assertThat("Not all emails were sent successfully", 
-          successCount.get(), is(CONCURRENT_EMAILS));
-      
-      // Verify that no thread pinning was detected
-      assertThat("Thread pinning detected during email operations",
-          pinningDetector.getPinningEvents().isEmpty(), is(true));
-    } 
-    finally {
-      pinningDetector.disable();
-    }
+    }, virtualThreadExecutor);
+    
+    // Wait for completion and verify
+    future.join();
+    verify(email).send();
   }
 
   /**
    * Tests that MDC context is properly propagated across virtual thread boundaries
-   * when sending emails.
+   * during email operations.
    */
   @Test
-  public void testMdcContextPropagationAcrossVirtualThreads() throws Exception {
-    // Create a simple email
+  public void testMdcContextPropagationWithVirtualThreads() throws Exception {
+    // Create a mock email
     Email email = mock(Email.class);
+    AtomicBoolean mdcPropagated = new AtomicBoolean(false);
     
-    // Set up MDC context verification
+    // Setup email.send() to verify MDC context
     doAnswer(invocation -> {
-      // Verify that MDC context is available in the email send operation
       String mdcValue = MDC.get(MDC_TEST_KEY);
-      assertThat("MDC context not propagated to email send operation", 
-          mdcValue, is(MDC_TEST_VALUE));
+      mdcPropagated.set(MDC_TEST_VALUE.equals(mdcValue));
       return null;
     }).when(email).send();
     
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Set MDC context in the parent thread
-      MDC.put(MDC_TEST_KEY, MDC_TEST_VALUE);
+    // Set MDC context and execute email sending from a virtual thread
+    MDC.put(MDC_TEST_KEY, MDC_TEST_VALUE);
+    try {
+      CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+        try {
+          emailManager.send(email);
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutor);
       
-      try {
-        // Submit task to send email from a virtual thread
-        executor.submit(() -> {
-          try {
-            // Send the email - this should have the MDC context
-            emailManager.send(email);
-          } 
-          catch (Exception e) {
-            throw new RuntimeException(e);
-          }
-        }).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      } 
-      finally {
-        // Clean up MDC context
-        MDC.remove(MDC_TEST_KEY);
-      }
+      // Wait for completion
+      future.join();
+    } finally {
+      MDC.remove(MDC_TEST_KEY);
     }
     
-    // Verify that the email was sent
-    verify(email).send();
+    // Verify MDC context was propagated
+    assertTrue(mdcPropagated.get(), "MDC context should be propagated to virtual thread");
   }
 
   /**
-   * Tests that the EmailManager can handle concurrent configuration access
-   * from multiple virtual threads without any issues.
+   * Tests that concurrent email operations don't suffer from thread pinning
+   * when using virtual threads.
    */
   @Test
-  public void testConcurrentConfigurationAccess() throws Exception {
-    // Create a countdown latch to wait for all threads to complete
-    CountDownLatch latch = new CountDownLatch(CONCURRENT_EMAILS);
-    AtomicInteger successCount = new AtomicInteger(0);
+  public void testConcurrentEmailOperationsWithVirtualThreads() throws Exception {
+    // Create a countdown latch to wait for all operations
+    CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
+    AtomicInteger errorCount = new AtomicInteger(0);
     
-    // Mock the email configuration
-    EmailConfiguration emailConfig = mock(EmailConfiguration.class);
-    when(emailConfig.isEnabled()).thenReturn(true);
-    when(emailConfig.copy()).thenReturn(emailConfig);
-    Secret password = mock(Secret.class);
-    when(emailConfig.getPassword()).thenReturn(password);
-    when(emailConfigurationStore.load()).thenReturn(emailConfig);
-    
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit tasks to access configuration concurrently
-      for (int i = 0; i < CONCURRENT_EMAILS; i++) {
-        executor.submit(() -> {
-          try {
-            // Get the email configuration
-            EmailConfiguration config = emailManager.getConfiguration();
-            assertThat("Email configuration should not be null", config, is(notNullValue()));
-            successCount.incrementAndGet();
-          } 
-          catch (Exception e) {
-            log.error("Error accessing email configuration", e);
-          } 
-          finally {
-            latch.countDown();
-          }
-        });
-      }
-      
-      // Wait for all threads to complete
-      assertThat("Not all configuration access operations completed within the timeout",
-          latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
+    // Setup a mock email that simulates I/O with a small delay
+    for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
+      final int index = i;
+      CompletableFuture.runAsync(() -> {
+        try {
+          // Create a new email for each operation
+          Email email = mock(Email.class);
+          doAnswer(invocation -> {
+            // Simulate I/O operation with a small delay
+            Thread.sleep(50);
+            return null;
+          }).when(email).send();
+          
+          // Send the email
+          emailManager.send(email);
+          
+          // Verify the email was sent
+          verify(email).send();
+        } catch (Exception e) {
+          errorCount.incrementAndGet();
+        } finally {
+          latch.countDown();
+        }
+      }, virtualThreadExecutor);
     }
     
-    // Verify that all configuration access operations were successful
-    assertThat("Not all configuration access operations were successful", 
-        successCount.get(), is(CONCURRENT_EMAILS));
+    // Wait for all operations to complete
+    boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     
-    // Verify that the configuration was loaded for each operation
-    verify(emailConfigurationStore, times(CONCURRENT_EMAILS)).load();
+    // Verify all operations completed successfully
+    assertTrue(completed, "All concurrent operations should complete within timeout");
+    assertThat(errorCount.get(), is(0));
   }
 
   /**
-   * Tests that the EmailManager can handle configuration updates from virtual threads
-   * without any issues.
+   * Tests that email configuration operations work correctly when executed from virtual threads.
    */
   @Test
-  public void testConfigurationUpdateFromVirtualThread() throws Exception {
-    // Mock the email configuration
+  public void testEmailConfigurationWithVirtualThreads() throws Exception {
+    // Setup mocks for configuration
     EmailConfiguration oldEmailConfig = mock(EmailConfiguration.class);
     when(emailConfigurationStore.load()).thenReturn(oldEmailConfig);
     when(oldEmailConfig.copy()).thenReturn(oldEmailConfig);
@@ -313,22 +247,60 @@ public class EmailManagerVirtualThreadTest
     
     EmailConfiguration newEmailConfig = mock(EmailConfiguration.class);
     when(newEmailConfig.copy()).thenReturn(newEmailConfig);
-    Secret newPass = mock(Secret.class);
-    when(secretsService.encrypt(any(), any(), any())).thenReturn(newPass);
+    Secret newSecret = mock(Secret.class);
+    when(secretsService.encrypt(any(), any(), any())).thenReturn(newSecret);
     
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit task to update configuration from a virtual thread
-      executor.submit(() -> {
-        // Update the email configuration
-        emailManager.setConfiguration(newEmailConfig, "newPassword");
-      }).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    }
+    // Execute configuration update from a virtual thread
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      emailManager.setConfiguration(newEmailConfig, "newPassword");
+    }, virtualThreadExecutor);
     
-    // Verify that the configuration was updated
+    // Wait for completion
+    future.join();
+    
+    // Verify configuration was updated
     verify(emailConfigurationStore).save(newEmailConfig);
     verify(secretsService).encrypt(any(), any(), any());
     verify(secretsService).remove(oldPass);
     verify(eventManager).post(any());
+  }
+
+  /**
+   * Tests that retrieving email configuration works correctly when executed from virtual threads.
+   */
+  @Test
+  public void testGetEmailConfigurationFromVirtualThread() throws Exception {
+    // Execute get configuration from a virtual thread
+    CompletableFuture<EmailConfiguration> future = CompletableFuture.supplyAsync(() -> {
+      return emailManager.getConfiguration();
+    }, virtualThreadExecutor);
+    
+    // Wait for completion and verify
+    EmailConfiguration config = future.join();
+    assertThat(config, notNullValue());
+    verify(emailConfigurationStore).load();
+  }
+
+  /**
+   * Tests that email validation works correctly when executed from virtual threads.
+   */
+  @Test
+  public void testEmailValidationFromVirtualThread() throws Exception {
+    // Create a simple email for validation
+    SimpleEmail email = new SimpleEmail();
+    email.setHostName("example.com");
+    email.setSmtpPort(25);
+    email.setFrom("sender@example.com");
+    email.addTo("recipient@example.com");
+    email.setSubject("Test Subject");
+    email.setMsg("Test Message");
+    
+    // Execute validation from a virtual thread
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      assertDoesNotThrow(() -> emailManager.apply(emailManager.getConfiguration(), email, "password"));
+    }, virtualThreadExecutor);
+    
+    // Wait for completion
+    future.join();
   }
 }

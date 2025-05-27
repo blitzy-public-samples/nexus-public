@@ -18,6 +18,7 @@
 
 /**
  * @since 3.17
+ * @updated Java 21 compatibility - Optimized for Virtual Threads backend
  */
 Ext.define('NX.onboarding.store.Onboarding', {
   extend: 'Ext.data.Store',
@@ -25,6 +26,28 @@ Ext.define('NX.onboarding.store.Onboarding', {
 
   proxy: {
     type: 'rest',
-    url: 'service/rest/internal/ui/onboarding'
+    url: 'service/rest/internal/ui/onboarding',
+    timeout: 60000, // Increased timeout for Java 21 Virtual Threads processing
+    noCache: false, // Enable caching for better performance with Java 21 backend
+    reader: {
+      type: 'json'
+    },
+    writer: {
+      type: 'json',
+      writeAllFields: true
+    }
+  },
+  
+  // Optimized for Java 21 backend services
+  remoteSort: true,
+  remoteFilter: true,
+  autoSync: false, // Manual sync for better control with Java 21 backend
+  
+  // Improved error handling for Java 21 REST backend
+  listeners: {
+    exception: function(proxy, response, operation) {
+      var error = operation.getError() || {};
+      NX.Messages.error('Onboarding Error: ' + (error.statusText || 'Unknown error'));
+    }
   }
 });

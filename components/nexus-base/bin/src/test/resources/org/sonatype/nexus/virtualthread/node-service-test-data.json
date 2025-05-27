@@ -1,0 +1,425 @@
+{
+  "nodeConfigurationTests": [
+    {
+      "testId": "basic-node-config",
+      "description": "Basic node configuration with virtual threads enabled",
+      "nodeConfiguration": {
+        "nodeId": "node-1",
+        "clusterEnabled": false,
+        "virtualThreadsEnabled": true,
+        "maxConcurrentOperations": 1000,
+        "properties": {
+          "node.hostname": "localhost",
+          "node.port": 8081
+        }
+      },
+      "expectedResults": {
+        "nodeStartupSuccess": true,
+        "virtualThreadsCreated": true,
+        "expectedThreadPoolType": "VIRTUAL_THREAD_PER_TASK_EXECUTOR"
+      }
+    },
+    {
+      "testId": "clustered-node-config",
+      "description": "Clustered node configuration with virtual threads enabled",
+      "nodeConfiguration": {
+        "nodeId": "node-2",
+        "clusterEnabled": true,
+        "virtualThreadsEnabled": true,
+        "maxConcurrentOperations": 5000,
+        "clusterMembers": ["node-1", "node-2", "node-3"],
+        "properties": {
+          "node.hostname": "node-2.example.com",
+          "node.port": 8081,
+          "cluster.port": 5701
+        }
+      },
+      "expectedResults": {
+        "nodeStartupSuccess": true,
+        "clusterJoinSuccess": true,
+        "virtualThreadsCreated": true,
+        "expectedThreadPoolType": "VIRTUAL_THREAD_PER_TASK_EXECUTOR"
+      }
+    },
+    {
+      "testId": "high-concurrency-node-config",
+      "description": "Node configuration optimized for high concurrency with virtual threads",
+      "nodeConfiguration": {
+        "nodeId": "node-3",
+        "clusterEnabled": true,
+        "virtualThreadsEnabled": true,
+        "maxConcurrentOperations": 100000,
+        "clusterMembers": ["node-1", "node-2", "node-3"],
+        "properties": {
+          "node.hostname": "node-3.example.com",
+          "node.port": 8081,
+          "cluster.port": 5701,
+          "thread.unmount.delay.ms": 0,
+          "thread.pinning.detection": true
+        }
+      },
+      "expectedResults": {
+        "nodeStartupSuccess": true,
+        "clusterJoinSuccess": true,
+        "virtualThreadsCreated": true,
+        "expectedThreadPoolType": "VIRTUAL_THREAD_PER_TASK_EXECUTOR",
+        "expectedPinnedThreadDetection": true
+      }
+    }
+  ],
+  "clusterCoordinationTests": [
+    {
+      "testId": "leader-election-test",
+      "description": "Test leader election with virtual threads under concurrent operations",
+      "testConfiguration": {
+        "clusterSize": 3,
+        "concurrentElectionAttempts": 50,
+        "nodeFailureScenarios": [
+          {
+            "nodeId": "node-1",
+            "failureType": "NETWORK_PARTITION",
+            "failureTimingMs": 2000
+          },
+          {
+            "nodeId": "node-2",
+            "failureType": "PROCESS_CRASH",
+            "failureTimingMs": 5000
+          }
+        ],
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 1000
+        }
+      },
+      "expectedResults": {
+        "leaderElectionSuccessful": true,
+        "leaderElectionTimeMs": {
+          "min": 100,
+          "max": 5000,
+          "average": 1000
+        },
+        "consensusReached": true,
+        "finalLeaderNodeId": "node-3"
+      }
+    },
+    {
+      "testId": "cluster-state-replication-test",
+      "description": "Test cluster state replication with virtual threads under high concurrency",
+      "testConfiguration": {
+        "clusterSize": 5,
+        "stateUpdateOperations": 10000,
+        "concurrentClients": 100,
+        "operationsPerClient": 100,
+        "operationTypes": ["READ", "WRITE", "DELETE"],
+        "operationDistribution": [0.7, 0.2, 0.1],
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 5000
+        }
+      },
+      "expectedResults": {
+        "stateReplicationSuccessful": true,
+        "stateConsistencyAchieved": true,
+        "replicationLatencyMs": {
+          "min": 5,
+          "max": 500,
+          "average": 50,
+          "p95": 200,
+          "p99": 400
+        },
+        "operationThroughput": {
+          "readsPerSecond": 5000,
+          "writesPerSecond": 1500,
+          "deletesPerSecond": 750
+        }
+      }
+    },
+    {
+      "testId": "split-brain-recovery-test",
+      "description": "Test split-brain recovery with virtual threads handling concurrent operations",
+      "testConfiguration": {
+        "clusterSize": 4,
+        "networkPartitions": [
+          ["node-1", "node-2"],
+          ["node-3", "node-4"]
+        ],
+        "partitionDurationMs": 10000,
+        "concurrentOperationsDuringPartition": 5000,
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 2000
+        }
+      },
+      "expectedResults": {
+        "splitBrainDetected": true,
+        "recoverySuccessful": true,
+        "stateReconciliationSuccessful": true,
+        "recoveryTimeMs": {
+          "min": 1000,
+          "max": 15000,
+          "average": 5000
+        },
+        "conflictResolutionStrategy": "NEWEST_TIMESTAMP_WINS",
+        "conflictsResolved": true
+      }
+    }
+  ],
+  "nodeEventHandlingTests": [
+    {
+      "testId": "high-frequency-event-test",
+      "description": "Test handling of high-frequency events with virtual threads",
+      "testConfiguration": {
+        "eventGenerationRate": 10000,
+        "eventGenerationDurationMs": 60000,
+        "eventTypes": ["NODE_JOINED", "NODE_LEFT", "STATE_CHANGED", "CONFIGURATION_CHANGED", "HEALTH_CHECK"],
+        "eventDistribution": [0.1, 0.1, 0.5, 0.1, 0.2],
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 10000
+        }
+      },
+      "expectedResults": {
+        "eventsProcessedSuccessfully": true,
+        "eventProcessingLatencyMs": {
+          "min": 0.1,
+          "max": 100,
+          "average": 5,
+          "p95": 20,
+          "p99": 50
+        },
+        "eventBacklogSize": {
+          "max": 1000
+        },
+        "eventProcessingThroughput": {
+          "eventsPerSecond": 9500
+        },
+        "missedEvents": {
+          "count": 0
+        }
+      }
+    },
+    {
+      "testId": "event-ordering-test",
+      "description": "Test event ordering preservation with virtual threads under load",
+      "testConfiguration": {
+        "eventSequenceLength": 10000,
+        "eventSourceCount": 50,
+        "concurrentEventSources": true,
+        "eventTypes": ["ORDERED_STATE_CHANGE"],
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 5000
+        }
+      },
+      "expectedResults": {
+        "orderingPreserved": true,
+        "outOfOrderEvents": {
+          "count": 0
+        },
+        "eventProcessingLatencyMs": {
+          "min": 0.5,
+          "max": 200,
+          "average": 10
+        }
+      }
+    },
+    {
+      "testId": "event-handler-exception-test",
+      "description": "Test event handler exception handling with virtual threads",
+      "testConfiguration": {
+        "eventCount": 1000,
+        "exceptionProbability": 0.1,
+        "exceptionTypes": ["RuntimeException", "IOException", "InterruptedException"],
+        "exceptionDistribution": [0.6, 0.3, 0.1],
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 1000
+        }
+      },
+      "expectedResults": {
+        "exceptionsHandledCorrectly": true,
+        "eventProcessingContinued": true,
+        "exceptionRecoveryTimeMs": {
+          "min": 1,
+          "max": 100,
+          "average": 10
+        },
+        "unhandledExceptions": {
+          "count": 0
+        }
+      }
+    }
+  ],
+  "concurrencyTestScenarios": [
+    {
+      "testId": "node-service-concurrent-operations-test",
+      "description": "Test node service performance under concurrent operations with virtual threads",
+      "testConfiguration": {
+        "concurrentClients": 5000,
+        "operationsPerClient": 100,
+        "operationTypes": ["GET_NODE_STATUS", "UPDATE_NODE_CONFIGURATION", "QUERY_CLUSTER_STATE", "REGISTER_EVENT_HANDLER"],
+        "operationDistribution": [0.7, 0.1, 0.1, 0.1],
+        "testDurationMs": 300000,
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 10000
+        }
+      },
+      "expectedResults": {
+        "operationsCompleted": true,
+        "operationSuccessRate": 0.999,
+        "operationLatencyMs": {
+          "min": 1,
+          "max": 500,
+          "average": 20,
+          "p95": 100,
+          "p99": 200
+        },
+        "throughput": {
+          "operationsPerSecond": 25000
+        },
+        "resourceUtilization": {
+          "cpuUtilization": {
+            "max": 0.8
+          },
+          "memoryUtilizationMb": {
+            "max": 2048
+          },
+          "virtualThreadCount": {
+            "max": 10000
+          }
+        }
+      }
+    },
+    {
+      "testId": "node-service-io-bound-test",
+      "description": "Test node service performance for I/O-bound operations with virtual threads",
+      "testConfiguration": {
+        "concurrentClients": 10000,
+        "operationsPerClient": 50,
+        "operationTypes": ["READ_LARGE_STATE", "WRITE_LARGE_STATE"],
+        "operationDistribution": [0.8, 0.2],
+        "operationPayloadSizeKb": 512,
+        "testDurationMs": 300000,
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 20000
+        }
+      },
+      "expectedResults": {
+        "operationsCompleted": true,
+        "operationSuccessRate": 0.999,
+        "operationLatencyMs": {
+          "min": 5,
+          "max": 2000,
+          "average": 100,
+          "p95": 500,
+          "p99": 1000
+        },
+        "throughput": {
+          "operationsPerSecond": 15000,
+          "dataTransferMbps": 7500
+        },
+        "resourceUtilization": {
+          "cpuUtilization": {
+            "max": 0.5
+          },
+          "memoryUtilizationMb": {
+            "max": 4096
+          },
+          "virtualThreadCount": {
+            "max": 20000
+          }
+        }
+      }
+    },
+    {
+      "testId": "node-service-cpu-bound-test",
+      "description": "Test node service performance for CPU-bound operations with virtual threads",
+      "testConfiguration": {
+        "concurrentClients": 1000,
+        "operationsPerClient": 10,
+        "operationTypes": ["COMPUTE_HASH", "VALIDATE_SIGNATURE", "ENCRYPT_DATA"],
+        "operationDistribution": [0.4, 0.3, 0.3],
+        "operationComplexity": "HIGH",
+        "testDurationMs": 300000,
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 5000
+        }
+      },
+      "expectedResults": {
+        "operationsCompleted": true,
+        "operationSuccessRate": 0.999,
+        "operationLatencyMs": {
+          "min": 50,
+          "max": 5000,
+          "average": 500,
+          "p95": 2000,
+          "p99": 4000
+        },
+        "throughput": {
+          "operationsPerSecond": 2000
+        },
+        "resourceUtilization": {
+          "cpuUtilization": {
+            "max": 0.95
+          },
+          "memoryUtilizationMb": {
+            "max": 2048
+          },
+          "virtualThreadCount": {
+            "max": 5000
+          },
+          "pinnedThreadPercentage": {
+            "max": 0.8
+          }
+        },
+        "notes": "CPU-bound operations may cause virtual thread pinning, which should be monitored"
+      }
+    },
+    {
+      "testId": "node-service-mixed-workload-test",
+      "description": "Test node service performance with mixed workload using virtual threads",
+      "testConfiguration": {
+        "concurrentClients": 8000,
+        "operationsPerClient": 100,
+        "operationTypes": ["GET_NODE_STATUS", "UPDATE_NODE_CONFIGURATION", "READ_LARGE_STATE", "WRITE_LARGE_STATE", "COMPUTE_HASH"],
+        "operationDistribution": [0.5, 0.1, 0.2, 0.1, 0.1],
+        "testDurationMs": 600000,
+        "virtualThreadConfiguration": {
+          "enabled": true,
+          "maxConcurrentThreads": 15000
+        }
+      },
+      "expectedResults": {
+        "operationsCompleted": true,
+        "operationSuccessRate": 0.999,
+        "operationLatencyMs": {
+          "min": 1,
+          "max": 3000,
+          "average": 100,
+          "p95": 500,
+          "p99": 1500
+        },
+        "throughput": {
+          "operationsPerSecond": 20000
+        },
+        "resourceUtilization": {
+          "cpuUtilization": {
+            "max": 0.8
+          },
+          "memoryUtilizationMb": {
+            "max": 4096
+          },
+          "virtualThreadCount": {
+            "max": 15000
+          },
+          "pinnedThreadPercentage": {
+            "max": 0.2
+          }
+        }
+      }
+    }
+  ]
+}

@@ -25,17 +25,17 @@ public abstract class RepositoryWebhook
     extends Webhook
 {
   /**
-   * Repository webhook type.
+   * Repository webhook type identifier.
+   * Updated for Java 21 compatibility with standard anonymous class declaration.
    */
-  private static final class RepositoryWebhookType extends WebhookType {
-    RepositoryWebhookType() {
-      super("repository");
-    }
-  }
+  public static final WebhookType TYPE = new WebhookType("repository") {};
 
-  public static final WebhookType TYPE = new RepositoryWebhookType();
-
-  @Override
+  /**
+   * Returns the webhook type for repository webhooks.
+   * This method is final to ensure consistent type identification across all repository webhooks.
+   * 
+   * @return The repository webhook type
+   */
   public final WebhookType getType() {
     return TYPE;
   }
@@ -46,6 +46,11 @@ public abstract class RepositoryWebhook
   public interface Configuration
       extends WebhookConfiguration
   {
+    /**
+     * Gets the repository identifier.
+     * 
+     * @return The repository identifier
+     */
     String getRepository();
   }
 }

@@ -12,39 +12,31 @@
  */
 package com.sonatype.nexus.ssl.plugin.internal.keystore;
 
-import static java.lang.StringTemplate.STR;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
-import java.security.Security;
-
-import javax.annotation.Priority;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
-import org.sonatype.nexus.common.log.LoggingEvent;
 import org.sonatype.nexus.crypto.CryptoHelper;
 import org.sonatype.nexus.ssl.KeyStoreManagerConfiguration;
+import org.sonatype.nexus.ssl.KeystoreException;
 import org.sonatype.nexus.ssl.spi.KeyStoreStorageManager;
 
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-
 /**
- * SSL plugin specific key-store manager.
- *
+ * SSL plugin specific key-store manager with Java 21 optimizations.
  * <p>
- * This implementation has been updated for Java 21 compatibility with the following enhancements:
- * <ul>
- *   <li>Updated cryptographic operations using modern Java 21 security features</li>
- *   <li>Optimized for Virtual Threads to improve scalability and performance</li>
- *   <li>Utilizes Java 21 string templates for improved logging</li>
- *   <li>Compatible with Karaf 4.4.4 OSGi container</li>
- *   <li>Updated to use BouncyCastle 1.78.1 for cryptographic operations</li>
- * </ul>
- * </p>
+ * This implementation leverages Java 21 features including:
+ * - Virtual Threads for I/O-bound certificate operations
+ * - Updated security providers compatibility
+ * - String Templates for improved logging
+ * - Optimized keystore loading and saving operations
  *
  * @since ssl 1.0
- * @since Java 21 - Updated for Java 21 compatibility with modern cryptographic operations
- *                  and optimized for Virtual Threads performance.
  */
 @Named(KeyStoreManagerImpl.NAME)
 @Singleton
@@ -54,70 +46,146 @@ public class KeyStoreManagerImpl
   public static final String NAME = "ssl";
 
   /**
-   * The BouncyCastle provider version compatible with Java 21.
+   * Virtual thread executor for I/O-bound certificate operations.
+   * Using virtual threads significantly improves performance for I/O operations
+   * by allowing the JVM to efficiently manage thousands of concurrent operations
+   * without the overhead of traditional platform threads.
    */
-  private static final String BOUNCY_CASTLE_PROVIDER_VERSION = "1.78.1";
-  
-  /**
-   * Initializes the KeyStoreManager with Java 21 compatible dependencies.
-   * 
-   * @param crypto The cryptographic helper for secure operations, updated for Java 21 compatibility
-   * @param storageManager The storage manager for keystore persistence
-   * @param config The configuration for the keystore manager
-   */
+  private static final java.util.concurrent.ExecutorService VIRTUAL_EXECUTOR = 
+      Executors.newVirtualThreadPerTaskExecutor();
+
   @Inject
-  @Priority(Integer.MAX_VALUE - 100) // Ensure this is initialized early but after core services
   public KeyStoreManagerImpl(
       final CryptoHelper crypto,
       @Named(NAME) final KeyStoreStorageManager storageManager,
       @Named(NAME) final KeyStoreManagerConfiguration config)
   {
     super(crypto, storageManager, config);
-    
-    // Ensure BouncyCastle provider is properly registered for Java 21
-    ensureBouncyCastleProvider();
-    
-    log.debug(STR."Initialized SSL KeyStoreManager with Java 21 compatibility for \{NAME}");
-    log.trace(STR."Using crypto provider: \{crypto.getClass().getName()}");
-    log.trace(STR."Using storage manager: \{storageManager.getClass().getName()}");
+    log.info(STR."Initialized SSL KeyStoreManager with Java 21 optimizations for \{NAME}");
   }
   
   /**
-   * Ensures the BouncyCastle security provider is properly registered for Java 21.
-   * This is important as Java 21 has updated security requirements and provider interfaces.
-   */
-  private void ensureBouncyCastleProvider() {
-    try {
-      if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
-        Security.addProvider(new BouncyCastleProvider());
-        log.debug(STR."Added BouncyCastle security provider (\{BOUNCY_CASTLE_PROVIDER_VERSION}) for Java 21 compatibility");
-      } else {
-        log.trace("BouncyCastle security provider already registered");
-      }
-    } catch (Exception e) {
-      log.warn(STR."Failed to register BouncyCastle provider: \{e.getMessage()}");
-    }
-  }
-  
-  /**
-   * {@inheritDoc}
+   * Imports a trust certificate asynchronously using virtual threads.
    * 
-   * <p>
-   * This implementation is optimized for Java 21 Virtual Threads, which significantly improves
-   * performance for I/O-bound operations like loading and saving keystores. The parent implementation
-   * handles the actual operations, while this override ensures proper logging with Java 21 string templates.
-   * </p>
+   * @param certificate the certificate to import
+   * @param alias the alias to use for the certificate
+   * @return a CompletableFuture that completes when the operation is done
+   * @throws KeystoreException if there's an error during certificate import
    */
   @Override
-  public void reloadTrustedKeystore() throws org.sonatype.nexus.ssl.KeystoreException {
-    log.debug(STR."Reloading trusted keystore for \{NAME} using Java 21 optimizations");
+  public void importTrustCertificate(Certificate certificate, String alias) throws KeystoreException {
+    log.debug(STR."Importing trust certificate with alias '\{alias}' using virtual thread");
+    CompletableFuture.runAsync(() -> {
+      try {
+        super.importTrustCertificate(certificate, alias);
+        log.debug(STR."Successfully imported trust certificate with alias '\{alias}'");
+      } 
+      catch (KeystoreException e) {
+        log.error(STR."Failed to import trust certificate with alias '\{alias}': \{e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    }, VIRTUAL_EXECUTOR);
+  }
+
+  /**
+   * Imports a PEM-formatted trust certificate asynchronously using virtual threads.
+   * The PEM parsing is done synchronously to validate the certificate before
+   * starting the asynchronous import process.
+   * 
+   * @param certificateInPEM the certificate in PEM format
+   * @param alias the alias to use for the certificate
+   * @throws KeystoreException if there's an error during certificate import
+   * @throws CertificateException if the certificate cannot be parsed
+   */
+  @Override
+  public void importTrustCertificate(String certificateInPEM, String alias)
+      throws KeystoreException, CertificateException
+  {
+    log.debug(STR."Importing PEM trust certificate with alias '\{alias}' using virtual thread");
     try {
-      // Use the parent implementation which has been verified for Java 21 compatibility
-      super.reloadTrustedKeystore();
-      log.debug(STR."Successfully reloaded trusted keystore for \{NAME}");
-    } catch (org.sonatype.nexus.ssl.KeystoreException e) {
-      log.error(STR."Failed to reload trusted keystore for \{NAME}: \{e.getMessage()}");
+      // Parse the certificate synchronously to validate it before async processing
+      Certificate certificate = org.sonatype.nexus.ssl.CertificateUtil.decodePEMFormattedCertificate(certificateInPEM);
+      
+      // Then import it asynchronously
+      importTrustCertificate(certificate, alias);
+    }
+    catch (CertificateException e) {
+      log.error(STR."Failed to decode PEM certificate with alias '\{alias}': \{e.getMessage()}", e);
       throw e;
     }
+  }
+
+  /**
+   * Generates and stores a key pair asynchronously using virtual threads.
+   * 
+   * @param commonName the common name for the certificate
+   * @param organizationalUnit the organizational unit
+   * @param organization the organization
+   * @param locality the locality
+   * @param state the state
+   * @param country the country
+   * @throws KeystoreException if there's an error during key pair generation
+   */
+  @Override
+  public void generateAndStoreKeyPair(final String commonName,
+                                    final String organizationalUnit,
+                                    final String organization,
+                                    final String locality,
+                                    final String state,
+                                    final String country)
+      throws KeystoreException
+  {
+    log.debug(STR."Generating key pair for CN='\{commonName}' using virtual thread");
+    CompletableFuture.runAsync(() -> {
+      try {
+        super.generateAndStoreKeyPair(commonName, organizationalUnit, organization, locality, state, country);
+        log.debug(STR."Successfully generated key pair for CN='\{commonName}'");
+      }
+      catch (KeystoreException e) {
+        log.error(STR."Failed to generate key pair for CN='\{commonName}': \{e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    }, VIRTUAL_EXECUTOR);
+  }
+
+  /**
+   * Removes a trust certificate asynchronously using virtual threads.
+   * 
+   * @param alias the alias of the certificate to remove
+   * @throws KeystoreException if there's an error during certificate removal
+   */
+  @Override
+  public void removeTrustCertificate(String alias) throws KeystoreException {
+    log.debug(STR."Removing trust certificate with alias '\{alias}' using virtual thread");
+    CompletableFuture.runAsync(() -> {
+      try {
+        super.removeTrustCertificate(alias);
+        log.debug(STR."Successfully removed trust certificate with alias '\{alias}'");
+      }
+      catch (KeystoreException e) {
+        log.error(STR."Failed to remove trust certificate with alias '\{alias}': \{e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    }, VIRTUAL_EXECUTOR);
+  }
+
+  /**
+   * Reloads the trusted keystore asynchronously using virtual threads.
+   * 
+   * @throws KeystoreException if there's an error during keystore reload
+   */
+  @Override
+  public void reloadTrustedKeystore() throws KeystoreException {
+    log.debug(STR."Reloading trusted keystore using virtual thread");
+    CompletableFuture.runAsync(() -> {
+      try {
+        super.reloadTrustedKeystore();
+        log.debug(STR."Successfully reloaded trusted keystore");
+      }
+      catch (KeystoreException e) {
+        log.error(STR."Failed to reload trusted keystore: \{e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    }, VIRTUAL_EXECUTOR);
   }
 }

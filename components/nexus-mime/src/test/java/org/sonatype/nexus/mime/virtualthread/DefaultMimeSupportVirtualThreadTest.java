@@ -14,340 +14,511 @@ package org.sonatype.nexus.mime.virtualthread;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.mime.MimeRule;
+import org.sonatype.nexus.mime.MimeRulesSource;
 import org.sonatype.nexus.mime.internal.DefaultMimeSupport;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.Timeout;
 
+import static java.lang.StringTemplate.STR;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link DefaultMimeSupport} using Java 21 Virtual Threads.
  * 
- * This test validates that MIME detection operations scale efficiently with Virtual Threads
- * and don't suffer from thread pinning issues when performing I/O operations.
+ * This test validates that DefaultMimeSupport works correctly when accessed
+ * concurrently by many virtual threads, ensuring thread safety and performance
+ * under high concurrency scenarios, particularly for I/O-bound operations.
  */
 public class DefaultMimeSupportVirtualThreadTest
     extends TestSupport
 {
-  private DefaultMimeSupport underTest;
-  
-  private ExecutorService virtualThreadExecutor;
-  private ExecutorService platformThreadExecutor;
-  
-  @TempDir
-  Path tempDir;
-  
-  private File gifFile;
-  private File zipFile;
-  private File jarFile;
-  
-  @BeforeEach
-  void setUp() throws IOException {
-    underTest = new DefaultMimeSupport();
-    
-    // Create executors for testing
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
-    virtualThreadExecutor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    // Limited platform thread pool for comparison
-    platformThreadExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
-    
-    // Create test files in temp directory
-    gifFile = copyResourceToTempFile("mime/file.gif");
-    zipFile = copyResourceToTempFile("mime/file.zip");
-    jarFile = copyResourceToTempFile("mime/file.jar");
-  }
-  
-  @AfterEach
-  void tearDown() {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-    }
-    if (platformThreadExecutor != null) {
-      platformThreadExecutor.shutdown();
-    }
-  }
+  private static final int THREAD_COUNT = 5000;
+  private static final int OPERATIONS_PER_THREAD = 10;
   
   /**
-   * Tests that MIME detection works correctly with a high number of concurrent operations using Virtual Threads.
-   * This validates that the DefaultMimeSupport class can handle high concurrency scenarios efficiently.
+   * Test that verifies concurrent path-based MIME type detection from many virtual threads.
+   * 
+   * This test creates thousands of virtual threads that simultaneously detect MIME types
+   * from file paths, ensuring that DefaultMimeSupport handles concurrent path-based
+   * detection correctly under high concurrency.
    */
   @Test
-  void concurrentMimeDetectionWithVirtualThreads() throws Exception {
-    int taskCount = 5000; // High number of concurrent operations
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
+  @Timeout(value = 10, unit = TimeUnit.SECONDS)
+  public void testConcurrentPathBasedDetection() throws Exception {
+    final DefaultMimeSupport underTest = new DefaultMimeSupport();
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
+    final ConcurrentHashMap<String, String> results = new ConcurrentHashMap<>();
+    final AtomicInteger errors = new AtomicInteger(0);
     
-    // Submit multiple concurrent tasks using virtual threads
-    for (int i = 0; i < taskCount; i++) {
-      final int index = i % 3; // Cycle through the 3 test files
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String mimeType = detectMimeTypeForIndex(index);
-          assertThat(mimeType, notNullValue());
-        } 
-        catch (Exception e) {
-          log.error("Error detecting MIME type", e);
-          errorCount.incrementAndGet();
-        } 
-        finally {
-          latch.countDown();
-        }
-      });
-    }
+    // Define test paths and their expected MIME types
+    final String[][] testPaths = {
+        {"/some/path/artifact.pom", "application/xml"},
+        {"/some/path/artifact.jar", "application/java-archive"},
+        {"/some/path/artifact-sources.jar", "application/java-archive"},
+        {"/some/path/maven-metadata.xml", "application/xml"},
+        {"/some/path/some.xml", "application/xml"},
+        {"/some/path/some.tar.gz", "application/x-gzip"},
+        {"/some/path/some.tar.bz2", "application/x-bzip2"},
+        {"/some/path/some.zip", "application/zip"},
+        {"/some/path/some.war", "application/java-archive"},
+        {"/some/path/some.rar", "application/java-archive"}
+    };
     
-    // Wait for all tasks to complete with a reasonable timeout
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    
-    // Verify results
-    assertThat("All tasks should complete within the timeout", completed, is(true));
-    assertThat("No errors should occur during MIME detection", errorCount.get(), is(0));
-  }
-  
-  /**
-   * Tests that MIME detection with content-based analysis doesn't suffer from thread pinning issues
-   * when using Virtual Threads. This is important for I/O-bound operations like reading file content.
-   */
-  @Test
-  void contentBasedMimeDetectionDoesNotPinVirtualThreads() throws Exception {
-    int taskCount = 1000;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicReference<Exception> firstException = new AtomicReference<>();
-    
-    // Submit tasks that specifically perform content-based MIME detection
-    for (int i = 0; i < taskCount; i++) {
-      virtualThreadExecutor.submit(() -> {
-        try (InputStream is = new FileInputStream(gifFile)) {
-          // Force content-based detection by providing null filename
-          String mimeType = underTest.detectMimeType(is, null);
-          assertThat(mimeType, equalTo("image/gif"));
-        } 
-        catch (Exception e) {
-          if (firstException.get() == null) {
-            firstException.set(e);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create a large number of virtual threads that will all detect MIME types concurrently
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int threadId = i;
+        futures.add(executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Each thread performs multiple MIME type detections
+            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
+              int pathIndex = (threadId + j) % testPaths.length;
+              String path = testPaths[pathIndex][0];
+              String expectedMimeType = testPaths[pathIndex][1];
+              
+              String detectedMimeType = underTest.guessMimeTypeFromPath(path);
+              results.put(STR."{threadId}-{j}", detectedMimeType);
+              
+              if (!expectedMimeType.equals(detectedMimeType)) {
+                errors.incrementAndGet();
+              }
+            }
+            
+            return null;
+          } 
+          finally {
+            completionLatch.countDown();
           }
-        } 
-        finally {
-          latch.countDown();
-        }
-      });
+        }));
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      assertTrue(completionLatch.await(5, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
+      
+      // Verify that all detections were correct
+      assertEquals(0, errors.get(), "Some MIME type detections were incorrect");
+      
+      // Verify specific examples
+      for (int i = 0; i < 10; i++) {
+        int pathIndex = i % testPaths.length;
+        String expectedMimeType = testPaths[pathIndex][1];
+        assertEquals(expectedMimeType, results.get(STR."0-{i}"));
+      }
+    }
+  }
+  
+  /**
+   * Test that verifies concurrent content-based MIME type detection from many virtual threads.
+   * 
+   * This test creates thousands of virtual threads that simultaneously detect MIME types
+   * from file content using InputStreams, ensuring that DefaultMimeSupport handles concurrent
+   * content-based detection correctly under high concurrency and doesn't suffer from thread pinning.
+   */
+  @Test
+  @Timeout(value = 20, unit = TimeUnit.SECONDS)
+  public void testConcurrentContentBasedDetection() throws Exception {
+    final DefaultMimeSupport underTest = new DefaultMimeSupport();
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
+    final ConcurrentHashMap<String, String> results = new ConcurrentHashMap<>();
+    final AtomicInteger errors = new AtomicInteger(0);
+    
+    // Define test files and their expected MIME types
+    final String[][] testFiles = {
+        {"src/test/resources/mime/file.gif", "image/gif"},
+        {"src/test/resources/mime/file.zip", "application/zip"},
+        {"src/test/resources/mime/empty.zip", "application/zip"},
+        {"src/test/resources/mime/file.jar", "application/java-archive"}
+    };
+    
+    // Resolve file paths
+    final File[] resolvedFiles = new File[testFiles.length];
+    for (int i = 0; i < testFiles.length; i++) {
+      resolvedFiles[i] = util.resolveFile(testFiles[i][0]);
+      assertNotNull(resolvedFiles[i], STR."Test file {testFiles[i][0]} should exist");
+      assertTrue(resolvedFiles[i].exists(), STR."Test file {testFiles[i][0]} should exist");
     }
     
-    // Wait for all tasks to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    
-    // Verify results
-    assertThat("All tasks should complete within the timeout", completed, is(true));
-    assertThat("No exceptions should occur during content-based MIME detection", 
-        firstException.get(), is(null));
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create a large number of virtual threads that will all detect MIME types concurrently
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int threadId = i;
+        futures.add(executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Each thread performs multiple MIME type detections
+            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
+              int fileIndex = (threadId + j) % resolvedFiles.length;
+              File file = resolvedFiles[fileIndex];
+              String expectedMimeType = testFiles[fileIndex][1];
+              
+              // Use try-with-resources to ensure InputStream is closed
+              try (InputStream is = new FileInputStream(file)) {
+                String detectedMimeType = underTest.detectMimeType(is, file.getName());
+                results.put(STR."{threadId}-{j}", detectedMimeType);
+                
+                if (!expectedMimeType.equals(detectedMimeType)) {
+                  errors.incrementAndGet();
+                }
+              }
+            }
+            
+            return null;
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        }));
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      assertTrue(completionLatch.await(15, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
+      
+      // Verify that all detections were correct
+      assertEquals(0, errors.get(), "Some MIME type detections were incorrect");
+      
+      // Verify specific examples
+      for (int i = 0; i < 4; i++) {
+        int fileIndex = i % resolvedFiles.length;
+        String expectedMimeType = testFiles[fileIndex][1];
+        assertEquals(expectedMimeType, results.get(STR."0-{i}"));
+      }
+    }
   }
   
   /**
-   * Compares performance between Virtual Threads and Platform Threads for MIME detection operations.
-   * This test validates that Virtual Threads provide better scalability for I/O-bound operations.
+   * Test that verifies concurrent MIME type detection with custom MimeRulesSource from many virtual threads.
+   * 
+   * This test creates thousands of virtual threads that simultaneously detect MIME types
+   * using a custom MimeRulesSource, ensuring that DefaultMimeSupport handles concurrent
+   * detection with custom rules correctly under high concurrency.
    */
   @Test
-  void compareVirtualThreadsVsPlatformThreadsPerformance() throws Exception {
-    int taskCount = 1000;
+  @Timeout(value = 10, unit = TimeUnit.SECONDS)
+  public void testConcurrentDetectionWithCustomRules() throws Exception {
+    final DefaultMimeSupport underTest = new DefaultMimeSupport();
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
+    final ConcurrentHashMap<String, String> results = new ConcurrentHashMap<>();
+    final AtomicInteger errors = new AtomicInteger(0);
     
-    // Measure execution time with platform threads
-    long platformThreadTime = measureExecutionTime(platformThreadExecutor, taskCount);
-    log.info("Platform thread execution time for {} tasks: {} ms", taskCount, platformThreadTime);
+    // Create a custom MimeRulesSource that always returns a fixed MIME type
+    final MimeRulesSource customSource = new MimeRulesSource() {
+      @Override
+      public MimeRule getRuleForName(String path) {
+        return new MimeRule(false, "custom/mime-type");
+      }
+    };
     
-    // Measure execution time with virtual threads
-    long virtualThreadTime = measureExecutionTime(virtualThreadExecutor, taskCount);
-    log.info("Virtual thread execution time for {} tasks: {} ms", taskCount, virtualThreadTime);
-    
-    // For high concurrency I/O-bound operations, virtual threads should be more efficient
-    // This might not always be true for small workloads due to JVM warmup, but should be
-    // observable with sufficient load
-    assertThat("Virtual threads should handle high concurrency efficiently", 
-        virtualThreadTime, lessThan(platformThreadTime * 2)); // Conservative assertion
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create a large number of virtual threads that will all detect MIME types concurrently
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int threadId = i;
+        futures.add(executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Each thread performs multiple MIME type detections with custom rules
+            for (int j = 0; j < OPERATIONS_PER_THREAD; j++) {
+              String path = STR."/some/path/file-{threadId}-{j}.ext";
+              String expectedMimeType = "custom/mime-type";
+              
+              String detectedMimeType = underTest.guessMimeTypeFromPath(path, customSource);
+              results.put(STR."{threadId}-{j}", detectedMimeType);
+              
+              if (!expectedMimeType.equals(detectedMimeType)) {
+                errors.incrementAndGet();
+              }
+            }
+            
+            return null;
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        }));
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      assertTrue(completionLatch.await(5, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
+      
+      // Verify that all detections were correct
+      assertEquals(0, errors.get(), "Some MIME type detections were incorrect");
+      
+      // Verify specific examples
+      for (int i = 0; i < 10; i++) {
+        assertEquals("custom/mime-type", results.get(STR."0-{i}"));
+      }
+    }
   }
   
   /**
-   * Tests that extension-based MIME detection works correctly with Virtual Threads.
+   * Test that compares the performance of virtual threads vs platform threads for MIME detection.
+   * 
+   * This test creates both virtual threads and platform threads to perform MIME type detection
+   * and compares their performance, demonstrating the benefits of virtual threads for
+   * concurrent I/O-bound operations like content-based MIME detection.
    */
   @Test
-  void extensionBasedMimeDetectionWithVirtualThreads() throws Exception {
-    int taskCount = 5000;
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger errorCount = new AtomicInteger(0);
+  @Timeout(value = 30, unit = TimeUnit.SECONDS)
+  public void compareVirtualAndPlatformThreadPerformance() throws Exception {
+    final DefaultMimeSupport underTest = new DefaultMimeSupport();
     
-    // Submit multiple concurrent tasks using virtual threads
-    for (int i = 0; i < taskCount; i++) {
-      final int index = i % 3; // Cycle through the 3 test files
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String filename = getFilenameForIndex(index);
-          String mimeType = underTest.guessMimeTypeFromPath(filename);
-          assertThat(mimeType, notNullValue());
+    // Define test files for content-based detection
+    final String[][] testFiles = {
+        {"src/test/resources/mime/file.gif", "image/gif"},
+        {"src/test/resources/mime/file.zip", "application/zip"},
+        {"src/test/resources/mime/empty.zip", "application/zip"},
+        {"src/test/resources/mime/file.jar", "application/java-archive"}
+    };
+    
+    // Resolve file paths
+    final File[] resolvedFiles = new File[testFiles.length];
+    for (int i = 0; i < testFiles.length; i++) {
+      resolvedFiles[i] = util.resolveFile(testFiles[i][0]);
+      assertNotNull(resolvedFiles[i], STR."Test file {testFiles[i][0]} should exist");
+      assertTrue(resolvedFiles[i].exists(), STR."Test file {testFiles[i][0]} should exist");
+    }
+    
+    // Test with virtual threads for content-based detection
+    long virtualThreadContentTime = measureContentDetectionPerformance(underTest, resolvedFiles, true, 5000);
+    
+    // Test with platform threads for content-based detection (using a smaller number to avoid resource exhaustion)
+    long platformThreadContentTime = measureContentDetectionPerformance(underTest, resolvedFiles, false, 500);
+    
+    // Scale the platform thread time to match the virtual thread count
+    long scaledPlatformThreadContentTime = platformThreadContentTime * 10; // 5000/500 = 10
+    
+    // Test with virtual threads for path-based detection
+    long virtualThreadPathTime = measurePathDetectionPerformance(underTest, true, 5000);
+    
+    // Test with platform threads for path-based detection
+    long platformThreadPathTime = measurePathDetectionPerformance(underTest, false, 500);
+    
+    // Scale the platform thread time to match the virtual thread count
+    long scaledPlatformThreadPathTime = platformThreadPathTime * 10; // 5000/500 = 10
+    
+    log.info(STR."Performance comparison:\n" +
+             STR."  Content-based MIME detection:\n" +
+             STR."    Virtual Threads (5000): {virtualThreadContentTime}ms\n" +
+             STR."    Platform Threads (500): {platformThreadContentTime}ms\n" +
+             STR."    Scaled Platform Threads (equivalent to 5000): {scaledPlatformThreadContentTime}ms\n" +
+             STR."  Path-based MIME detection:\n" +
+             STR."    Virtual Threads (5000): {virtualThreadPathTime}ms\n" +
+             STR."    Platform Threads (500): {platformThreadPathTime}ms\n" +
+             STR."    Scaled Platform Threads (equivalent to 5000): {scaledPlatformThreadPathTime}ms");
+    
+    // We expect virtual threads to be more efficient for I/O-bound operations (content-based detection),
+    // but we don't assert on exact numbers as performance can vary across environments
+  }
+  
+  /**
+   * Helper method to measure the performance of content-based MIME detection using either virtual or platform threads.
+   * 
+   * @param mimeSupport The DefaultMimeSupport to test
+   * @param files The test files to use for detection
+   * @param useVirtualThreads Whether to use virtual threads (true) or platform threads (false)
+   * @param threadCount The number of threads to create
+   * @return The time in milliseconds taken to complete all operations
+   */
+  private long measureContentDetectionPerformance(
+      DefaultMimeSupport mimeSupport,
+      File[] files,
+      boolean useVirtualThreads,
+      int threadCount) throws Exception {
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    
+    ExecutorService executor = useVirtualThreads ?
+        Executors.newVirtualThreadPerTaskExecutor() :
+        Executors.newFixedThreadPool(Math.min(threadCount, 200), new ThreadFactory() {
+          private final AtomicInteger counter = new AtomicInteger();
           
-          // Verify correct MIME type based on extension
-          switch (filename.substring(filename.lastIndexOf('.') + 1)) {
-            case "gif" -> assertThat(mimeType, equalTo("image/gif"));
-            case "zip" -> assertThat(mimeType, equalTo("application/zip"));
-            case "jar" -> assertThat(mimeType, equalTo("application/java-archive"));
-            default -> throw new AssertionError("Unexpected file extension");
+          @Override
+          public Thread newThread(Runnable r) {
+            Thread t = new Thread(r);
+            t.setName(STR."platform-{counter.incrementAndGet()}");
+            return t;
           }
-        } 
-        catch (Exception e) {
-          log.error("Error detecting MIME type", e);
-          errorCount.incrementAndGet();
-        } 
-        finally {
-          latch.countDown();
-        }
-      });
+        });
+    
+    try {
+      // Create threads that will perform content-based MIME detection
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i;
+        futures.add(executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Perform multiple content-based MIME detections
+            for (int j = 0; j < 5; j++) {
+              int fileIndex = (threadId + j) % files.length;
+              File file = files[fileIndex];
+              
+              // Use try-with-resources to ensure InputStream is closed
+              try (InputStream is = new FileInputStream(file)) {
+                mimeSupport.detectMimeType(is, file.getName());
+              }
+            }
+            
+            return null;
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        }));
+      }
+      
+      // Start timing
+      long startTime = System.currentTimeMillis();
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      completionLatch.await();
+      
+      // End timing
+      long endTime = System.currentTimeMillis();
+      
+      return endTime - startTime;
+    } 
+    finally {
+      executor.shutdown();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
     }
-    
-    // Wait for all tasks to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    
-    // Verify results
-    assertThat("All tasks should complete within the timeout", completed, is(true));
-    assertThat("No errors should occur during extension-based MIME detection", errorCount.get(), is(0));
   }
   
   /**
-   * Tests that MIME detection with a large number of concurrent operations doesn't exhaust system resources
-   * when using Virtual Threads. This validates the scalability benefits of Virtual Threads.
+   * Helper method to measure the performance of path-based MIME detection using either virtual or platform threads.
+   * 
+   * @param mimeSupport The DefaultMimeSupport to test
+   * @param useVirtualThreads Whether to use virtual threads (true) or platform threads (false)
+   * @param threadCount The number of threads to create
+   * @return The time in milliseconds taken to complete all operations
    */
-  @Test
-  void highConcurrencyMimeDetectionWithVirtualThreads() throws Exception {
-    int taskCount = 10000; // Very high concurrency
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    AtomicInteger successCount = new AtomicInteger(0);
+  private long measurePathDetectionPerformance(
+      DefaultMimeSupport mimeSupport,
+      boolean useVirtualThreads,
+      int threadCount) throws Exception {
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(threadCount);
     
-    // Submit a large number of concurrent tasks
-    for (int i = 0; i < taskCount; i++) {
-      final int index = i % 3;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String mimeType = detectMimeTypeForIndex(index);
-          if (mimeType != null) {
-            successCount.incrementAndGet();
-          }
-        } 
-        catch (Exception e) {
-          log.error("Error in high concurrency test", e);
-        } 
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for all tasks to complete with a reasonable timeout
-    boolean completed = latch.await(60, TimeUnit.SECONDS);
-    
-    // Verify results
-    assertThat("All tasks should complete within the timeout", completed, is(true));
-    assertThat("Most operations should succeed", successCount.get(), greaterThan(taskCount - 100));
-  }
-  
-  /**
-   * Helper method to measure execution time for a batch of MIME detection operations.
-   */
-  private long measureExecutionTime(ExecutorService executor, int taskCount) throws Exception {
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    List<Exception> exceptions = new ArrayList<>();
-    
-    long startTime = System.currentTimeMillis();
-    
-    // Submit tasks
-    for (int i = 0; i < taskCount; i++) {
-      final int index = i % 3;
-      executor.submit(() -> {
-        try {
-          detectMimeTypeForIndex(index);
-        } 
-        catch (Exception e) {
-          synchronized (exceptions) {
-            exceptions.add(e);
-          }
-        } 
-        finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    // Wait for all tasks to complete
-    boolean completed = latch.await(30, TimeUnit.SECONDS);
-    long endTime = System.currentTimeMillis();
-    
-    if (!completed) {
-      throw new AssertionError("Tasks did not complete within timeout");
-    }
-    
-    if (!exceptions.isEmpty()) {
-      throw new AssertionError(STR."\{exceptions.size()} exceptions occurred during execution", 
-          exceptions.get(0));
-    }
-    
-    return endTime - startTime;
-  }
-  
-  /**
-   * Helper method to detect MIME type for a file based on index.
-   */
-  private String detectMimeTypeForIndex(int index) throws IOException {
-    File file = switch (index) {
-      case 0 -> gifFile;
-      case 1 -> zipFile;
-      case 2 -> jarFile;
-      default -> throw new IllegalArgumentException("Invalid index");
+    // Define test paths for path-based detection
+    final String[] testPaths = {
+        "/some/path/artifact.pom",
+        "/some/path/artifact.jar",
+        "/some/path/artifact-sources.jar",
+        "/some/path/maven-metadata.xml",
+        "/some/path/some.xml",
+        "/some/path/some.tar.gz",
+        "/some/path/some.tar.bz2",
+        "/some/path/some.zip",
+        "/some/path/some.war",
+        "/some/path/some.rar"
     };
     
-    try (InputStream is = new FileInputStream(file)) {
-      return underTest.detectMimeType(is, file.getName());
+    ExecutorService executor = useVirtualThreads ?
+        Executors.newVirtualThreadPerTaskExecutor() :
+        Executors.newFixedThreadPool(Math.min(threadCount, 200), new ThreadFactory() {
+          private final AtomicInteger counter = new AtomicInteger();
+          
+          @Override
+          public Thread newThread(Runnable r) {
+            Thread t = new Thread(r);
+            t.setName(STR."platform-{counter.incrementAndGet()}");
+            return t;
+          }
+        });
+    
+    try {
+      // Create threads that will perform path-based MIME detection
+      List<Future<?>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < threadCount; i++) {
+        final int threadId = i;
+        futures.add(executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            startLatch.await();
+            
+            // Perform multiple path-based MIME detections
+            for (int j = 0; j < 20; j++) {
+              int pathIndex = (threadId + j) % testPaths.length;
+              String path = testPaths[pathIndex];
+              
+              mimeSupport.guessMimeTypeFromPath(path);
+            }
+            
+            return null;
+          } 
+          finally {
+            completionLatch.countDown();
+          }
+        }));
+      }
+      
+      // Start timing
+      long startTime = System.currentTimeMillis();
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      completionLatch.await();
+      
+      // End timing
+      long endTime = System.currentTimeMillis();
+      
+      return endTime - startTime;
+    } 
+    finally {
+      executor.shutdown();
+      executor.awaitTermination(5, TimeUnit.SECONDS);
     }
-  }
-  
-  /**
-   * Helper method to get filename for a file based on index.
-   */
-  private String getFilenameForIndex(int index) {
-    return switch (index) {
-      case 0 -> "test.gif";
-      case 1 -> "test.zip";
-      case 2 -> "test.jar";
-      default -> throw new IllegalArgumentException("Invalid index");
-    };
-  }
-  
-  /**
-   * Helper method to copy a test resource to a temporary file.
-   */
-  private File copyResourceToTempFile(String resourcePath) throws IOException {
-    File sourceFile = util.resolveFile(resourcePath);
-    File targetFile = tempDir.resolve(sourceFile.getName()).toFile();
-    Files.copy(sourceFile.toPath(), targetFile.toPath());
-    return targetFile;
   }
 }

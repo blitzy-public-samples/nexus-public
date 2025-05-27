@@ -15,7 +15,6 @@ package org.sonatype.nexus.repository.security.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.internal.AuthenticatingRealmImpl;
 import org.sonatype.nexus.security.realm.RealmManager;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
 
 import com.codahale.metrics.health.HealthCheck.Result;
 import org.apache.shiro.authc.AuthenticationException;
@@ -23,11 +22,11 @@ import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.Realm;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.experimental.categories.Category;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.InjectMocks;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.singleton;
@@ -39,7 +38,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@Tag("java21")
 public class DefaultUserHealthCheckTest
     extends TestSupport
 {

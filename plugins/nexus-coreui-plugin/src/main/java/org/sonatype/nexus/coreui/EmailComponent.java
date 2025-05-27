@@ -12,6 +12,10 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.CompletableFuture;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -38,13 +42,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Email {@link DirectComponent}.
- * 
- * This component handles email configuration and verification operations.
- * All DirectMethod operations in this component benefit from Java 21's Virtual Threads
- * infrastructure, which provides improved scalability for I/O-bound operations
- * like email verification without consuming significant system resources.
  *
- * @since 3.0 (Java 21 Virtual Thread optimization since 3.x)
+ * @since 3.0
  */
 @Named
 @Singleton
@@ -61,15 +60,15 @@ public class EmailComponent
 
   /**
    * Returns current configuration.
-   * 
-   * This method benefits from Java 21's Virtual Threads infrastructure when called through the REST API.
    */
   @DirectMethod
   @Timed
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public EmailConfigurationXO read() {
-    return convert(emailManager.getConfiguration());
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return CompletableFuture.supplyAsync(() -> convert(emailManager.getConfiguration()), executor).join();
+    }
   }
 
   EmailConfigurationXO convert(final EmailConfiguration value) {
@@ -89,14 +88,6 @@ public class EmailComponent
     );
   }
 
-  /**
-   * Updates the email configuration.
-   * 
-   * This method benefits from Java 21's Virtual Threads infrastructure when called through the REST API.
-   * 
-   * @param configuration the email configuration to update
-   * @return the updated configuration
-   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -104,8 +95,12 @@ public class EmailComponent
   @RequiresPermissions("nexus:settings:update")
   @Validate
   public EmailConfigurationXO update(@NotNull @Valid final EmailConfigurationXO configuration) {
-    emailManager.setConfiguration(convert(configuration), configuration.getPassword());
-    return read();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return CompletableFuture.supplyAsync(() -> {
+        emailManager.setConfiguration(convert(configuration), configuration.getPassword());
+        return read();
+      }, executor).join();
+    }
   }
 
   EmailConfiguration convert(final EmailConfigurationXO value) {
@@ -125,19 +120,6 @@ public class EmailComponent
     return emailConfiguration;
   }
 
-  /**
-   * Sends a verification email using the provided configuration.
-   * 
-   * This method performs an I/O-bound operation (sending an email) which automatically
-   * benefits from Java 21's Virtual Threads infrastructure. The DirectMethod annotation
-   * ensures this method is executed on a virtual thread when called through the REST API,
-   * providing improved scalability without consuming significant system resources.
-   * 
-   * @param configuration the email configuration to use
-   * @param address the email address to send verification to
-   * @throws EmailException if there is an error sending the email
-   * @since 3.0 (Java 21 Virtual Thread optimization since 3.x)
-   */
   @DirectMethod
   @Timed
   @ExceptionMetered
@@ -149,8 +131,14 @@ public class EmailComponent
       @NotNull @Email final String address)
       throws EmailException
   {
-    // Email sending is an I/O-bound operation that benefits from the Java 21 Virtual Thread infrastructure
-    // The underlying HTTP/REST layer automatically handles this method on a virtual thread
-    emailManager.sendVerification(convert(configuration), configuration.getPassword(), address);
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      CompletableFuture.runAsync(() -> {
+        try {
+          emailManager.sendVerification(convert(configuration), configuration.getPassword(), address);
+        } catch (EmailException e) {
+          throw new RuntimeException(e);
+        }
+      }, executor).join();
+    }
   }
 }

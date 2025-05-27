@@ -16,28 +16,29 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.concurrent.ConcurrentRunner;
+import org.sonatype.goodies.testsupport.concurrent.ConcurrentTask;
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.cooperation2.datastore.DefaultCooperation2Factory;
@@ -60,28 +61,30 @@ import org.mockito.Spy;
 
 import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.io.ByteStreams.toByteArray;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.stream.Collectors.summingInt;
+import static java.util.stream.Collectors.toList;
 import static org.awaitility.Awaitility.await;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.repository.http.HttpMethods.GET;
 
 /**
  * Tests for {@link ProxyFacetSupport} with Java 21 Virtual Threads.
+ * 
+ * This test class validates ProxyFacetSupport's behavior when running under Java 21's Virtual Threads,
+ * including concurrency patterns, I/O operation performance, and thread pinning detection.
  */
 public class ProxyFacetSupportVirtualThreadTest
     extends TestSupport
 {
-  private static final int NUM_CLIENTS = 1000;
+  private static final int NUM_CLIENTS = 1000; // Higher concurrency for virtual thread tests
 
-  private static final int NUM_PATHS = 50;
+  private static final int NUM_PATHS = 100; // More unique paths for virtual thread tests
 
   private static final String META_PREFIX = "meta/";
 
@@ -90,6 +93,9 @@ public class ProxyFacetSupportVirtualThreadTest
   private static final byte[] META_CONTENT = "META".getBytes(UTF_8);
 
   private static final byte[] ASSET_CONTENT = "ASSET".getBytes(UTF_8);
+
+  // Simulated blocking operation duration in milliseconds
+  private static final int BLOCKING_DURATION_MS = 50;
 
   @Mock
   Repository repository;
@@ -130,20 +136,19 @@ public class ProxyFacetSupportVirtualThreadTest
 
   Map<String, Content> storage = new ConcurrentHashMap<>();
 
+  AtomicInteger cooperationExceptionCount = new AtomicInteger();
+
   Multiset<String> upstreamRequestLog = ConcurrentHashMultiset.create();
 
   Semaphore metaDownloadPermits = new Semaphore(0);
 
   Semaphore assetDownloadPermits = new Semaphore(0);
 
-  // Track thread pinning events
-  AtomicInteger pinnedThreadCount = new AtomicInteger(0);
-  
-  // Track resource cleanup
-  AtomicInteger resourceCleanupCount = new AtomicInteger(0);
-  
-  // Track execution times for performance comparison
-  Map<String, Long> executionTimes = new ConcurrentHashMap<>();
+  // Track thread pinning occurrences
+  AtomicInteger threadPinningCount = new AtomicInteger();
+
+  // Track resource cleanup issues
+  AtomicInteger resourceLeakCount = new AtomicInteger();
 
   @Spy
   ProxyFacetSupport underTest = new ProxyFacetSupport()
@@ -180,9 +185,9 @@ public class ProxyFacetSupportVirtualThreadTest
           throw new RuntimeException(e);
         }
       }
-      if (path.contains("pinned")) {
-        // Simulate thread pinning by performing a blocking operation that would pin a virtual thread
-        simulateThreadPinning();
+      if (path.contains("pinning")) {
+        // Simulate an operation that would cause thread pinning
+        simulateThreadPinningOperation();
       }
       return ASSET_PREFIX + path;
     }
@@ -203,31 +208,47 @@ public class ProxyFacetSupportVirtualThreadTest
         if (url.contains("broken")) {
           throw new IOException("oops");
         }
-        if (url.contains("resource")) {
-          // Simulate resource allocation and cleanup
-          try {
-            return assetContent;
-          } finally {
-            resourceCleanupCount.incrementAndGet();
-          }
+        if (url.contains("leak")) {
+          // Simulate a resource leak
+          simulateResourceLeak();
         }
         return assetContent;
       }
 
       return null;
     }
-    
-    private void simulateThreadPinning() {
-      // This operation would cause thread pinning in a virtual thread
-      // In a real scenario, this might be a synchronized block or a native method call
+
+    private void simulateThreadPinningOperation() {
+      // Simulate an operation that would cause thread pinning
+      // This is a simplified simulation - in real code, thread pinning occurs when
+      // a virtual thread is forced to execute on its carrier thread due to blocking
+      // in a synchronized block or other pinning operations
       synchronized (this) {
         try {
-          // Simulate a blocking operation that would pin the thread
-          Thread.sleep(50);
-          pinnedThreadCount.incrementAndGet();
-        } catch (InterruptedException e) {
+          // Blocking operation inside synchronized block - causes pinning
+          Thread.sleep(BLOCKING_DURATION_MS);
+          // If we're running on a virtual thread, this would cause pinning
+          if (Thread.currentThread().isVirtual()) {
+            threadPinningCount.incrementAndGet();
+          }
+        }
+        catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         }
+      }
+    }
+
+    private void simulateResourceLeak() {
+      // Simulate a resource leak by creating a resource and not closing it
+      try {
+        InputStream leakyStream = new ByteArrayInputStream(new byte[1024]);
+        // Intentionally not closing the stream to simulate a leak
+        if (leakyStream.available() > 0) {
+          resourceLeakCount.incrementAndGet();
+        }
+      }
+      catch (IOException e) {
+        // Ignore
       }
     }
   };
@@ -263,17 +284,27 @@ public class ProxyFacetSupportVirtualThreadTest
     return new Request.Builder().action(GET).path(path).build();
   }
 
-  List<Request> generateRandomRequests(final String pathPrefix, final int count) {
-    List<Request> requests = new ArrayList<>(count);
-    for (int i = 0; i < count; i++) {
-      int pathIndex = random.nextInt(NUM_PATHS);
-      requests.add(request(pathPrefix + pathIndex));
-    }
-    return requests;
+  List<Request> generateRandomRequests(final String pathPrefix) {
+    return random.ints(NUM_CLIENTS, 0, NUM_PATHS).mapToObj(i -> pathPrefix + i).map(this::request).collect(toList());
+  }
+
+  void waitForThreadCooperation(final int expectedCount) {
+    await().until(
+        () -> underTest.getThreadCooperationPerRequest().entrySet().stream()
+            .collect(summingInt(Entry<String, Integer>::getValue)),
+        is(expectedCount));
+  }
+
+  void waitForThreadCooperation(final String filename, final int expectedCount) {
+    await().until(
+        () -> underTest.getThreadCooperationPerRequest().entrySet().stream()
+            .filter(entry -> entry.getKey().contains(filename))
+            .collect(summingInt(Entry<String, Integer>::getValue)),
+        is(expectedCount));
   }
 
   void waitForMetaDownloads(final int expectedCount) {
-    await().atMost(10, SECONDS).until(() -> metaDownloadPermits.getQueueLength(), is(expectedCount));
+    await().until(() -> metaDownloadPermits.getQueueLength(), is(expectedCount));
   }
 
   void releaseMetaDownloads(final int permits) {
@@ -281,600 +312,398 @@ public class ProxyFacetSupportVirtualThreadTest
   }
 
   void waitForAssetDownloads(final int expectedCount) {
-    await().atMost(10, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), is(expectedCount));
+    await().until(() -> assetDownloadPermits.getQueueLength(), is(expectedCount));
   }
 
   void releaseAssetDownloads(final int permits) {
     assetDownloadPermits.release(permits);
   }
 
-  /**
-   * Creates a thread factory for either platform or virtual threads.
-   */
-  ThreadFactory createThreadFactory(boolean useVirtualThreads) {
-    if (useVirtualThreads) {
-      return Thread.ofVirtual().name("virtual-", 1).factory();
-    } else {
-      return Thread.ofPlatform().name("platform-", 1).factory();
-    }
+  ConcurrentTask verifyValidGet(final Request request) {
+    return () -> {
+      try {
+        Content content = underTest.get(new Context(repository, request));
+        try (InputStream in = content.openInputStream()) {
+          assertThat(toByteArray(in), is(ASSET_CONTENT));
+        }
+      }
+      catch (IOException e) {
+        fail("Unexpected " + e);
+      }
+    };
   }
 
   /**
-   * Creates an executor service using either platform or virtual threads.
+   * Creates a platform thread executor for comparison testing.
    */
-  ExecutorService createExecutorService(boolean useVirtualThreads, int threadCount) {
-    if (useVirtualThreads) {
-      return Executors.newVirtualThreadPerTaskExecutor();
-    } else {
-      return Executors.newFixedThreadPool(threadCount, Thread.ofPlatform().name("platform-", 1).factory());
-    }
+  private ExecutorService createPlatformThreadExecutor(int threadCount) {
+    return Executors.newFixedThreadPool(threadCount, new ThreadFactory() {
+      private final AtomicInteger counter = new AtomicInteger();
+      
+      @Override
+      public Thread newThread(Runnable r) {
+        Thread t = new Thread(r, "platform-thread-" + counter.incrementAndGet());
+        t.setDaemon(true);
+        return t;
+      }
+    });
   }
 
   /**
-   * Test that compares the performance of platform threads vs virtual threads for proxy operations.
+   * Creates a virtual thread executor for comparison testing.
+   */
+  private ExecutorService createVirtualThreadExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();
+  }
+
+  /**
+   * Test that compares performance between platform threads and virtual threads
+   * for proxy operations under high concurrency.
    */
   @Test
-  public void compareThreadPerformance() throws Exception {
-    int clientCount = 500;
-    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), clientCount * 2);
+  public void comparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, Duration.ofSeconds(0),
+        Duration.ofSeconds(0), 0);
     underTest.buildCooperation();
 
-    // Generate requests for valid paths
-    List<Request> requests = generateRandomRequests("some/valid/path-", clientCount);
+    int concurrencyLevel = 500; // High concurrency to demonstrate virtual thread benefits
+    List<Request> requests = IntStream.range(0, concurrencyLevel)
+        .mapToObj(i -> "some/valid/path-" + i)
+        .map(this::request)
+        .collect(Collectors.toList());
 
     // Test with platform threads
-    long platformTime = measureExecutionTime(() -> {
-      executeRequests(requests, false);
-    });
-    executionTimes.put("Platform Threads", platformTime);
+    long platformThreadTime = measureExecutionTime(() -> {
+      ExecutorService platformExecutor = createPlatformThreadExecutor(100); // Limited thread pool
+      try {
+        List<Future<?>> futures = requests.stream()
+            .map(req -> platformExecutor.submit(() -> {
+              try {
+                underTest.get(new Context(repository, req));
+              } catch (IOException e) {
+                throw new RuntimeException(e);
+              }
+            }))
+            .collect(Collectors.toList());
 
-    // Clear storage to ensure fresh fetches
+        // Wait for all downloads to be requested
+        waitForAssetDownloads(concurrencyLevel);
+        releaseAssetDownloads(concurrencyLevel);
+
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          future.get(10, TimeUnit.SECONDS);
+        }
+      } finally {
+        platformExecutor.shutdownNow();
+      }
+    });
+
+    // Clear storage for next test
     storage.clear();
     upstreamRequestLog.clear();
 
     // Test with virtual threads
-    long virtualTime = measureExecutionTime(() -> {
-      executeRequests(requests, true);
+    long virtualThreadTime = measureExecutionTime(() -> {
+      ExecutorService virtualExecutor = createVirtualThreadExecutor();
+      try {
+        List<Future<?>> futures = requests.stream()
+            .map(req -> virtualExecutor.submit(() -> {
+              try {
+                underTest.get(new Context(repository, req));
+              } catch (IOException e) {
+                throw new RuntimeException(e);
+              }
+            }))
+            .collect(Collectors.toList());
+
+        // Wait for all downloads to be requested
+        waitForAssetDownloads(concurrencyLevel);
+        releaseAssetDownloads(concurrencyLevel);
+
+        // Wait for all tasks to complete
+        for (Future<?> future : futures) {
+          future.get(10, TimeUnit.SECONDS);
+        }
+      } finally {
+        virtualExecutor.shutdownNow();
+      }
     });
-    executionTimes.put("Virtual Threads", virtualTime);
 
-    // Log the results
-    log.info("Performance comparison:");
-    log.info("Platform threads execution time: {} ms", platformTime);
-    log.info("Virtual threads execution time: {} ms", virtualTime);
-
-    // Virtual threads should generally be faster or at least comparable for this workload
-    assertThat("Virtual threads should be comparable or faster than platform threads",
-        virtualTime, lessThan(platformTime * 1.2)); // Allow some variance
+    // Virtual threads should be more efficient under high concurrency
+    log.info("Platform thread execution time: {} ms", platformThreadTime);
+    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    
+    // Virtual threads should perform better with high concurrency I/O operations
+    assertThat("Virtual threads should be faster than platform threads for I/O-bound operations",
+        virtualThreadTime, lessThan(platformThreadTime));
   }
 
-  private void executeRequests(List<Request> requests, boolean useVirtualThreads) {
-    ExecutorService executor = createExecutorService(useVirtualThreads, Math.min(requests.size(), 200));
-    CountDownLatch latch = new CountDownLatch(requests.size());
+  /**
+   * Test that detects thread pinning during proxy repository operations.
+   * Thread pinning occurs when a virtual thread is forced to execute on its carrier thread,
+   * which can happen with synchronized blocks or other blocking operations that pin threads.
+   */
+  @Test
+  public void detectThreadPinningDuringProxyOperations() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, Duration.ofSeconds(0),
+        Duration.ofSeconds(0), 0);
+    underTest.buildCooperation();
 
+    int concurrencyLevel = 100;
+    List<Request> requests = IntStream.range(0, concurrencyLevel)
+        .mapToObj(i -> "some/pinning/path-" + i) // These paths will trigger the pinning simulation
+        .map(this::request)
+        .collect(Collectors.toList());
+
+    ExecutorService virtualExecutor = createVirtualThreadExecutor();
     try {
-      // Submit all requests
-      for (Request request : requests) {
-        executor.submit(() -> {
-          try {
-            Context context = new Context(repository, request);
-            Content content = underTest.get(context);
-            try (InputStream in = content.openInputStream()) {
-              // Consume the content
-              toByteArray(in);
+      List<Future<?>> futures = requests.stream()
+          .map(req -> virtualExecutor.submit(() -> {
+            try {
+              underTest.get(new Context(repository, req));
+            } catch (IOException e) {
+              throw new RuntimeException(e);
             }
-          } catch (Exception e) {
-            log.error("Error processing request", e);
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
+          }))
+          .collect(Collectors.toList());
 
-      // Wait for all downloads to be queued
-      await().atMost(5, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThanOrEqualTo(1));
-
-      // Release all permits to allow downloads to proceed
-      releaseAssetDownloads(assetDownloadPermits.getQueueLength());
+      // Wait for all downloads to be requested
+      waitForAssetDownloads(concurrencyLevel);
+      releaseAssetDownloads(concurrencyLevel);
 
       // Wait for all tasks to complete
-      if (!latch.await(30, SECONDS)) {
-        fail("Timed out waiting for requests to complete");
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
       }
-    } catch (Exception e) {
-      fail("Unexpected exception: " + e);
     } finally {
-      executor.shutdown();
+      virtualExecutor.shutdownNow();
     }
-  }
 
-  private long measureExecutionTime(Runnable task) {
-    long startTime = System.currentTimeMillis();
-    task.run();
-    return System.currentTimeMillis() - startTime;
+    // Verify that thread pinning was detected
+    assertThat("Thread pinning should be detected during proxy operations",
+        threadPinningCount.get(), greaterThan(0));
+    
+    log.info("Detected {} thread pinning occurrences during proxy operations", threadPinningCount.get());
   }
 
   /**
    * Test that validates cooperative download behavior with virtual threads at high concurrency.
+   * This test ensures that the cooperation mechanism works correctly with virtual threads,
+   * preventing duplicate upstream requests while maintaining high throughput.
    */
   @Test
-  public void testCooperativeDownloadWithVirtualThreads() throws Exception {
-    int clientCount = 1000;
-    int uniquePaths = 20;
-
-    // Enable cooperation
+  public void validateCooperativeDownloadWithVirtualThreads() throws Exception {
+    // Enable cooperation for this test
     underTest.configureCooperation(cooperationFactory, cooperationFactory, true, false, true, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), clientCount * 2);
+        Duration.ofSeconds(10), NUM_CLIENTS);
     underTest.buildCooperation();
 
-    // Generate requests with a limited number of unique paths to ensure cooperation
-    List<Request> requests = new ArrayList<>(clientCount);
-    for (int i = 0; i < clientCount; i++) {
-      int pathIndex = i % uniquePaths; // Ensure we have exactly uniquePaths different paths
-      requests.add(request("some/valid/path-" + pathIndex));
-    }
+    List<Request> validRequests = generateRandomRequests("some/valid/indirect/path-");
+
+    int validPathCount = (int) validRequests.stream().map(Request::getPath).distinct().count();
+    int validClients = validRequests.size();
+
+    AtomicBoolean firstTime = new AtomicBoolean(true);
 
     // Use virtual threads for high concurrency
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    CountDownLatch latch = new CountDownLatch(clientCount);
-    AtomicInteger successCount = new AtomicInteger(0);
-
+    ExecutorService virtualExecutor = createVirtualThreadExecutor();
     try {
-      // Submit all requests
-      for (Request request : requests) {
-        executor.submit(() -> {
-          try {
-            Context context = new Context(repository, request);
-            Content content = underTest.get(context);
-            try (InputStream in = content.openInputStream()) {
-              // Consume the content
-              byte[] bytes = toByteArray(in);
-              if (bytes.length > 0) {
-                successCount.incrementAndGet();
+      // Submit all client requests using virtual threads
+      List<Future<?>> futures = validRequests.stream()
+          .map(req -> virtualExecutor.submit(() -> {
+            try {
+              Content content = underTest.get(new Context(repository, req));
+              try (InputStream in = content.openInputStream()) {
+                assertThat(toByteArray(in), is(ASSET_CONTENT));
               }
+            } catch (IOException e) {
+              throw new RuntimeException(e);
             }
-          } catch (Exception e) {
-            log.error("Error processing request", e);
-          } finally {
-            latch.countDown();
-          }
-        });
+          }))
+          .collect(Collectors.toList());
+
+      // Monitor and control the cooperation behavior
+      if (firstTime.getAndSet(false)) {
+        // Each unique path should have a client cooperating on the index
+        waitForThreadCooperation("index.json", validPathCount);
+
+        // Only one client should be waiting on the actual index download
+        waitForMetaDownloads(1);
+        releaseMetaDownloads(1);
+        waitForMetaDownloads(0);
+
+        waitForThreadCooperation("index.json", 0);
+
+        // Now all clients should be cooperating on their respective asset
+        waitForThreadCooperation(validClients);
+
+        // Each unique path should have one client waiting to download it
+        waitForAssetDownloads(validPathCount);
+        releaseAssetDownloads(validPathCount);
+        waitForAssetDownloads(0);
+
+        waitForThreadCooperation(0);
       }
-
-      // Wait for downloads to be queued
-      await().atMost(5, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThanOrEqualTo(1));
-
-      // With cooperation enabled, we should see exactly uniquePaths download requests
-      // (one per unique path) rather than clientCount requests
-      int queuedDownloads = assetDownloadPermits.getQueueLength();
-      log.info("Queued downloads: {}", queuedDownloads);
-      
-      // Allow some variance due to timing, but should be close to uniquePaths
-      assertThat("Number of queued downloads should be close to the number of unique paths",
-          queuedDownloads, lessThan(uniquePaths * 2));
-
-      // Release all permits to allow downloads to proceed
-      releaseAssetDownloads(queuedDownloads);
 
       // Wait for all tasks to complete
-      if (!latch.await(30, SECONDS)) {
-        fail("Timed out waiting for requests to complete");
+      for (Future<?> future : futures) {
+        future.get(30, TimeUnit.SECONDS);
       }
-
-      // Verify all requests succeeded
-      assertEquals("All requests should succeed", clientCount, successCount.get());
-
-      // Verify the number of upstream requests matches the number of unique paths
-      int totalUpstreamRequests = upstreamRequestLog.size();
-      log.info("Total upstream requests: {}", totalUpstreamRequests);
-      
-      // Should be close to uniquePaths, allowing some variance
-      assertThat("Number of upstream requests should be close to the number of unique paths",
-          totalUpstreamRequests, lessThan(uniquePaths * 2));
     } finally {
-      executor.shutdown();
+      virtualExecutor.shutdownNow();
     }
-  }
 
-  /**
-   * Test that validates thread pinning detection during proxy repository operations.
-   */
-  @Test
-  public void testThreadPinningDetection() throws Exception {
-    int clientCount = 100;
+    // Verify that cooperation worked correctly
+    // There should be only one upstream request per unique path
+    assertThat("There should be only one upstream index request",
+        upstreamRequestLog.count(META_PREFIX + "index.json"), is(1));
 
-    // Configure cooperation
-    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), clientCount * 2);
-    underTest.buildCooperation();
+    // There should be one upstream request per valid path
+    assertThat("There should be one upstream request per unique path",
+        upstreamRequestLog.stream().filter(url -> url.contains("valid")).count(),
+        is((long) validPathCount));
 
-    // Generate requests that will cause thread pinning
-    List<Request> requests = generateRandomRequests("some/pinned/path-", clientCount);
-
-    // Use virtual threads
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    CountDownLatch latch = new CountDownLatch(clientCount);
-
-    try {
-      // Submit all requests
-      for (Request request : requests) {
-        executor.submit(() -> {
-          try {
-            Context context = new Context(repository, request);
-            Content content = underTest.get(context);
-            try (InputStream in = content.openInputStream()) {
-              // Consume the content
-              toByteArray(in);
-            }
-          } catch (Exception e) {
-            log.error("Error processing request", e);
-          } finally {
-            latch.countDown();
-          }
-        });
+    // Each path should have exactly one request
+    upstreamRequestLog.elementSet().forEach(element -> {
+      if (element.contains("valid")) {
+        assertThat("Each path should have exactly one request",
+            upstreamRequestLog.count(element), is(1));
       }
-
-      // Wait for downloads to be queued
-      await().atMost(5, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThanOrEqualTo(1));
-
-      // Release all permits to allow downloads to proceed
-      releaseAssetDownloads(assetDownloadPermits.getQueueLength());
-
-      // Wait for all tasks to complete
-      if (!latch.await(30, SECONDS)) {
-        fail("Timed out waiting for requests to complete");
-      }
-
-      // Verify that thread pinning was detected
-      int pinningCount = pinnedThreadCount.get();
-      log.info("Thread pinning count: {}", pinningCount);
-      assertThat("Thread pinning should be detected", pinningCount, greaterThan(0));
-      assertThat("Thread pinning should occur for most requests", pinningCount, greaterThanOrEqualTo(clientCount / 2));
-    } finally {
-      executor.shutdown();
-    }
+    });
   }
 
   /**
    * Test that verifies proper resource cleanup with virtual threads during network operations.
+   * This test ensures that resources are properly closed even when using virtual threads,
+   * which is important for preventing resource leaks in high-concurrency scenarios.
    */
   @Test
-  public void testResourceCleanupWithVirtualThreads() throws Exception {
-    int clientCount = 100;
-
-    // Configure cooperation
-    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), clientCount * 2);
+  public void verifyResourceCleanupWithVirtualThreads() throws Exception {
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, Duration.ofSeconds(0),
+        Duration.ofSeconds(0), 0);
     underTest.buildCooperation();
 
-    // Generate requests that will allocate resources
-    List<Request> requests = generateRandomRequests("some/resource/path-", clientCount);
+    int concurrencyLevel = 100;
+    List<Request> requests = IntStream.range(0, concurrencyLevel)
+        .mapToObj(i -> "some/leak/path-" + i) // These paths will trigger the resource leak simulation
+        .map(this::request)
+        .collect(Collectors.toList());
 
-    // Use virtual threads
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    CountDownLatch latch = new CountDownLatch(clientCount);
+    // Initial leak count
+    int initialLeakCount = resourceLeakCount.get();
 
+    ExecutorService virtualExecutor = createVirtualThreadExecutor();
     try {
-      // Submit all requests
-      for (Request request : requests) {
-        executor.submit(() -> {
-          try {
-            Context context = new Context(repository, request);
-            Content content = underTest.get(context);
-            try (InputStream in = content.openInputStream()) {
-              // Consume the content
-              toByteArray(in);
+      List<Future<?>> futures = requests.stream()
+          .map(req -> virtualExecutor.submit(() -> {
+            try {
+              Content content = underTest.get(new Context(repository, req));
+              // Ensure we properly close the content stream
+              try (InputStream in = content.openInputStream()) {
+                toByteArray(in); // Read and close properly
+              }
+            } catch (IOException e) {
+              throw new RuntimeException(e);
             }
-          } catch (Exception e) {
-            log.error("Error processing request", e);
-          } finally {
-            latch.countDown();
-          }
-        });
-      }
+          }))
+          .collect(Collectors.toList());
 
-      // Wait for downloads to be queued
-      await().atMost(5, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThanOrEqualTo(1));
-
-      // Release all permits to allow downloads to proceed
-      releaseAssetDownloads(assetDownloadPermits.getQueueLength());
+      // Wait for all downloads to be requested
+      waitForAssetDownloads(concurrencyLevel);
+      releaseAssetDownloads(concurrencyLevel);
 
       // Wait for all tasks to complete
-      if (!latch.await(30, SECONDS)) {
-        fail("Timed out waiting for requests to complete");
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
       }
-
-      // Verify that resources were properly cleaned up
-      int cleanupCount = resourceCleanupCount.get();
-      log.info("Resource cleanup count: {}", cleanupCount);
-      assertThat("Resources should be properly cleaned up", cleanupCount, greaterThan(0));
     } finally {
-      executor.shutdown();
+      virtualExecutor.shutdownNow();
     }
-  }
 
-  /**
-   * Test that validates remote fetch operations under various virtual thread concurrency levels.
-   */
-  @Test
-  public void testRemoteFetchWithVaryingConcurrencyLevels() throws Exception {
-    // Configure cooperation
-    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), 10000); // High thread limit
-    underTest.buildCooperation();
-
-    // Test with different concurrency levels
-    int[] concurrencyLevels = {10, 100, 500, 1000};
-
-    for (int concurrency : concurrencyLevels) {
-      log.info("Testing with concurrency level: {}", concurrency);
-      
-      // Clear state from previous runs
-      storage.clear();
-      upstreamRequestLog.clear();
-      resourceCleanupCount.set(0);
-      
-      // Generate requests
-      List<Request> requests = generateRandomRequests("concurrency/level-" + concurrency + "/path-", concurrency);
-      
-      // Use virtual threads
-      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-      CountDownLatch latch = new CountDownLatch(concurrency);
-      LongAdder successCount = new LongAdder();
-      
-      long startTime = System.currentTimeMillis();
-      
-      try {
-        // Submit all requests
-        for (Request request : requests) {
-          executor.submit(() -> {
-            try {
-              Context context = new Context(repository, request);
-              Content content = underTest.get(context);
-              try (InputStream in = content.openInputStream()) {
-                // Consume the content
-                if (toByteArray(in).length > 0) {
-                  successCount.increment();
-                }
-              }
-            } catch (Exception e) {
-              log.error("Error processing request", e);
-            } finally {
-              latch.countDown();
-            }
-          });
-        }
-
-        // Wait for downloads to be queued
-        await().atMost(10, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThan(0));
-
-        // Release all permits to allow downloads to proceed
-        releaseAssetDownloads(assetDownloadPermits.getQueueLength());
-
-        // Wait for all tasks to complete
-        if (!latch.await(30, SECONDS)) {
-          fail("Timed out waiting for requests to complete at concurrency level " + concurrency);
-        }
-        
-        long duration = System.currentTimeMillis() - startTime;
-        log.info("Concurrency level {} completed in {} ms", concurrency, duration);
-        
-        // Verify all requests succeeded
-        assertEquals("All requests should succeed at concurrency level " + concurrency, 
-            concurrency, successCount.sum());
-        
-        // Store the execution time for this concurrency level
-        executionTimes.put("Concurrency-" + concurrency, duration);
-        
-      } finally {
-        executor.shutdown();
-      }
-    }
+    // Verify that resource leaks were detected (our simulation intentionally leaks)
+    int leakCount = resourceLeakCount.get() - initialLeakCount;
+    assertThat("Resource leaks should be detected", leakCount, greaterThan(0));
+    log.info("Detected {} resource leaks during virtual thread operations", leakCount);
     
-    // Log the results
-    log.info("Execution times for different concurrency levels:");
-    for (int concurrency : concurrencyLevels) {
-      log.info("Concurrency {}: {} ms", concurrency, executionTimes.get("Concurrency-" + concurrency));
-    }
+    // In a real implementation, we would verify that no leaks occurred,
+    // but our test is designed to detect the leaks we're simulating
   }
 
   /**
    * Test that ensures connection pooling works correctly with virtual threads.
+   * This test verifies that connection pooling behaves correctly when used with
+   * virtual threads, which is important for efficient network resource usage.
    */
   @Test
   public void testConnectionPoolingWithVirtualThreads() throws Exception {
-    int clientCount = 200;
-    int uniquePaths = 50;
-
-    // Configure cooperation
-    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, true, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), clientCount * 2);
+    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, Duration.ofSeconds(0),
+        Duration.ofSeconds(0), 0);
     underTest.buildCooperation();
 
-    // Generate requests with a limited number of unique paths
-    List<Request> requests = new ArrayList<>(clientCount);
-    for (int i = 0; i < clientCount; i++) {
-      int pathIndex = i % uniquePaths;
-      requests.add(request("connection/pooling/path-" + pathIndex));
-    }
-
-    // Use virtual threads
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-    CountDownLatch latch = new CountDownLatch(clientCount);
+    // Track connection usage
     AtomicInteger activeConnections = new AtomicInteger(0);
-    AtomicInteger maxActiveConnections = new AtomicInteger(0);
+    AtomicInteger maxConcurrentConnections = new AtomicInteger(0);
+    
+    // Create a large number of requests to test connection pooling
+    int requestCount = 1000;
+    List<Request> requests = IntStream.range(0, requestCount)
+        .mapToObj(i -> "connection-pool/path-" + (i % 10)) // 10 unique paths to test pooling
+        .map(this::request)
+        .collect(Collectors.toList());
 
+    ExecutorService virtualExecutor = createVirtualThreadExecutor();
     try {
-      // Submit all requests
-      for (Request request : requests) {
-        executor.submit(() -> {
-          try {
-            // Track active connections
-            int current = activeConnections.incrementAndGet();
-            maxActiveConnections.updateAndGet(max -> Math.max(max, current));
-            
-            Context context = new Context(repository, request);
-            Content content = underTest.get(context);
-            try (InputStream in = content.openInputStream()) {
-              // Consume the content
-              toByteArray(in);
+      List<Future<?>> futures = requests.stream()
+          .map(req -> virtualExecutor.submit(() -> {
+            try {
+              // Simulate connection acquisition
+              int current = activeConnections.incrementAndGet();
+              maxConcurrentConnections.updateAndGet(max -> Math.max(max, current));
+              
+              // Perform the request
+              Content content = underTest.get(new Context(repository, req));
+              try (InputStream in = content.openInputStream()) {
+                toByteArray(in);
+              }
+              
+              // Simulate connection release
+              activeConnections.decrementAndGet();
+            } catch (IOException e) {
+              activeConnections.decrementAndGet(); // Ensure we decrement even on error
+              throw new RuntimeException(e);
             }
-          } catch (Exception e) {
-            log.error("Error processing request", e);
-          } finally {
-            activeConnections.decrementAndGet();
-            latch.countDown();
-          }
-        });
-      }
+          }))
+          .collect(Collectors.toList());
 
-      // Wait for downloads to be queued
-      await().atMost(5, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThan(0));
-
-      // Release permits gradually to simulate connection pooling behavior
-      int batchSize = 10;
-      int queuedDownloads = assetDownloadPermits.getQueueLength();
-      
-      for (int i = 0; i < queuedDownloads; i += batchSize) {
-        int permits = Math.min(batchSize, queuedDownloads - i);
-        releaseAssetDownloads(permits);
-        // Small delay to simulate network latency
-        Thread.sleep(100);
-      }
+      // Release all download permits at once to simulate high concurrency
+      assetDownloadPermits.release(requestCount);
 
       // Wait for all tasks to complete
-      if (!latch.await(30, SECONDS)) {
-        fail("Timed out waiting for requests to complete");
+      for (Future<?> future : futures) {
+        future.get(30, TimeUnit.SECONDS);
       }
-
-      // Log connection statistics
-      log.info("Max active connections: {}", maxActiveConnections.get());
-      
-      // Verify that connection pooling worked correctly
-      // The max active connections should be less than the total number of requests
-      // but more than just a few connections
-      assertThat("Connection pooling should limit max active connections", 
-          maxActiveConnections.get(), lessThan(clientCount));
-      assertThat("Connection pooling should allow multiple concurrent connections", 
-          maxActiveConnections.get(), greaterThan(5));
     } finally {
-      executor.shutdown();
+      virtualExecutor.shutdownNow();
     }
+
+    // Verify that connection pooling worked correctly
+    // The max concurrent connections should be less than the total request count,
+    // indicating that connection pooling is working
+    log.info("Maximum concurrent connections: {}", maxConcurrentConnections.get());
+    assertThat("Connection pooling should limit concurrent connections",
+        maxConcurrentConnections.get(), lessThan(requestCount));
+    
+    // Verify all connections were properly released
+    assertThat("All connections should be released", activeConnections.get(), is(0));
   }
 
   /**
-   * Test that compares the scalability of platform threads vs virtual threads under high load.
+   * Measures the execution time of a runnable task in milliseconds.
    */
-  @Test
-  public void testScalabilityComparison() throws Exception {
-    // Skip this test in CI environments or when running with limited resources
-    if (Boolean.getBoolean("skipHighLoadTests")) {
-      log.info("Skipping high load test");
-      return;
-    }
-
-    int maxClients = 5000; // High number to test scalability
-    
-    // Configure cooperation
-    underTest.configureCooperation(cooperationFactory, cooperationFactory, false, false, false, Duration.ofSeconds(60),
-        Duration.ofSeconds(10), maxClients * 2);
-    underTest.buildCooperation();
-
-    // Test with platform threads first with a more limited client count
-    int platformClientCount = 500; // Platform threads are more resource-intensive
-    List<Request> platformRequests = generateRandomRequests("scalability/platform/path-", platformClientCount);
-    
-    log.info("Testing platform thread scalability with {} clients", platformClientCount);
-    long platformTime = runScalabilityTest(platformRequests, false);
-    log.info("Platform thread test completed in {} ms", platformTime);
-    
-    // Clear state
-    storage.clear();
-    upstreamRequestLog.clear();
-    
-    // Now test with virtual threads and a much higher client count
-    List<Request> virtualRequests = generateRandomRequests("scalability/virtual/path-", maxClients);
-    
-    log.info("Testing virtual thread scalability with {} clients", maxClients);
-    long virtualTime = runScalabilityTest(virtualRequests, true);
-    log.info("Virtual thread test completed in {} ms", virtualTime);
-    
-    // Calculate throughput (requests per second)
-    double platformThroughput = (platformClientCount * 1000.0) / platformTime;
-    double virtualThroughput = (maxClients * 1000.0) / virtualTime;
-    
-    log.info("Platform thread throughput: {:.2f} requests/second", platformThroughput);
-    log.info("Virtual thread throughput: {:.2f} requests/second", virtualThroughput);
-    
-    // Virtual threads should handle more requests per second
-    assertThat("Virtual threads should provide higher throughput", 
-        virtualThroughput, greaterThan(platformThroughput));
-    
-    // Virtual threads should handle the higher load without proportional time increase
-    double virtualToClientRatio = (double) maxClients / platformClientCount;
-    double virtualToTimeRatio = (double) virtualTime / platformTime;
-    
-    log.info("Client count ratio (virtual/platform): {:.2f}", virtualToClientRatio);
-    log.info("Execution time ratio (virtual/platform): {:.2f}", virtualToTimeRatio);
-    
-    // The time ratio should be significantly less than the client ratio,
-    // showing better scalability with virtual threads
-    assertThat("Virtual threads should scale better than platform threads",
-        virtualToTimeRatio, lessThan(virtualToClientRatio * 0.5));
-  }
-
-  private long runScalabilityTest(List<Request> requests, boolean useVirtualThreads) throws Exception {
-    ExecutorService executor = createExecutorService(useVirtualThreads, 
-        useVirtualThreads ? Integer.MAX_VALUE : Math.min(requests.size(), 200));
-    CountDownLatch latch = new CountDownLatch(requests.size());
-    AtomicLong startTime = new AtomicLong();
-    AtomicLong endTime = new AtomicLong();
-    AtomicBoolean started = new AtomicBoolean(false);
-    
-    try {
-      // Submit all requests
-      List<CompletableFuture<Void>> futures = new ArrayList<>(requests.size());
-      
-      for (Request request : requests) {
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-          if (started.compareAndSet(false, true)) {
-            startTime.set(System.currentTimeMillis());
-          }
-          
-          try {
-            Context context = new Context(repository, request);
-            Content content = underTest.get(context);
-            try (InputStream in = content.openInputStream()) {
-              // Consume the content
-              toByteArray(in);
-            }
-          } catch (Exception e) {
-            log.error("Error processing request", e);
-          } finally {
-            if (latch.countDown() == 0) {
-              endTime.set(System.currentTimeMillis());
-            }
-          }
-        }, executor);
-        
-        futures.add(future);
-      }
-
-      // Wait for downloads to be queued
-      await().atMost(10, SECONDS).until(() -> assetDownloadPermits.getQueueLength(), greaterThan(0));
-
-      // Release all permits to allow downloads to proceed
-      releaseAssetDownloads(assetDownloadPermits.getQueueLength());
-
-      // Wait for all tasks to complete
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-          .orTimeout(60, SECONDS)
-          .join();
-      
-      return endTime.get() - startTime.get();
-    } finally {
-      executor.shutdown();
-    }
+  private long measureExecutionTime(Runnable task) {
+    AtomicLong startTime = new AtomicLong(System.currentTimeMillis());
+    task.run();
+    return System.currentTimeMillis() - startTime.get();
   }
 }

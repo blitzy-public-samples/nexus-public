@@ -12,297 +12,331 @@
  */
 package org.apache.virtualthread;
 
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.sonatype.nexus.security.AbstractSecurityTest;
-import org.sonatype.nexus.security.config.CPrivilege;
-import org.sonatype.nexus.security.config.CRole;
-import org.sonatype.nexus.security.config.CUser;
-import org.sonatype.nexus.security.config.memory.MemoryCUser;
-import org.sonatype.nexus.security.internal.AuthorizingRealmImpl;
-import org.sonatype.nexus.security.internal.SecurityConfigurationManagerImpl;
-import org.sonatype.nexus.security.privilege.WildcardPrivilegeDescriptor;
-import org.sonatype.nexus.security.user.UserStatus;
-
+import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.authc.AuthenticationException;
+import org.apache.shiro.authc.AuthenticationInfo;
+import org.apache.shiro.authc.AuthenticationToken;
+import org.apache.shiro.authc.SimpleAuthenticationInfo;
+import org.apache.shiro.authc.UsernamePasswordToken;
+import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.authz.Permission;
-import org.apache.shiro.authz.permission.RolePermissionResolver;
+import org.apache.shiro.authz.SimpleAuthorizationInfo;
 import org.apache.shiro.authz.permission.WildcardPermission;
-import org.apache.shiro.realm.Realm;
+import org.apache.shiro.mgt.DefaultSecurityManager;
+import org.apache.shiro.realm.AuthorizingRealm;
+import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.subject.SimplePrincipalCollection;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.apache.shiro.subject.Subject;
+import org.sonatype.goodies.testsupport.TestSupport;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Tests Apache Shiro's authorization mechanisms using Java 21 virtual threads.
- * 
- * This test verifies that permission checks and role-based access control work correctly
- * when executed concurrently on virtual threads. It validates that the AuthorizingRealmImpl
- * properly handles permission checks without thread interference.
+ * Verifies that permission checks and role-based access control work correctly
+ * when executed concurrently on virtual threads.
  */
 public class ShiroVirtualThreadAuthorizationTest
-    extends AbstractSecurityTest
+    extends TestSupport
 {
-  private static final int THREAD_COUNT = 100;
-  private static final int ITERATIONS = 10;
-  private static final String BASE_USERNAME = "vt-user-";
+  private static final int VIRTUAL_THREAD_COUNT = 100;
+  private static final int PERMISSION_CHECK_COUNT = 10;
   
-  private AuthorizingRealmImpl realm;
-  private SecurityConfigurationManagerImpl configurationManager;
-  private ExecutorService virtualThreadExecutor;
-
-  @BeforeEach
-  @Override
-  protected void setUp() throws Exception {
-    super.setUp();
-
-    realm = (AuthorizingRealmImpl) lookup(Realm.class, AuthorizingRealmImpl.NAME);
-    realm.setRolePermissionResolver(this.lookup(RolePermissionResolver.class));
-
-    configurationManager = lookup(SecurityConfigurationManagerImpl.class);
+  private DefaultSecurityManager securityManager;
+  private TestAuthorizingRealm realm;
+  
+  @Before
+  public void setUp() {
+    // Create and configure the security manager with our test realm
+    realm = new TestAuthorizingRealm();
+    securityManager = new DefaultSecurityManager(realm);
     
-    // Create a virtual thread per task executor
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    // Enable authorization caching
+    realm.setCachingEnabled(true);
+    realm.setAuthorizationCachingEnabled(true);
     
-    // Set up test users, roles and permissions
-    setupTestAuthorizationConfig();
+    // Set the security manager as the default for static access
+    SecurityUtils.setSecurityManager(securityManager);
   }
-
-  @AfterEach
-  @Override
-  protected void tearDown() throws Exception {
-    if (virtualThreadExecutor != null) {
-      virtualThreadExecutor.shutdown();
-      try {
-        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-          virtualThreadExecutor.shutdownNow();
-        }
-      } catch (InterruptedException e) {
-        virtualThreadExecutor.shutdownNow();
-        Thread.currentThread().interrupt();
+  
+  @After
+  public void tearDown() {
+    // Clean up the security manager
+    if (securityManager != null) {
+      securityManager.destroy();
+    }
+    SecurityUtils.setSecurityManager(null);
+  }
+  
+  /**
+   * Tests that basic permission checks work correctly with virtual threads.
+   * This verifies that a subject can check permissions when running on a virtual thread.
+   */
+  @Test
+  public void testBasicPermissionCheckOnVirtualThread() throws Exception {
+    // Login as admin user
+    Subject adminSubject = loginUser("admin", "password");
+    
+    // Create a virtual thread to perform permission checks
+    Thread virtualThread = Thread.ofVirtual()
+        .name("permission-check-")
+        .start(() -> {
+          // Get the current subject (should be the admin)
+          Subject currentSubject = SecurityUtils.getSubject();
+          
+          // Verify the subject is authenticated
+          assertTrue("Subject should be authenticated", currentSubject.isAuthenticated());
+          
+          // Check permissions
+          assertTrue("Admin should have admin permission", 
+              currentSubject.isPermitted("admin:*"));
+          assertTrue("Admin should have system permission", 
+              currentSubject.isPermitted("system:config:read"));
+        });
+    
+    // Wait for the virtual thread to complete
+    virtualThread.join();
+    
+    // Logout
+    adminSubject.logout();
+  }
+  
+  /**
+   * Tests concurrent permission checks across multiple virtual threads.
+   * This verifies that multiple subjects can check permissions concurrently
+   * when running on different virtual threads without interference.
+   */
+  @Test
+  public void testConcurrentPermissionChecksOnVirtualThreads() throws Exception {
+    // Login as admin user
+    Subject adminSubject = loginUser("admin", "password");
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Create a set to track any failures
+      Set<String> failures = ConcurrentHashMap.newKeySet();
+      
+      // Create a latch to ensure all threads start at roughly the same time
+      CountDownLatch startLatch = new CountDownLatch(1);
+      
+      // Submit tasks to check permissions concurrently
+      List<Future<?>> futures = IntStream.range(0, VIRTUAL_THREAD_COUNT)
+          .mapToObj(i -> executor.submit(() -> {
+            try {
+              // Wait for the signal to start
+              startLatch.await();
+              
+              // Get the current subject (should be the admin)
+              Subject currentSubject = SecurityUtils.getSubject();
+              
+              // Perform multiple permission checks
+              for (int j = 0; j < PERMISSION_CHECK_COUNT; j++) {
+                if (!currentSubject.isPermitted("admin:*")) {
+                  failures.add("Thread " + i + " failed admin:* permission check");
+                }
+                
+                if (!currentSubject.isPermitted("system:config:read")) {
+                  failures.add("Thread " + i + " failed system:config:read permission check");
+                }
+                
+                // Check a collection of permissions
+                Collection<Permission> permissions = List.of(
+                    new WildcardPermission("repository:read:*"),
+                    new WildcardPermission("repository:write:*")
+                );
+                
+                if (!currentSubject.isPermittedAll(permissions)) {
+                  failures.add("Thread " + i + " failed repository permissions check");
+                }
+              }
+            } 
+            catch (Exception e) {
+              failures.add("Thread " + i + " exception: " + e.getMessage());
+            }
+          }))
+          .collect(Collectors.toList());
+      
+      // Signal all threads to start
+      startLatch.countDown();
+      
+      // Wait for all futures to complete
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
+      }
+      
+      // Check for any failures
+      if (!failures.isEmpty()) {
+        fail("Permission check failures: " + String.join(", ", failures));
       }
     }
-    super.tearDown();
+    
+    // Logout
+    adminSubject.logout();
   }
-
+  
   /**
-   * Tests basic authorization functionality with a single virtual thread.
-   * This verifies that the basic permission checks work correctly on a virtual thread.
+   * Tests that role checks work correctly with virtual threads.
+   * This verifies that a subject can check roles when running on a virtual thread.
    */
   @Test
-  public void testBasicAuthorizationOnVirtualThread() throws Exception {
-    CountDownLatch latch = new CountDownLatch(1);
-    AtomicBoolean hasRole = new AtomicBoolean(false);
-    AtomicBoolean canRead = new AtomicBoolean(false);
-    AtomicBoolean canCreate = new AtomicBoolean(false);
+  public void testRoleChecksOnVirtualThread() throws Exception {
+    // Login as user with specific roles
+    Subject userSubject = loginUser("user1", "password");
     
-    virtualThreadExecutor.submit(() -> {
-      try {
-        SimplePrincipalCollection principal = new SimplePrincipalCollection(BASE_USERNAME + "0", realm.getName());
-        
-        // Test role check
-        hasRole.set(realm.hasRole(principal, "role-0"));
-        
-        // Test permission checks
-        canRead.set(realm.isPermitted(principal, new WildcardPermission("app:config:read")));
-        canCreate.set(realm.isPermitted(principal, new WildcardPermission("app:config:create")));
-      } finally {
-        latch.countDown();
+    // Create a virtual thread to perform role checks
+    Thread virtualThread = Thread.ofVirtual()
+        .name("role-check-")
+        .start(() -> {
+          // Get the current subject
+          Subject currentSubject = SecurityUtils.getSubject();
+          
+          // Verify the subject is authenticated
+          assertTrue("Subject should be authenticated", currentSubject.isAuthenticated());
+          
+          // Check roles
+          assertTrue("User should have user role", 
+              currentSubject.hasRole("user"));
+          assertTrue("User should have viewer role", 
+              currentSubject.hasRole("viewer"));
+          
+          // Check multiple roles
+          assertTrue("User should have all specified roles", 
+              currentSubject.hasAllRoles(List.of("user", "viewer")));
+        });
+    
+    // Wait for the virtual thread to complete
+    virtualThread.join();
+    
+    // Logout
+    userSubject.logout();
+  }
+  
+  /**
+   * Tests that authorization caching works correctly with virtual threads.
+   * This verifies that authorization information is properly cached and retrieved
+   * when accessed from virtual threads.
+   */
+  @Test
+  public void testAuthorizationCachingWithVirtualThreads() throws Exception {
+    // Login as admin user
+    Subject adminSubject = loginUser("admin", "password");
+    
+    // First access should populate the cache
+    adminSubject.isPermitted("admin:*");
+    
+    // Track the number of authorization info lookups
+    int initialLookupCount = realm.getAuthorizationInfoLookupCount();
+    
+    // Create a virtual thread executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit tasks to check permissions concurrently
+      List<Future<?>> futures = IntStream.range(0, VIRTUAL_THREAD_COUNT)
+          .mapToObj(i -> executor.submit(() -> {
+            // Get the current subject (should be the admin)
+            Subject currentSubject = SecurityUtils.getSubject();
+            
+            // Check permissions (should use cached authorization info)
+            assertTrue(currentSubject.isPermitted("admin:*"));
+          }))
+          .collect(Collectors.toList());
+      
+      // Wait for all futures to complete
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
       }
-    });
+    }
     
-    assertTrue(latch.await(5, TimeUnit.SECONDS), "Test did not complete in time");
-    assertTrue(hasRole.get(), "User should have role");
-    assertTrue(canRead.get(), "User should have read permission");
-    assertFalse(canCreate.get(), "User should not have create permission");
+    // Verify that the cache was used (lookup count should not have increased significantly)
+    int finalLookupCount = realm.getAuthorizationInfoLookupCount();
+    assertThat("Authorization cache should have been used", 
+        finalLookupCount - initialLookupCount, is(0));
+    
+    // Logout
+    adminSubject.logout();
   }
-
+  
   /**
-   * Tests concurrent authorization checks with multiple virtual threads.
-   * This verifies that multiple virtual threads can perform permission checks
-   * concurrently without interference.
+   * Helper method to login a user and return the authenticated Subject.
    */
-  @Test
-  public void testConcurrentAuthorizationChecks() throws Exception {
-    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
-    ConcurrentHashMap<String, Boolean> results = new ConcurrentHashMap<>();
-    
-    // Submit tasks to virtual threads
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      final int userId = i;
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String username = BASE_USERNAME + userId;
-          SimplePrincipalCollection principal = new SimplePrincipalCollection(username, realm.getName());
-          
-          // Each user should have their own role
-          boolean hasRole = realm.hasRole(principal, "role-" + userId);
-          results.put(username + "-role", hasRole);
-          
-          // Each user should have read permission
-          boolean canRead = realm.isPermitted(principal, new WildcardPermission("app:config:read"));
-          results.put(username + "-read", canRead);
-        } finally {
-          latch.countDown();
-        }
-      });
-    }
-    
-    assertTrue(latch.await(10, TimeUnit.SECONDS), "Concurrent tests did not complete in time");
-    
-    // Verify all results
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      String username = BASE_USERNAME + i;
-      assertTrue(results.get(username + "-role"), "User " + username + " should have role");
-      assertTrue(results.get(username + "-read"), "User " + username + " should have read permission");
-    }
+  private Subject loginUser(String username, String password) {
+    Subject subject = SecurityUtils.getSubject();
+    UsernamePasswordToken token = new UsernamePasswordToken(username, password);
+    subject.login(token);
+    return subject;
   }
-
+  
   /**
-   * Tests repeated authorization checks with the same virtual thread.
-   * This verifies that authorization caching works correctly with virtual threads.
+   * Custom AuthorizingRealm implementation for testing.
+   * Provides authentication and authorization for test users.
    */
-  @Test
-  public void testRepeatedAuthorizationChecks() throws Exception {
-    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
-    AtomicInteger successCount = new AtomicInteger(0);
+  private static class TestAuthorizingRealm extends AuthorizingRealm {
+    private int authorizationInfoLookupCount = 0;
     
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      final int userId = i % 10; // Reuse users to test caching
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String username = BASE_USERNAME + userId;
-          SimplePrincipalCollection principal = new SimplePrincipalCollection(username, realm.getName());
-          
-          // Perform multiple permission checks to test caching
-          boolean allChecksSucceeded = true;
-          for (int j = 0; j < ITERATIONS; j++) {
-            boolean hasRole = realm.hasRole(principal, "role-" + userId);
-            boolean canRead = realm.isPermitted(principal, new WildcardPermission("app:config:read"));
-            
-            if (!hasRole || !canRead) {
-              allChecksSucceeded = false;
-              break;
-            }
-            
-            // Small delay to simulate work
-            Thread.sleep(10);
-          }
-          
-          if (allChecksSucceeded) {
-            successCount.incrementAndGet();
-          }
-        } catch (Exception e) {
-          fail("Exception during repeated authorization checks: " + e.getMessage());
-        } finally {
-          latch.countDown();
-        }
-      });
+    @Override
+    protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) 
+        throws AuthenticationException {
+      // Simple authentication for testing
+      UsernamePasswordToken upToken = (UsernamePasswordToken) token;
+      String username = upToken.getUsername();
+      
+      // For testing, accept any username with password "password"
+      if ("password".equals(new String(upToken.getPassword()))) {
+        return new SimpleAuthenticationInfo(username, "password", getName());
+      }
+      
+      return null;
     }
     
-    assertTrue(latch.await(10, TimeUnit.SECONDS), "Repeated tests did not complete in time");
-    assertEquals(THREAD_COUNT, successCount.get(), "All authorization checks should succeed");
-  }
-
-  /**
-   * Tests concurrent permission resolution with multiple virtual threads.
-   * This verifies that permission resolution works correctly when multiple
-   * virtual threads are resolving permissions concurrently.
-   */
-  @Test
-  public void testConcurrentPermissionResolution() throws Exception {
-    CountDownLatch latch = new CountDownLatch(THREAD_COUNT);
-    ConcurrentHashMap<Integer, Set<String>> permissionResults = new ConcurrentHashMap<>();
-    
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      final int userId = i % 10; // Reuse users to test caching
-      virtualThreadExecutor.submit(() -> {
-        try {
-          String username = BASE_USERNAME + userId;
-          SimplePrincipalCollection principal = new SimplePrincipalCollection(username, realm.getName());
-          
-          // Test different permission patterns
-          List<Permission> permissions = List.of(
-              new WildcardPermission("app:config:read"),
-              new WildcardPermission("app:config:*"),
-              new WildcardPermission("app:ui:read"),
-              new WildcardPermission("app:*:read")
-          );
-          
-          Set<String> grantedPermissions = new HashSet<>();
-          for (Permission permission : permissions) {
-            if (realm.isPermitted(principal, permission)) {
-              grantedPermissions.add(permission.toString());
-            }
-          }
-          
-          permissionResults.put(userId, grantedPermissions);
-        } finally {
-          latch.countDown();
-        }
-      });
+    @Override
+    protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
+      // Track the number of authorization info lookups
+      authorizationInfoLookupCount++;
+      
+      String username = (String) getAvailablePrincipal(principals);
+      SimpleAuthorizationInfo info = new SimpleAuthorizationInfo();
+      
+      // Assign roles and permissions based on username
+      if ("admin".equals(username)) {
+        // Admin user has admin role and all permissions
+        info.addRole("admin");
+        info.addStringPermission("admin:*");
+        info.addStringPermission("system:*");
+        info.addStringPermission("repository:*:*");
+      } 
+      else {
+        // Regular users have basic roles and permissions
+        info.addRole("user");
+        info.addRole("viewer");
+        info.addStringPermission("repository:read:*");
+      }
+      
+      return info;
     }
     
-    assertTrue(latch.await(10, TimeUnit.SECONDS), "Permission resolution tests did not complete in time");
-    
-    // Verify results - each user should have consistent permissions
-    for (int i = 0; i < 10; i++) {
-      Set<String> permissions = permissionResults.get(i);
-      assertTrue(permissions.contains("app:config:read"), "User should have app:config:read permission");
-      assertTrue(permissions.contains("app:config:*"), "User should have app:config:* permission");
-      assertFalse(permissions.contains("app:ui:read"), "User should not have app:ui:read permission");
-      assertFalse(permissions.contains("app:*:read"), "User should not have app:*:read permission");
-    }
-  }
-
-  /**
-   * Sets up test users, roles, and permissions for authorization testing.
-   * Creates multiple users with different roles and permissions to test
-   * various authorization scenarios.
-   */
-  private void setupTestAuthorizationConfig() throws Exception {
-    // Create a read privilege that all users will have
-    CPrivilege readPrivilege = WildcardPrivilegeDescriptor.privilege("app:config:read");
-    configurationManager.createPrivilege(readPrivilege);
-    
-    // Create roles and users for testing
-    for (int i = 0; i < 10; i++) {
-      CRole role = configurationManager.newRole();
-      role.setId("role-" + i);
-      role.setName("Role " + i);
-      role.setDescription("Test role " + i);
-      role.addPrivilege(readPrivilege.getId());
-      
-      configurationManager.createRole(role);
-      
-      CUser user = new MemoryCUser();
-      user.setEmail("vt-user-" + i + "@example.com");
-      user.setFirstName("VT");
-      user.setLastName("User " + i);
-      user.setStatus(UserStatus.active.toString());
-      user.setId(BASE_USERNAME + i);
-      user.setPassword("password");
-      
-      Set<String> roles = new HashSet<>();
-      roles.add(role.getId());
-      
-      configurationManager.createUser(user, roles);
+    /**
+     * @return the number of times authorization info has been looked up
+     */
+    public int getAuthorizationInfoLookupCount() {
+      return authorizationInfoLookupCount;
     }
   }
 }

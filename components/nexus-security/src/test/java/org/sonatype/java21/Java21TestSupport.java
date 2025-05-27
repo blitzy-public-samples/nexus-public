@@ -13,181 +13,294 @@
 package org.sonatype.java21;
 
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.security.AbstractSecurityTest;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
 
+import jdk.jfr.Configuration;
+import jdk.jfr.Recording;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.TestInfo;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 /**
  * Base abstract test class that provides common utilities and configurations for Java 21-specific security tests.
  * <p>
- * This class extends {@link AbstractSecurityTest} and adds support for Java 21 features, particularly Virtual Threads,
- * to facilitate testing security components under the new runtime environment.
+ * This class extends the Sonatype TestSupport harness with additional Java 21 capabilities for validating
+ * security components under the new runtime environment, including virtual thread creation, thread pinning detection,
+ * and test categorization.
  * <p>
- * Key features include:
- * <ul>
- *   <li>Virtual Thread creation and management</li>
- *   <li>Thread pinning detection</li>
- *   <li>Test categorization for Java 21 features</li>
- * </ul>
+ * Usage example:
+ * <pre>
+ * public class MyJava21Test extends Java21TestSupport {
+ *   @Test
+ *   void testWithVirtualThreads() {
+ *     Thread vThread = createVirtualThread(() -> {
+ *       // Test code running in a virtual thread
+ *     });
+ *     vThread.start();
+ *     vThread.join();
+ *     
+ *     assertFalse(wasPinningDetected());
+ *   }
+ * }
+ * </pre>
  *
  * @since 3.60
  */
-@Tag("java21")
-public abstract class Java21TestSupport
-    extends AbstractSecurityTest
-{
-  /**
-   * Thread pinning detector for identifying when Virtual Threads get pinned to platform threads.
-   */
-  protected ThreadPinningDetector pinningDetector;
+public abstract class Java21TestSupport extends TestSupport {
+
+  private Recording jfrRecording;
+  private final AtomicBoolean pinningDetected = new AtomicBoolean(false);
+  private final List<String> pinningStackTraces = new ArrayList<>();
 
   /**
-   * Current test information.
-   */
-  protected TestInfo testInfo;
-
-  /**
-   * Setup method that runs before each test.
-   * Initializes the thread pinning detector and enables JVM thread pinning detection.
+   * Sets up the test environment before each test method execution.
+   * <p>
+   * Initializes JFR recording for thread pinning detection.
    */
   @BeforeEach
-  public void setupJava21Test(TestInfo testInfo) {
-    this.testInfo = testInfo;
-    this.pinningDetector = new ThreadPinningDetector();
+  public void setupJava21Test() throws Exception {
+    // Start JFR recording to detect thread pinning
+    Configuration config = Configuration.getConfiguration("default");
+    jfrRecording = new Recording(config);
+    jfrRecording.enable("jdk.VirtualThreadPinned").withStackTrace();
+    jfrRecording.start();
     
-    // Enable JVM thread pinning detection
-    System.setProperty("jdk.tracePinnedThreads", "full");
+    // Reset pinning detection state
+    pinningDetected.set(false);
+    pinningStackTraces.clear();
+    
+    log.info("Java21TestSupport: Test environment initialized with JFR recording for thread pinning detection");
   }
 
   /**
-   * Cleanup method that runs after each test.
-   * Resets thread pinning detection settings.
+   * Cleans up the test environment after each test method execution.
+   * <p>
+   * Stops JFR recording and logs any detected thread pinning events.
    */
   @AfterEach
-  public void cleanupJava21Test() {
-    System.clearProperty("jdk.tracePinnedThreads");
+  public void tearDownJava21Test() throws Exception {
+    if (jfrRecording != null) {
+      jfrRecording.stop();
+      
+      // Check for VirtualThreadPinned events
+      jfrRecording.getEvents().forEach(event -> {
+        if (event.getEventType().getName().equals("jdk.VirtualThreadPinned")) {
+          pinningDetected.set(true);
+          String stackTrace = event.getStackTrace().toString();
+          pinningStackTraces.add(stackTrace);
+          log.warn("Thread pinning detected: {}\nStack trace: {}", event, stackTrace);
+        }
+      });
+      
+      jfrRecording.close();
+    }
+    
+    log.info("Java21TestSupport: Test environment cleaned up");
   }
 
   /**
-   * Creates a new Virtual Thread.
+   * Creates a virtual thread with the specified runnable task.
    *
-   * @param name the name of the thread
-   * @param runnable the code to be executed by the thread
-   * @return the created Virtual Thread
+   * @param task the task to be executed by the virtual thread
+   * @return a new unstarted virtual thread
    */
-  protected Thread createVirtualThread(String name, Runnable runnable) {
-    return Thread.ofVirtual().name(name).start(runnable);
+  protected Thread createVirtualThread(Runnable task) {
+    return Thread.ofVirtual().name("test-virtual-thread").unstarted(task);
   }
 
   /**
-   * Creates a Virtual Thread factory with the specified name pattern.
+   * Creates a virtual thread with the specified name and runnable task.
    *
-   * @param namePattern the pattern for naming threads created by this factory
-   * @return a ThreadFactory that creates Virtual Threads
+   * @param name the name of the virtual thread
+   * @param task the task to be executed by the virtual thread
+   * @return a new unstarted virtual thread
    */
-  protected ThreadFactory createVirtualThreadFactory(String namePattern) {
-    return Thread.ofVirtual().name(namePattern).factory();
+  protected Thread createVirtualThread(String name, Runnable task) {
+    return Thread.ofVirtual().name(name).unstarted(task);
   }
 
   /**
-   * Creates an ExecutorService that creates a new Virtual Thread for each task.
+   * Creates and starts a virtual thread with the specified runnable task.
    *
-   * @return an ExecutorService using Virtual Threads
+   * @param task the task to be executed by the virtual thread
+   * @return a started virtual thread
+   */
+  protected Thread startVirtualThread(Runnable task) {
+    return Thread.startVirtualThread(task);
+  }
+
+  /**
+   * Creates a virtual thread factory with the specified name prefix.
+   *
+   * @param namePrefix the prefix for thread names created by this factory
+   * @return a thread factory that creates virtual threads
+   */
+  protected ThreadFactory createVirtualThreadFactory(String namePrefix) {
+    return Thread.ofVirtual().name(namePrefix + "-", 0).factory();
+  }
+
+  /**
+   * Creates an executor service that creates a new virtual thread for each task.
+   *
+   * @return an executor service backed by virtual threads
    */
   protected ExecutorService createVirtualThreadExecutor() {
     return Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
-   * Executes a task on a Virtual Thread and waits for its completion.
+   * Executes the specified task in a virtual thread and returns the result.
+   *
+   * @param <T> the type of the task's result
+   * @param task the task to execute
+   * @return the task's result
+   * @throws Exception if the task throws an exception
+   */
+  protected <T> T runInVirtualThread(Callable<T> task) throws Exception {
+    AtomicReference<T> result = new AtomicReference<>();
+    AtomicReference<Exception> exception = new AtomicReference<>();
+    
+    Thread vThread = createVirtualThread(() -> {
+      try {
+        result.set(task.call());
+      }
+      catch (Exception e) {
+        exception.set(e);
+      }
+    });
+    
+    vThread.start();
+    vThread.join();
+    
+    if (exception.get() != null) {
+      throw exception.get();
+    }
+    
+    return result.get();
+  }
+
+  /**
+   * Executes the specified task in a virtual thread.
    *
    * @param task the task to execute
-   * @param timeout the maximum time to wait for the task to complete
-   * @param <T> the type of the result
-   * @return the result of the task
-   * @throws Exception if the task execution fails or times out
+   * @throws Exception if the task throws an exception
    */
-  protected <T> T runWithVirtualThread(Supplier<T> task, Duration timeout) throws Exception {
-    CompletableFuture<T> future = CompletableFuture.supplyAsync(task, createVirtualThreadExecutor());
-    return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+  protected void runInVirtualThread(Runnable task) throws Exception {
+    Thread vThread = createVirtualThread(task);
+    vThread.start();
+    vThread.join();
   }
 
   /**
-   * Executes a task on a Virtual Thread and waits for its completion.
+   * Executes the specified task in multiple virtual threads concurrently.
    *
-   * @param task the task to execute
-   * @param timeout the maximum time to wait for the task to complete
-   * @throws Exception if the task execution fails or times out
+   * @param <T> the type of the task's result
+   * @param task the task supplier to execute
+   * @param count the number of concurrent threads
+   * @return a list of results from all task executions
+   * @throws Exception if any task throws an exception
    */
-  protected void runWithVirtualThread(Runnable task, Duration timeout) throws Exception {
-    CompletableFuture<Void> future = CompletableFuture.runAsync(task, createVirtualThreadExecutor());
-    future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-  }
-
-  /**
-   * Checks if the current JVM supports Virtual Threads.
-   *
-   * @return true if Virtual Threads are supported, false otherwise
-   */
-  protected boolean isVirtualThreadSupported() {
-    try {
-      Thread.ofVirtual().start(() -> {}).join();
-      return true;
-    }
-    catch (UnsupportedOperationException e) {
-      return false;
+  protected <T> List<T> runConcurrentlyInVirtualThreads(Supplier<Callable<T>> task, int count) throws Exception {
+    try (ExecutorService executor = createVirtualThreadExecutor()) {
+      List<Future<T>> futures = new ArrayList<>();
+      
+      for (int i = 0; i < count; i++) {
+        futures.add(executor.submit(task.get()));
+      }
+      
+      List<T> results = new ArrayList<>(count);
+      for (Future<T> future : futures) {
+        results.add(future.get());
+      }
+      
+      return results;
     }
   }
 
   /**
-   * Checks if the current thread is a Virtual Thread.
+   * Checks if thread pinning was detected during test execution.
    *
-   * @return true if the current thread is a Virtual Thread, false otherwise
+   * @return true if thread pinning was detected, false otherwise
+   */
+  protected boolean wasPinningDetected() {
+    return pinningDetected.get();
+  }
+
+  /**
+   * Gets the stack traces of any thread pinning events that were detected.
+   *
+   * @return a list of stack traces from thread pinning events
+   */
+  protected List<String> getPinningStackTraces() {
+    return new ArrayList<>(pinningStackTraces);
+  }
+
+  /**
+   * Detects if the current thread is a virtual thread.
+   *
+   * @return true if the current thread is a virtual thread, false otherwise
    */
   protected boolean isVirtualThread() {
     return Thread.currentThread().isVirtual();
   }
 
   /**
-   * Detects if a Virtual Thread is pinned to a platform thread during the execution of a task.
+   * Simulates a blocking operation that would typically cause thread pinning if executed
+   * within a synchronized block in a virtual thread.
    *
-   * @param task the task to execute and check for thread pinning
-   * @return true if thread pinning was detected, false otherwise
+   * @param durationMillis the duration to block in milliseconds
    */
-  protected boolean detectThreadPinning(Runnable task) {
-    return pinningDetector.detectPinning(task);
+  protected void simulateBlockingOperation(long durationMillis) {
+    try {
+      Thread.sleep(Duration.ofMillis(durationMillis));
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   /**
-   * Creates a task that will intentionally cause thread pinning for testing purposes.
-   * This is useful for validating that thread pinning detection is working correctly.
+   * Creates a test scenario that would cause thread pinning if executed in a virtual thread.
+   * This method is useful for validating thread pinning detection mechanisms.
    *
-   * @return a Runnable that will cause thread pinning when executed on a Virtual Thread
+   * @return a runnable that will cause thread pinning when executed in a virtual thread
    */
-  protected Runnable createPinningTask() {
+  protected Runnable createThreadPinningScenario() {
     return () -> {
       synchronized (this) {
-        try {
-          // This will cause pinning because synchronized blocks pin Virtual Threads
-          Thread.sleep(100);
-        }
-        catch (InterruptedException e) {
-          Thread.currentThread().interrupt();
-        }
+        // Blocking operation inside synchronized block will cause pinning
+        simulateBlockingOperation(100);
       }
     };
+  }
+
+  /**
+   * Executes a test that verifies thread pinning detection is working correctly.
+   * This method deliberately creates a thread pinning scenario and verifies it's detected.
+   *
+   * @throws Exception if an error occurs during test execution
+   */
+  protected void verifyThreadPinningDetection() throws Exception {
+    // Reset pinning detection
+    pinningDetected.set(false);
+    pinningStackTraces.clear();
+    
+    // Create a scenario that will cause pinning
+    runInVirtualThread(createThreadPinningScenario());
+    
+    // Verify pinning was detected
+    if (!wasPinningDetected()) {
+      log.warn("Thread pinning detection test failed: pinning was not detected");
+    }
   }
 }

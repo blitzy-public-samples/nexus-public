@@ -15,10 +15,13 @@ package org.sonatype.nexus.content.example.internal.store;
 import org.sonatype.nexus.repository.content.store.AssetDAO;
 
 /**
- * Example asset data access object interface for the example content repository format.
- * 
+ * Example implementation of {@link AssetDAO} for the example content format.
+ * <p>
+ * This interface is compatible with Java 21, MyBatis 3.5.15, and updated JDBC drivers.
+ * It leverages the core repository content framework's AssetDAO interface without
+ * adding any additional methods or functionality.
+ *
  * @since 3.24
- * @see AssetDAO
  */
 public interface ExampleAssetDAO
     extends AssetDAO

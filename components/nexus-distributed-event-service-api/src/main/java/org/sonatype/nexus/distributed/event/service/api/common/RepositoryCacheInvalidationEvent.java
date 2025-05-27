@@ -12,12 +12,13 @@
  */
 package org.sonatype.nexus.distributed.event.service.api.common;
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Preconditions;
 
 /**
  * Indicates that the cache should be invalidated for provided repository
@@ -34,13 +35,18 @@ public class RepositoryCacheInvalidationEvent
   @JsonCreator
   public RepositoryCacheInvalidationEvent(@JsonProperty("repositoryName") final String repositoryName) {
     super(EventType.UPDATED);
-    this.repositoryName = checkNotNull(repositoryName, "Repository name cannot be null");
+    this.repositoryName = Preconditions.checkNotNull(repositoryName, "Repository name cannot be null");
   }
 
   public String getRepositoryName() {
     return repositoryName;
   }
   
+  /**
+   * Returns a string representation of this event using Java 21 String Templates.
+   *
+   * @return a string representation of this event
+   */
   @Override
   public String toString() {
     return STR."RepositoryCacheInvalidationEvent{repositoryName=\{repositoryName}}";

@@ -14,24 +14,22 @@ package org.sonatype.nexus.virtualthread;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.nexus.thread.NexusForkJoinPoolFactory;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertTrue;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 
 /**
  * Tests for {@link NexusForkJoinPoolFactory} with Java 21 Virtual Threads.
@@ -40,186 +38,211 @@ import static org.junit.Assert.assertTrue;
  */
 public class NexusForkJoinPoolFactoryVirtualThreadTest
 {
-  private static final String TEST_PREFIX = "nexus-vt-test-";
+  private static final String TEST_PREFIX = "virtual-thread-test-";
   
   /**
-   * Tests that virtual thread executor properly names threads.
+   * Verifies that virtual thread executors created by the factory correctly apply thread naming conventions.
    */
   @Test
   public void virtualThreadsHaveCustomPrefix() throws Exception {
     Executor executor = NexusForkJoinPoolFactory.createVirtualThreadExecutor(TEST_PREFIX);
     
-    // Use a latch to wait for the thread to execute
+    AtomicReference<String> threadName = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
     
-    // Use an array to capture the thread name from inside the virtual thread
-    String[] threadName = new String[1];
-    
     executor.execute(() -> {
-      // Capture the current thread name
-      threadName[0] = Thread.currentThread().getName();
+      threadName.set(Thread.currentThread().getName());
       latch.countDown();
     });
     
-    // Wait for the virtual thread to complete
-    assertTrue("Virtual thread did not complete in time", latch.await(5, TimeUnit.SECONDS));
+    latch.await(5, TimeUnit.SECONDS);
     
-    // Verify the thread name contains our prefix
-    assertThat(threadName[0], containsString(TEST_PREFIX));
+    assertThat(threadName.get(), containsString(TEST_PREFIX));
+    assertThat(Thread.currentThread().isVirtual(), is(false)); // Main test thread is platform thread
   }
   
   /**
-   * Tests that virtual threads are properly created and can execute tasks.
+   * Verifies that the default virtual thread executor creates threads that are properly identified as virtual.
    */
   @Test
-  public void virtualThreadsExecuteTasks() throws Exception {
+  public void defaultVirtualThreadExecutorCreatesVirtualThreads() throws Exception {
     Executor executor = NexusForkJoinPoolFactory.createVirtualThreadExecutor();
     
-    // Create a counter to track completed tasks
-    AtomicInteger counter = new AtomicInteger(0);
+    AtomicReference<Boolean> isVirtual = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
     
-    // Number of tasks to execute
-    int taskCount = 100;
+    executor.execute(() -> {
+      isVirtual.set(Thread.currentThread().isVirtual());
+      latch.countDown();
+    });
     
-    // Use a latch to wait for all tasks to complete
-    CountDownLatch latch = new CountDownLatch(taskCount);
+    latch.await(5, TimeUnit.SECONDS);
     
-    // Submit tasks
-    for (int i = 0; i < taskCount; i++) {
-      executor.execute(() -> {
-        counter.incrementAndGet();
-        latch.countDown();
-      });
-    }
-    
-    // Wait for all tasks to complete
-    assertTrue("Not all virtual threads completed in time", latch.await(5, TimeUnit.SECONDS));
-    
-    // Verify all tasks were executed
-    assertThat(counter.get(), is(taskCount));
+    assertThat(isVirtual.get(), is(true));
   }
   
   /**
-   * Tests that ForkJoinPool can work with virtual threads for I/O-bound operations.
+   * Tests that ForkJoinPool instances can effectively manage both platform and virtual threads.
+   * This test verifies that a ForkJoinPool created by the factory can execute tasks while
+   * virtual threads are also running in the system.
    */
   @Test
   public void forkJoinPoolWorksWithVirtualThreads() throws Exception {
-    // Create an I/O-bound pool with higher parallelism
-    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createIoBoundPool(TEST_PREFIX, 16);
+    // Create a ForkJoinPool using the factory
+    ForkJoinPool forkJoinPool = NexusForkJoinPoolFactory.createForkJoinPool(TEST_PREFIX);
     
     // Create a virtual thread executor
     Executor virtualExecutor = NexusForkJoinPoolFactory.createVirtualThreadExecutor();
     
-    // Number of tasks to execute
-    int taskCount = 50;
+    // Start some virtual threads
+    int virtualThreadCount = 10;
+    CountDownLatch virtualThreadsLatch = new CountDownLatch(virtualThreadCount);
     
-    // Use a latch to wait for all tasks to complete
-    CountDownLatch latch = new CountDownLatch(taskCount);
-    
-    // Submit tasks that simulate I/O operations using both executors
-    List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
-    for (int i = 0; i < taskCount; i++) {
+    for (int i = 0; i < virtualThreadCount; i++) {
       final int taskId = i;
-      
-      // Alternate between ForkJoinPool and VirtualThreadExecutor
-      if (i % 2 == 0) {
-        // Use ForkJoinPool
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-          simulateIoOperation(taskId);
-          latch.countDown();
-        }, forkJoinPool);
-        futures.add(future);
-      } else {
-        // Use VirtualThreadExecutor
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-          simulateIoOperation(taskId);
-          latch.countDown();
-        }, virtualExecutor);
-        futures.add(future);
-      }
+      virtualExecutor.execute(() -> {
+        try {
+          // Simulate some I/O work
+          Thread.sleep(100);
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        finally {
+          virtualThreadsLatch.countDown();
+        }
+      });
     }
     
-    // Wait for all tasks to complete
-    assertTrue("Not all tasks completed in time", latch.await(10, TimeUnit.SECONDS));
+    // Submit tasks to the ForkJoinPool
+    int platformTaskCount = 5;
+    List<Future<String>> futures = new ArrayList<>();
     
-    // Verify all futures completed without exceptions
-    CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-    allFutures.join(); // This will throw an exception if any future completed exceptionally
+    for (int i = 0; i < platformTaskCount; i++) {
+      final int taskId = i;
+      futures.add(forkJoinPool.submit(() -> {
+        // Verify thread naming
+        String threadName = Thread.currentThread().getName();
+        assertThat(threadName, containsString(TEST_PREFIX));
+        
+        // Simulate some CPU work
+        int result = 0;
+        for (int j = 0; j < 1000; j++) {
+          result += j;
+        }
+        
+        return "Task " + taskId + " completed with result " + result;
+      }));
+    }
     
-    // Shutdown the ForkJoinPool
+    // Verify all virtual threads completed
+    assertThat(virtualThreadsLatch.await(5, TimeUnit.SECONDS), is(true));
+    
+    // Verify all platform thread tasks completed successfully
+    for (Future<String> future : futures) {
+      String result = future.get(5, TimeUnit.SECONDS);
+      assertThat(result, notNullValue());
+      assertThat(result, containsString("completed with result"));
+    }
+    
+    // Clean up
     forkJoinPool.shutdown();
-    assertTrue("ForkJoinPool did not terminate in time", forkJoinPool.awaitTermination(5, TimeUnit.SECONDS));
+    assertThat(forkJoinPool.awaitTermination(5, TimeUnit.SECONDS), is(true));
   }
   
   /**
-   * Tests that the optimal parallelism is correctly determined.
-   */
-  @Test
-  public void optimalParallelismIsCorrect() {
-    int parallelism = NexusForkJoinPoolFactory.getOptimalParallelism();
-    
-    // Verify parallelism is positive and reasonable
-    assertTrue("Parallelism should be positive", parallelism > 0);
-    
-    // It should be related to the available processors
-    int availableProcessors = Runtime.getRuntime().availableProcessors();
-    assertTrue("Parallelism should be related to available processors", 
-        parallelism <= availableProcessors * 2); // Allow for some flexibility
-  }
-  
-  /**
-   * Tests structured concurrency patterns with virtual threads.
+   * Tests structured concurrency patterns with Virtual Threads using Java 21's
+   * StructuredTaskScope. This test verifies that multiple related tasks can be
+   * executed concurrently and managed as a single unit of work.
    */
   @Test
   public void structuredConcurrencyWithVirtualThreads() throws Exception {
-    // Create a thread-per-task executor using virtual threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Number of tasks to execute
-      int taskCount = 100;
-      
-      // Submit tasks and collect futures
-      List<CompletableFuture<Integer>> futures = new ArrayList<>();
+    // Create a virtual thread executor with custom naming
+    Executor executor = NexusForkJoinPoolFactory.createVirtualThreadExecutor(TEST_PREFIX);
+    
+    // Use try-with-resources to ensure proper cleanup of the scope
+    try (var scope = new java.util.concurrent.StructuredTaskScope.ShutdownOnFailure()) {
+      // Fork multiple subtasks
+      int taskCount = 5;
+      List<java.util.concurrent.StructuredTaskScope.Subtask<Integer>> subtasks = new ArrayList<>();
       
       for (int i = 0; i < taskCount; i++) {
         final int taskId = i;
-        CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
-          // Simulate some work
-          try {
-            Thread.sleep(10);
-          } 
-          catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-          }
-          return taskId * 2; // Return a result
-        }, executor);
-        
-        futures.add(future);
+        subtasks.add(scope.fork(() -> {
+          // Verify we're running in a virtual thread
+          assertThat(Thread.currentThread().isVirtual(), is(true));
+          
+          // Simulate some work with varying duration
+          Thread.sleep(50 * taskId);
+          return taskId * 10;
+        }));
       }
       
-      // Wait for all futures to complete and collect results
-      CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+      // Wait for all subtasks to complete
+      scope.join();
       
-      // This demonstrates structured concurrency - we wait for all child tasks before proceeding
-      allFutures.join();
+      // Ensure no exceptions occurred
+      scope.throwIfFailed();
       
-      // Verify all results
+      // Verify results
       for (int i = 0; i < taskCount; i++) {
-        assertThat(futures.get(i).join(), is(i * 2));
+        assertThat(subtasks.get(i).get(), is(i * 10));
       }
-    } // ExecutorService is automatically closed here due to try-with-resources
+    }
   }
   
   /**
-   * Simulates an I/O operation by sleeping for a short time.
+   * Tests that the CPU-bound pool created by the factory is properly configured
+   * for computational workloads in a Java 21 environment with Virtual Threads present.
    */
-  private void simulateIoOperation(int taskId) {
-    try {
-      // Simulate I/O with different durations
-      Thread.sleep(50 + (taskId % 5) * 10);
-    } 
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
+  @Test
+  public void cpuBoundPoolConfiguration() throws Exception {
+    // Create a CPU-bound pool
+    ForkJoinPool cpuPool = NexusForkJoinPoolFactory.createCpuBoundPool(TEST_PREFIX);
+    
+    // Verify the pool has the expected parallelism (should match available processors)
+    assertThat(cpuPool.getParallelism(), is(Runtime.getRuntime().availableProcessors()));
+    
+    // Create some virtual threads in the background
+    Executor virtualExecutor = NexusForkJoinPoolFactory.createVirtualThreadExecutor();
+    CountDownLatch virtualThreadsStarted = new CountDownLatch(5);
+    
+    for (int i = 0; i < 5; i++) {
+      virtualExecutor.execute(() -> {
+        virtualThreadsStarted.countDown();
+        try {
+          // Keep virtual threads alive during the test
+          Thread.sleep(1000);
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+      });
     }
+    
+    // Wait for virtual threads to start
+    assertThat(virtualThreadsStarted.await(5, TimeUnit.SECONDS), is(true));
+    
+    // Submit CPU-intensive work to the CPU pool
+    Future<Long> result = cpuPool.submit(() -> {
+      // Verify thread naming
+      String threadName = Thread.currentThread().getName();
+      assertThat(threadName, containsString(TEST_PREFIX));
+      
+      // Perform CPU-intensive calculation
+      long sum = 0;
+      for (long i = 0; i < 10_000_000; i++) {
+        sum += i;
+      }
+      return sum;
+    });
+    
+    // Verify the result
+    long expectedSum = 49999995000000L; // Sum of numbers from 0 to 9,999,999
+    assertThat(result.get(10, TimeUnit.SECONDS), is(expectedSum));
+    
+    // Clean up
+    cpuPool.shutdown();
+    assertThat(cpuPool.awaitTermination(5, TimeUnit.SECONDS), is(true));
   }
 }

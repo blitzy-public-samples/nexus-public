@@ -18,6 +18,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Subset of JEXL selectors that can also be represented as SQL.
+ * Updated for Java 21 with pattern matching and enhanced encapsulation.
  *
  * @since 3.6
  */
@@ -28,28 +29,51 @@ public class CselSelector
 
   private final CselToSql cselToSql;
 
+  /**
+   * Constructs a new CSEL selector with the specified SQL transformer and expression.
+   *
+   * @param cselToSql the SQL transformer to use (must not be null)
+   * @param expression the JEXL expression to evaluate (must not be null)
+   */
   public CselSelector(final CselToSql cselToSql, final JexlExpression expression) {
     super(expression);
     this.cselToSql = checkNotNull(cselToSql);
   }
 
+  /**
+   * Transforms this selector's CSEL expression into SQL using the configured transformer.
+   *
+   * @param sqlBuilder the builder to populate with SQL fragments
+   */
   @Override
   public void toSql(final SelectorSqlBuilder sqlBuilder) {
-    // Get the syntax tree and transform it to SQL using pattern matching
-    ASTJexlScript syntaxTree = expression.getSyntaxTree();
-    if (syntaxTree != null) {
-      cselToSql.transformCselToSql(syntaxTree, sqlBuilder);
-    }
+    // Using pattern matching to ensure we have a valid syntax tree
+    var syntaxTree = switch (expression) {
+      case JexlExpression expr when expr.getSyntaxTree() != null -> expr.getSyntaxTree();
+      case JexlExpression expr -> throw new IllegalStateException("Invalid syntax tree in expression: " + expr);
+    };
+    
+    cselToSql.transformCselToSql(syntaxTree, sqlBuilder);
   }
 
+  /**
+   * Transforms this selector's CSEL expression into SQL using the provided transformer.
+   *
+   * @param sqlBuilder the builder to populate with SQL fragments
+   * @param cselToSql the SQL transformer to use
+   * @param <T> the type of SQL builder
+   */
   @Override
-  public <T> void toSql(final T sqlBuilder, final CselToSql<T> cselToSqlTransformer) {
-    // Use pattern matching to handle the transformation
-    switch (sqlBuilder) {
-      case SelectorSqlBuilder builder when cselToSqlTransformer != null -> 
-          cselToSqlTransformer.transformCselToSql(expression.getSyntaxTree(), sqlBuilder);
-      case null -> throw new IllegalArgumentException("SQL builder cannot be null");
-      default -> cselToSqlTransformer.transformCselToSql(expression.getSyntaxTree(), sqlBuilder);
-    }
+  public <T> void toSql(final T sqlBuilder, final CselToSql<T> cselToSql) {
+    checkNotNull(cselToSql, "CselToSql transformer cannot be null");
+    checkNotNull(sqlBuilder, "SQL builder cannot be null");
+    
+    // Using pattern matching to ensure we have a valid syntax tree
+    var syntaxTree = switch (expression) {
+      case JexlExpression expr when expr.getSyntaxTree() != null -> expr.getSyntaxTree();
+      case JexlExpression expr -> throw new IllegalStateException("Invalid syntax tree in expression: " + expr);
+    };
+    
+    cselToSql.transformCselToSql(syntaxTree, sqlBuilder);
   }
 }

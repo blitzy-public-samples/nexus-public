@@ -1,0 +1,112 @@
+# Maven Repository Event Message Templates using Java 21 String Templates
+# This file contains test templates for formatting event messages in Maven repositories
+# These templates demonstrate the use of Java 21's String Templates feature
+
+# ======== ARTIFACT EVENTS ========
+
+# Artifact upload events
+ArtifactUploadTemplate = STR."Artifact \{gav} uploaded to repository \{repositoryName} by user \{userId} (\{userIpAddress})"
+ArtifactUploadWithSizeTemplate = STR."Artifact \{gav} (\{sizeInBytes / 1024} KB) uploaded to repository \{repositoryName}"
+ArtifactUploadWithTimestampTemplate = STR."Artifact \{gav} uploaded at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)} to repository \{repositoryName}"
+
+# Artifact download events
+ArtifactDownloadTemplate = STR."Artifact \{gav} downloaded from repository \{repositoryName} by user \{userId} (\{userIpAddress})"
+ArtifactDownloadWithCountTemplate = STR."Artifact \{gav} downloaded from repository \{repositoryName} (download count: \{downloadCount})"
+ArtifactDownloadWithTimestampTemplate = STR."Artifact \{gav} downloaded at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)} from repository \{repositoryName}"
+
+# Artifact deletion events
+ArtifactDeleteTemplate = STR."Artifact \{gav} deleted from repository \{repositoryName} by user \{userId}"
+ArtifactDeleteWithTimestampTemplate = STR."Artifact \{gav} deleted at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)} from repository \{repositoryName}"
+
+# ======== METADATA EVENTS ========
+
+# Metadata update events
+MetadataUpdateTemplate = STR."Metadata for \{gav} updated in repository \{repositoryName}"
+MetadataUpdateWithDetailsTemplate = STR."Metadata for \{gav} updated in repository \{repositoryName} with \{changes.size()} changes"
+MetadataUpdateWithTimestampTemplate = STR."Metadata for \{gav} updated at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)} in repository \{repositoryName}"
+
+# Metadata rebuild events
+MetadataRebuildTemplate = STR."Metadata rebuilt for repository \{repositoryName}"
+MetadataRebuildWithCountTemplate = STR."Metadata rebuilt for repository \{repositoryName} (\{metadataCount} files processed)"
+MetadataRebuildWithTimestampTemplate = STR."Metadata rebuilt at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)} for repository \{repositoryName}"
+
+# ======== REPOSITORY EVENTS ========
+
+# Repository creation events
+RepositoryCreateTemplate = STR."Maven repository \{repositoryName} (\{repositoryType}) created by user \{userId}"
+RepositoryCreateWithTimestampTemplate = STR."Maven repository \{repositoryName} (\{repositoryType}) created at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)}"
+
+# Repository update events
+RepositoryUpdateTemplate = STR."Maven repository \{repositoryName} updated by user \{userId}"
+RepositoryUpdateWithDetailsTemplate = STR."Maven repository \{repositoryName} updated with changes: \{String.join(", ", changes)}"
+
+# Repository deletion events
+RepositoryDeleteTemplate = STR."Maven repository \{repositoryName} deleted by user \{userId}"
+RepositoryDeleteWithTimestampTemplate = STR."Maven repository \{repositoryName} deleted at \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)}"
+
+# ======== ERROR EVENTS ========
+
+# Artifact validation error events
+ArtifactValidationErrorTemplate = STR."Validation error for artifact \{gav}: \{error.getMessage()}"
+ArtifactValidationErrorWithDetailsTemplate = STR."Validation error for artifact \{gav} in repository \{repositoryName}: \{error.getMessage()} (at line \{error.getLineNumber()}, column \{error.getColumnNumber()})"
+
+# Repository error events
+RepositoryErrorTemplate = STR."Error in repository \{repositoryName}: \{exception.getMessage()}"
+RepositoryErrorWithStackTraceTemplate = STR."Error in repository \{repositoryName}: \{exception.getMessage()}\nStack trace: \{java.util.Arrays.stream(exception.getStackTrace()).limit(5).map(StackTraceElement::toString).collect(java.util.stream.Collectors.joining("\n"))}"
+
+# Proxy repository error events
+ProxyErrorTemplate = STR."Proxy error for repository \{repositoryName} connecting to \{remoteUrl}: \{exception.getMessage()}"
+ProxyErrorWithStatusTemplate = STR."Proxy error for repository \{repositoryName} connecting to \{remoteUrl}: HTTP \{statusCode} - \{statusMessage}"
+
+# ======== COMPLEX TEMPLATES ========
+
+# Templates with conditional expressions
+ArtifactEventWithConditionTemplate = STR."Artifact \{gav} \{operation == "UPLOAD" ? "uploaded to" : operation == "DOWNLOAD" ? "downloaded from" : "processed in"} repository \{repositoryName}"
+RepositoryEventWithConditionTemplate = STR."Repository \{repositoryName} \{event.getType() == "CREATE" ? "created" : event.getType() == "UPDATE" ? "updated" : event.getType() == "DELETE" ? "deleted" : "modified"} by user \{userId}"
+
+# Templates with formatted numbers and dates
+ArtifactSizeTemplate = STR."Artifact \{gav} size: \{sizeInBytes < 1024 ? sizeInBytes + " bytes" : sizeInBytes < 1024*1024 ? String.format("%.2f KB", sizeInBytes/1024.0) : String.format("%.2f MB", sizeInBytes/(1024.0*1024.0))}"
+ArtifactTimestampTemplate = STR."Artifact \{gav} processed on \{java.time.format.DateTimeFormatter.ofPattern("MMMM d, yyyy 'at' HH:mm:ss").format(timestamp)}"
+
+# Templates with list processing
+RepositoryGroupMembersTemplate = STR."Repository group \{repositoryName} contains: \{String.join(", ", members)}"
+ArtifactDependenciesTemplate = STR."Artifact \{gav} has dependencies: \{dependencies.isEmpty() ? "none" : dependencies.stream().map(d -> d.getGroupId() + ":" + d.getArtifactId()).collect(java.util.stream.Collectors.joining(", "))}"
+
+# Templates with nested expressions
+NestedExpressionTemplate = STR."Repository \{repositoryName} contains \{artifacts.size()} artifacts with a total size of \{String.format("%.2f", artifacts.stream().mapToLong(a -> a.getSize()).sum() / (1024.0 * 1024.0))} MB"
+ComplexNestedTemplate = STR."Analysis of repository \{repositoryName}: \{artifacts.isEmpty() ? "No artifacts" : String.format("%d artifacts, largest: %s (%.2f MB), newest: %s (uploaded %s)", 
+  artifacts.size(), 
+  artifacts.stream().max((a1, a2) -> Long.compare(a1.getSize(), a2.getSize())).get().getGav(), 
+  artifacts.stream().max((a1, a2) -> Long.compare(a1.getSize(), a2.getSize())).get().getSize() / (1024.0 * 1024.0),
+  artifacts.stream().max((a1, a2) -> a1.getLastUpdated().compareTo(a2.getLastUpdated())).get().getGav(),
+  java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd").format(artifacts.stream().max((a1, a2) -> a1.getLastUpdated().compareTo(a2.getLastUpdated())).get().getLastUpdated())
+)}"
+
+# Templates with exception handling
+ExceptionHandlingTemplate = STR."Operation on repository \{repositoryName} \{try { result = operation(); "succeeded with result: " + result } catch (Exception e) { "failed with error: " + e.getMessage() }}"
+
+# Templates with multiline formatting
+MultilineAuditTemplate = STR."Maven Repository Audit Log:\n
+  Repository: \{repositoryName}\n
+  Event: \{eventType}\n
+  User: \{userId}\n
+  Timestamp: \{java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp)}\n
+  Details: \{details}\n"
+
+# Templates with embedded JSON
+JsonAuditTemplate = STR."{\n
+  \"repository\": \"\{repositoryName}\",\n
+  \"event\": \"\{eventType}\",\n
+  \"user\": \"\{userId}\",\n
+  \"timestamp\": \"\{java.time.format.DateTimeFormatter.ISO_INSTANT.format(timestamp)}\",\n
+  \"details\": \{details.isEmpty() ? "{}" : details}\n
+}"
+
+# Templates with embedded XML
+XmlAuditTemplate = STR."<event>\n
+  <repository>\{repositoryName}</repository>\n
+  <type>\{eventType}</type>\n
+  <user>\{userId}</user>\n
+  <timestamp>\{java.time.format.DateTimeFormatter.ISO_INSTANT.format(timestamp)}</timestamp>\n
+  <details>\{details}</details>\n
+</event>"

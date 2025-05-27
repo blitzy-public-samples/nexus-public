@@ -14,13 +14,16 @@ package org.sonatype.nexus.common.io;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
 
 import org.sonatype.nexus.common.io.Cooperation.IOCheck;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toMap;
@@ -33,12 +36,15 @@ import static java.util.stream.Collectors.toMap;
 public abstract class ScopedCooperationFactorySupport
     extends CooperationFactorySupport
 {
+  private static final Logger log = LoggerFactory.getLogger(ScopedCooperationFactorySupport.class);
+  
   /**
-   * Flag to determine if Virtual Threads should be used for I/O operations.
-   * Defaults to true in Java 21 environments.
+   * Executor service for Virtual Thread-based operations.
+   * 
+   * @since 3.60
    */
-  private boolean useVirtualThreads = true;
-
+  private static final Executor VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+  
   @Override
   protected Cooperation build(final String id, final Config config) {
     return new ScopedCooperation(id, config);
@@ -49,56 +55,6 @@ public abstract class ScopedCooperationFactorySupport
    */
   protected <T> CooperatingFuture<T> createFuture(final String requestKey, final Config config) {
     return new CooperatingFuture<>(requestKey, config);
-  }
-  
-  /**
-   * Creates a new {@link CooperatingFuture} optimized for Virtual Thread execution.
-   * 
-   * @param requestKey the unique key identifying this request
-   * @param config the cooperation configuration
-   * @param executor the Virtual Thread executor service to use
-   * @return a new CooperatingFuture instance
-   * @since 3.60
-   */
-  protected <T> CooperatingFuture<T> createVirtualThreadFuture(final String requestKey, 
-                                                             final Config config,
-                                                             final ExecutorService executor) {
-    CooperatingFuture<T> future = createFuture(requestKey, config);
-    future.setVirtualThreadExecutor(executor);
-    return future;
-  }
-
-  /**
-   * Creates a new {@link ExecutorService} that uses Virtual Threads.
-   * Each task submitted to this executor will run in its own Virtual Thread.
-   *
-   * @return An ExecutorService that creates a new Virtual Thread for each task
-   * @since 3.60
-   */
-  protected ExecutorService createVirtualThreadExecutor() {
-    return Executors.newVirtualThreadPerTaskExecutor();
-  }
-
-  /**
-   * Configures whether Virtual Threads should be used for I/O operations.
-   *
-   * @param useVirtualThreads true to use Virtual Threads, false to use platform threads
-   * @return this factory for fluent API
-   * @since 3.60
-   */
-  public ScopedCooperationFactorySupport useVirtualThreads(final boolean useVirtualThreads) {
-    this.useVirtualThreads = useVirtualThreads;
-    return this;
-  }
-
-  /**
-   * Checks if Virtual Threads are enabled for this factory.
-   *
-   * @return true if Virtual Threads are enabled, false otherwise
-   * @since 3.60
-   */
-  public boolean isUsingVirtualThreads() {
-    return useVirtualThreads;
   }
 
   /**
@@ -119,6 +75,46 @@ public abstract class ScopedCooperationFactorySupport
    * Streams all futures that are currently cooperating.
    */
   protected abstract Stream<CooperatingFuture<?>> streamFutures(String scope);
+  
+  /**
+   * Begins cooperation for the scoped key using the given future with Virtual Thread support.
+   * This method should be implemented to provide optimized handling for Virtual Thread-based cooperation.
+   *
+   * @param scopedKey the scoped key for cooperation
+   * @param future the future to associate with this cooperation
+   * @return {@code null} if the key was not already in use; otherwise the currently associated future
+   * @since 3.60
+   */
+  protected <T> CooperatingFuture<T> beginVirtualThreadCooperation(String scopedKey, CooperatingFuture<T> future) {
+    // Default implementation delegates to the standard beginCooperation method
+    return beginCooperation(scopedKey, future);
+  }
+
+  /**
+   * Ends cooperation for the scoped key and its associated future with Virtual Thread support.
+   * This method should be implemented to provide optimized handling for Virtual Thread-based cooperation.
+   *
+   * @param scopedKey the scoped key for cooperation
+   * @param future the future to disassociate from this cooperation
+   * @since 3.60
+   */
+  protected <T> void endVirtualThreadCooperation(String scopedKey, CooperatingFuture<T> future) {
+    // Default implementation delegates to the standard endCooperation method
+    endCooperation(scopedKey, future);
+  }
+  
+  /**
+   * Streams all futures that are currently cooperating with Virtual Thread support.
+   * This method should be implemented to provide optimized handling for Virtual Thread-based cooperation.
+   *
+   * @param scope the scope to stream futures from
+   * @return stream of cooperating futures
+   * @since 3.60
+   */
+  protected Stream<CooperatingFuture<?>> streamVirtualThreadFutures(String scope) {
+    // Default implementation delegates to the standard streamFutures method
+    return streamFutures(scope);
+  }
 
   /**
    * Join cache results without retrying; assumes that any caches have no lag.
@@ -126,6 +122,26 @@ public abstract class ScopedCooperationFactorySupport
   @Nullable
   protected <T> T join(final IOCheck<T> request) throws IOException {
     return request.check();
+  }
+  
+  /**
+   * Executes the given task using Virtual Threads when available and enabled.
+   * 
+   * @param task the task to execute
+   * @param useVirtualThreads whether to use Virtual Threads
+   * @since 3.60
+   */
+  protected void executeWithVirtualThread(Runnable task, boolean useVirtualThreads) {
+    if (useVirtualThreads) {
+      try {
+        VIRTUAL_THREAD_EXECUTOR.execute(task);
+      } catch (Exception e) {
+        log.warn("Failed to execute task with Virtual Thread, falling back to current thread", e);
+        task.run();
+      }
+    } else {
+      task.run();
+    }
   }
 
   /**
@@ -137,11 +153,6 @@ public abstract class ScopedCooperationFactorySupport
     private final String scope;
 
     private final Config config;
-    
-    /**
-     * Executor service for Virtual Thread operations, created lazily when needed.
-     */
-    private ExecutorService virtualThreadExecutor;
 
     /**
      * @param id unique identifier for this cooperation point
@@ -151,43 +162,42 @@ public abstract class ScopedCooperationFactorySupport
       this.config = checkNotNull(config);
     }
 
-    /**
-     * Gets or creates the Virtual Thread executor service.
-     * 
-     * @return the Virtual Thread executor service
-     */
-    private synchronized ExecutorService getVirtualThreadExecutor() {
-      if (virtualThreadExecutor == null && useVirtualThreads) {
-        virtualThreadExecutor = createVirtualThreadExecutor();
-      }
-      return virtualThreadExecutor;
-    }
-
     @Override
     public <T> T cooperate(final String requestKey, final IOCall<T> request) throws IOException {
+      CooperatingFuture<T> myFuture = createFuture(requestKey, config);
       String scopedKey = scope + requestKey;
-      CooperatingFuture<T> myFuture;
-      
-      // Create appropriate future based on Virtual Thread configuration
-      if (useVirtualThreads) {
-        ExecutorService executor = getVirtualThreadExecutor();
-        myFuture = createVirtualThreadFuture(requestKey, config, executor);
-      } else {
-        myFuture = createFuture(requestKey, config);
-      }
 
-      CooperatingFuture<T> theirFuture = beginCooperation(scopedKey, myFuture);
-      if (theirFuture == null) {
-        try {
-          // We're the lead thread, go ahead with the I/O request
-          // If using Virtual Threads, the execution will be delegated to the Virtual Thread executor
-          return myFuture.call(request);
-        } finally {
-          endCooperation(scopedKey, myFuture);
+      if (config.useVirtualThreads()) {
+        // Use Virtual Thread-optimized cooperation
+        CooperatingFuture<T> theirFuture = beginVirtualThreadCooperation(scopedKey, myFuture);
+        if (theirFuture == null) {
+          try {
+            // We're the lead thread, go-ahead with the I/O request
+            // For I/O-bound operations, we can leverage Virtual Threads for better performance
+            return myFuture.call(request);
+          }
+          finally {
+            endVirtualThreadCooperation(scopedKey, myFuture);
+          }
+        }
+        else {
+          // Cooperatively wait for lead thread to complete
+          return theirFuture.cooperate(request);
         }
       } else {
-        // Cooperatively wait for lead thread to complete
-        return theirFuture.cooperate(request);
+        // Use standard platform thread cooperation
+        CooperatingFuture<T> theirFuture = beginCooperation(scopedKey, myFuture);
+        if (theirFuture == null) {
+          try {
+            return myFuture.call(request); // we're the lead thread, go-ahead with the I/O request
+          }
+          finally {
+            endCooperation(scopedKey, myFuture);
+          }
+        }
+        else {
+          return theirFuture.cooperate(request); // cooperatively wait for lead thread to complete
+        }
       }
     }
 
@@ -198,7 +208,32 @@ public abstract class ScopedCooperationFactorySupport
 
     @Override
     public Map<String, Integer> getThreadCountPerKey() {
-      return streamFutures(scope).collect(toMap(CooperatingFuture::getRequestKey, CooperatingFuture::getThreadCount));
+      if (config.useVirtualThreads()) {
+        return streamVirtualThreadFutures(scope).collect(toMap(
+            CooperatingFuture::getRequestKey, 
+            CooperatingFuture::getThreadCount));
+      } else {
+        return streamFutures(scope).collect(toMap(
+            CooperatingFuture::getRequestKey, 
+            CooperatingFuture::getThreadCount));
+      }
+    }
+    
+    /**
+     * Returns statistics about Virtual Thread usage for this cooperation point.
+     * 
+     * @return map of request keys to Virtual Thread counts
+     * @since 3.60
+     */
+    public Map<String, Integer> getVirtualThreadCountPerKey() {
+      if (config.useVirtualThreads()) {
+        return streamVirtualThreadFutures(scope).collect(toMap(
+            CooperatingFuture::getRequestKey, 
+            CooperatingFuture::getThreadCount));
+      } else {
+        // Return empty map when Virtual Threads are not enabled
+        return Map.of();
+      }
     }
   }
 }

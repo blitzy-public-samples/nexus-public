@@ -19,6 +19,7 @@ import java.util.Map;
 import javax.sql.DataSource;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.stateguard.InvalidStateException;
 import org.sonatype.nexus.common.stateguard.StateGuardModule;
 import org.sonatype.nexus.datastore.api.DataAccess;
@@ -27,17 +28,13 @@ import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Injector;
+import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-// Java 21 test group annotation
-import org.sonatype.nexus.testcommon.virtualthread.Java21TestGroup;
-import org.junit.experimental.categories.Category;
 
 import static com.google.inject.Guice.createInjector;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -54,7 +51,7 @@ import static org.mockito.Mockito.verify;
  * {@link DataStoreSupport} tests.
  */
 @ExtendWith(MockitoExtension.class)
-@Category(Java21TestGroup.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class DataStoreSupportTest
     extends TestSupport
 {

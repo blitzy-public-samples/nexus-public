@@ -14,17 +14,17 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.io.IOException;
 import java.util.Enumeration;
-import java.util.concurrent.Callable;
-
-import jakarta.annotation.Nullable;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
-import jakarta.servlet.ServletConfig;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import javax.annotation.Nullable;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.repository.BadRequestException;
@@ -43,6 +43,7 @@ import org.sonatype.nexus.repository.view.ViewFacet;
 import org.sonatype.nexus.repository.view.payloads.StringPayload;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HttpHeaders;
 import org.apache.commons.lang.StringEscapeUtils;
@@ -82,11 +83,6 @@ public class ViewServlet
 
   private final boolean sandboxEnabled;
 
-  /**
-   * Record for capturing request context information
-   */
-  private record RequestContext(HttpServletRequest httpRequest, HttpServletResponse httpResponse, String uri) {}
-
   @Inject
   public ViewServlet(final RepositoryManager repositoryManager,
                      final HttpResponseSenderSelector httpResponseSenderSelector,
@@ -94,6 +90,7 @@ public class ViewServlet
                      final DescriptionRenderer descriptionRenderer,
                      @Named("${nexus.repository.sandbox.enable:-true}") final boolean sandboxEnabled)
   {
+
     this.repositoryManager = checkNotNull(repositoryManager);
     this.httpResponseSenderSelector = checkNotNull(httpResponseSenderSelector);
     this.descriptionHelper = checkNotNull(descriptionHelper);
@@ -119,85 +116,80 @@ public class ViewServlet
   {
     String uri = httpRequest.getRequestURI();
     if (httpRequest.getQueryString() != null) {
-      uri = STR."{uri}?{httpRequest.getQueryString()}";
+      uri = uri + "?" + httpRequest.getQueryString();
     }
 
     if (log.isDebugEnabled()) {
-      log.debug(STR."Servicing: {httpRequest.getMethod()} {uri} ({httpRequest.getRequestURL()})");
+      log.debug("Servicing: {} {} ({})", httpRequest.getMethod(), uri, httpRequest.getRequestURL());
     }
 
-    // Create a RequestContext record to hold the request information
-    RequestContext context = new RequestContext(httpRequest, httpResponse, uri);
-
-    // Use a virtual thread to handle the request
-    try {
-      // Create a callable that will process the request
-      Callable<Void> task = () -> {
+    // Create a virtual thread executor for processing this request
+    try (ExecutorService executor = createVirtualThreadExecutor("service", uri)) {
+      // Set thread name for better diagnostics
+      String threadName = "nexus-request-" + httpRequest.getMethod() + "-" + uri.replaceAll("/", "_");
+      
+      // Submit the request processing to a virtual thread
+      executor.submit(() -> {
+        // Set MDC context for logging in the virtual thread
         MDC.put(getClass().getName(), uri);
+        MDC.put("requestMethod", httpRequest.getMethod());
+        MDC.put("requestURI", uri);
+        
         try {
-          doService(context.httpRequest(), context.httpResponse());
-          log.debug("Service completed");
-          return null;
+          doService(httpRequest, httpResponse);
+          log.debug("Service completed on virtual thread");
         }
         catch (BadRequestException e) { // NOSONAR
-          log.warn(STR."Bad request. Reason: {e.getMessage()}");
-          send(null, HttpResponses.badRequest(e.getMessage()), context.httpResponse());
-          return null;
+          log.warn("Bad request. Reason: {}", e.getMessage());
+          try {
+            send(null, HttpResponses.badRequest(e.getMessage()), httpResponse);
+          } catch (Exception ex) {
+            log.error("Error sending bad request response", ex);
+          }
         }
         catch (Exception e) {
           if (!(e instanceof AuthorizationException)) {
-            log.warn(STR."Failure servicing: {context.httpRequest().getMethod()} {context.uri()}", e);
+            log.warn("Failure servicing: {} {}", httpRequest.getMethod(), uri, e);
           }
-          if (e instanceof ServletException || e instanceof IOException) {
-            throw e;
+          try {
+            Throwables.propagateIfPossible(e, ServletException.class, IOException.class);
+            throw new ServletException(e);
+          } catch (Exception ex) {
+            log.error("Error propagating exception", ex);
           }
-          throw new ServletException(e);
         }
         finally {
+          // Clean up MDC context
           MDC.remove(getClass().getName());
+          MDC.remove("requestMethod");
+          MDC.remove("requestURI");
         }
-      };
-
-      // Execute the task in a virtual thread
-      Thread.startVirtualThread(task).join();
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new ServletException("Request processing interrupted", e);
-    }
-    catch (Exception e) {
-      if (e instanceof ServletException servletException) {
-        throw servletException;
-      }
-      if (e instanceof IOException ioException) {
-        throw ioException;
-      }
-      throw new ServletException("Error processing request", e);
+        return null;
+      }).get(); // Wait for the virtual thread to complete
+    } catch (Exception e) {
+      log.error("Error processing request with virtual thread", e);
+      throw new ServletException("Error processing request with virtual thread", e);
     }
   }
 
   protected void doService(final HttpServletRequest httpRequest, final HttpServletResponse httpResponse)
       throws Exception
   {
-    // Set security headers
     if (sandboxEnabled) {
       httpResponse.setHeader(HttpHeaders.CONTENT_SECURITY_POLICY, SANDBOX);
     }
     httpResponse.setHeader(HttpHeaders.X_XSS_PROTECTION, "1; mode=block");
-    // Add recommended security headers for Java 21
-    httpResponse.setHeader(HttpHeaders.X_CONTENT_TYPE_OPTIONS, "nosniff");
-    httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
 
     // resolve repository for request
     RepositoryPath path = RepositoryPath.parse(httpRequest.getPathInfo());
-    log.debug(STR."Parsed path: {path}");
+    log.debug("Parsed path: {}", path);
 
     Repository repo = repository(path.getRepositoryName());
     if (repo == null) {
       send(null, HttpResponses.notFound(REPOSITORY_NOT_FOUND_MESSAGE), httpResponse);
       return;
     }
-    log.debug(STR."Repository: {repo}");
+    log.debug("Repository: {}", repo);
 
     if (!repo.getConfiguration().isOnline()) {
       send(null, HttpResponses.serviceUnavailable("Repository offline"), httpResponse);
@@ -205,7 +197,7 @@ public class ViewServlet
     }
 
     ViewFacet facet = repo.facet(ViewFacet.class);
-    log.debug(STR."Dispatching to view facet: {facet}");
+    log.debug("Dispatching to view facet: {}", facet);
 
     // Dispatch the request
     Request request = buildRequest(httpRequest, path.getRemainingPath());
@@ -237,11 +229,6 @@ public class ViewServlet
     return builder.build();
   }
 
-  /**
-   * Record to hold dispatch result information
-   */
-  private record DispatchResult(Response response, Exception failure) {}
-
   @VisibleForTesting
   void dispatchAndSend(final Request request,
                        final ViewFacet facet,
@@ -249,38 +236,51 @@ public class ViewServlet
                        final HttpServletResponse httpResponse)
       throws Exception
   {
-    // Use a virtual thread for the dispatch operation which may involve I/O
-    DispatchResult result = Thread.startVirtualThread(() -> {
-      try {
-        return new DispatchResult(facet.dispatch(request), null);
-      }
-      catch (Exception e) {
-        return new DispatchResult(null, e);
-      }
-    }).join();
-
-    String describeFlags = request.getParameters().get(P_DESCRIBE);
-    log.trace(STR."Describe flags: {describeFlags}");
+    // Set repository name in MDC for better diagnostics
+    String repoName = request.getPath().split("/")[0];
+    MDC.put("repository", repoName);
     
-    if (describeFlags != null) {
-      send(request, describe(request, result.response(), result.failure(), describeFlags), httpResponse);
-    }
-    else {
-      if (result.failure() != null) {
-        throw result.failure();
-      }
-      log.debug(STR."Request: {request}");
-      
-      // Use a virtual thread for sending the response which involves I/O
-      Thread.startVirtualThread(() -> {
+    try (ExecutorService executor = createVirtualThreadExecutor("send", request != null ? request.getPath() : "unknown")) {
+      // Execute the dispatch operation on a virtual thread for improved concurrency
+      Response response = executor.submit(() -> {
         try {
-          sender.send(request, result.response(), httpResponse);
+          // Set thread name for better diagnostics
+          Thread.currentThread().setName("nexus-dispatch-" + repoName + "-" + request.getAction());
+          return facet.dispatch(request);
+        } catch (Exception e) {
+          // Capture the exception to be handled outside the virtual thread
+          log.debug("Exception during dispatch on virtual thread", e);
+          throw e;
         }
-        catch (Exception e) {
-          log.error(STR."Error sending response: {e.getMessage()}", e);
-          throw new RuntimeException(e);
-        }
-      }).join();
+      }).get(); // Wait for the virtual thread to complete
+      
+      String describeFlags = request.getParameters().get(P_DESCRIBE);
+      log.trace("Describe flags: {}", describeFlags);
+      
+      if (describeFlags != null) {
+        send(request, describe(request, response, null, describeFlags), httpResponse);
+      } else {
+        log.debug("Request: {}", request);
+        
+        // Send the response on a virtual thread for improved concurrency
+        executor.submit(() -> {
+          try {
+            // Set thread name for better diagnostics
+            Thread.currentThread().setName("nexus-send-" + repoName + "-" + request.getAction());
+            sender.send(request, response, httpResponse);
+          } catch (Exception e) {
+            log.error("Error sending response on virtual thread", e);
+            throw e;
+          }
+          return null;
+        }).get(); // Wait for the virtual thread to complete
+      }
+    } catch (Exception e) {
+      // If the exception was thrown during dispatch, unwrap and rethrow it
+      Throwables.propagateIfPossible(e.getCause(), Exception.class);
+      throw e;
+    } finally {
+      MDC.remove("repository");
     }
   }
 
@@ -291,7 +291,6 @@ public class ViewServlet
         "path", StringEscapeUtils.escapeHtml(request.getPath()),
         "nexusUrl", BaseUrlHolder.get()
     ));
-    
     if (exception != null) {
       descriptionHelper.describeException(description, exception);
     }
@@ -301,55 +300,67 @@ public class ViewServlet
     }
 
     DescribeType type = DescribeType.parse(flags);
-    log.trace(STR."Describe type: {type}");
-    
-    // Use pattern matching for switch statement
-    return switch (type) {
-      case HTML -> {
+    log.trace("Describe type: {}", type);
+    switch (type) {
+      case HTML: {
         String html = descriptionRenderer.renderHtml(description);
-        yield HttpResponses.ok(new StringPayload(html, ContentTypes.TEXT_HTML));
+        return HttpResponses.ok(new StringPayload(html, ContentTypes.TEXT_HTML));
       }
-      case JSON -> {
+      case JSON: {
         String json = descriptionRenderer.renderJson(description);
-        yield HttpResponses.ok(new StringPayload(json, ContentTypes.APPLICATION_JSON));
+        return HttpResponses.ok(new StringPayload(json, ContentTypes.APPLICATION_JSON));
       }
-      default -> throw new RuntimeException(STR."Invalid describe-type: {type}");
-    };
+      default:
+        throw new RuntimeException("Invalid describe-type: " + type);
+    }
   }
 
   /**
    * Send with default sender.
    *
    * Needed in a few places _before_ we have a repository instance to determine its specific sender.
+   * Uses a virtual thread for improved concurrency.
    */
   @VisibleForTesting
   void send(@Nullable final Request request, final Response response, final HttpServletResponse httpResponse)
       throws ServletException, IOException
   {
-    try {
-      // Use a virtual thread for sending the response which involves I/O
-      Thread.startVirtualThread(() -> {
+    try (ExecutorService executor = createVirtualThreadExecutor("send", request != null ? request.getPath() : "unknown")) {
+      // Execute the send operation on a virtual thread
+      executor.submit(() -> {
         try {
+          // Set thread name for better diagnostics
+          Thread.currentThread().setName("nexus-default-send-" + 
+              (request != null ? request.getAction() + "-" + request.getPath() : "unknown"));
+          
+          // Add diagnostic information to MDC
+          if (request != null) {
+            MDC.put("requestAction", request.getAction());
+            MDC.put("requestPath", request.getPath());
+          }
+          
           httpResponseSenderSelector.defaultSender().send(request, response, httpResponse);
+        } catch (Exception e) {
+          log.error("Error sending response with default sender on virtual thread", e);
+          throw e;
+        } finally {
+          // Clean up MDC
+          if (request != null) {
+            MDC.remove("requestAction");
+            MDC.remove("requestPath");
+          }
         }
-        catch (Exception e) {
-          log.error(STR."Error sending response with default sender: {e.getMessage()}", e);
-          throw new RuntimeException(e);
-        }
-      }).join();
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new ServletException("Response sending interrupted", e);
-    }
-    catch (Exception e) {
-      if (e.getCause() instanceof ServletException servletException) {
-        throw servletException;
+        return null;
+      }).get(); // Wait for the virtual thread to complete
+    } catch (Exception e) {
+      // Unwrap and rethrow the exception
+      if (e.getCause() instanceof ServletException) {
+        throw (ServletException) e.getCause();
+      } else if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      } else {
+        throw new ServletException("Error sending response with default sender", e);
       }
-      if (e.getCause() instanceof IOException ioException) {
-        throw ioException;
-      }
-      throw new ServletException("Error sending response", e);
     }
   }
 
@@ -358,7 +369,19 @@ public class ViewServlet
    */
   @Nullable
   private Repository repository(final String name) {
-    log.debug(STR."Looking for repository: {name}");
+    log.debug("Looking for repository: {}", name);
     return repositoryManager.get(name);
+  }
+  
+  /**
+   * Creates a virtual thread executor for handling repository requests.
+   * This method centralizes the creation of virtual thread executors with consistent naming.
+   *
+   * @param operationType The type of operation being performed (e.g., "dispatch", "send")
+   * @param repositoryName The name of the repository being accessed
+   * @return An ExecutorService that creates virtual threads for each task
+   */
+  private ExecutorService createVirtualThreadExecutor(String operationType, String repositoryName) {
+    return Executors.newVirtualThreadPerTaskExecutor();
   }
 }

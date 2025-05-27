@@ -12,14 +12,13 @@
  */
 package org.sonatype.nexus.formfields;
 
-import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -32,11 +31,11 @@ public class ComboboxFormField<V>
     extends Combobox<V>
 {
   /**
-   * Record for id/name mapping pairs to simplify data handling.
-   *
-   * @since 3.31
+   * Record representing a mapping pair for id and name fields.
+   * 
+   * @since 3.60
    */
-  public record MappingPair(String id, String name) {}
+  public record MappingPair(String idMapping, String nameMapping) {}
 
   private String storeApi;
 
@@ -47,11 +46,12 @@ public class ComboboxFormField<V>
   private String nameMapping;
   
   /**
-   * Virtual thread executor for remote data fetching operations.
-   *
-   * @since 3.31
+   * Virtual thread executor for asynchronous data fetching operations.
+   * Using virtual threads improves scalability for I/O-bound operations.
+   * 
+   * @since 3.60
    */
-  private static final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  private static final Executor VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
   public ComboboxFormField(final String id,
                            final String label,
@@ -109,6 +109,16 @@ public class ComboboxFormField<V>
   public String getNameMapping() {
     return nameMapping;
   }
+  
+  /**
+   * Returns the current id/name mapping as a MappingPair record.
+   * 
+   * @return MappingPair containing the current id and name mappings
+   * @since 3.60
+   */
+  public MappingPair getMappingPair() {
+    return new MappingPair(idMapping, nameMapping);
+  }
 
   /**
    * @since 3.0
@@ -129,45 +139,61 @@ public class ComboboxFormField<V>
     storeFilters.put(checkNotNull(property, "property"), checkNotNull(value, "value"));
     return this;
   }
-
+  
   /**
-   * Adds multiple store filters at once.
+   * Processes a filter value based on its type using pattern matching.
+   * This method demonstrates the use of Pattern Matching for switch to improve
+   * code readability and maintainability.
    *
-   * @param filters map of property/value pairs to add as filters
-   * @return this instance for fluent API usage
-   * @since 3.31
+   * @param filterValue the filter value to process
+   * @return processed filter value as string
+   * @since 3.60
    */
-  public Combobox<V> withStoreFilters(final Map<String, String> filters) {
-    if (filters != null && !filters.isEmpty()) {
-      filters.forEach(this::withStoreFilter);
-    }
-    return this;
+  public String processFilterValue(Object filterValue) {
+    return switch (filterValue) {
+      case String s -> s;
+      case Number n -> n.toString();
+      case Boolean b -> b.toString();
+      case null -> "";
+      case Optional<?> o -> o.map(Object::toString).orElse("");
+      default -> filterValue.toString();
+    };
   }
-
+  
   /**
-   * Clears all store filters.
+   * Applies a filter transformation function to all filter values.
+   * Uses modern collection methods for map processing.
    *
-   * @return this instance for fluent API usage
-   * @since 3.31
+   * @param transformer function to transform filter values
+   * @return this instance for method chaining
+   * @since 3.60
    */
-  public Combobox<V> clearStoreFilters() {
+  public ComboboxFormField<V> transformFilters(Function<String, String> transformer) {
+    checkNotNull(transformer, "transformer");
+    
+    Map<String, String> transformedFilters = new HashMap<>();
+    storeFilters.forEach((key, value) -> 
+        transformedFilters.put(key, transformer.apply(value)));
+    
     storeFilters.clear();
+    storeFilters.putAll(transformedFilters);
+    
     return this;
   }
 
   /**
-   * Sets both id and name mappings at once using a MappingPair record.
+   * Asynchronously fetches data from the store API using Virtual Threads.
+   * This improves scalability for I/O-bound operations by using lightweight virtual threads
+   * instead of platform threads.
    *
-   * @param mappingPair the id/name mapping pair
-   * @return this instance for fluent API usage
-   * @since 3.31
+   * @param dataFetcher function that performs the actual data fetching operation
+   * @param <R> the type of data being fetched
+   * @return CompletableFuture that will complete with the fetched data
+   * @since 3.60
    */
-  public ComboboxFormField<V> withMappings(final MappingPair mappingPair) {
-    if (mappingPair != null) {
-      this.idMapping = mappingPair.id();
-      this.nameMapping = mappingPair.name();
-    }
-    return this;
+  public <R> CompletableFuture<R> fetchDataAsync(Function<ComboboxFormField<V>, R> dataFetcher) {
+    checkNotNull(dataFetcher, "dataFetcher");
+    return CompletableFuture.supplyAsync(() -> dataFetcher.apply(this), VIRTUAL_THREAD_EXECUTOR);
   }
 
   public ComboboxFormField<V> withIdMapping(final String idMapping) {
@@ -179,58 +205,20 @@ public class ComboboxFormField<V>
     this.nameMapping = nameMapping;
     return this;
   }
-
+  
   /**
-   * Fetches data from the remote API using Virtual Threads.
-   * 
-   * @param <T> the type of data to be returned
-   * @param dataFetcher the function to fetch data from the remote API
-   * @return a CompletableFuture that will complete with the fetched data
-   * @since 3.31
-   */
-  public <T> CompletableFuture<List<T>> fetchDataAsync(DataFetcher<T> dataFetcher) {
-    return CompletableFuture.supplyAsync(() -> {
-      try {
-        return dataFetcher.fetch(storeApi, getStoreFilters());
-      } catch (Exception e) {
-        return Collections.emptyList();
-      }
-    }, virtualThreadExecutor);
-  }
-
-  /**
-   * Functional interface for fetching data from a remote API.
+   * Sets both id and name mappings using a MappingPair record.
+   * Demonstrates the use of Record Patterns for more concise data handling.
    *
-   * @param <T> the type of data to be returned
-   * @since 3.31
+   * @param mappingPair record containing id and name mapping values
+   * @return this instance for method chaining
+   * @since 3.60
    */
-  @FunctionalInterface
-  public interface DataFetcher<T> {
-    /**
-     * Fetches data from the remote API.
-     *
-     * @param api the API endpoint to fetch data from
-     * @param filters the filters to apply to the data fetch
-     * @return the fetched data
-     * @throws Exception if an error occurs during data fetching
-     */
-    List<T> fetch(String api, Map<String, String> filters) throws Exception;
-  }
-
-  /**
-   * Processes a value based on its type using Pattern Matching for switch.
-   *
-   * @param value the value to process
-   * @return a string representation of the value
-   * @since 3.31
-   */
-  public String processFilterValue(Object value) {
-    return switch (value) {
-      case String s -> s;
-      case Number n -> n.toString();
-      case Boolean b -> b.toString();
-      case null -> "";
-      default -> value.toString();
-    };
+  public ComboboxFormField<V> withMappingPair(MappingPair mappingPair) {
+    if (mappingPair instanceof MappingPair(String id, String name)) {
+      this.idMapping = id;
+      this.nameMapping = name;
+    }
+    return this;
   }
 }

@@ -15,17 +15,19 @@ package org.sonatype.nexus.coreui;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
+import javax.annotation.PreDestroy;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 
 import org.sonatype.goodies.common.Time;
+import org.sonatype.nexus.common.log.LogManager;
+import org.sonatype.nexus.common.log.Logger;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
@@ -67,14 +69,12 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class HttpSettingsComponent
     extends DirectComponentSupport
 {
+  private static final Logger log = LogManager.getLogger(HttpSettingsComponent.class);
+  
   private final HttpClientManager httpClientManager;
 
   private final SecretsService secretsService;
   
-  /**
-   * Virtual Thread executor for I/O-bound operations.
-   * Using Virtual Threads improves concurrency for HTTP and encryption operations.
-   */
   private final ExecutorService virtualThreadExecutor;
 
   @Inject
@@ -86,6 +86,8 @@ public class HttpSettingsComponent
 
   /**
    * Retrieves HTTP system settings
+   * 
+   * Uses virtual threads for improved I/O performance with Java 21.
    */
   @DirectMethod
   @Timed
@@ -93,11 +95,10 @@ public class HttpSettingsComponent
   @RequiresPermissions("nexus:settings:read")
   public HttpSettingsXO read() {
     try {
-      // Execute the I/O-bound operation in a Virtual Thread for improved concurrency
-      return executeWithVirtualThread(() -> convert(httpClientManager.getConfiguration()));
+      return virtualThreadExecutor.submit(() -> convert(httpClientManager.getConfiguration())).get();
     } catch (Exception e) {
-      log.error("Error reading HTTP settings", e);
-      throw new RuntimeException("Failed to read HTTP settings", e);
+      log.error("Error retrieving HTTP settings", e);
+      throw new RuntimeException("Failed to retrieve HTTP settings", e);
     }
   }
 
@@ -132,6 +133,8 @@ public class HttpSettingsComponent
 
   /**
    * Updates HTTP system settings.
+   * 
+   * Uses virtual threads for improved I/O performance with Java 21.
    */
   @DirectMethod
   @Timed
@@ -141,8 +144,7 @@ public class HttpSettingsComponent
   @Validate
   public HttpSettingsXO update(@NotNull @Valid final HttpSettingsXO settings) {
     try {
-      // Execute the I/O-bound operation in a Virtual Thread for improved concurrency
-      return executeWithVirtualThread(() -> {
+      return virtualThreadExecutor.submit(() -> {
         HttpClientConfiguration previous = httpClientManager.getConfiguration();
         HttpClientConfiguration model = null;
         try {
@@ -155,23 +157,11 @@ public class HttpSettingsComponent
         httpClientManager.setConfiguration(model);
         removeSecrets(previous, model);
         return read();
-      });
+      }).get();
     } catch (Exception e) {
       log.error("Error updating HTTP settings", e);
       throw new RuntimeException("Failed to update HTTP settings", e);
     }
-  }
-
-  /**
-   * Executes a callable task using a Virtual Thread for improved concurrency with I/O operations.
-   * Virtual Threads are lightweight and efficient for I/O-bound operations like HTTP requests and encryption.
-   *
-   * @param task The task to execute
-   * @return The result of the task
-   * @throws Exception If the task execution fails
-   */
-  private <T> T executeWithVirtualThread(Callable<T> task) throws Exception {
-    return virtualThreadExecutor.submit(task).get();
   }
 
   private HttpClientConfiguration convert(final HttpSettingsXO value, final HttpClientConfiguration previous) {
@@ -378,6 +368,17 @@ public class HttpSettingsComponent
       result.setHttpsAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
       result.setHttpsAuthNtlmHost(auth.getHost());
       result.setHttpsAuthNtlmDomain(auth.getDomain());
+    }
+  }
+  
+  /**
+   * Cleanup resources when the component is destroyed.
+   */
+  @PreDestroy
+  public void shutdown() {
+    if (virtualThreadExecutor != null) {
+      log.debug("Shutting down virtual thread executor");
+      virtualThreadExecutor.shutdown();
     }
   }
 }

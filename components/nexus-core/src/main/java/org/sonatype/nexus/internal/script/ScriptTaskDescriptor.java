@@ -18,15 +18,14 @@ import javax.inject.Singleton;
 
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
+import org.sonatype.nexus.common.log.LogManager;
+import org.sonatype.nexus.common.log.Logger;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.StringTextFormField;
 import org.sonatype.nexus.formfields.TextAreaFormField;
 import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@link ScriptTask} descriptor.
@@ -39,13 +38,13 @@ import org.slf4j.LoggerFactory;
 public class ScriptTaskDescriptor
     extends TaskDescriptorSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(ScriptTaskDescriptor.class);
-  
   public static final String TYPE_ID = "script";
 
   public static final String LANGUAGE = "language";
 
   public static final String SOURCE = "source";
+  
+  private final Logger log;
 
   private interface Messages
       extends MessageBundle
@@ -75,28 +74,39 @@ public class ScriptTaskDescriptor
   // TODO: this task may expose a lot of potential for misuse, and may need to be optional enabled by system property
 
   @Inject
-  public ScriptTaskDescriptor(final NodeAccess nodeAccess, @Named("${nexus.scripts.allowCreation:-false}") boolean allowCreation) {
+  public ScriptTaskDescriptor(final NodeAccess nodeAccess, 
+                             @Named("${nexus.scripts.allowCreation:-false}") boolean allowCreation,
+                             final LogManager logManager) {
     super(TYPE_ID,
         ScriptTask.class,
         messages.name(),
         VISIBLE,
         isExposed(allowCreation),
-        // Using enhanced Java 21 syntax for form field creation
-        new StringTextFormField(LANGUAGE, messages.languageLabel(), messages.languageHelpText(), FormField.MANDATORY)
-            .withInitialValue(ScriptEngineManagerProvider.DEFAULT_LANGUAGE),
-        new TextAreaFormField(SOURCE, messages.sourceLabel(), messages.sourceHelpText(), 
-            FormField.MANDATORY, null, !allowCreation),
+        new StringTextFormField(
+            LANGUAGE,
+            messages.languageLabel(),
+            messages.languageHelpText(),
+            FormField.MANDATORY
+        ).withInitialValue(ScriptEngineManagerProvider.DEFAULT_LANGUAGE),
+        new TextAreaFormField(
+            SOURCE,
+            messages.sourceLabel(),
+            messages.sourceHelpText(),
+            FormField.MANDATORY,
+            null,
+            !allowCreation
+        ),
         nodeAccess.isClustered() ? newMultinodeFormField() : null);
     
-    log.debug(STR."Initialized ScriptTaskDescriptor with allowCreation={allowCreation}, exposed={isExposed(allowCreation)}");
+    this.log = logManager.getLogger(getClass());
+    log.debug(STR."Initialized \{TYPE_ID} task descriptor with allowCreation=\{allowCreation}");
   }
 
   /**
    * If the allowCreation flag is false we don't want this task exposed to user, but still want
    * existing scripts runnable
    */
-  private static boolean isExposed(boolean allowCreation) {
-    log.trace(STR."Determining script task exposure with allowCreation={allowCreation}");
+  private static boolean isExposed(boolean allowCreation){
     return allowCreation;
   }
 }

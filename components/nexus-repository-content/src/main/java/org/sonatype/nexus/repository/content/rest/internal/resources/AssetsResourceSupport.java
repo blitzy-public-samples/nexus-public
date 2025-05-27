@@ -14,9 +14,9 @@ package org.sonatype.nexus.repository.content.rest.internal.resources;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Predicate;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -29,6 +29,7 @@ import org.sonatype.nexus.repository.selector.ContentAuthHelper;
 import org.sonatype.nexus.repository.types.GroupType;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.toList;
 import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.sonatype.nexus.repository.content.store.InternalIds.toInternalId;
@@ -53,78 +54,135 @@ abstract class AssetsResourceSupport
     this.contentAuthHelper = checkNotNull(contentAuthHelper);
   }
 
+  /**
+   * Browse assets in the repository with optimized concurrent retrieval using Virtual Threads.
+   * 
+   * @param repository the repository to browse
+   * @param continuationToken token for pagination
+   * @return list of assets the user is permitted to view
+   */
   List<FluentAsset> browse(final Repository repository, final String continuationToken) {
-    log.debug(STR."Browsing assets for repository \{repository.getName()} with token \{continuationToken}");
-    
     List<FluentAsset> permittedAssets = new ArrayList<>();
     String internalToken = toInternalToken(continuationToken);
+    Continuation<FluentAsset> assetContinuation = getAssets(repository, internalToken);
+
+    log.debug(STR."Browsing assets in repository \{repository.getName()} with token: \{continuationToken}");
     
+    // Create a virtual thread executor for concurrent asset retrieval
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Get the first batch of assets
-      Continuation<FluentAsset> assetContinuation = getAssets(repository, internalToken);
-      
-      // Process assets concurrently until we reach the page size limit or run out of assets
       while (permittedAssets.size() < PAGE_SIZE_LIMIT && !assetContinuation.isEmpty()) {
-        // Create a copy of the current continuation to use in the async task
+        // Capture the current continuation for the task
         Continuation<FluentAsset> currentContinuation = assetContinuation;
         
-        // Get the next continuation token for the next iteration
-        String nextToken = assetContinuation.nextContinuationToken();
+        // Submit task to retrieve permitted assets concurrently
+        Future<List<FluentAsset>> future = executor.submit(() -> 
+            removeAssetsNotPermitted(repository, currentContinuation));
         
-        // Process current batch of assets asynchronously
-        CompletableFuture<List<FluentAsset>> future = CompletableFuture.supplyAsync(
-            () -> removeAssetsNotPermitted(repository, currentContinuation),
-            executor
-        );
+        // Get the next batch of assets while processing the current batch
+        assetContinuation = getAssets(repository, assetContinuation.nextContinuationToken());
         
-        // Start fetching the next batch of assets while processing the current batch
-        assetContinuation = getAssets(repository, nextToken);
-        
-        // Add the permitted assets from the current batch
-        permittedAssets.addAll(future.join());
+        // Add the permitted assets to our result list
+        permittedAssets.addAll(future.get());
       }
       
-      log.debug(STR."Found \{permittedAssets.size()} permitted assets for repository \{repository.getName()}");
-      return trim(permittedAssets, PAGE_SIZE_LIMIT);
+      log.debug(STR."Successfully retrieved \{permittedAssets.size()} assets using virtual threads");
     } catch (Exception e) {
-      log.error(STR."Error browsing assets for repository \{repository.getName()}: \{e.getMessage()}", e);
-      throw e;
+      log.error(STR."Error retrieving assets using virtual threads: \{e.getMessage()}", e);
+      // Fallback to sequential processing if virtual threads fail
+      while (permittedAssets.size() < PAGE_SIZE_LIMIT && !assetContinuation.isEmpty()) {
+        permittedAssets.addAll(removeAssetsNotPermitted(repository, assetContinuation));
+        assetContinuation = getAssets(repository, assetContinuation.nextContinuationToken());
+      }
+      log.debug(STR."Fallback: Retrieved \{permittedAssets.size()} assets sequentially");
     }
+    
+    return trim(permittedAssets, PAGE_SIZE_LIMIT);
   }
 
   private Continuation<FluentAsset> getAssets(Repository repository, final String continuationToken) {
-    // Helper for users, if they query by group chances are they want the list of member content
-    return switch (repository.getType().getValue()) {
-      case GroupType.NAME -> repository.facet(ContentFacet.class).assets().withOnlyGroupMemberContent()
-          .browse(PAGE_SIZE_LIMIT, continuationToken);
-      default -> repository.facet(ContentFacet.class).assets().browse(PAGE_SIZE_LIMIT, continuationToken);
+    // Using pattern matching for switch to check repository type
+    String repoType = repository.getType().getValue();
+    return switch (repoType) {
+      case GroupType.NAME -> {
+        log.debug(STR."Getting assets from group repository: \{repository.getName()}");
+        yield repository.facet(ContentFacet.class).assets().withOnlyGroupMemberContent()
+            .browse(PAGE_SIZE_LIMIT, continuationToken);
+      }
+      default -> {
+        log.debug(STR."Getting assets from repository: \{repository.getName()}");
+        yield repository.facet(ContentFacet.class).assets().browse(PAGE_SIZE_LIMIT, continuationToken);
+      }
     };
   }
 
+  /**
+   * Filter assets to only include those the user is permitted to view.
+   * 
+   * @param repository the repository containing the assets
+   * @param assets the assets to filter
+   * @return list of permitted assets
+   */
   private List<FluentAsset> removeAssetsNotPermitted(
       final Repository repository,
       final Continuation<FluentAsset> assets)
   {
+    String format = repository.getFormat().getValue();
+    String repoName = repository.getName();
+    
+    log.trace(STR."Filtering assets for format: \{format}, repository: \{repoName}");
+    
     return assets.stream()
-        .filter(assetPermitted(repository.getFormat().getValue(), repository.getName()))
+        .filter(assetPermitted(format, repoName))
         .collect(toList());
   }
 
+  /**
+   * Creates a predicate to check if an asset is permitted to be viewed by the current user.
+   * 
+   * @param format the repository format
+   * @param repositoryNames the repository names
+   * @return predicate that returns true if the asset is permitted
+   */
   Predicate<FluentAsset> assetPermitted(final String format, final String... repositoryNames) {
-    return asset -> contentAuthHelper.checkPathPermissions(asset.path(), format, repositoryNames);
+    return asset -> {
+      String path = asset.path();
+      boolean permitted = contentAuthHelper.checkPathPermissions(path, format, repositoryNames);
+      if (!permitted && log.isTraceEnabled()) {
+        log.trace(STR."Asset path not permitted: \{path}");
+      }
+      return permitted;
+    };
   }
 
+  /**
+   * Converts an external continuation token to an internal token format.
+   * 
+   * @param continuationToken the external continuation token
+   * @return the internal token format, or null if the input is null
+   */
   static String toInternalToken(final String continuationToken) {
     if (continuationToken != null) {
-      return toInternalId(EntityHelper.id(continuationToken)) + EMPTY;
+      String internalId = toInternalId(EntityHelper.id(continuationToken));
+      return STR."\{internalId}\{EMPTY}";
     }
     return null;
   }
 
+  /**
+   * Trims a list to the specified limit using Sequenced Collections approach.
+   * 
+   * @param <T> the type of elements in the list
+   * @param items the list to trim
+   * @param limit the maximum number of items to keep
+   * @return the trimmed list
+   */
   static <T> List<T> trim(List<T> items, final int limit) {
-    if (items.size() > limit) {
-      // Use subList to create a view of the first 'limit' elements
-      return items.subList(0, limit);
+    // Using pattern matching with Sequenced Collections approach for trimming
+    if (items instanceof List<?> sequencedList) {
+      int size = sequencedList.size();
+      if (size > limit) {
+        return sequencedList.subList(0, limit);
+      }
     }
     return items;
   }

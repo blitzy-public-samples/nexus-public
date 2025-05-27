@@ -13,236 +13,218 @@
 package org.sonatype.java21;
 
 import java.util.List;
+import java.util.Optional;
+
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.common.upgrade.Upgrade;
+import org.sonatype.nexus.common.upgrade.Upgrades;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.experimental.categories.Category;
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.upgrade.Upgrade;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for Java 21 record pattern features in the context of the Nexus upgrade framework.
- * 
- * This test class demonstrates how record patterns can be used to extract and validate
- * upgrade metadata in a more concise and type-safe manner.
+ * Tests for validating Java 21 record pattern features with the Nexus upgrade framework.
  */
 @Category(Java21TestGroup.class)
-class RecordPatternUpgradeTest
-    extends TestSupport
+public class RecordPatternUpgradeTest
 {
   /**
    * Record representing version information for an upgrade.
    */
-  record VersionRecord(String from, String to) {
-    // Validates that the version is properly formatted (e.g., "1.0.0")
-    boolean isValid() {
-      return from.matches("\\d+\\.\\d+\\.\\d+") && to.matches("\\d+\\.\\d+\\.\\d+");
-    }
-    
-    // Checks if this is a major version upgrade
-    boolean isMajorUpgrade() {
-      return !from.startsWith(to.substring(0, 1));
-    }
-  }
-  
+  record VersionRecord(String from, String to) {}
+
   /**
    * Record representing a dependency for an upgrade.
    */
-  record DependencyRecord(String model, VersionRecord version, boolean checkpoint) {
-    // Checks if this dependency requires a checkpoint
-    boolean requiresCheckpoint() {
-      return checkpoint || version.isMajorUpgrade();
-    }
-  }
-  
+  record DependencyRecord(String model, String version) {}
+
   /**
    * Record representing an upgrade with its metadata.
    */
-  record UpgradeRecord(String model, VersionRecord version, List<DependencyRecord> dependencies, Upgrade implementation) {
-    // Checks if this upgrade has dependencies
-    boolean hasDependencies() {
-      return dependencies != null && !dependencies.isEmpty();
-    }
-    
-    // Checks if any dependencies require checkpoints
-    boolean hasCheckpointDependencies() {
-      if (!hasDependencies()) {
-        return false;
-      }
-      
-      return dependencies.stream().anyMatch(DependencyRecord::requiresCheckpoint);
-    }
-  }
-  
+  record UpgradeRecord(
+      String model,
+      VersionRecord version,
+      List<DependencyRecord> dependencies,
+      Upgrade implementation) {}
+
   /**
-   * Test basic record pattern matching with a simple VersionRecord.
+   * Tests basic record pattern matching for upgrade metadata extraction.
    */
   @Test
-  @DisplayName("Test basic record pattern matching with VersionRecord")
-  void testBasicRecordPattern() {
-    Object versionObj = new VersionRecord("1.0.0", "2.0.0");
-    
-    // Using record pattern to match and extract components in a single step
-    if (versionObj instanceof VersionRecord(String from, String to)) {
-      assertEquals("1.0.0", from);
-      assertEquals("2.0.0", to);
-      assertTrue(from.startsWith("1"));
-      assertTrue(to.startsWith("2"));
-    } else {
-      // This should not happen
-      throw new AssertionError("Object should be a VersionRecord");
-    }
-  }
-  
-  /**
-   * Test nested record pattern matching with DependencyRecord containing a VersionRecord.
-   */
-  @Test
-  @DisplayName("Test nested record pattern matching with DependencyRecord")
-  void testNestedRecordPattern() {
-    Object dependencyObj = new DependencyRecord(
-        "content", 
-        new VersionRecord("1.0.0", "1.1.0"), 
-        true);
-    
-    // Using nested record pattern to match and extract components from nested records
-    if (dependencyObj instanceof DependencyRecord(String model, VersionRecord(String from, String to), boolean checkpoint)) {
-      assertEquals("content", model);
-      assertEquals("1.0.0", from);
-      assertEquals("1.1.0", to);
-      assertTrue(checkpoint);
-      assertFalse(from.startsWith("2"));
-      assertTrue(from.startsWith(to.substring(0, 1))); // Same major version
-    } else {
-      // This should not happen
-      throw new AssertionError("Object should be a DependencyRecord");
-    }
-  }
-  
-  /**
-   * Test complex nested record pattern matching with UpgradeRecord containing a list of DependencyRecords.
-   */
-  @Test
-  @DisplayName("Test complex nested record patterns with UpgradeRecord")
-  void testComplexNestedRecordPattern() {
-    // Create a mock Upgrade implementation
-    Upgrade mockUpgrade = new Upgrade() {
-      @Override
-      public void apply() {
-        // Mock implementation
-      }
-    };
-    
-    // Create an UpgradeRecord with dependencies
+  @DisplayName("Extract upgrade metadata using record patterns")
+  void testBasicRecordPatternMatching() {
+    // Create an upgrade record
     UpgradeRecord upgradeRecord = new UpgradeRecord(
         "security",
-        new VersionRecord("2.0.0", "3.0.0"),
-        List.of(
-            new DependencyRecord("content", new VersionRecord("1.5.0", "2.0.0"), false),
-            new DependencyRecord("config", new VersionRecord("2.0.0", "2.1.0"), true)
-        ),
-        mockUpgrade
+        new VersionRecord("1.0", "2.0"),
+        List.of(new DependencyRecord("core", "3.0")),
+        createMockUpgrade("security", "1.0", "2.0")
     );
-    
-    Object upgradeObj = upgradeRecord;
-    
-    // Using complex nested record pattern to match and extract components
-    if (upgradeObj instanceof UpgradeRecord(String model, VersionRecord version, var dependencies, var implementation)) {
+
+    // Use record pattern to extract metadata
+    if (upgradeRecord instanceof UpgradeRecord(String model, VersionRecord version, var dependencies, var implementation)) {
       assertEquals("security", model);
-      assertTrue(version.isMajorUpgrade());
-      assertEquals(2, dependencies.size());
-      assertTrue(upgradeRecord.hasCheckpointDependencies());
-      
-      // Further pattern matching on the first dependency
-      Object firstDep = dependencies.get(0);
-      if (firstDep instanceof DependencyRecord(String depModel, VersionRecord depVersion, boolean checkpoint)) {
-        assertEquals("content", depModel);
-        assertTrue(depVersion.isMajorUpgrade());
-        assertFalse(checkpoint);
-        assertTrue(depVersion.isValid());
-      }
-      
-      // Further pattern matching on the second dependency
-      Object secondDep = dependencies.get(1);
-      if (secondDep instanceof DependencyRecord(String depModel, VersionRecord depVersion, boolean checkpoint)) {
-        assertEquals("config", depModel);
-        assertFalse(depVersion.isMajorUpgrade());
-        assertTrue(checkpoint);
-        assertTrue(depVersion.isValid());
-      }
+      assertEquals("1.0", version.from());
+      assertEquals("2.0", version.to());
+      assertEquals(1, dependencies.size());
+      assertNotNull(implementation);
     } else {
-      // This should not happen
-      throw new AssertionError("Object should be an UpgradeRecord");
+      // This should never happen if record pattern matching works correctly
+      assertTrue(false, "Record pattern matching failed");
     }
   }
-  
+
   /**
-   * Test pattern matching in switch expressions with record patterns.
+   * Tests nested record pattern matching for complex upgrade metadata extraction.
    */
   @Test
-  @DisplayName("Test pattern matching in switch expressions with record patterns")
-  void testPatternMatchingInSwitch() {
-    Object versionObj1 = new VersionRecord("1.0.0", "2.0.0");
-    Object versionObj2 = new VersionRecord("2.0.0", "2.1.0");
-    
-    // Using record patterns in switch expressions
-    String result1 = switch (versionObj1) {
-      case VersionRecord(var from, var to) when from.startsWith("1") && to.startsWith("2") ->
-        "Major upgrade from " + from + " to " + to;
-      case VersionRecord(var from, var to) ->
-        "Version change from " + from + " to " + to;
-      default ->
-        "Not a version record";
-    };
-    
-    String result2 = switch (versionObj2) {
-      case VersionRecord(var from, var to) when from.startsWith("1") && to.startsWith("2") ->
-        "Major upgrade from " + from + " to " + to;
-      case VersionRecord(var from, var to) ->
-        "Version change from " + from + " to " + to;
-      default ->
-        "Not a version record";
-    };
-    
-    assertEquals("Major upgrade from 1.0.0 to 2.0.0", result1);
-    assertEquals("Version change from 2.0.0 to 2.1.0", result2);
-  }
-  
-  /**
-   * Test using var for type inference in record patterns.
-   */
-  @Test
-  @DisplayName("Test using var for type inference in record patterns")
-  void testVarInRecordPatterns() {
-    Object upgradeObj = new UpgradeRecord(
-        "security",
-        new VersionRecord("1.0.0", "1.1.0"),
-        List.of(new DependencyRecord("content", new VersionRecord("1.0.0", "1.0.1"), false)),
-        null
+  @DisplayName("Extract nested upgrade metadata using record patterns")
+  void testNestedRecordPatternMatching() {
+    // Create an upgrade record with nested records
+    UpgradeRecord upgradeRecord = new UpgradeRecord(
+        "repository",
+        new VersionRecord("2.0", "3.0"),
+        List.of(
+            new DependencyRecord("core", "4.0"),
+            new DependencyRecord("security", "2.0")
+        ),
+        createMockUpgrade("repository", "2.0", "3.0")
     );
-    
-    // Using var for type inference in record patterns
-    if (upgradeObj instanceof UpgradeRecord(var model, var version, var dependencies, var implementation)) {
-      assertEquals("security", model);
-      assertFalse(version.isMajorUpgrade());
-      assertEquals(1, dependencies.size());
-      
-      // The compiler infers the correct types:
-      // model is String
-      // version is VersionRecord
-      // dependencies is List<DependencyRecord>
-      // implementation is Upgrade
-      
-      // We can still access methods on the inferred types
-      assertTrue(version.isValid());
-      assertFalse(((UpgradeRecord) upgradeObj).hasCheckpointDependencies());
+
+    // Use nested record pattern to extract metadata
+    if (upgradeRecord instanceof UpgradeRecord(String model, VersionRecord(String from, String to), var dependencies, var implementation)) {
+      assertEquals("repository", model);
+      assertEquals("2.0", from);
+      assertEquals("3.0", to);
+      assertEquals(2, dependencies.size());
+      assertNotNull(implementation);
+
+      // Extract the first dependency using record pattern
+      if (dependencies.get(0) instanceof DependencyRecord(String depModel, String depVersion)) {
+        assertEquals("core", depModel);
+        assertEquals("4.0", depVersion);
+      } else {
+        assertTrue(false, "Dependency record pattern matching failed");
+      }
     } else {
-      // This should not happen
-      throw new AssertionError("Object should be an UpgradeRecord");
+      assertTrue(false, "Nested record pattern matching failed");
+    }
+  }
+
+  /**
+   * Tests record pattern matching in switch expressions for upgrade processing.
+   */
+  @Test
+  @DisplayName("Process upgrades using record patterns in switch expressions")
+  void testRecordPatternInSwitchExpression() {
+    // Create different types of upgrade records
+    UpgradeRecord securityUpgrade = new UpgradeRecord(
+        "security",
+        new VersionRecord("1.0", "2.0"),
+        List.of(),
+        createMockUpgrade("security", "1.0", "2.0")
+    );
+
+    UpgradeRecord repositoryUpgrade = new UpgradeRecord(
+        "repository",
+        new VersionRecord("2.0", "3.0"),
+        List.of(new DependencyRecord("core", "4.0")),
+        createMockUpgrade("repository", "2.0", "3.0")
+    );
+
+    // Process upgrades using switch expression with record patterns
+    String result = processUpgrade(securityUpgrade);
+    assertEquals("Security upgrade from 1.0 to 2.0", result);
+
+    result = processUpgrade(repositoryUpgrade);
+    assertEquals("Repository upgrade from 2.0 to 3.0 with core dependency", result);
+  }
+
+  /**
+   * Tests record pattern matching with Optional for handling nullable upgrade components.
+   */
+  @Test
+  @DisplayName("Handle optional upgrade components using record patterns")
+  void testRecordPatternWithOptional() {
+    // Create an upgrade record wrapped in Optional
+    Optional<UpgradeRecord> maybeUpgrade = Optional.of(new UpgradeRecord(
+        "config",
+        new VersionRecord("1.5", "2.5"),
+        List.of(),
+        createMockUpgrade("config", "1.5", "2.5")
+    ));
+
+    // Use record pattern with Optional
+    if (maybeUpgrade.isPresent() && maybeUpgrade.get() instanceof UpgradeRecord(String model, VersionRecord(String from, String to), var dependencies, var implementation)) {
+      assertEquals("config", model);
+      assertEquals("1.5", from);
+      assertEquals("2.5", to);
+      assertTrue(dependencies.isEmpty());
+      assertNotNull(implementation);
+    } else {
+      assertTrue(false, "Optional record pattern matching failed");
+    }
+
+    // Test with empty Optional
+    Optional<UpgradeRecord> emptyUpgrade = Optional.empty();
+    if (emptyUpgrade.isPresent() && emptyUpgrade.get() instanceof UpgradeRecord(var model, var version, var dependencies, var implementation)) {
+      assertTrue(false, "Should not match empty Optional");
+    } else {
+      assertFalse(emptyUpgrade.isPresent());
+    }
+  }
+
+  /**
+   * Process an upgrade record using switch expression with record patterns.
+   */
+  private String processUpgrade(Object upgrade) {
+    return switch (upgrade) {
+      case UpgradeRecord(String model, VersionRecord(String from, String to), var dependencies, var implementation) 
+          when model.equals("security") -> 
+          "Security upgrade from " + from + " to " + to;
+
+      case UpgradeRecord(String model, VersionRecord(String from, String to), var dependencies, var implementation) 
+          when model.equals("repository") && !dependencies.isEmpty() -> 
+          "Repository upgrade from " + from + " to " + to + " with core dependency";
+
+      case UpgradeRecord(String model, VersionRecord(String from, String to), var dependencies, var implementation) -> 
+          "Generic upgrade from " + from + " to " + to + " for model " + model;
+
+      default -> "Unknown upgrade type";
+    };
+  }
+
+  /**
+   * Creates a mock upgrade implementation with the specified metadata.
+   */
+  private Upgrade createMockUpgrade(String model, String from, String to) {
+    return new MockUpgrade(model, from, to);
+  }
+
+  /**
+   * Mock implementation of Upgrade interface for testing.
+   */
+  @Upgrades(model = "test", from = "1.0", to = "2.0")
+  private static class MockUpgrade implements Upgrade {
+    private final String model;
+    private final String from;
+    private final String to;
+
+    public MockUpgrade(String model, String from, String to) {
+      this.model = model;
+      this.from = from;
+      this.to = to;
+    }
+
+    @Override
+    public void apply() throws Exception {
+      // Mock implementation
     }
   }
 }

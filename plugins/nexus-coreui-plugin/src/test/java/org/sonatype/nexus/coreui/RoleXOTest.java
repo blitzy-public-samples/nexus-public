@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Set;
 
@@ -35,23 +36,11 @@ import org.eclipse.sisu.space.BeanScanning;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
-
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link RoleXO} validation.
- * <p>
- * This test class has been updated for Java 21 compatibility and uses JUnit Jupiter (JUnit 5).
- * It demonstrates the use of modern testing practices including:
- * - JUnit Jupiter annotations and lifecycle management
- * - Mockito 4.11.0 for mocking
- * - Hamcrest 2.2 for assertions
- * - Java 21 compatible temporary directory handling
- */
 public class RoleXOTest
   extends InjectedTestSupport
 {
@@ -83,7 +72,7 @@ public class RoleXOTest
   }
 
   @Test
-  void testValidationSuccess() {
+  void validationShouldSucceedWithValidRole() {
     RoleXO roleXO = new RoleXO();
     roleXO.setId("test");
     roleXO.setName("test");
@@ -95,7 +84,7 @@ public class RoleXOTest
   }
 
   @Test
-  void testValidationFailureIncludesSelf() {
+  void validationShouldFailWhenRoleIncludesSelf() {
     RoleXO roleXO = new RoleXO();
     roleXO.setId("test");
     roleXO.setName("test");

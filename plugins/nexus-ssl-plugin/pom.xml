@@ -65,7 +65,29 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Security dependencies for Shiro 2.0.0 compatibility -->
+    <!-- BouncyCastle for Java 21 compatibility -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.78.1</version>
+      <scope>provided</scope>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>1.78.1</version>
+      <scope>provided</scope>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcutil-jdk18on</artifactId>
+      <version>1.78.1</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Apache Shiro for Java 21 compatibility -->
     <dependency>
       <groupId>org.apache.shiro</groupId>
       <artifactId>shiro-core</artifactId>
@@ -73,7 +95,6 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Test dependencies -->
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-testsupport</artifactId>
@@ -86,6 +107,7 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- Updated Spock for Java 21 compatibility -->
     <dependency>
       <groupId>org.spockframework</groupId>
       <artifactId>spock-core</artifactId>
@@ -104,45 +126,28 @@
   <build>
     <plugins>
       <plugin>
+        <groupId>org.apache.karaf.tooling</groupId>
+        <artifactId>karaf-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
         <configuration>
           <instructions>
-            <!-- Ensure Java 21 compatibility in OSGi manifest -->
+            <!-- Ensure Java 21 compatibility -->
             <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-            <!-- Handle Java 21's stronger module encapsulation -->
-            <_exportcontents>com.sonatype.nexus.ssl.plugin.*</_exportcontents>
-            <!-- Ensure compatibility with BouncyCastle 1.78.1 -->
+            <!-- Add module access for Java 21's stronger module encapsulation -->
             <Import-Package>
-              org.bouncycastle.*;version="[1.78,2)",
-              org.apache.shiro.*;version="[2.0,3)",
+              javax.crypto.*,
+              javax.net.ssl.*,
+              org.bouncycastle.*;version="[1.78,2.0)",
+              org.apache.shiro.*;version="[2.0,3.0)",
               *
             </Import-Package>
-            <!-- Avoid split packages with core bundle -->
-            <_removeheaders>Bnd-LastModified</_removeheaders>
-            <!-- Ensure proper OSGi metadata for Java 21 -->
-            <Require-Capability>osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"</Require-Capability>
+            <!-- Ensure OSGi bundle is compatible with Java 21 -->
+            <_fixupmessages>"Classes found in the wrong directory";is:=warning</_fixupmessages>
+            <_removeheaders>Bnd-LastModified,Built-By,Created-By,Tool,Build-Jdk,Include-Resource</_removeheaders>
           </instructions>
-        </configuration>
-      </plugin>
-      
-      <plugin>
-        <groupId>org.apache.karaf.tooling</groupId>
-        <artifactId>karaf-maven-plugin</artifactId>
-      </plugin>
-      
-      <!-- Configure surefire for Java 21 compatibility -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <argLine>
-            --add-opens java.base/java.lang=ALL-UNNAMED
-            --add-opens java.base/java.util=ALL-UNNAMED
-            --add-opens java.base/java.nio=ALL-UNNAMED
-            --add-opens java.base/sun.nio.ch=ALL-UNNAMED
-            --add-opens java.management/sun.management=ALL-UNNAMED
-          </argLine>
         </configuration>
       </plugin>
     </plugins>

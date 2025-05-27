@@ -12,17 +12,18 @@
  */
 package org.sonatype.nexus.content.raw.internal;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.director.ContentDirector;
 import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 
 /**
- * Raw content director implementation for Java 21 compatibility.
+ * Raw format implementation of ContentDirector that allows content movement between repositories.
  * 
  * @since 3.27
+ * @see ContentDirector
  */
 @Named("raw")
 @Singleton

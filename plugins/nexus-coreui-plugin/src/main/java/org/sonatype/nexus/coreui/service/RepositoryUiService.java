@@ -23,6 +23,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -84,10 +86,6 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.coreui.internal.RepositoryCleanupAttributesUtil.initializeCleanupAttributes;
 
-/**
- * Repository UI Service that provides repository management functionality for the UI.
- * Updated for Java 21 compatibility with modern language features.
- */
 @Named
 @Singleton
 public class RepositoryUiService
@@ -156,8 +154,7 @@ public class RepositoryUiService
   private static ReferenceXO toReference(final Entry<String, Recipe> recipe) {
     ReferenceXO xo = new ReferenceXO();
     xo.setId(recipe.getKey());
-    // Using Java 21 string template for improved readability
-    xo.setName("%s (%s)".formatted(recipe.getValue().getFormat(), recipe.getValue().getType()));
+    xo.setName(String.format("%s (%s)", recipe.getValue().getFormat(), recipe.getValue().getType()));
     return xo;
   }
 
@@ -222,7 +219,7 @@ public class RepositoryUiService
       final @Nullable StoreLoadParameters parameters,
       final List<RepositoryReferenceXO> references)
   {
-    if (parameters != null && StringUtils.isNotBlank(parameters.getQuery())) {
+    if (StringUtils.isNotBlank(parameters.getQuery())) {
       return references.stream()
           .filter(repo -> repo.getName().startsWith(parameters.getQuery()))
           .collect(Collectors.toList());
@@ -249,7 +246,7 @@ public class RepositoryUiService
       final @Nullable StoreLoadParameters parameters)
   {
     List<RepositoryReferenceXO> references = readReferencesAddingEntryForAll(parameters);
-    formats.forEach(format -> {
+    formats.stream().forEach(format -> {
       references.add(new RepositoryReferenceXO(RepositorySelector.allOfFormat(format.getValue()).toSelector(),
           "(All " + format.getValue() + " Repositories)", null, null, null, null, null, null));
     });
@@ -269,7 +266,8 @@ public class RepositoryUiService
     config.setRecipeName(repositoryXO.getRecipe());
     config.setOnline(repositoryXO.getOnline());
 
-    Optional.ofNullable(repositoryXO.getRoutingRuleId())
+    Optional.ofNullable(repositoryXO)
+        .map(RepositoryXO::getRoutingRuleId)
         .filter(StringUtils::isNotBlank)
         .map(DetachedEntityId::new)
         .ifPresent(config::setRoutingRuleId);
@@ -285,12 +283,12 @@ public class RepositoryUiService
     Repository repository = repositoryManager.get(repositoryXO.getName());
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
 
-    // Replace stored password using pattern matching for instanceof with Java 21
+    // Replace stored password
     Optional.of(repositoryXO)
         .map(RepositoryXO::getAttributes)
         .map(attr -> attr.get("httpclient"))
         .map(httpclient -> httpclient.get("authentication"))
-        .flatMap(auth -> auth instanceof Map<?,?> authMap ? Optional.of((Map<String, Object>)authMap) : Optional.empty())
+        .map(Map.class::cast)
         .ifPresent(authentication -> {
           String password = (String) authentication.get("password");
           if (PasswordPlaceholder.is(password)) {
@@ -298,11 +296,9 @@ public class RepositoryUiService
                 .map(Repository::getConfiguration)
                 .map(Configuration::getAttributes)
                 .map(attr -> attr.get("httpclient"))
-                .flatMap(httpclient -> httpclient instanceof Map<?,?> httpMap ? 
-                    Optional.of((Map<String, Object>)httpMap) : Optional.empty())
+                .map(Map.class::cast)
                 .map(httpclient -> httpclient.get("authentication"))
-                .flatMap(auth -> auth instanceof Map<?,?> authMap ? 
-                    Optional.of((Map<String, Object>)authMap) : Optional.empty())
+                .map(Map.class::cast)
                 .map(storedAuthentication -> storedAuthentication.get("password"))
                 .ifPresent(storedPassword -> authentication.put("password", storedPassword));
           }
@@ -335,11 +331,20 @@ public class RepositoryUiService
   public String rebuildIndex(final @NotEmpty String name) {
     Repository repository = repositoryManager.get(name);
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
-    TaskConfiguration taskConfiguration =
-        taskScheduler.createTaskConfigurationInstance(RebuildIndexTaskDescriptor.TYPE_ID);
-    taskConfiguration.setString(RebuildIndexTask.REPOSITORY_NAME_FIELD_ID, repository.getName());
-    TaskInfo taskInfo = taskScheduler.submit(taskConfiguration);
-    return taskInfo.getId();
+    
+    // Use Virtual Threads for non-blocking task submission
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> {
+        TaskConfiguration taskConfiguration =
+            taskScheduler.createTaskConfigurationInstance(RebuildIndexTaskDescriptor.TYPE_ID);
+        taskConfiguration.setString(RebuildIndexTask.REPOSITORY_NAME_FIELD_ID, repository.getName());
+        TaskInfo taskInfo = taskScheduler.submit(taskConfiguration);
+        return taskInfo.getId();
+      }).get();
+    } catch (Exception e) {
+      log.error("Error submitting rebuild index task for repository {}", repository.getName(), e);
+      throw new RuntimeException("Failed to submit rebuild index task", e);
+    }
   }
 
   @RequiresAuthentication
@@ -347,7 +352,21 @@ public class RepositoryUiService
   public void invalidateCache(final @NotEmpty String name) {
     Repository repository = repositoryManager.get(name);
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
-    repositoryCacheInvalidationService.processCachesInvalidation(repository);
+    
+    // Use Virtual Threads for concurrent cache invalidation operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      executor.submit(() -> {
+        try {
+          repositoryCacheInvalidationService.processCachesInvalidation(repository);
+          log.debug("Cache invalidation completed for repository {}", repository.getName());
+        } catch (Exception e) {
+          log.error("Error during cache invalidation for repository {}", repository.getName(), e);
+        }
+      }).get(); // Wait for completion to maintain backward compatibility
+    } catch (Exception e) {
+      log.error("Failed to execute cache invalidation for repository {}", repository.getName(), e);
+      throw new RuntimeException("Cache invalidation failed", e);
+    }
   }
 
   @VisibleForTesting
@@ -398,43 +417,36 @@ public class RepositoryUiService
   }
 
   private static String getUrl(final String repositoryName) {
-    // Using Java 21 string template for improved readability
-    return "%s/repository/%s/".formatted(BaseUrlHolder.get(), repositoryName); // trailing slash is important
+    return BaseUrlHolder.get() + "/repository/" + repositoryName + "/"; // trailing slash is important
   }
 
   private static Map<String, Map<String, Object>> filterAttributes(final Map<String, Map<String, Object>> attributes) {
-    // Using pattern matching for instanceof with Java 21
     Optional.ofNullable(attributes)
         .map(attr -> attr.get("httpclient"))
-        .flatMap(httpclient -> httpclient instanceof Map<?,?> httpMap ? 
-            Optional.of((Map<String, Object>)httpMap) : Optional.empty())
         .map(httpclient -> httpclient.get("authentication"))
-        .flatMap(auth -> auth instanceof Map<?,?> authMap ? 
-            Optional.of((Map<String, Object>)authMap) : Optional.empty())
+        .map(Map.class::cast)
         .ifPresent(authentication -> authentication.put("password", PasswordPlaceholder.get()));
     return attributes;
   }
 
   @RequiresAuthentication
   public List<RepositoryStatusXO> readStatus(final Map<String, String> params) {
-    // Using Java 21 Virtual Threads for I/O-bound operations
-    var executor = Executors.newVirtualThreadPerTaskExecutor();
-    try {
-      return StreamSupport.stream(browse().spliterator(), false)
-          .map(repository -> executor.submit(() -> buildStatus(repository)))
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<RepositoryStatusXO>> futures = StreamSupport.stream(browse().spliterator(), false)
+          .map(config -> executor.submit(() -> buildStatus(config)))
+          .collect(Collectors.toList());
+      
+      return futures.stream()
           .map(future -> {
             try {
               return future.get();
             } catch (Exception e) {
-              log.error("Error building repository status", e);
-              RepositoryStatusXO errorStatus = new RepositoryStatusXO();
-              errorStatus.setDescription("Error retrieving status: " + e.getMessage());
-              return errorStatus;
+              log.error("Error retrieving repository status", e);
+              return null;
             }
           })
+          .filter(Objects::nonNull)
           .collect(Collectors.toList());
-    } finally {
-      executor.close();
     }
   }
 
@@ -446,14 +458,23 @@ public class RepositoryUiService
     // TODO - should we try to aggregate status from group members?
     if (repository.getType() instanceof ProxyType) {
       try {
-        RemoteConnectionStatus remoteStatus = repository.facet(HttpClientFacet.class).getStatus();
-        statusXO.setDescription(remoteStatus.getDescription());
-        if (remoteStatus.getReason() != null) {
-          statusXO.setReason(remoteStatus.getReason());
+        // Use Virtual Threads for remote connection status check
+        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+          Future<RemoteConnectionStatus> future = executor.submit(() -> 
+              repository.facet(HttpClientFacet.class).getStatus());
+          
+          RemoteConnectionStatus remoteStatus = future.get();
+          statusXO.setDescription(remoteStatus.getDescription());
+          if (remoteStatus.getReason() != null) {
+            statusXO.setReason(remoteStatus.getReason());
+          }
         }
       }
       catch (MissingFacetException e) {
         // no http client facet (usually on proxies), no remote status
+      }
+      catch (Exception e) {
+        log.error("Error retrieving remote connection status for repository {}", repository.getName(), e);
       }
     }
     return statusXO;
@@ -471,17 +492,27 @@ public class RepositoryUiService
         boolean loaded = StreamSupport.stream(repositoryManager.browse().spliterator(), false)
             .anyMatch(repo -> configuration.getRepositoryName().equals(repo.getName()));
         if (loaded) {
-          RemoteConnectionStatus remoteStatus = repositoryManager.get(configuration.getRepositoryName())
-              .facet(HttpClientFacet.class)
-              .getStatus();
-          statusXO.setDescription(remoteStatus.getDescription());
-          if (remoteStatus.getReason() != null) {
-            statusXO.setReason(remoteStatus.getReason());
+          // Use Virtual Threads for remote connection status check
+          try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            Future<RemoteConnectionStatus> future = executor.submit(() -> 
+                repositoryManager.get(configuration.getRepositoryName())
+                    .facet(HttpClientFacet.class)
+                    .getStatus());
+            
+            RemoteConnectionStatus remoteStatus = future.get();
+            statusXO.setDescription(remoteStatus.getDescription());
+            if (remoteStatus.getReason() != null) {
+              statusXO.setReason(remoteStatus.getReason());
+            }
           }
         }
       }
       catch (MissingFacetException e) {
         // no http client facet (usually on proxies), no remote status
+      }
+      catch (Exception e) {
+        log.error("Error retrieving remote connection status for repository {}", 
+            configuration.getRepositoryName(), e);
       }
     }
     return statusXO;
@@ -522,8 +553,7 @@ public class RepositoryUiService
       configurations = filterIn(configurations, versionPolicies, configuration -> Optional.of(configuration)
           .map(Configuration::getAttributes)
           .map(attr -> attr.get("maven"))
-          .flatMap(maven -> maven instanceof Map<?,?> mavenMap ? 
-              Optional.of((Map<String, Object>)mavenMap) : Optional.empty())
+          .map(Map.class::cast)
           .map(maven -> maven.get("versionPolicy"))
           .map(String.class::cast)
           .orElse(null));
@@ -554,7 +584,8 @@ public class RepositoryUiService
     if (facets == null) {
       return Collections.emptyList();
     }
-    return Arrays.stream(facets.split(","))
+    return Arrays.asList(facets.split(","))
+        .stream()
         .filter(StringUtils::isNotBlank)
         .map(typeLookup::type)
         .map(clazz -> (Class<Facet>) clazz)
@@ -618,20 +649,31 @@ public class RepositoryUiService
     return StreamSupport.stream(iterable.spliterator(), false)
         .filter(result -> {
           String fieldValue = filteredFieldSelector.apply(result);
-
-          boolean shouldInclude = allExcludes;
-
-          for (String strFilter : filters) {
-            if (strFilter.startsWith("!")) {
-              if (Objects.equals(fieldValue, strFilter.substring(1))) {
-                shouldInclude = false;
+          
+          // Using Pattern Matching for switch to improve readability and maintainability
+          return switch (fieldValue) {
+            case null -> allExcludes; // If fieldValue is null, include only if all filters are excludes
+            default -> {
+              boolean shouldInclude = allExcludes;
+              
+              for (String strFilter : filters) {
+                // Using Pattern Matching for switch with String patterns
+                switch (strFilter) {
+                  case String s when s.startsWith("!") -> {
+                    if (Objects.equals(fieldValue, s.substring(1))) {
+                      shouldInclude = false;
+                    }
+                  }
+                  case String s -> {
+                    if (Objects.equals(fieldValue, s)) {
+                      shouldInclude = true;
+                    }
+                  }
+                }
               }
+              yield shouldInclude;
             }
-            else if (Objects.equals(fieldValue, strFilter)) {
-              shouldInclude = true;
-            }
-          }
-          return shouldInclude;
+          };
         })
         .collect(Collectors.toList());
   }

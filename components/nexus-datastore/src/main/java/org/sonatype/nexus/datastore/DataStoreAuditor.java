@@ -14,10 +14,14 @@ package org.sonatype.nexus.datastore;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
@@ -29,10 +33,10 @@ import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 /**
- * Auditor for DataStore configuration events.
+ * Auditor for DataStore events.
  * 
- * This implementation is optimized for Virtual Threads in Java 21, ensuring
- * efficient event handling across thread boundaries with minimal blocking.
+ * Optimized for Virtual Thread execution in Java 21 with enhanced thread safety
+ * for concurrent audit record processing.
  */
 @Named
 @Singleton
@@ -40,10 +44,12 @@ public class DataStoreAuditor
     extends AuditorSupport
     implements EventAware
 {
+  private static final Logger log = LoggerFactory.getLogger(DataStoreAuditor.class);
+  
   public static final String DOMAIN = "DataStore";
   
-  // Thread-safe map for concurrent event processing
-  private final ConcurrentHashMap<String, Object> processingEvents = new ConcurrentHashMap<>();
+  // Executor service using Virtual Threads for non-blocking event processing
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public DataStoreAuditor() {
     registerType(DataStoreConfigurationEvent.class, UPDATED_TYPE);
@@ -52,52 +58,42 @@ public class DataStoreAuditor
   /**
    * Handle DataStore configuration events.
    * 
-   * This method is optimized for Virtual Thread execution with the following characteristics:
-   * - Uses @AllowConcurrentEvents to support parallel event processing
-   * - Avoids operations that would cause thread pinning
-   * - Uses thread-safe data structures for concurrent audit record processing
-   * - Ensures proper event handling across Virtual Thread boundaries
+   * This method is optimized for concurrent execution with Virtual Threads.
+   * The @AllowConcurrentEvents annotation ensures multiple events can be processed
+   * simultaneously without blocking.
    *
-   * @param event the DataStore configuration event
+   * @param event the DataStore configuration event to process
    */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final DataStoreConfigurationEvent event) {
-    // Fast path for non-recording state to avoid unnecessary processing
-    if (!isRecording()) {
-      return;
-    }
-    
-    // Use event ID as key to prevent duplicate processing
-    String eventKey = event.getConfigurationName() + "-" + event.getType() + "-" + System.nanoTime();
-    
-    // Ensure we don't process the same event concurrently
-    if (processingEvents.putIfAbsent(eventKey, Boolean.TRUE) != null) {
-      return;
-    }
-    
-    try {
-      // Create audit data with thread-safe approach
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(type(event.getClass()));
-      data.setContext(event.getConfigurationName());
+    if (isRecording()) {
+      // Process event in a Virtual Thread to avoid blocking the event bus thread
+      virtualThreadExecutor.execute(() -> {
+        try {
+          // Create a new AuditData instance for each event to ensure thread safety
+          AuditData data = new AuditData();
+          data.setDomain(DOMAIN);
+          data.setType(type(event.getClass()));
+          data.setContext(event.getConfigurationName());
 
-      // Create a new map for attributes to avoid shared mutable state
-      Map<String, Object> attributes = data.getAttributes();
-      attributes.put("type", event.getType());
-      attributes.put("source", event.getSource());
+          // Create a new map for attributes to avoid shared state issues
+          Map<String, Object> attributes = data.getAttributes();
+          attributes.put("type", event.getType());
+          attributes.put("source", event.getSource());
 
-      // Create a defensive copy of event attributes to avoid modification during processing
-      Map<String, String> eventAttributes = new HashMap<>(event.getAttributes());
-      eventAttributes.replace("password", DataStoreConfiguration.REDACTED);
-      attributes.put("attributes", eventAttributes);
+          // Create a copy of event attributes to avoid concurrent modification
+          Map<String, String> eventAttributes = new HashMap<>(event.getAttributes());
+          eventAttributes.replace("password", DataStoreConfiguration.REDACTED);
+          attributes.put("attributes", eventAttributes);
 
-      // Record the audit data
-      record(data);
-    } finally {
-      // Always remove the event from processing map to prevent memory leaks
-      processingEvents.remove(eventKey);
+          // Record the audit data
+          record(data);
+        } catch (Exception e) {
+          // Log any exceptions that occur during event processing
+          log.error("Error processing DataStore audit event", e);
+        }
+      });
     }
   }
 }

@@ -1,0 +1,280 @@
+{
+  "repository": {
+    "name": "maven-central",
+    "type": "proxy",
+    "format": "maven2",
+    "online": true,
+    "attributes": {
+      "proxy": {
+        "remoteUrl": "https://repo1.maven.org/maven2/",
+        "contentMaxAge": 1440,
+        "metadataMaxAge": 1440
+      },
+      "httpclient": {
+        "blocked": false,
+        "autoBlock": true,
+        "connection": {
+          "retries": 3,
+          "timeout": 60,
+          "enableCircularRedirects": false,
+          "enableCookies": false
+        },
+        "authentication": null
+      },
+      "storage": {
+        "blobStoreName": "default",
+        "strictContentTypeValidation": true
+      },
+      "cleanup": {
+        "policyName": "cleanup-weekly"
+      }
+    }
+  },
+  "repositoryGroup": {
+    "name": "maven-public",
+    "type": "group",
+    "format": "maven2",
+    "online": true,
+    "members": [
+      "maven-central",
+      "maven-releases",
+      "maven-snapshots"
+    ],
+    "attributes": {
+      "storage": {
+        "blobStoreName": "default",
+        "strictContentTypeValidation": true
+      }
+    }
+  },
+  "blobStore": {
+    "name": "default",
+    "type": "file",
+    "attributes": {
+      "file": {
+        "path": "data/blobs/default",
+        "volumeId": "default-volume"
+      },
+      "metrics": {
+        "totalSize": 1073741824,
+        "availableSpace": 536870912,
+        "blobCount": 1024
+      }
+    }
+  },
+  "s3BlobStore": {
+    "name": "s3-store",
+    "type": "s3",
+    "attributes": {
+      "s3": {
+        "region": "us-west-2",
+        "bucket": "nexus-blobs",
+        "prefix": "data",
+        "expiration": 3,
+        "encryption": {
+          "type": "s3ManagedEncryption",
+          "keyId": null
+        }
+      },
+      "metrics": {
+        "totalSize": 2147483648,
+        "availableSpace": 1073741824,
+        "blobCount": 2048
+      }
+    }
+  },
+  "component": {
+    "name": "commons-lang3",
+    "group": "org.apache.commons",
+    "version": "3.12.0",
+    "format": "maven2",
+    "assets": [
+      {
+        "name": "commons-lang3-3.12.0.jar",
+        "contentType": "application/java-archive",
+        "size": 587402,
+        "blobRef": "default:a1b2c3d4e5f6",
+        "checksums": {
+          "sha1": "c6842c86792ff03b9f1d1fe2aab8dc23aa6c6f0e",
+          "sha256": "d4c9cbad8c91c3b4d2c0a4f2a9a8d65e9b1c3a4f5b6c7d8e9f0a1b2c3d4e5f6a7",
+          "md5": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d"
+        }
+      },
+      {
+        "name": "commons-lang3-3.12.0.pom",
+        "contentType": "application/xml",
+        "size": 28563,
+        "blobRef": "default:f6e5d4c3b2a1",
+        "checksums": {
+          "sha1": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+          "sha256": "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+          "md5": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+        }
+      }
+    ]
+  },
+  "nestedRecords": {
+    "user": {
+      "username": "admin",
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@example.com",
+      "roles": [
+        {
+          "id": "nx-admin",
+          "name": "Administrator",
+          "description": "Administrator role",
+          "privileges": [
+            {
+              "id": "nx-all",
+              "name": "All permissions",
+              "description": "All permissions",
+              "type": "application"
+            }
+          ]
+        }
+      ]
+    },
+    "task": {
+      "id": "cleanup-task",
+      "name": "Repository Cleanup",
+      "type": "repository.cleanup",
+      "schedule": {
+        "type": "cron",
+        "cronExpression": "0 0 1 * * ?",
+        "startTime": "2023-01-01T00:00:00Z",
+        "timeZone": "UTC"
+      },
+      "properties": {
+        "repositoryName": "maven-central",
+        "minimumRetained": 3,
+        "removeIfReleased": true
+      }
+    }
+  },
+  "recordArrays": {
+    "repositories": [
+      {
+        "name": "maven-releases",
+        "type": "hosted",
+        "format": "maven2",
+        "online": true,
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true,
+            "writePolicy": "ALLOW_ONCE"
+          }
+        }
+      },
+      {
+        "name": "maven-snapshots",
+        "type": "hosted",
+        "format": "maven2",
+        "online": true,
+        "attributes": {
+          "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": true,
+            "writePolicy": "ALLOW"
+          }
+        }
+      }
+    ],
+    "blobStores": [
+      {
+        "name": "default",
+        "type": "file",
+        "attributes": {
+          "file": {
+            "path": "data/blobs/default",
+            "volumeId": "default-volume"
+          }
+        }
+      },
+      {
+        "name": "backup",
+        "type": "file",
+        "attributes": {
+          "file": {
+            "path": "data/blobs/backup",
+            "volumeId": "backup-volume"
+          }
+        }
+      }
+    ]
+  },
+  "patternMatchingExamples": {
+    "simpleRecord": {
+      "id": "simple-record",
+      "value": "Simple Record Value"
+    },
+    "recordWithNested": {
+      "id": "record-with-nested",
+      "nested": {
+        "id": "nested-record",
+        "value": "Nested Record Value"
+      }
+    },
+    "recordWithArray": {
+      "id": "record-with-array",
+      "items": [
+        {
+          "id": "item-1",
+          "value": "Item 1 Value"
+        },
+        {
+          "id": "item-2",
+          "value": "Item 2 Value"
+        }
+      ]
+    },
+    "deeplyNestedRecord": {
+      "id": "deeply-nested",
+      "level1": {
+        "id": "level-1",
+        "level2": {
+          "id": "level-2",
+          "level3": {
+            "id": "level-3",
+            "value": "Deep Nested Value"
+          }
+        }
+      }
+    }
+  },
+  "virtualThreadTestCases": {
+    "ioOperations": [
+      {
+        "name": "file-read",
+        "path": "/data/test/file1.txt",
+        "operation": "READ",
+        "expectedDuration": 50,
+        "expectedResult": "SUCCESS"
+      },
+      {
+        "name": "s3-upload",
+        "path": "s3://bucket/path/to/file",
+        "operation": "WRITE",
+        "expectedDuration": 200,
+        "expectedResult": "SUCCESS"
+      }
+    ],
+    "concurrentRequests": [
+      {
+        "name": "api-request-1",
+        "endpoint": "/api/v1/repositories",
+        "method": "GET",
+        "concurrentUsers": 100,
+        "expectedThroughput": 1000
+      },
+      {
+        "name": "api-request-2",
+        "endpoint": "/api/v1/components",
+        "method": "POST",
+        "concurrentUsers": 50,
+        "expectedThroughput": 500
+      }
+    ]
+  }
+}

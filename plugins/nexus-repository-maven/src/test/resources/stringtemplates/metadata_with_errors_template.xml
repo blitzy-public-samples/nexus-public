@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>org.sonatype.nexus.repository.maven</groupId>
+  <artifactId>\{artifactId}</artifactId>
+  <versioning>
+    <latest>\{latestVersion}</latest>
+    <release>\{releaseVersion}</release>
+    <versions>
+      <version>\{version}</version>
+      <version>\{invalidVersion</version>
+    </versions>
+    <lastUpdated>\{timestamp}
+    <!-- Missing closing tag for lastUpdated -->
+    <!-- Missing closing tag for versioning -->
+  <!-- Missing closing tag for metadata -->
+  <errorMessage>\{errorType}: \{errorMessage} at line \{lineNumber}</errorMessage>
+  <errorDetails>\{STR."Failed to parse XML at position \{position}: \{reason}"}</errorDetails>
+  <errorCode>\{errorCode + 1000}</errorCode>
+  <stackTrace>\{exception.getClass().getName()}: \{exception.getMessage()}
+\{Arrays.stream(exception.getStackTrace()).limit(3).map(StackTraceElement::toString).collect(Collectors.joining("\n"))}</stackTrace>

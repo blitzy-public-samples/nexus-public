@@ -14,31 +14,46 @@ package org.sonatype.nexus.repository.httpbridge;
 
 import java.io.IOException;
 
-import jakarta.annotation.Nullable;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.annotation.Nullable;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.repository.view.Request;
 import org.sonatype.nexus.repository.view.Response;
 
 /**
  * Allows repository format specific handling of HTTP response sending.
- * 
- * This interface is compatible with Java 21 and supports Virtual Thread execution
- * for improved concurrency and performance when handling HTTP responses.
+ * <p>
+ * This interface is designed to be compatible with Java 21 Virtual Threads, enabling highly concurrent
+ * processing of HTTP responses with minimal resource overhead. Implementations should be thread-safe
+ * and prepared to execute concurrently in a Virtual Thread environment where thousands of concurrent
+ * operations may be in progress simultaneously.
+ * <p>
+ * Implementations should:
+ * <ul>
+ *   <li>Avoid blocking operations where possible to maximize Virtual Thread efficiency</li>
+ *   <li>Ensure thread-safety for all shared state</li>
+ *   <li>Use non-blocking I/O patterns when processing response content</li>
+ *   <li>Be aware that thread-local variables behave differently in Virtual Threads</li>
+ *   <li>Consider using Java 21 features like String Templates for logging</li>
+ * </ul>
  *
  * @since 3.0
  */
 public interface HttpResponseSender
 {
   /**
-   * Sends the repository response to the HTTP servlet response.
-   * 
-   * @param request The original repository request, may be null
+   * Sends the repository {@link Response} to the HTTP response.
+   * <p>
+   * This method is designed to be compatible with Java 21 Virtual Threads and may be executed
+   * concurrently across thousands of Virtual Threads. Implementations should avoid blocking operations
+   * where possible and use efficient I/O patterns to maximize throughput.
+   *
+   * @param request The original repository request (may be null)
    * @param response The repository response to send
-   * @param httpServletResponse The HTTP servlet response to send to
-   * @throws ServletException If a servlet error occurs
-   * @throws IOException If an I/O error occurs
+   * @param httpServletResponse The HTTP servlet response to write to
+   * @throws ServletException If a servlet-specific error occurs
+   * @throws IOException If an I/O error occurs during response sending
    */
   void send(@Nullable Request request, Response response, HttpServletResponse httpServletResponse)
       throws ServletException, IOException;

@@ -13,6 +13,8 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -35,6 +37,9 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
+ * REST resource for script privilege management.
+ * Updated for Java 21 with Virtual Threads support for I/O-bound operations.
+ *
  * @since 3.19
  */
 @Consumes(APPLICATION_JSON)
@@ -43,6 +48,12 @@ public class ScriptPrivilegeApiResource
     extends PrivilegeApiResourceSupport
     implements Resource, ScriptPrivilegeApiResourceDoc
 {
+  /**
+   * Virtual thread executor for handling I/O-bound privilege operations.
+   * Uses Java 21's Virtual Threads to optimize concurrent privilege management operations.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
   @Inject
   public ScriptPrivilegeApiResource(final SecuritySystem securitySystem,
                                     final Map<String, PrivilegeDescriptor> privilegeDescriptors)
@@ -56,10 +67,17 @@ public class ScriptPrivilegeApiResource
   @RequiresPermissions("nexus:privileges:create")
   @Path("script")
   public Response createPrivilege(final ApiPrivilegeScriptRequest privilege) {
-    return switch (privilege) {
-      case null -> Response.status(Response.Status.BAD_REQUEST).build();
-      default -> doCreate(ScriptPrivilegeDescriptor.TYPE, privilege);
-    };
+    try {
+      // Use Virtual Thread to handle the I/O-bound privilege creation operation
+      return virtualThreadExecutor.submit(() -> doCreate(ScriptPrivilegeDescriptor.TYPE, privilege)).get();
+    }
+    catch (Exception e) {
+      log.error("Error creating script privilege with Virtual Thread", e);
+      if (e.getCause() != null) {
+        throw new RuntimeException("Failed to create privilege: " + e.getCause().getMessage(), e.getCause());
+      }
+      throw new RuntimeException("Failed to create privilege", e);
+    }
   }
 
   @Override
@@ -70,8 +88,19 @@ public class ScriptPrivilegeApiResource
   public void updatePrivilege(@PathParam("privilegeName") final String privilegeName,
                               final ApiPrivilegeScriptRequest privilege)
   {
-    if (privilegeName != null && privilege != null) {
-      doUpdate(privilegeName, ScriptPrivilegeDescriptor.TYPE, privilege);
+    try {
+      // Use Virtual Thread to handle the I/O-bound privilege update operation
+      virtualThreadExecutor.submit(() -> {
+        doUpdate(privilegeName, ScriptPrivilegeDescriptor.TYPE, privilege);
+        return null;
+      }).get();
+    }
+    catch (Exception e) {
+      log.error("Error updating script privilege with Virtual Thread", e);
+      if (e.getCause() != null) {
+        throw new RuntimeException("Failed to update privilege: " + e.getCause().getMessage(), e.getCause());
+      }
+      throw new RuntimeException("Failed to update privilege", e);
     }
   }
 }

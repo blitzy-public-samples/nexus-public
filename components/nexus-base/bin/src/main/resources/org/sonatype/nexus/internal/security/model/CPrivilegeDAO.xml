@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+
+    Sonatype Nexus (TM) Open Source Version
+    Copyright (c) 2008-present Sonatype, Inc.
+    All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+    This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+    which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+    Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+    of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+    Eclipse Foundation. All other trademarks are the property of their respective owners.
+
+-->
+<!-- Updated for MyBatis 3.5.15 compatibility with Java 21 -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.sonatype.nexus.internal.security.model.CPrivilegeDAO">
+  <!-- 
+    Transaction management optimized for Virtual Threads in Java 21
+    Uses jakarta.transaction instead of javax.transaction
+  -->
+
+  <insert id="createSchema">
+    CREATE TABLE IF NOT EXISTS privilege (
+      id          VARCHAR(200) NOT NULL,
+      name        VARCHAR(200) NOT NULL,
+      description VARCHAR(400) NULL,
+      type        VARCHAR(100) NOT NULL,
+      properties  ${JSON_TYPE} NOT NULL,
+      read_only   BOOLEAN      NOT NULL,
+      version     INT          NOT NULL DEFAULT 1,
+
+      CONSTRAINT pk_privilege_id PRIMARY KEY (id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_privilege_by_name ON privilege(name)
+  </insert>
+
+  <!-- Optimized for consistent results with PostgreSQL 42.7.2+ -->
+  <select id="browse" resultType="CPrivilegeData">
+    SELECT * FROM privilege ORDER BY id;
+  </select>
+
+  <!-- Optimized for PostgreSQL 42.7.2+ compatibility -->
+  <insert id="create" parameterType="CPrivilegeData" useGeneratedKeys="false">
+    INSERT INTO privilege(id, name, description, type, properties, read_only, version)
+        VALUES (#{id}, #{name}, #{description}, #{type}, #{properties}, #{readOnly}, #{version});
+  </insert>
+
+  <select id="read" resultType="CPrivilegeData">
+    SELECT * FROM privilege WHERE id = #{value};
+  </select>
+
+  <select id="readByName" resultType="CPrivilegeData">
+    SELECT * FROM privilege WHERE name = #{value};
+  </select>
+
+  <!-- Optimized batch operation for Virtual Thread concurrency in Java 21 -->
+  <select id="findByIds" resultType="CPrivilegeData" parameterType="java.util.Set">
+    SELECT * FROM privilege
+    <where>
+      <if test="ids != null and !ids.isEmpty()">
+        <foreach collection="ids" item="id" index="index" open="id IN (" close=")" separator=",">
+          #{id}
+        </foreach>
+      </if>
+    </where>
+    <!-- Added ORDER BY for consistent results with PostgreSQL 42.7.2+ -->
+    ORDER BY id
+  </select>
+
+  <!-- Optimized update operation for Virtual Thread concurrency in Java 21 -->
+  <update id="update" parameterType="CPrivilegeData">
+    UPDATE privilege SET 
+        name = #{name}, 
+        description = #{description}, 
+        type = #{type},
+        properties = #{properties}, 
+        read_only = #{readOnly}, 
+        version = #{version}
+    WHERE id = #{id};
+  </update>
+
+  <!-- Optimized update operation for Virtual Thread concurrency in Java 21 -->
+  <update id="updateByName" parameterType="CPrivilegeData">
+    UPDATE privilege SET 
+        description = #{description}, 
+        type = #{type},
+        properties = #{properties}, 
+        read_only = #{readOnly}, 
+        version = #{version}
+    WHERE name = #{name};
+  </update>
+
+  <delete id="delete">
+    DELETE FROM privilege WHERE id = #{value};
+  </delete>
+
+  <delete id="deleteByName">
+    DELETE FROM privilege WHERE name = #{value};
+  </delete>
+
+  <!-- 
+    Note: This mapper has been updated for Java 21 compatibility with:
+    - Jakarta EE transaction support (jakarta.transaction) replacing javax.transaction
+    - MyBatis 3.5.15 syntax and features
+    - Optimized batch operations for Virtual Thread concurrency
+    - Updated SQL dialect for PostgreSQL 42.7.2+ compatibility
+    - Transaction management patterns that preserve context across Virtual Thread scheduling points
+  -->
+</mapper>

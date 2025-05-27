@@ -13,6 +13,8 @@
 package org.sonatype.nexus.coreui;
 
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -35,7 +37,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Component for freezing and releasing the application.
- * Updated for Java 21 to leverage virtual threads for improved concurrency.
  *
  * @since 3.2
  */
@@ -56,7 +57,10 @@ class FreezeComponent
   @Timed
   @ExceptionMetered
   public FreezeStatusXO read() {
-    return buildStatus();
+    // Use Virtual Threads for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return CompletableFuture.supplyAsync(() -> buildStatus(), executor).join();
+    }
   }
 
   @DirectMethod
@@ -66,19 +70,18 @@ class FreezeComponent
   @RequiresPermissions("nexus:*")
   @Validate
   public FreezeStatusXO update(final @NotNull @Valid FreezeStatusXO freezeStatusXO) {
-    // Use virtual threads for potentially blocking operations to improve concurrency
-    // Virtual threads are lightweight and efficient for I/O-bound operations in Java 21
-    if (freezeStatusXO.isFrozen()) {
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        freezeService.requestFreeze("UI request")
-      ).join();
+    // Use Virtual Threads for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return CompletableFuture.supplyAsync(() -> {
+        if (freezeStatusXO.isFrozen()) {
+          freezeService.requestFreeze("UI request");
+        }
+        else {
+          freezeService.cancelFreeze();
+        }
+        return buildStatus();
+      }, executor).join();
     }
-    else {
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        freezeService.cancelFreeze()
-      ).join();
-    }
-    return buildStatus();
   }
 
   @DirectMethod
@@ -88,12 +91,13 @@ class FreezeComponent
   @RequiresPermissions("nexus:*")
   @Validate
   public FreezeStatusXO forceRelease() {
-    // Use virtual threads for potentially blocking operations to improve concurrency
-    // This approach eliminates traditional thread pool management overhead
-    Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-      freezeService.cancelAllFreezeRequests()
-    ).join();
-    return buildStatus();
+    // Use Virtual Threads for I/O-bound operations
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return CompletableFuture.supplyAsync(() -> {
+        freezeService.cancelAllFreezeRequests();
+        return buildStatus();
+      }, executor).join();
+    }
   }
 
   private FreezeStatusXO buildStatus() {

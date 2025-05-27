@@ -1,0 +1,423 @@
+/*
+ * Sonatype Nexus (TM) Open Source Version
+ * Copyright (c) 2008-present Sonatype, Inc.
+ * All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+ *
+ * This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+ * which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+ *
+ * Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+ * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+ * Eclipse Foundation. All other trademarks are the property of their respective owners.
+ */
+package org.sonatype.nexus.repository.maven.internal;
+
+import java.io.ByteArrayInputStream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+
+import javax.annotation.Nullable;
+
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.io.InputStreamSupplier;
+import org.sonatype.nexus.mime.MimeRulesSource;
+import org.sonatype.nexus.repository.mime.DefaultContentValidator;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
+
+import org.apache.http.entity.ContentType;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.verification.VerificationMode;
+
+import static java.util.Optional.ofNullable;
+import static org.apache.http.entity.ContentType.TEXT_PLAIN;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Tests for {@link MavenContentValidator} using Java 21 Virtual Threads.
+ * 
+ * This test class verifies that the MavenContentValidator behaves correctly
+ * when used concurrently with Virtual Threads.
+ * 
+ * @since 3.60
+ */
+@ExtendWith(MockitoExtension.class)
+@VirtualThreadTestGroup
+public class MavenContentValidatorVirtualThreadTest
+    extends TestSupport
+{
+  private static final InputStreamSupplier DEFAULT_SUPPLIER = () -> new ByteArrayInputStream("0xDEADBEEF".getBytes());
+
+  // "caff" as a header would normally be detected as 'audio/x-caf'
+  private static final InputStreamSupplier AUDIO_CAF_SUPPLIER = () -> new ByteArrayInputStream("caff123456789".getBytes());
+
+  private static final InputStreamSupplier MD5_SUPPLIER = () -> new ByteArrayInputStream("0161dba22520b2c13b50493fd98ed4ce".getBytes());
+
+  private static final InputStreamSupplier SHA1_SUPPLIER = () -> new ByteArrayInputStream("2abe58492ad5e25e18cfca3fad4f0322d47cb893".getBytes());
+
+  private static final InputStreamSupplier SHA256_SUPPLIER = () -> new ByteArrayInputStream("34cbb64305cb610b642162b052e66b4683ae68fd20d34591c21ab68bec106ccb".getBytes());
+
+  private static final InputStreamSupplier SHA512_SUPPLIER = () -> new ByteArrayInputStream("bfe3bcd9fc7180c2439d7c0b3b3036f71a6da1fed2983e3ab23185bf3a6877f6a32dbd6b949d7ef3ab1935699a113f47987082fbaffb2ce9f65f5ad058475c0e".getBytes());
+
+  @Mock
+  private MimeRulesSource mimeRulesSource;
+
+  @Mock
+  private DefaultContentValidator defaultContentValidator;
+
+  private MavenContentValidator underTest;
+
+  @BeforeEach
+  void setUp() {
+    underTest = new MavenContentValidator(defaultContentValidator);
+
+    when(defaultContentValidator.determineContentType(any(),
+        any(),
+        any(),
+        any(),
+        any())
+        ).thenReturn(TEXT_PLAIN.getMimeType());
+  }
+
+  /**
+   * Provides test parameters for parameterized tests.
+   */
+  static Stream<Arguments> testParameters() {
+    return Stream.of(
+        // contentName, strictContentValidation, declaredContentType, contentSupplier, defaultContentValidatorInvocation, expectedContentType, expectedExceptionMessage
+        Arguments.of(null, true, TEXT_PLAIN, DEFAULT_SUPPLIER, times(1), TEXT_PLAIN, null),
+        Arguments.of("file.jar", true, TEXT_PLAIN, DEFAULT_SUPPLIER, times(1), TEXT_PLAIN, null),
+        Arguments.of("file.pom", true, TEXT_PLAIN, DEFAULT_SUPPLIER, times(1), TEXT_PLAIN, null),
+
+        Arguments.of("file.md5", false, TEXT_PLAIN, MD5_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.md5", true, TEXT_PLAIN, MD5_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.md5", true, TEXT_PLAIN, DEFAULT_SUPPLIER, never(), TEXT_PLAIN, "Not a Maven2 digest: file.md5"),
+        Arguments.of("file.md5", false, null, MD5_SUPPLIER, times(1), TEXT_PLAIN, null),
+        Arguments.of("file.md5", false, TEXT_PLAIN, AUDIO_CAF_SUPPLIER, never(), TEXT_PLAIN, null),
+
+        Arguments.of("file.sha1", false, TEXT_PLAIN, SHA1_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.sha1", true, TEXT_PLAIN, SHA1_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.sha1", true, TEXT_PLAIN, DEFAULT_SUPPLIER, never(), TEXT_PLAIN, "Not a Maven2 digest: file.sha1"),
+        Arguments.of("file.sha1", false, null, SHA1_SUPPLIER, times(1), TEXT_PLAIN, null),
+        Arguments.of("file.sha1", false, TEXT_PLAIN, AUDIO_CAF_SUPPLIER, never(), TEXT_PLAIN, null),
+
+        Arguments.of("file.sha256", false, TEXT_PLAIN, SHA256_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.sha256", true, TEXT_PLAIN, SHA256_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.sha256", true, TEXT_PLAIN, DEFAULT_SUPPLIER, never(), TEXT_PLAIN, "Not a Maven2 digest: file.sha256"),
+        Arguments.of("file.sha256", false, null, SHA256_SUPPLIER, times(1), TEXT_PLAIN, null),
+        Arguments.of("file.sha256", false, TEXT_PLAIN, AUDIO_CAF_SUPPLIER, never(), TEXT_PLAIN, null),
+
+        Arguments.of("file.sha512", false, TEXT_PLAIN, SHA512_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.sha512", true, TEXT_PLAIN, SHA512_SUPPLIER, never(), TEXT_PLAIN, null),
+        Arguments.of("file.sha512", true, TEXT_PLAIN, DEFAULT_SUPPLIER, never(), TEXT_PLAIN, "Not a Maven2 digest: file.sha512"),
+        Arguments.of("file.sha512", false, null, SHA512_SUPPLIER, times(1), TEXT_PLAIN, null),
+        Arguments.of("file.sha512", false, TEXT_PLAIN, AUDIO_CAF_SUPPLIER, never(), TEXT_PLAIN, null)
+    );
+  }
+
+  /**
+   * Tests content type determination with various parameters.
+   */
+  @ParameterizedTest
+  @MethodSource("testParameters")
+  void determineContentType(
+      @Nullable String contentName,
+      boolean isStrictContentValidation,
+      @Nullable ContentType declaredContentType,
+      InputStreamSupplier contentSupplier,
+      VerificationMode defaultContentValidatorInvocation,
+      ContentType expectedContentType,
+      @Nullable String expectedExceptionMessage) throws Exception 
+  {
+    String declaredMimeType = ofNullable(declaredContentType).map(ContentType::getMimeType).orElse(null);
+
+    when(defaultContentValidator.determineContentType(eq(isStrictContentValidation),
+        eq(contentSupplier),
+        eq(mimeRulesSource),
+        any(),
+        eq(declaredMimeType)
+        )).thenReturn(TEXT_PLAIN.getMimeType());
+
+    if (expectedExceptionMessage != null) {
+      Exception exception = assertThrows(Exception.class, () -> {
+        underTest.determineContentType(
+            isStrictContentValidation,
+            contentSupplier,
+            mimeRulesSource,
+            contentName,
+            declaredMimeType);
+      });
+      assertThat(exception.getMessage(), is(expectedExceptionMessage));
+    } else {
+      assertThat(underTest.determineContentType(
+          isStrictContentValidation,
+          contentSupplier,
+          mimeRulesSource,
+          contentName,
+          declaredMimeType),
+      is(expectedContentType.getMimeType()));
+
+      String contentNameForDefaultValidator = ("file.pom".equalsIgnoreCase(contentName)) ? "file.pom.xml" : contentName;
+
+      verify(defaultContentValidator, defaultContentValidatorInvocation)
+          .determineContentType(
+              isStrictContentValidation,
+              contentSupplier,
+              mimeRulesSource,
+              contentNameForDefaultValidator,
+              declaredMimeType);
+    }
+  }
+
+  /**
+   * Tests concurrent content validation using Virtual Threads.
+   * This test verifies that the MavenContentValidator behaves correctly when used
+   * concurrently from multiple Virtual Threads.
+   */
+  @Test
+  void concurrentContentValidationWithVirtualThreads() throws Exception {
+    // Configure the mock for concurrent access
+    when(defaultContentValidator.determineContentType(any(), any(), any(), any(), any()))
+        .thenReturn(TEXT_PLAIN.getMimeType());
+
+    // Create an executor service using Virtual Threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int threadCount = 100;
+      CountDownLatch latch = new CountDownLatch(threadCount);
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit tasks to validate content concurrently
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Alternate between different content types
+            String contentName = index % 5 == 0 ? "file.md5" :
+                               index % 4 == 0 ? "file.sha1" :
+                               index % 3 == 0 ? "file.sha256" :
+                               index % 2 == 0 ? "file.sha512" : "file.pom";
+
+            InputStreamSupplier supplier = index % 5 == 0 ? MD5_SUPPLIER :
+                                         index % 4 == 0 ? SHA1_SUPPLIER :
+                                         index % 3 == 0 ? SHA256_SUPPLIER :
+                                         index % 2 == 0 ? SHA512_SUPPLIER : DEFAULT_SUPPLIER;
+
+            boolean strict = index % 2 == 0;
+
+            // Perform content validation
+            String result = underTest.determineContentType(
+                strict,
+                supplier,
+                mimeRulesSource,
+                contentName,
+                TEXT_PLAIN.getMimeType());
+
+            // Verify result
+            if (TEXT_PLAIN.getMimeType().equals(result)) {
+              successCount.incrementAndGet();
+            } else {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            // Some combinations are expected to throw exceptions
+            if (e.getMessage() != null && e.getMessage().startsWith("Not a Maven2 digest")) {
+              // This is an expected exception for certain combinations
+              successCount.incrementAndGet();
+            } else {
+              errorCount.incrementAndGet();
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all threads to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      assertThat("All threads should complete in time", completed, is(true));
+      assertThat("All validations should succeed", errorCount.get(), is(0));
+      assertThat("All threads should have run", successCount.get(), is(threadCount));
+    }
+  }
+
+  /**
+   * Tests concurrent content validation with mixed content types using Virtual Threads.
+   * This test verifies that the MavenContentValidator correctly handles a mix of
+   * different content types when accessed concurrently from multiple Virtual Threads.
+   */
+  @Test
+  void concurrentMixedContentValidationWithVirtualThreads() throws Exception {
+    // Configure the mock for concurrent access
+    when(defaultContentValidator.determineContentType(any(), any(), any(), any(), any()))
+        .thenReturn(TEXT_PLAIN.getMimeType());
+
+    // Create an executor service using Virtual Threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int threadCount = 200;
+      CountDownLatch latch = new CountDownLatch(threadCount);
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit tasks to validate content concurrently with different content types
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Use different content types and suppliers based on the thread index
+            // to create a mix of validation scenarios
+            String contentName;
+            InputStreamSupplier supplier;
+            boolean strict = index % 2 == 0;
+
+            switch (index % 8) {
+              case 0:
+                contentName = "file.md5";
+                supplier = MD5_SUPPLIER;
+                break;
+              case 1:
+                contentName = "file.md5";
+                supplier = DEFAULT_SUPPLIER; // Will cause exception with strict validation
+                break;
+              case 2:
+                contentName = "file.sha1";
+                supplier = SHA1_SUPPLIER;
+                break;
+              case 3:
+                contentName = "file.sha1";
+                supplier = AUDIO_CAF_SUPPLIER; // Should be handled differently
+                break;
+              case 4:
+                contentName = "file.sha256";
+                supplier = SHA256_SUPPLIER;
+                break;
+              case 5:
+                contentName = "file.sha512";
+                supplier = SHA512_SUPPLIER;
+                break;
+              case 6:
+                contentName = "file.pom";
+                supplier = DEFAULT_SUPPLIER;
+                break;
+              default:
+                contentName = null; // Test null content name
+                supplier = DEFAULT_SUPPLIER;
+                break;
+            }
+
+            try {
+              // Perform content validation
+              String result = underTest.determineContentType(
+                  strict,
+                  supplier,
+                  mimeRulesSource,
+                  contentName,
+                  TEXT_PLAIN.getMimeType());
+
+              // Verify result
+              if (TEXT_PLAIN.getMimeType().equals(result)) {
+                successCount.incrementAndGet();
+              } else {
+                errorCount.incrementAndGet();
+              }
+            } catch (Exception e) {
+              // Some combinations are expected to throw exceptions
+              if (e.getMessage() != null && e.getMessage().startsWith("Not a Maven2 digest")) {
+                // This is an expected exception for certain combinations
+                successCount.incrementAndGet();
+              } else {
+                errorCount.incrementAndGet();
+              }
+            }
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all threads to complete
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
+      assertThat("All threads should complete in time", completed, is(true));
+      assertThat("All validations should succeed or fail as expected", errorCount.get(), is(0));
+      assertThat("All threads should have run", successCount.get(), is(threadCount));
+    }
+  }
+
+  /**
+   * Tests high concurrency content validation using Virtual Threads.
+   * This test verifies that the MavenContentValidator can handle a high number of
+   * concurrent requests using Virtual Threads without errors.
+   */
+  @Test
+  void highConcurrencyContentValidationWithVirtualThreads() throws Exception {
+    // Configure the mock for concurrent access
+    when(defaultContentValidator.determineContentType(any(), any(), any(), any(), any()))
+        .thenReturn(TEXT_PLAIN.getMimeType());
+
+    // Create an executor service using Virtual Threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int threadCount = 1000; // High concurrency test
+      CountDownLatch latch = new CountDownLatch(threadCount);
+      AtomicInteger successCount = new AtomicInteger(0);
+      AtomicInteger errorCount = new AtomicInteger(0);
+
+      // Submit tasks to validate content concurrently
+      for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+          try {
+            // Use a simple validation case that should always succeed
+            String result = underTest.determineContentType(
+                false, // non-strict validation
+                DEFAULT_SUPPLIER,
+                mimeRulesSource,
+                "file.jar",
+                TEXT_PLAIN.getMimeType());
+
+            if (TEXT_PLAIN.getMimeType().equals(result)) {
+              successCount.incrementAndGet();
+            } else {
+              errorCount.incrementAndGet();
+            }
+          } catch (Exception e) {
+            errorCount.incrementAndGet();
+          } finally {
+            latch.countDown();
+          }
+        });
+      }
+
+      // Wait for all threads to complete
+      boolean completed = latch.await(60, TimeUnit.SECONDS);
+      assertThat("All threads should complete in time", completed, is(true));
+      assertThat("All validations should succeed", errorCount.get(), is(0));
+      assertThat("All threads should have run", successCount.get(), is(threadCount));
+
+      // Verify the mock was called the expected number of times
+      verify(defaultContentValidator, times(threadCount))
+          .determineContentType(
+              eq(false),
+              eq(DEFAULT_SUPPLIER),
+              eq(mimeRulesSource),
+              eq("file.jar"),
+              eq(TEXT_PLAIN.getMimeType()));
+    }
+  }
+}

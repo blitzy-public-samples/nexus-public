@@ -13,20 +13,19 @@
 package org.sonatype.nexus.testsuite;
 
 import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit test for simple App.
  */
-public class AppTest
+public class AppTest 
 {
     /**
-     * Rigorous Test :-)
+     * Rigourous Test :-)
      */
     @Test
     public void appWorksCorrectly()
     {
-        assertTrue(true, "App should work correctly");
+        assertTrue(true);
     }
 }

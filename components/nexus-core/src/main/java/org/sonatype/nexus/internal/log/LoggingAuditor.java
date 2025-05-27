@@ -13,6 +13,8 @@
 package org.sonatype.nexus.internal.log;
 
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -23,6 +25,7 @@ import org.sonatype.nexus.common.event.EventAware;
 import org.sonatype.nexus.common.log.LoggerLevel;
 import org.sonatype.nexus.common.log.LoggerLevelChangedEvent;
 import org.sonatype.nexus.common.log.LoggersResetEvent;
+import org.sonatype.nexus.thread.internal.MDCUtils;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
@@ -39,45 +42,84 @@ public class LoggingAuditor
     implements EventAware
 {
   public static final String DOMAIN = "logging";
+  
+  /**
+   * Virtual thread executor for asynchronous event processing.
+   * Using virtual threads provides high concurrency with minimal resource usage.
+   */
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
+  /**
+   * Handles logger reset events by creating and recording audit data.
+   * Uses virtual threads for asynchronous processing with MDC context propagation.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final LoggersResetEvent event) {
     if (isRecording()) {
-      // Log using String Templates for improved readability and performance
+      // Create audit data with structured information
+      AuditData data = createAuditData(DOMAIN, "reset", SYSTEM_CONTEXT);
+      
+      // Log the event using String Templates for structured logging
       if (log.isDebugEnabled()) {
-        log.debug(STR."Processing loggers reset event");
+        log.debug(STR."Loggers reset event received");
       }
       
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType("reset");
-      data.setContext(SYSTEM_CONTEXT);
-      record(data); // AuditorSupport.record() already uses virtual threads
+      // Process asynchronously using virtual threads with MDC context propagation
+      virtualThreadExecutor.execute(MDCUtils.withMdcContext(() -> record(data)));
     }
   }
 
+  /**
+   * Handles logger level changed events by creating and recording audit data.
+   * Uses virtual threads for asynchronous processing with MDC context propagation.
+   */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final LoggerLevelChangedEvent event) {
     if (isRecording()) {
       String logger = event.getLogger();
       LoggerLevel level = event.getLevel();
-      
-      // Log using String Templates for improved readability and performance
-      if (log.isDebugEnabled()) {
-        log.debug(STR."Processing logger level changed event: logger=\{logger}, level=\{level}");
-      }
 
-      AuditData data = new AuditData();
-      data.setDomain(DOMAIN);
-      data.setType(CHANGED_TYPE);
-      data.setContext(logger);
+      // Create audit data with structured information using String Templates
+      AuditData data = createAuditData(DOMAIN, CHANGED_TYPE, logger);
 
+      // Add attributes using String Templates for structured logging
       Map<String, Object> attributes = data.getAttributes();
       attributes.put("logger", logger);
       attributes.put("level", string(level));
-      record(data); // AuditorSupport.record() already uses virtual threads
+      
+      // Log the event using String Templates for structured logging
+      if (log.isDebugEnabled()) {
+        log.debug(STR."Logger level changed: logger=\{logger}, level=\{level}");
+      }
+      
+      // Process asynchronously using virtual threads with MDC context propagation
+      virtualThreadExecutor.execute(MDCUtils.withMdcContext(() -> record(data)));
     }
+  }
+  
+  /**
+   * Creates an AuditData object with the specified domain, type, and context.
+   * Optimized for concurrent execution in virtual threads.
+   * Uses Java 21 String Templates for structured logging when needed.
+   *
+   * @param domain the audit domain
+   * @param type the audit type
+   * @param context the audit context
+   * @return a new AuditData instance
+   */
+  private AuditData createAuditData(String domain, String type, String context) {
+    AuditData data = new AuditData();
+    data.setDomain(domain);
+    data.setType(type);
+    data.setContext(context);
+    
+    // Log creation of audit data using String Templates for structured logging
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Creating audit data: domain=\{domain}, type=\{type}, context=\{context}");
+    }
+    
+    return data;
   }
 }

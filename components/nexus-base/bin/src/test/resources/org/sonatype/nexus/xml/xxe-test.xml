@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  This file is used to test Java 21's XXE (XML External Entity) protections.
+  It contains a DOCTYPE declaration with an external entity reference that attempts
+  to access a system resource. Java 21 has enhanced security features in its XML parsers
+  that should prevent this type of attack by default.
+  
+  Expected behavior:
+  - When parsed with secure XML processing enabled (default in Java 21), the parser should
+    either block the entity resolution or throw appropriate security exceptions.
+  - Test classes should verify that external entities are not resolved and system resources
+    are not accessed.
+-->
+<!DOCTYPE foo [
+   <!ELEMENT foo ANY >
+   <!ENTITY xxe SYSTEM "file:///etc/passwd" >
+]>
+<foo>&xxe;</foo>

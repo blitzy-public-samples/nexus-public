@@ -12,14 +12,32 @@
  */
 package org.sonatype.nexus.formfields;
 
-import static java.lang.StringTemplate.STR;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * Set of checkboxes field.
+ * 
+ * This implementation has been updated for Java 21 compatibility with enhanced
+ * type checking, Pattern Matching for switch, and String Templates.
+ * 
+ * @since 3.0
  */
 public class SetOfCheckboxesFormField
     extends AbstractFormField<Boolean>
 {
+  /**
+   * Virtual thread executor for asynchronous validation operations.
+   *
+   * @since 3.60
+   */
+  private static final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  
   public SetOfCheckboxesFormField(String id, String label, String helpText, boolean required) {
     super(id, label, helpText, required);
   }
@@ -29,44 +47,73 @@ public class SetOfCheckboxesFormField
   }
   
   /**
-   * Validates the input value against the field's requirements.
-   * Uses Pattern Matching for switch to handle different types of input values.
+   * Sets the initial value and returns this instance for fluent API usage.
    *
-   * @param value The value to validate
-   * @return A validation message if invalid, or null if valid
+   * @param initialValue the initial value to set
+   * @return this instance for fluent API usage
+   * @since 3.60
    */
-  public String validate(Object value) {
-    if (isRequired() && value == null) {
-      return generateRequiredFieldMessage(getId());
-    }
-    
+  public SetOfCheckboxesFormField withInitialValue(final Boolean initialValue) {
+    setInitialValue(initialValue);
+    return this;
+  }
+  
+  /**
+   * Validates the input value using Pattern Matching for switch.
+   * 
+   * @param value the value to validate
+   * @return a validation result containing success status and optional error message
+   * @since 3.60
+   */
+  public ValidationResult validateValue(Object value) {
     return switch (value) {
-      case Boolean b -> null; // Boolean values are always valid for this field
-      case String s when s.isEmpty() && isRequired() -> generateRequiredFieldMessage(getId());
-      case String s -> null; // Non-empty strings are valid
-      case null -> null; // Already checked required above
-      default -> generateInvalidTypeMessage(value);
+      case Boolean b -> new ValidationResult(true, null);
+      case String s when "true".equalsIgnoreCase(s) || "false".equalsIgnoreCase(s) -> 
+          new ValidationResult(true, null);
+      case Number n when n.intValue() == 0 || n.intValue() == 1 -> 
+          new ValidationResult(true, null);
+      case Collection<?> c when c.isEmpty() -> 
+          new ValidationResult(false, STR."Value cannot be an empty collection for field '{getId()}'.");
+      case null -> 
+          new ValidationResult(isRequired() ? false : true, 
+              isRequired() ? STR."Field '{getId()}' is required." : null);
+      default -> 
+          new ValidationResult(false, STR."Invalid value type {value.getClass().getSimpleName()} for checkbox field '{getId()}'. Expected Boolean.");
     };
   }
   
   /**
-   * Generates a validation message for required fields using String Templates.
-   *
-   * @param fieldId The ID of the field
-   * @return A validation message
+   * Asynchronously validates a collection of values using Virtual Threads.
+   * 
+   * @param values the collection of values to validate
+   * @return a CompletableFuture that will complete with the validation results
+   * @since 3.60
    */
-  private String generateRequiredFieldMessage(String fieldId) {
-    return STR."Field \{fieldId} is required";
+  public CompletableFuture<List<ValidationResult>> validateValuesAsync(Collection<?> values) {
+    return CompletableFuture.supplyAsync(() -> 
+        values.stream()
+            .map(this::validateValue)
+            .toList(),
+        virtualThreadExecutor);
   }
   
   /**
-   * Generates a validation message for invalid input types using String Templates.
-   *
-   * @param value The invalid value
-   * @return A validation message
+   * Record class for validation results.
+   * 
+   * @param valid whether the validation was successful
+   * @param errorMessage the error message if validation failed, null otherwise
+   * @since 3.60
    */
-  private String generateInvalidTypeMessage(Object value) {
-    String typeName = value.getClass().getSimpleName();
-    return STR."Invalid type for checkbox field: \{typeName}. Expected Boolean.";
+  public record ValidationResult(boolean valid, String errorMessage) {}
+  
+  /**
+   * Returns a string representation of this set of checkboxes form field.
+   * 
+   * @return a string representation of this set of checkboxes form field
+   * @since 3.60
+   */
+  @Override
+  public String toString() {
+    return STR."SetOfCheckboxesFormField{id={getId()}, label={getLabel()}, required={isRequired()}, initialValue={getInitialValue()}}";
   }
 }

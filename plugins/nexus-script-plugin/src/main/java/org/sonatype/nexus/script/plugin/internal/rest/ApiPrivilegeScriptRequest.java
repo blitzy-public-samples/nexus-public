@@ -13,6 +13,7 @@
 package org.sonatype.nexus.script.plugin.internal.rest;
 
 import java.util.Collection;
+import static java.lang.StringTemplate.STR;
 
 import org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor;
 import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
@@ -20,8 +21,8 @@ import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActionsRequest;
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotBlank;
+import io.swagger.annotations.ApiModelProperty;
+import javax.validation.constraints.NotBlank;
 
 /**
  * @since 3.19
@@ -32,7 +33,7 @@ public class ApiPrivilegeScriptRequest
   public static final String SCRIPT_KEY = "name";
 
   @NotBlank
-  @Schema(description = NexusSecurityApiConstants.PRIVILEGE_SCRIPT_DESCRIPTION)
+  @ApiModelProperty(NexusSecurityApiConstants.PRIVILEGE_SCRIPT_DESCRIPTION)
   private String scriptName;
 
   /**
@@ -53,6 +54,7 @@ public class ApiPrivilegeScriptRequest
 
   public ApiPrivilegeScriptRequest(final Privilege privilege) {
     super(privilege);
+    // Direct property access with the privilege object
     scriptName = privilege.getPrivilegeProperty(SCRIPT_KEY);
   }
 
@@ -67,6 +69,7 @@ public class ApiPrivilegeScriptRequest
   @Override
   protected Privilege doAsPrivilege(final Privilege privilege) {
     super.doAsPrivilege(privilege);
+    // Direct property setting on the privilege object
     privilege.addProperty(SCRIPT_KEY, scriptName);
     privilege.setType(ScriptPrivilegeDescriptor.TYPE);
     return privilege;
@@ -74,6 +77,7 @@ public class ApiPrivilegeScriptRequest
 
   @Override
   protected String doAsActionString() {
-    return toBreadRunActionString();
+    // Using Java 21 String Templates for more readable string formatting
+    return STR."Script action: \{toBreadRunActionString()}";
   }
 }

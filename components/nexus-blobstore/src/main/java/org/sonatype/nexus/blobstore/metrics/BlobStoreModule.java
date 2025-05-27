@@ -17,11 +17,12 @@ import java.lang.reflect.Method;
 
 import org.sonatype.nexus.common.guice.AbstractInterceptorModule;
 
+import com.google.inject.Scopes;
 import com.google.inject.matcher.AbstractMatcher;
 import com.google.inject.matcher.Matchers;
 
 /**
- * Registers the {@link MonitoringBlobStoreMetrics} behaviour.
+ * Registers the {@link MonitoringBlobStoreMetrics} behaviour and Virtual Thread metrics support.
  *
  * @since 3.38
  */
@@ -30,36 +31,31 @@ public class BlobStoreModule
 {
   @Override
   protected void configure() {
-    bindInterceptor(Matchers.any(), new TransactionalMatcher(), new BlobStoreAnalyticsInterceptor());
+    // Bind the VirtualThreadBlobStoreMetrics as a singleton
+    bind(VirtualThreadBlobStoreMetrics.class).in(Scopes.SINGLETON);
+    
+    // Create and bind the interceptor
+    BlobStoreAnalyticsInterceptor interceptor = new BlobStoreAnalyticsInterceptor();
+    requestInjection(interceptor); // Ensure VirtualThreadBlobStoreMetrics is injected
+    
+    // Register the interceptor for methods with the MonitoringBlobStoreMetrics annotation
+    bindInterceptor(Matchers.any(), new TransactionalMatcher(), interceptor);
   }
 
-  /**
-   * Matcher for methods annotated with {@link MonitoringBlobStoreMetrics} or annotations that are themselves
-   * annotated with {@link MonitoringBlobStoreMetrics}.
-   * 
-   * Optimized for Java 21 Virtual Threads to reduce overhead in the interception pattern.
-   */
   private static final class TransactionalMatcher
       extends AbstractMatcher<Method>
   {
     @Override
     public boolean matches(final Method method) {
-      // Fast path: direct annotation check
       if (method.isAnnotationPresent(MonitoringBlobStoreMetrics.class)) {
         return true;
       }
-      
-      // Slower path: check for stereotype annotations (annotations marked with @MonitoringBlobStoreMetrics)
-      // This is optimized to minimize overhead in Virtual Thread context
-      Annotation[] annotations = method.getDeclaredAnnotations();
-      if (annotations.length > 0) {
-        for (Annotation annotation : annotations) {
-          if (annotation.annotationType().isAnnotationPresent(MonitoringBlobStoreMetrics.class)) {
-            return true;
-          }
+      // look for stereotypes; annotations marked with @MonitoringBlobStoreMetrics
+      for (Annotation annotation : method.getDeclaredAnnotations()) {
+        if (annotation.annotationType().isAnnotationPresent(MonitoringBlobStoreMetrics.class)) {
+          return true;
         }
       }
-      
       return false;
     }
   }

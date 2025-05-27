@@ -12,14 +12,17 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
-import java.util.StringJoiner;
-import java.util.concurrent.Callable;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.sonatype.nexus.capability.Condition;
 import org.sonatype.nexus.common.event.EventManager;
 
 /**
  * A condition that applies a logical AND between conditions.
+ * <p>
+ * This implementation is compatible with Java 21 Virtual Threads and uses pattern matching
+ * for switch to efficiently evaluate conditions.
  *
  * @since capabilities 2.0
  */
@@ -30,6 +33,14 @@ public class ConjunctionCondition
 
   private Condition lastNotSatisfied;
 
+  /**
+   * Constructs a new ConjunctionCondition with multiple conditions.
+   * <p>
+   * This implementation ensures proper handling of conditions across Virtual Thread boundaries.
+   *
+   * @param eventManager the event manager instance
+   * @param conditions the conditions to be evaluated together with AND logic
+   */
   public ConjunctionCondition(final EventManager eventManager,
                               final Condition... conditions)
   {
@@ -37,75 +48,85 @@ public class ConjunctionCondition
   }
 
   /**
-   * Helper record for pattern matching in the reevaluate method.
+   * Reevaluates all conditions using pattern matching for switch to determine if all conditions are satisfied.
+   * <p>
+   * This implementation ensures proper thread context propagation when evaluating conditions.
+   *
+   * @param conditions the conditions to evaluate
+   * @return true if all conditions are satisfied, false otherwise
    */
-  private record ConditionResult(boolean satisfied, Condition condition) {}
-
   @Override
   protected boolean reevaluate(final Condition... conditions) {
-    // Use pattern matching with switch to evaluate conditions
+    // Use pattern matching for switch to handle condition evaluation more efficiently
     for (final Condition condition : conditions) {
-      ConditionResult result = new ConditionResult(condition.isSatisfied(), condition);
+      // Capture the current condition to ensure proper thread context propagation
+      boolean satisfied = condition.isSatisfied();
       
-      // Use pattern matching to handle the condition evaluation
-      switch (result) {
-        case ConditionResult(false, var unsatisfiedCondition) -> {
-          lastNotSatisfied = unsatisfiedCondition;
+      // Use pattern matching with switch to handle the condition state
+      switch (satisfied) {
+        case false -> {
+          lastNotSatisfied = condition;
           return false;
         }
-        case ConditionResult(true, _) -> {
-          // Continue checking other conditions
-        }
+        case true -> { /* Continue checking other conditions */ }
       }
     }
-    
-    // All conditions are satisfied
     lastNotSatisfied = null;
     return true;
   }
 
   /**
-   * Ensures thread context is properly propagated when evaluating conditions.
-   * This is particularly important when using Virtual Threads in Java 21.
+   * Returns a string representation of this conjunction condition.
+   * <p>
+   * Uses modern Java string joining features instead of StringBuilder for improved readability.
+   *
+   * @return a string representation of this condition
    */
-  private <T> T withThreadContext(Callable<T> callable) throws Exception {
-    // Capture the current thread context
-    Thread currentThread = Thread.currentThread();
-    try {
-      // Execute the callable with the current thread context
-      return callable.call();
-    } catch (Exception e) {
-      throw e;
-    }
-  }
-
   @Override
   public String toString() {
-    return String.join(" AND ", (Iterable<String>) () -> 
-        java.util.Arrays.stream(getConditions())
-            .map(Object::toString)
-            .iterator());
+    List<String> conditionStrings = new ArrayList<>();
+    for (final Condition condition : getConditions()) {
+      conditionStrings.add(condition.toString());
+    }
+    return String.join(" AND ", conditionStrings);
   }
 
+  /**
+   * Explains why this condition is satisfied.
+   * <p>
+   * Uses modern Java string joining features instead of StringBuilder for improved readability.
+   *
+   * @return explanation of why this condition is satisfied
+   */
   @Override
   public String explainSatisfied() {
-    StringJoiner joiner = new StringJoiner(" AND ");
+    List<String> explanations = new ArrayList<>();
     for (final Condition condition : getConditions()) {
-      joiner.add(condition.explainSatisfied());
+      explanations.add(condition.explainSatisfied());
     }
-    return joiner.toString();
+    return String.join(" AND ", explanations);
   }
 
+  /**
+   * Explains why this condition is not satisfied.
+   * <p>
+   * If a specific condition caused the failure, returns its explanation.
+   * Otherwise, joins all condition explanations with OR.
+   * <p>
+   * Uses modern Java string joining features instead of StringBuilder for improved readability.
+   *
+   * @return explanation of why this condition is not satisfied
+   */
   @Override
   public String explainUnsatisfied() {
     if (lastNotSatisfied != null) {
       return lastNotSatisfied.explainUnsatisfied();
     }
     
-    StringJoiner joiner = new StringJoiner(" OR ");
+    List<String> explanations = new ArrayList<>();
     for (final Condition condition : getConditions()) {
-      joiner.add(condition.explainUnsatisfied());
+      explanations.add(condition.explainUnsatisfied());
     }
-    return joiner.toString();
+    return String.join(" OR ", explanations);
   }
 }

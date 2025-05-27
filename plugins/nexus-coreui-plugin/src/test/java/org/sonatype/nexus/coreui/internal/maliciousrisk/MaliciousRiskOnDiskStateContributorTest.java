@@ -15,17 +15,15 @@ package org.sonatype.nexus.coreui.internal.maliciousrisk;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.sonatype.nexus.common.app.FeatureFlags.MALWARE_RISK_ON_DISK_ENABLED;
 import static org.sonatype.nexus.common.app.FeatureFlags.MALWARE_RISK_ON_DISK_NONADMIN_OVERRIDE_ENABLED;
 
-/**
- * Tests for {@link MaliciousRiskOnDiskStateContributor}.
- * 
- * Updated for Java 21 compatibility and migrated to JUnit Jupiter (JUnit 5.10.1).
- */
+@ExtendWith(MockitoExtension.class)
 public class MaliciousRiskOnDiskStateContributorTest
     extends TestSupport
 {

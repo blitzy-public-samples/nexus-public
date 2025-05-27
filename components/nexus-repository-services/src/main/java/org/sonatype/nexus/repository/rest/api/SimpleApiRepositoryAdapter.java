@@ -87,11 +87,18 @@ public class SimpleApiRepositoryAdapter
     String format = repository.getFormat().toString();
     String url = repository.getUrl();
 
+    // Using Pattern Matching for switch with arrow syntax for more concise and type-safe code
+    // The switch expression matches against the repository type and returns the appropriate repository object
     return switch (repository.getType()) {
-      case GroupType groupType -> new SimpleApiGroupRepository(name, format, url, online,
+      // Using Pattern Matching to match against the actual type objects
+      case GroupType gt -> new SimpleApiGroupRepository(
+          name, 
+          format, 
+          url, 
+          online,
           getStorageAttributes(repository),
           getGroupAttributes(repository));
-      case HostedType hostedType -> new SimpleApiHostedRepository(
+      case HostedType ht -> new SimpleApiHostedRepository(
           name,
           format,
           url,
@@ -99,7 +106,11 @@ public class SimpleApiRepositoryAdapter
           getHostedStorageAttributes(repository),
           getCleanupPolicyAttributes(repository),
           getComponentAttributes(repository));
-      case ProxyType proxyType -> new SimpleApiProxyRepository(name, format, url, online,
+      case ProxyType pt -> new SimpleApiProxyRepository(
+          name, 
+          format, 
+          url, 
+          online,
           getStorageAttributes(repository),
           getCleanupPolicyAttributes(repository),
           getProxyAttributes(repository),
@@ -252,5 +263,4 @@ public class SimpleApiRepositoryAdapter
   protected static Integer toInt(final Number num, final Integer defaultValue) {
     return num == null ? defaultValue : num.intValue();
   }
-
-}
+  }

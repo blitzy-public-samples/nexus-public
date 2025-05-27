@@ -32,9 +32,6 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link OnboardingStateContributor} functionality.
- */
 @ExtendWith(MockitoExtension.class)
 public class OnboardingStateContributorTest
     extends TestSupport
@@ -56,9 +53,6 @@ public class OnboardingStateContributorTest
 
   private OnboardingStateContributor underTest;
 
-  /**
-   * Sets up the test environment with mocked dependencies.
-   */
   @BeforeEach
   public void setup() {
     when(onboardingConfiguration.isEnabled()).thenReturn(true);
@@ -70,35 +64,24 @@ public class OnboardingStateContributorTest
     underTest = new OnboardingStateContributor(onboardingConfiguration, onboardingManager, adminPasswordFileManager);
   }
 
-  /**
-   * Verifies that the state map contains the expected onboarding and admin password file information
-   * when both onboarding is required and admin password file exists.
-   */
   @Test
-  public void shouldReturnCompleteStateWhenOnboardingRequiredAndPasswordFileExists() {
+  public void getState() {
     Map<String, Object> state = underTest.getState();
     assertThat(state.size(), is(2));
     assertThat(state.get("onboarding.required"), is(true));
     assertThat(state.get("admin.password.file"), is("path/to/file"));
   }
 
-  /**
-   * Verifies that null is returned when onboarding is not required and admin password file doesn't exist.
-   */
   @Test
-  public void shouldReturnNullWhenNoOnboardingItemsAndNoPasswordFile() {
+  public void getStateNoItems() {
     when(onboardingManager.needsOnboarding()).thenReturn(false);
     when(adminPasswordFileManager.exists()).thenReturn(false);
 
     assertThat(underTest.getState(), nullValue());
   }
 
-  /**
-   * Verifies that the onboarding state is cached and subsequent changes to the onboarding manager
-   * don't affect the returned state.
-   */
   @Test
-  public void shouldCacheOnboardingStateAfterFirstCall() {
+  public void getStateCacheOnboardingState() {
     Map<String, Object> state = underTest.getState();
     assertThat(state.get("onboarding.required"), is(true));
 
@@ -107,18 +90,15 @@ public class OnboardingStateContributorTest
     state = underTest.getState();
     assertThat(state.get("onboarding.required"), nullValue());
 
-    // Set to true to validate that cache kicks in and still doesn't add data to the map
+    //set to true to validate that cache kicks in and still doesn't add data to the map
     when(onboardingManager.needsOnboarding()).thenReturn(true);
 
     state = underTest.getState();
     assertThat(state.get("onboarding.required"), nullValue());
   }
 
-  /**
-   * Verifies that the admin password file path is not included in the state when the file doesn't exist.
-   */
   @Test
-  public void shouldNotIncludePasswordFilePathWhenFileDoesNotExist() {
+  public void getStateNoAdminPasswordFile() {
     when(adminPasswordFileManager.exists()).thenReturn(false);
 
     Map<String, Object> state = underTest.getState();

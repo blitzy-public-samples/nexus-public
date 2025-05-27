@@ -50,11 +50,6 @@ import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.script.plugin.internal.rest.ApiPrivilegeScript.SCRIPT_KEY;
 import static org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActions.ACTIONS_KEY;
 
-/**
- * Test for {@link ScriptPrivilegeApiResource} using JUnit Jupiter and Mockito 4.11.0.
- * This test class validates the functionality of script privilege API operations
- * with Java 21 compatibility.
- */
 @ExtendWith(MockitoExtension.class)
 public class ScriptPrivilegeApiResourceTest
     extends TestSupport
@@ -70,14 +65,8 @@ public class ScriptPrivilegeApiResourceTest
 
   private ScriptPrivilegeApiResource underTest;
 
-  /**
-   * Setup test environment before each test.
-   * Configures mock behavior and initializes the component under test.
-   * 
-   * @throws Exception if setup fails
-   */
   @BeforeEach
-  void setup() throws Exception {
+  public void setup() throws Exception {
     when(securitySystem.getAuthorizationManager("default")).thenReturn(authorizationManager);
     when(scriptManager.get(any())).thenReturn(mock(Script.class));
     when(scriptManager.get("invalid")).thenReturn(null);
@@ -90,12 +79,8 @@ public class ScriptPrivilegeApiResourceTest
     underTest = new ScriptPrivilegeApiResource(securitySystem, privilegeDescriptors);
   }
 
-  /**
-   * Tests creating a script privilege with multiple actions.
-   * Verifies that the privilege is created with the correct properties.
-   */
   @Test
-  void testCreatePrivilege_script() {
+  public void testCreatePrivilege_script() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeScriptRequest apiPrivilege = new ApiPrivilegeScriptRequest("name", "description", "scriptName", Arrays
@@ -110,12 +95,8 @@ public class ScriptPrivilegeApiResourceTest
         "browse,read,delete,edit,add,run");
   }
 
-  /**
-   * Tests creating a script privilege with the ALL action.
-   * Verifies that the privilege is created with the wildcard action.
-   */
   @Test
-  void testCreatePrivilege_scriptWithAllAction() {
+  public void testCreatePrivilege_scriptWithAllAction() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeScriptRequest apiPrivilege = new ApiPrivilegeScriptRequest("name", "description", "scriptName",
@@ -128,12 +109,8 @@ public class ScriptPrivilegeApiResourceTest
     assertPrivilege(argument.getValue(), "name", "description", SCRIPT_KEY, "scriptName", ACTIONS_KEY, "*");
   }
 
-  /**
-   * Tests creating a script privilege with an invalid script name.
-   * Verifies that the appropriate exception is thrown with the correct error message.
-   */
   @Test
-  void testCreatePrivilege_invalidScript() {
+  public void testCreatePrivilege_invalidScript() {
     when(authorizationManager.getPrivilege("name")).thenThrow(new NoSuchPrivilegeException("name"));
 
     ApiPrivilegeScriptRequest apiPrivilege = new ApiPrivilegeScriptRequest("name", "description", "invalid",
@@ -150,12 +127,8 @@ public class ScriptPrivilegeApiResourceTest
     }
   }
 
-  /**
-   * Tests updating a script privilege.
-   * Verifies that the privilege is updated with the correct properties.
-   */
   @Test
-  void testUpdatePrivilege_script() {
+  public void testUpdatePrivilege_script() {
     Privilege priv = createPrivilege("script", "priv", "privdesc", false, SCRIPT_KEY, "scriptName", ACTIONS_KEY,
         "read,run");
     when(authorizationManager.getPrivilegeByName("priv")).thenReturn(priv);
@@ -171,14 +144,6 @@ public class ScriptPrivilegeApiResourceTest
         "run");
   }
 
-  /**
-   * Helper method to assert that a privilege has the expected properties.
-   * 
-   * @param privilege the privilege to check
-   * @param name expected name
-   * @param description expected description
-   * @param properties key-value pairs of expected properties
-   */
   private void assertPrivilege(Privilege privilege,
                                String name,
                                String description,
@@ -195,16 +160,6 @@ public class ScriptPrivilegeApiResourceTest
     }
   }
 
-  /**
-   * Helper method to create a privilege with the specified properties.
-   * 
-   * @param type privilege type
-   * @param name privilege name
-   * @param description privilege description
-   * @param readOnly whether the privilege is read-only
-   * @param properties key-value pairs of privilege properties
-   * @return the created privilege
-   */
   private Privilege createPrivilege(String type,
                                     String name,
                                     String description,
@@ -224,3 +179,4 @@ public class ScriptPrivilegeApiResourceTest
 
     return privilege;
   }
+}

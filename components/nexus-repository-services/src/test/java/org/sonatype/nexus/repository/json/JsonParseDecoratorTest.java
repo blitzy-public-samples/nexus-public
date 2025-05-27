@@ -17,23 +17,23 @@ import java.io.OutputStream;
 import java.io.Writer;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonParser.Feature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.core.util.RequestPayload;
-import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.mockito.Mockito.verify;
 
-@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class JsonParseDecoratorTest
     extends TestSupport
 {
@@ -43,12 +43,12 @@ public class JsonParseDecoratorTest
   private JsonParserDecorator underTest;
 
   @BeforeEach
-  void setUp() {
+  public void setUp() {
     underTest = new JsonParserDecorator(jsonParser);
   }
 
   @Test
-  void shouldDecorateJsonParser() throws IOException {
+  public void decoratesJsonParser() throws IOException {
     underTest.getCodec();
     underTest.setCodec(null);
     underTest.getInputSource();

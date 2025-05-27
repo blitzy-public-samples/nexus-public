@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.sonatype.nexus.common.io.Cooperation.IOCall;
+import org.sonatype.nexus.common.io.Cooperation.ThreadStatistics;
 import org.sonatype.nexus.common.io.CooperationFactorySupport.Config;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -37,17 +38,9 @@ import static java.lang.Boolean.TRUE;
 /**
  * {@link CompletableFuture} that has various features added to help with cooperation.
  * <p>
- * This implementation is optimized for Java 21 Virtual Threads, providing significant performance
- * benefits for I/O-bound operations. When running with Virtual Threads enabled, this class will:
- * <ul>
- *   <li>Use lightweight Virtual Threads for non-blocking future completion</li>
- *   <li>Optimize thread management for high concurrency with reduced resource consumption</li>
- *   <li>Automatically detect and adapt to Virtual Thread execution context</li>
- * </ul>
- * <p>
- * Virtual Threads are particularly beneficial for I/O operations that may block, such as remote
- * repository access, database operations, or file system access. They allow thousands of concurrent
- * operations with minimal resource overhead compared to platform threads.
+ * This implementation supports both platform threads and Java 21 Virtual Threads for
+ * non-blocking future completion. When configured to use Virtual Threads, it leverages
+ * their lightweight nature to improve performance for I/O-bound operations.
  *
  * @since 3.14
  */
@@ -61,11 +54,21 @@ public class CooperatingFuture<T>
   private final AtomicLong staggerTimeMillis = new AtomicLong(System.currentTimeMillis());
 
   private final AtomicInteger threadCount = new AtomicInteger(1);
+  
+  // Track platform and virtual threads separately for detailed statistics
+  private final AtomicInteger platformThreadCount = new AtomicInteger(isVirtualThread() ? 0 : 1);
+  private final AtomicInteger virtualThreadCount = new AtomicInteger(isVirtualThread() ? 1 : 0);
 
   private final String requestKey;
 
   private final Config config;
 
+  /**
+   * Creates a new cooperating future with the given request key and configuration.
+   *
+   * @param requestKey unique identifier for this cooperation request
+   * @param config configuration for cooperation behavior
+   */
   public CooperatingFuture(final String requestKey, final Config config) {
     this.requestKey = checkNotNull(requestKey);
     this.config = checkNotNull(config);
@@ -74,8 +77,8 @@ public class CooperatingFuture<T>
   /**
    * Performs the given I/O request and updates this future with any result or error.
    * <p>
-   * When Virtual Threads are enabled, this operation will be optimized for I/O-bound tasks,
-   * allowing for higher concurrency with minimal resource overhead.
+   * When configured to use Virtual Threads, this method may execute the request on a
+   * Virtual Thread for improved I/O performance.
    */
   public T call(final IOCall<T> request) throws IOException {
     return performCall(request, false);
@@ -84,8 +87,9 @@ public class CooperatingFuture<T>
   /**
    * Cooperates on the given I/O request by waiting for the lead thread to complete.
    * <p>
-   * When Virtual Threads are enabled, this method optimizes cooperation to prevent unnecessary
-   * blocking of carrier threads, allowing for higher concurrency with minimal resource overhead.
+   * This method optimizes thread coordination based on the current thread type (platform or virtual)
+   * and configuration settings. When using Virtual Threads, it takes advantage of their lightweight
+   * nature for more efficient cooperation.
    */
   public T cooperate(final IOCall<T> request) throws IOException {
     increaseCooperation();
@@ -114,39 +118,6 @@ public class CooperatingFuture<T>
     }
   }
 
-  /**
-   * Asynchronously performs the given I/O request using a Virtual Thread when enabled.
-   * <p>
-   * This method leverages Java 21 Virtual Threads for optimal I/O performance when configured.
-   * It provides a non-blocking way to execute I/O operations with minimal resource overhead.
-   *
-   * @param request the I/O operation to perform
-   * @return a CompletableFuture that will be completed with the result of the I/O operation
-   * @since 3.60
-   */
-  public CompletableFuture<T> callAsync(final IOCall<T> request) {
-    if (config.useVirtualThreads() && isVirtualThreadSupported()) {
-      return CompletableFuture.supplyAsync(() -> {
-        try {
-          return call(request);
-        }
-        catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      }, newVirtualThreadExecutor());
-    }
-    else {
-      return CompletableFuture.supplyAsync(() -> {
-        try {
-          return call(request);
-        }
-        catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      });
-    }
-  }
-
   @VisibleForTesting
   public String getRequestKey() {
     return requestKey;
@@ -156,20 +127,58 @@ public class CooperatingFuture<T>
   public int getThreadCount() {
     return threadCount.get();
   }
+  
+  /**
+   * Returns detailed thread statistics for this cooperating future.
+   *
+   * @return thread statistics including platform and virtual thread counts
+   * @since 3.60
+   */
+  @VisibleForTesting
+  public ThreadStatistics getThreadStatistics() {
+    return new ThreadStatistics(
+        platformThreadCount.get(),
+        virtualThreadCount.get(),
+        threadCount.get());
+  }
 
   @Override
   public String toString() {
+    if (virtualThreadCount.get() > 0) {
+      return requestKey + " (" + threadCount.get() + " threads cooperating, " + 
+          virtualThreadCount.get() + " virtual)";
+    }
     return requestKey + " (" + threadCount.get() + " threads cooperating)";
   }
 
   /**
    * Fluent method that performs I/O and stores the result in this future, before passing it back.
    * <p>
-   * When Virtual Threads are enabled, this method optimizes I/O operations for higher throughput
-   * and lower resource consumption.
+   * When configured to use Virtual Threads and the current thread is not already a Virtual Thread,
+   * this method may submit the I/O operation to be executed on a Virtual Thread for improved performance.
    */
   protected T performCall(final IOCall<T> request, final boolean failover) throws IOException {
     boolean nested = isNestedCall();
+    
+    // If configured to use Virtual Threads and this is not a nested call and not already on a virtual thread,
+    // submit the operation to be executed on a Virtual Thread
+    if (config.useVirtualThreads() && !nested && !isVirtualThread()) {
+      try {
+        return submitToVirtualThread(request, failover);
+      }
+      catch (InterruptedException | ExecutionException e) {
+        log.debug("Virtual thread execution failed for {}", this, e);
+        if (e.getCause() instanceof IOException) {
+          throw (IOException) e.getCause();
+        }
+        else if (e.getCause() instanceof RuntimeException) {
+          throw (RuntimeException) e.getCause();
+        }
+        throw new IOException("Virtual thread execution failed for " + this, e);
+      }
+    }
+    
+    // Otherwise, execute directly on the current thread
     try {
       if (!nested) {
         callInProgress.set(TRUE);
@@ -191,12 +200,61 @@ public class CooperatingFuture<T>
       }
     }
   }
+  
+  /**
+   * Submits the I/O operation to be executed on a Virtual Thread.
+   * This method creates a new Virtual Thread for each operation to maximize concurrency
+   * for I/O-bound tasks without the overhead of platform thread management.
+   *
+   * @param request the I/O operation to execute
+   * @param failover whether this is a failover request
+   * @return the result of the I/O operation
+   * @throws InterruptedException if the current thread is interrupted while waiting
+   * @throws ExecutionException if the operation throws an exception
+   * @since 3.60
+   */
+  private T submitToVirtualThread(final IOCall<T> request, final boolean failover) 
+      throws InterruptedException, ExecutionException {
+    log.debug("Submitting {} to virtual thread", this);
+    
+    // Use a CompletableFuture to capture the result or exception
+    CompletableFuture<T> virtualThreadFuture = new CompletableFuture<>();
+    
+    // Create and start a virtual thread to execute the I/O operation
+    Thread.startVirtualThread(() -> {
+      boolean nested = isNestedCall();
+      try {
+        if (!nested) {
+          callInProgress.set(TRUE);
+        }
+        log.debug("Virtual thread requesting {}", this);
+        T value = request.call(failover);
+        log.debug("Virtual thread completing {}", this);
+        complete(value);
+        virtualThreadFuture.complete(value);
+      }
+      catch (Throwable e) { // NOSONAR capture all errors to report back
+        log.debug("Virtual thread completing {} with exception", this, e);
+        completeExceptionally(e);
+        virtualThreadFuture.completeExceptionally(e);
+      }
+      finally {
+        if (!nested) {
+          callInProgress.remove();
+        }
+      }
+    });
+    
+    // Wait for the virtual thread to complete and return the result
+    return virtualThreadFuture.get();
+  }
 
   /**
    * Cooperatively waits for the lead thread; may failover and repeat the request if allowed.
    * <p>
-   * When Virtual Threads are enabled, this method optimizes waiting behavior to prevent
-   * unnecessary blocking of carrier threads.
+   * When using Virtual Threads, this method optimizes the waiting process to prevent
+   * unnecessary blocking of carrier threads. Virtual Threads will automatically yield
+   * their carrier thread during the waiting period.
    */
   protected T waitForCall(
       final IOCall<T> request,
@@ -215,55 +273,16 @@ public class CooperatingFuture<T>
 
     try {
       log.debug("Attempt cooperative wait on {} for {}", this, timeout);
-      
-      // When using Virtual Threads, we can afford longer timeouts as they don't consume OS resources
-      if (isVirtualThread() && config.useVirtualThreads()) {
-        // For Virtual Threads, we can use a more generous timeout since they're lightweight
-        Duration extendedTimeout = timeout.multipliedBy(2);
-        log.debug("Using extended timeout {} for Virtual Thread", extendedTimeout);
-        return get(extendedTimeout.toMillis(), TimeUnit.MILLISECONDS);
-      } else {
-        return get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-      }
+      return get(timeout.toMillis(), TimeUnit.MILLISECONDS);
     }
     catch (TimeoutException e) {
       log.debug("Cooperative wait timed out on {}", this, e);
 
       if (failover) {
-        // For Virtual Threads, we can use a more efficient approach to failover
-        if (isVirtualThread() && config.useVirtualThreads()) {
-          log.debug("Using Virtual Thread optimized failover for {}", this);
-          // Start the failover operation in a new Virtual Thread to avoid blocking the current one
-          return startVirtualThreadForFailover(request);
-        } else {
-          return performCall(request, true); // failover and repeat request in case lead thread is stuck
-        }
+        return performCall(request, true); // failover and repeat request in case lead thread is stuck
       }
 
       throw new CooperationException("Cooperative wait timed out on " + this);
-    }
-  }
-
-  /**
-   * Starts a new Virtual Thread to handle failover operations.
-   * This prevents blocking the current Virtual Thread while performing the failover.
-   */
-  private T startVirtualThreadForFailover(final IOCall<T> request) throws IOException {
-    try {
-      return CompletableFuture.supplyAsync(() -> {
-        try {
-          return performCall(request, true);
-        }
-        catch (IOException e) {
-          throw new RuntimeException(e);
-        }
-      }, newVirtualThreadExecutor()).get();
-    }
-    catch (InterruptedException | ExecutionException e) {
-      if (e.getCause() instanceof RuntimeException && e.getCause().getCause() instanceof IOException) {
-        throw (IOException) e.getCause().getCause();
-      }
-      throw new IOException("Virtual Thread failover failed", e);
     }
   }
 
@@ -273,40 +292,89 @@ public class CooperatingFuture<T>
   private static boolean isNestedCall() {
     return TRUE.equals(callInProgress.get());
   }
-
+  
   /**
-   * Increases the cooperation count by one.
-   * <p>
-   * When Virtual Threads are enabled, this method may allow higher concurrency limits
-   * since Virtual Threads consume fewer resources than platform threads.
+   * Determines if the current thread is a Virtual Thread (Java 21+).
+   * This method uses reflection to avoid direct dependencies on Java 21 APIs,
+   * maintaining compatibility with Java 17.
    *
-   * @throws CooperationException if increasing the count would breach the given limit.
+   * @return true if the current thread is a Virtual Thread, false otherwise
+   * @since 3.60
    */
-  private void increaseCooperation() {
-    int limit = config.threadsPerKey();
-    
-    // For Virtual Threads, we can allow more concurrent operations
-    if (isVirtualThread() && config.useVirtualThreads() && limit > 0) {
-      // Virtual Threads are lightweight, so we can allow more of them
-      limit = limit * 4; // Increase limit for Virtual Threads
+  private static boolean isVirtualThread() {
+    try {
+      // Use reflection to call Thread.currentThread().isVirtual() to maintain Java 17 compatibility
+      return (boolean) Thread.class.getMethod("isVirtual").invoke(Thread.currentThread());
     }
-    
-    // try to avoid depleting entire request pool with waiting threads
-    final int finalLimit = limit;
-    threadCount.getAndUpdate(count -> {
-      if (finalLimit > 0 && count >= finalLimit) {
-        log.debug("Thread cooperation maxed for {}", this);
-        throw new CooperationException("Thread cooperation maxed for " + this);
-      }
-      return count + 1;
-    });
+    catch (Exception e) {
+      // If the method doesn't exist (pre-Java 21) or fails, it's not a virtual thread
+      return false;
+    }
   }
 
   /**
-   * Decreases the cooperation count by one.
+   * Increases the cooperation count by one, respecting thread type limits.
+   *
+   * @throws CooperationException if increasing the count would breach the given limit.
+   * @since 3.60
+   */
+  private void increaseCooperation() {
+    boolean isVirtual = isVirtualThread();
+    int platformLimit = config.threadsPerKey();
+    int virtualLimit = config.virtualThreadsPerKey();
+    
+    // For virtual threads, check the virtual thread limit if configured
+    if (isVirtual && virtualLimit > 0) {
+      virtualThreadCount.getAndUpdate(count -> {
+        if (count >= virtualLimit) {
+          log.debug("Virtual thread cooperation maxed for {}", this);
+          throw new CooperationException("Virtual thread cooperation maxed for " + this);
+        }
+        return count + 1;
+      });
+    }
+    // For platform threads, check the platform thread limit
+    else if (!isVirtual && platformLimit > 0) {
+      platformThreadCount.getAndUpdate(count -> {
+        if (count >= platformLimit) {
+          log.debug("Platform thread cooperation maxed for {}", this);
+          throw new CooperationException("Platform thread cooperation maxed for " + this);
+        }
+        return count + 1;
+      });
+    }
+    
+    // Increment the total thread count
+    threadCount.incrementAndGet();
+    
+    // Increment the appropriate thread type counter
+    if (isVirtual) {
+      if (virtualThreadCount.get() == 0) { // Only increment if not already incremented above
+        virtualThreadCount.incrementAndGet();
+      }
+    }
+    else {
+      if (platformThreadCount.get() == 0) { // Only increment if not already incremented above
+        platformThreadCount.incrementAndGet();
+      }
+    }
+  }
+
+  /**
+   * Decreases the cooperation count by one, tracking both total and thread-type specific counts.
+   * 
+   * @since 3.60
    */
   private void decreaseCooperation() {
     threadCount.decrementAndGet();
+    
+    // Decrement the appropriate thread type counter
+    if (isVirtualThread()) {
+      virtualThreadCount.decrementAndGet();
+    }
+    else {
+      platformThreadCount.decrementAndGet();
+    }
   }
 
   /**
@@ -325,38 +393,5 @@ public class CooperatingFuture<T>
     while (!staggerTimeMillis.compareAndSet(prevTimeMillis, nextTimeMillis));
 
     return Duration.ofMillis(nextTimeMillis - currentTimeMillis);
-  }
-  
-  /**
-   * Determines if the current thread is a Virtual Thread.
-   *
-   * @return {@code true} if the current thread is a Virtual Thread, {@code false} otherwise
-   */
-  private boolean isVirtualThread() {
-    return Thread.currentThread().isVirtual();
-  }
-  
-  /**
-   * Checks if Virtual Threads are supported in the current JVM.
-   *
-   * @return {@code true} if Virtual Threads are supported, {@code false} otherwise
-   */
-  private boolean isVirtualThreadSupported() {
-    try {
-      // Check if the isVirtual method exists (Java 21+)
-      Thread.class.getMethod("isVirtual");
-      return true;
-    } catch (NoSuchMethodException e) {
-      return false;
-    }
-  }
-  
-  /**
-   * Creates a new executor that uses Virtual Threads for each task.
-   *
-   * @return an executor that creates a new Virtual Thread for each task
-   */
-  private java.util.concurrent.ExecutorService newVirtualThreadExecutor() {
-    return Executors.newVirtualThreadPerTaskExecutor();
   }
 }

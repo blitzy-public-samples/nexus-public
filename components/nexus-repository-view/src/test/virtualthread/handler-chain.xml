@@ -1,157 +1,173 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  This configuration file defines handler chains for testing repository view handlers with Virtual Threads.
-  It includes various configurations to test execution order, concurrency, thread safety, and performance.
+Sonatype Nexus (TM) Open Source Version
+Copyright (c) 2008-present Sonatype, Inc.
+All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
+
+This program and the accompanying materials are made available under the terms of the Eclipse Public License Version 1.0,
+which accompanies this distribution and is available at http://www.eclipse.org/legal/epl-v10.html.
+
+Sonatype Nexus (TM) Professional Version is available from Sonatype, Inc. "Sonatype" and "Sonatype Nexus" are trademarks
+of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
+Eclipse Foundation, Inc. All other trademarks are the property of their respective owners.
+-->
+
+<!-- 
+Handler chain configuration for testing repository view handlers with Virtual Threads.
+This file defines various handler chain configurations used to validate that the repository view's
+request processing pipeline functions correctly when executed via Virtual Threads in Java 21.
 -->
 <handler-chains>
   <!-- 
-    Basic handler chain for testing simple request processing with Virtual Threads.
-    Tests the fundamental flow of request handling with minimal handlers.
+  Basic handler chain for testing simple request processing with Virtual Threads.
+  Tests the fundamental handler chain execution flow with minimal handlers.
   -->
-  <chain id="basic-virtual-thread-chain">
-    <description>Basic handler chain for testing simple request processing with Virtual Threads</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-    </handlers>
-  </chain>
-
+  <handler-chain id="basic-virtual-thread-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="routingHandler" class="org.sonatype.nexus.repository.view.handlers.RoutingHandler">
+      <description>Routes requests to the appropriate repository</description>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+  </handler-chain>
+  
   <!-- 
-    Complex handler chain for testing concurrent request processing with Virtual Threads.
-    Tests the behavior of multiple handlers executing in sequence under high concurrency.
+  Complex handler chain for testing concurrent request processing with Virtual Threads.
+  Includes multiple handlers that might execute concurrently to test thread safety.
   -->
-  <chain id="concurrent-virtual-thread-chain">
-    <description>Complex handler chain for testing concurrent request processing with Virtual Threads</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="formatHighAvailabilitySupportHandler" class="org.sonatype.nexus.repository.view.handlers.FormatHighAvailabilitySupportHandler"/>
-      <handler name="handlerContributor" class="org.sonatype.nexus.repository.view.handlers.HandlerContributor"/>
-      <handler name="timingHandler" class="org.sonatype.nexus.repository.view.handlers.TimingHandler"/>
-      <handler name="exceptionHandler" class="org.sonatype.nexus.repository.view.handlers.ExceptionHandler"/>
-    </handlers>
-  </chain>
-
+  <handler-chain id="concurrent-virtual-thread-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="routingHandler" class="org.sonatype.nexus.repository.view.handlers.RoutingHandler">
+      <description>Routes requests to the appropriate repository</description>
+    </handler>
+    <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler">
+      <description>Handles conditional HTTP requests (If-Modified-Since, If-None-Match)</description>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+    <handler name="handlerContributor" class="org.sonatype.nexus.repository.view.handlers.HandlerContributor">
+      <description>Dynamically contributes additional handlers to the chain</description>
+    </handler>
+    <handler name="formatHighAvailabilitySupportHandler" class="org.sonatype.nexus.repository.view.handlers.FormatHighAvailabilitySupportHandler">
+      <description>Checks if the repository format supports high availability</description>
+    </handler>
+  </handler-chain>
+  
   <!-- 
-    I/O-intensive handler chain for testing Virtual Thread performance with I/O operations.
-    Tests the performance benefits of Virtual Threads for I/O-bound operations.
+  I/O-intensive handler chain for testing Virtual Thread performance with blocking operations.
+  Includes handlers that perform I/O operations which would benefit from Virtual Threads.
   -->
-  <chain id="io-intensive-virtual-thread-chain">
-    <description>I/O-intensive handler chain for testing Virtual Thread performance with I/O operations</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="ioSimulationHandler" class="org.sonatype.nexus.repository.view.handlers.IoSimulationHandler">
-        <property name="simulatedIoDelayMs" value="100"/>
-        <property name="simulatedIoOperations" value="5"/>
-      </handler>
-      <handler name="timingHandler" class="org.sonatype.nexus.repository.view.handlers.TimingHandler"/>
-    </handlers>
-  </chain>
-
+  <handler-chain id="io-intensive-virtual-thread-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="routingHandler" class="org.sonatype.nexus.repository.view.handlers.RoutingHandler">
+      <description>Routes requests to the appropriate repository</description>
+    </handler>
+    <handler name="remoteRepositoryAccessHandler" class="org.sonatype.nexus.repository.proxy.ProxyRepositoryHandler">
+      <description>Handles remote repository access with blocking I/O operations</description>
+      <property name="useVirtualThreads" value="true"/>
+      <property name="connectionTimeout" value="30000"/>
+      <property name="socketTimeout" value="60000"/>
+    </handler>
+    <handler name="blobStoreHandler" class="org.sonatype.nexus.repository.storage.BlobStoreHandler">
+      <description>Handles blob storage operations with blocking I/O</description>
+      <property name="useVirtualThreads" value="true"/>
+      <property name="bufferSize" value="8192"/>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+  </handler-chain>
+  
   <!-- 
-    Thread safety test chain for validating thread safety with Virtual Threads.
-    Tests for potential thread pinning and synchronization issues.
+  Mixed handler chain for testing both CPU-bound and I/O-bound operations with Virtual Threads.
+  Tests how Virtual Threads perform with a mix of computation and I/O operations.
   -->
-  <chain id="thread-safety-virtual-thread-chain">
-    <description>Thread safety test chain for validating thread safety with Virtual Threads</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="synchronizedHandler" class="org.sonatype.nexus.repository.view.handlers.SynchronizedHandler">
-        <property name="synchronizationDurationMs" value="50"/>
-      </handler>
-      <handler name="threadInfoHandler" class="org.sonatype.nexus.repository.view.handlers.ThreadInfoHandler">
-        <property name="captureThreadInfo" value="true"/>
-        <property name="detectPinning" value="true"/>
-      </handler>
-    </handlers>
-  </chain>
-
+  <handler-chain id="mixed-workload-virtual-thread-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="routingHandler" class="org.sonatype.nexus.repository.view.handlers.RoutingHandler">
+      <description>Routes requests to the appropriate repository</description>
+    </handler>
+    <handler name="computationIntensiveHandler" class="org.sonatype.nexus.repository.view.handlers.ComputationIntensiveHandler">
+      <description>Performs CPU-intensive operations (not ideal for Virtual Threads)</description>
+      <property name="useVirtualThreads" value="false"/>
+    </handler>
+    <handler name="remoteRepositoryAccessHandler" class="org.sonatype.nexus.repository.proxy.ProxyRepositoryHandler">
+      <description>Handles remote repository access with blocking I/O operations</description>
+      <property name="useVirtualThreads" value="true"/>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+  </handler-chain>
+  
   <!-- 
-    Mixed workload chain for testing Virtual Threads with varied operations.
-    Tests the behavior of Virtual Threads under a mix of CPU-bound and I/O-bound operations.
+  Error handling chain for testing Virtual Thread error propagation and recovery.
+  Tests how errors are handled and propagated in Virtual Thread execution.
   -->
-  <chain id="mixed-workload-virtual-thread-chain">
-    <description>Mixed workload chain for testing Virtual Threads with varied operations</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="cpuIntensiveHandler" class="org.sonatype.nexus.repository.view.handlers.CpuIntensiveHandler">
-        <property name="computationIterations" value="1000"/>
-      </handler>
-      <handler name="ioSimulationHandler" class="org.sonatype.nexus.repository.view.handlers.IoSimulationHandler">
-        <property name="simulatedIoDelayMs" value="50"/>
-        <property name="simulatedIoOperations" value="3"/>
-      </handler>
-      <handler name="timingHandler" class="org.sonatype.nexus.repository.view.handlers.TimingHandler"/>
-    </handlers>
-  </chain>
-
+  <handler-chain id="error-handling-virtual-thread-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="errorGeneratingHandler" class="org.sonatype.nexus.repository.view.handlers.ErrorGeneratingHandler">
+      <description>Deliberately generates errors to test error handling</description>
+      <property name="errorProbability" value="0.5"/>
+      <property name="errorTypes" value="IOException,TimeoutException,InterruptedException"/>
+    </handler>
+    <handler name="errorHandlingHandler" class="org.sonatype.nexus.repository.view.handlers.ErrorHandlingHandler">
+      <description>Handles and recovers from errors in the handler chain</description>
+      <property name="maxRetries" value="3"/>
+      <property name="retryDelay" value="1000"/>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+  </handler-chain>
+  
   <!-- 
-    Error handling chain for testing Virtual Thread error propagation.
-    Tests how errors propagate through handler chains with Virtual Threads.
+  Long-running handler chain for testing Virtual Thread scheduling and prioritization.
+  Tests how Virtual Threads handle long-running operations and scheduling.
   -->
-  <chain id="error-handling-virtual-thread-chain">
-    <description>Error handling chain for testing Virtual Thread error propagation</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="errorInjectionHandler" class="org.sonatype.nexus.repository.view.handlers.ErrorInjectionHandler">
-        <property name="errorProbability" value="0.5"/>
-        <property name="errorType" value="IOException"/>
-      </handler>
-      <handler name="exceptionHandler" class="org.sonatype.nexus.repository.view.handlers.ExceptionHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-    </handlers>
-  </chain>
-
+  <handler-chain id="long-running-virtual-thread-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="longRunningHandler" class="org.sonatype.nexus.repository.view.handlers.LongRunningHandler">
+      <description>Performs long-running operations to test Virtual Thread scheduling</description>
+      <property name="operationDuration" value="5000"/>
+      <property name="operationType" value="io"/>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+  </handler-chain>
+  
   <!-- 
-    Long-running operation chain for testing Virtual Thread scheduling.
-    Tests how Virtual Threads handle long-running operations compared to platform threads.
+  Thread pinning test chain for testing Virtual Thread pinning scenarios.
+  Tests how Virtual Threads behave when pinned to carrier threads.
   -->
-  <chain id="long-running-virtual-thread-chain">
-    <description>Long-running operation chain for testing Virtual Thread scheduling</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="longRunningHandler" class="org.sonatype.nexus.repository.view.handlers.LongRunningHandler">
-        <property name="operationDurationMs" value="2000"/>
-        <property name="yieldPeriodMs" value="100"/>
-      </handler>
-      <handler name="timingHandler" class="org.sonatype.nexus.repository.view.handlers.TimingHandler"/>
-    </handlers>
-  </chain>
-
-  <!-- 
-    Nested handler chain for testing Virtual Thread stack depth.
-    Tests how Virtual Threads handle deep call stacks compared to platform threads.
-  -->
-  <chain id="nested-virtual-thread-chain">
-    <description>Nested handler chain for testing Virtual Thread stack depth</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="recursiveHandler" class="org.sonatype.nexus.repository.view.handlers.RecursiveHandler">
-        <property name="recursionDepth" value="50"/>
-      </handler>
-      <handler name="timingHandler" class="org.sonatype.nexus.repository.view.handlers.TimingHandler"/>
-    </handlers>
-  </chain>
-
-  <!-- 
-    Memory-intensive chain for testing Virtual Thread memory usage.
-    Tests how Virtual Threads handle memory-intensive operations compared to platform threads.
-  -->
-  <chain id="memory-intensive-virtual-thread-chain">
-    <description>Memory-intensive chain for testing Virtual Thread memory usage</description>
-    <handlers>
-      <handler name="conditionalRequestHandler" class="org.sonatype.nexus.repository.view.handlers.ConditionalRequestHandler"/>
-      <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler"/>
-      <handler name="memoryIntensiveHandler" class="org.sonatype.nexus.repository.view.handlers.MemoryIntensiveHandler">
-        <property name="memoryAllocationSize" value="1048576"/> <!-- 1MB -->
-        <property name="allocationCount" value="10"/>
-      </handler>
-      <handler name="timingHandler" class="org.sonatype.nexus.repository.view.handlers.TimingHandler"/>
-    </handlers>
-  </chain>
+  <handler-chain id="thread-pinning-test-chain">
+    <handler name="securityHandler" class="org.sonatype.nexus.repository.view.handlers.SecurityHandler">
+      <description>Handles authentication and authorization for repository requests</description>
+    </handler>
+    <handler name="synchronizedBlockHandler" class="org.sonatype.nexus.repository.view.handlers.SynchronizedBlockHandler">
+      <description>Uses synchronized blocks which pin Virtual Threads to carrier threads</description>
+      <property name="synchronizationDuration" value="1000"/>
+    </handler>
+    <handler name="nativeMethodHandler" class="org.sonatype.nexus.repository.view.handlers.NativeMethodHandler">
+      <description>Calls native methods which pin Virtual Threads to carrier threads</description>
+    </handler>
+    <handler name="contentHeadersHandler" class="org.sonatype.nexus.repository.view.handlers.ContentHeadersHandler">
+      <description>Adds appropriate content headers to responses</description>
+    </handler>
+  </handler-chain>
 </handler-chains>

@@ -20,7 +20,7 @@ import org.sonatype.nexus.common.entity.Continuation;
  * Fluent API to count/browse elements in a repository.
  *
  * @since 3.26
- * @see java.util.SequencedCollection Java 21 compatible with Sequenced Collections
+ * @java21.update This interface is compatible with Java 21 features including Sequenced Collections
  */
 public interface FluentQuery<T>
 {
@@ -31,29 +31,25 @@ public interface FluentQuery<T>
 
   /**
    * Browse through elements in the repository that match the current query.
-   * <p>
-   * The returned {@link Continuation} is a {@link java.util.Collection} with a defined encounter order,
-   * making it compatible with Java 21's {@code SequencedCollection} operations. This allows for
-   * accessing the first and last elements, as well as processing elements in reverse order when
-   * implementations support these features.
-   *
-   * @param limit maximum number of elements to return
-   * @param continuationToken optional token from a previous browse request
-   * @return continuation of elements that can be used with Java 21 Sequenced Collections features
+   * 
+   * <p>Returns a {@link Continuation} which is a {@link java.util.Collection} with a defined encounter order,
+   * compatible with Java 21 Sequenced Collections. The elements in the returned collection maintain
+   * a well-defined order from first to last, allowing for consistent iteration and access patterns.</p>
+   * 
+   * <p>When using with Java 21, the returned collection can be processed with Sequenced Collection
+   * operations through appropriate casting or adaptation.</p>
    */
   Continuation<T> browse(int limit, @Nullable String continuationToken);
 
   /**
-   * Browse through elements in the repository that match the current query, eagerly fetching related data.
-   * <p>
-   * The returned {@link Continuation} is a {@link java.util.Collection} with a defined encounter order,
-   * making it compatible with Java 21's {@code SequencedCollection} operations. This allows for
-   * accessing the first and last elements, as well as processing elements in reverse order when
-   * implementations support these features.
-   *
-   * @param limit maximum number of elements to return
-   * @param continuationToken optional token from a previous browse request
-   * @return continuation of elements that can be used with Java 21 Sequenced Collections features
+   * Browse through elements in the repository that match the current query, eagerly loading related entities.
+   * 
+   * <p>Returns a {@link Continuation} which is a {@link java.util.Collection} with a defined encounter order,
+   * compatible with Java 21 Sequenced Collections. The elements in the returned collection maintain
+   * a well-defined order from first to last, allowing for consistent iteration and access patterns.</p>
+   * 
+   * <p>When using with Java 21, the returned collection can be processed with Sequenced Collection
+   * operations through appropriate casting or adaptation.</p>
    */
   Continuation<T> browseEager(int limit, @Nullable String continuationToken);
 }

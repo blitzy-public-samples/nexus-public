@@ -19,10 +19,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
@@ -57,12 +56,6 @@ import static org.sonatype.nexus.validation.ConstraintViolations.maybePropagate;
 
 /**
  * Default {@link GroupFacet} implementation.
- * 
- * This implementation leverages Java 21 Virtual Threads for concurrent operations,
- * significantly improving performance for I/O-bound operations such as repository
- * member resolution, cache invalidation, and member traversal. Virtual Threads provide
- * lightweight concurrency with minimal overhead, allowing thousands of operations to
- * execute concurrently without the limitations of traditional thread pools.
  *
  * @since 3.0
  */
@@ -201,54 +194,65 @@ public class GroupFacetImpl
     return config.memberNames.contains(repository.getName());
   }
 
+  /**
+   * Asynchronously resolves repository members using Virtual Threads for improved concurrency.
+   * This implementation leverages Java 21 Virtual Threads to parallelize member resolution,
+   * significantly improving performance for groups with many members.
+   *
+   * @return List of resolved repository members
+   */
   @Override
   @Guarded(by = STARTED)
   public List<Repository> members() {
     final Repository repository = getRepository();
-    final String repositoryName = repository.getName();
-    final String repositoryFormat = repository.getFormat().getValue();
-
+    final List<String> memberNames = new ArrayList<>(config.memberNames);
+    final List<Repository> members = Collections.synchronizedList(new ArrayList<>(memberNames.size()));
+    
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Use CompletableFuture to asynchronously resolve repositories
-      List<CompletableFuture<Repository>> futures = config.memberNames.stream()
-          .map(name -> CompletableFuture.supplyAsync(() -> {
+      // Create a list of futures for each member resolution task
+      List<CompletableFuture<Void>> futures = memberNames.stream()
+          .map(name -> CompletableFuture.runAsync(() -> {
             Repository member = repositoryManager.get(name);
             if (member == null) {
               log.warn("Ignoring missing member repository: {}", name);
-              return null;
             } else if (!repository.getFormat().equals(member.getFormat())) {
               log.warn("Group {} includes an incompatible-format member: {} with format {}",
-                  repositoryName, name, member.getFormat());
-              return null;
+                  repository.getName(), name, member.getFormat());
             } else {
-              return member;
+              members.add(member);
             }
           }, executor))
           .collect(Collectors.toList());
 
-      // Wait for all futures to complete and collect results
-      return futures.stream()
-          .map(CompletableFuture::join)
-          .filter(member -> member != null)
-          .collect(Collectors.toList());
+      // Wait for all futures to complete
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    } catch (Exception e) {
+      log.error("Error resolving repository members", e);
     }
+    
+    return members;
   }
 
+  /**
+   * Optimized leaf members collection using Virtual Threads for parallel processing.
+   * This method collects all non-group repositories by traversing the repository hierarchy
+   * using Java 21 Virtual Threads for concurrent processing.
+   *
+   * @return List of leaf repository members (non-group repositories)
+   */
   @Override
   public List<Repository> leafMembers() {
-    // Use ConcurrentHashMap to safely collect leaf members from multiple threads
-    Set<Repository> leafMembers = ConcurrentHashMap.newKeySet();
+    Set<Repository> leafMembers = Collections.synchronizedSet(new LinkedHashSet<>());
     List<Repository> membersList = members();
     
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Process each repository in parallel using Virtual Threads
       List<CompletableFuture<Void>> futures = membersList.stream()
           .map(repository -> CompletableFuture.runAsync(() -> {
             if (groupType.equals(repository.getType())) {
-              // Recursively get leaf members from group repositories
+              // For group repositories, recursively collect their leaf members
               leafMembers.addAll(repository.facet(GroupFacet.class).leafMembers());
             } else {
-              // Add non-group repositories directly
+              // For non-group repositories, add directly to the result set
               leafMembers.add(repository);
             }
           }, executor))
@@ -256,80 +260,101 @@ public class GroupFacetImpl
 
       // Wait for all futures to complete
       CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    } catch (Exception e) {
+      log.error("Error collecting leaf members", e);
     }
-    
-    // Convert to ArrayList while preserving order as much as possible
-    return membersList.stream()
-        .filter(leafMembers::contains)
-        .collect(Collectors.toCollection(ArrayList::new));
+
+    return new ArrayList<>(leafMembers);
   }
 
+  /**
+   * Optimized all members collection using Virtual Threads for parallel processing.
+   * This method collects all repositories (including groups) by traversing the repository hierarchy
+   * using Java 21 Virtual Threads for concurrent processing.
+   *
+   * @return List of all repository members (including groups)
+   */
   @Override
   public List<Repository> allMembers() {
-    // Use thread-safe collection to gather all members
-    Set<Repository> allMembersSet = ConcurrentHashMap.newKeySet();
-    allMembersSet.add(getRepository()); // Add the root repository
-    
-    // Process all members recursively using Virtual Threads
-    processAllMembersAsync(allMembersSet, getRepository());
-    
-    // Convert to list preserving insertion order as much as possible
-    return new ArrayList<>(allMembersSet);
+    List<Repository> members = Collections.synchronizedList(new ArrayList<>());
+    allMembersAsync(members, getRepository());
+    return members;
   }
 
-  private void processAllMembersAsync(final Set<Repository> allMembersSet, final Repository root) {
-    List<Repository> groupMembers = root.optionalFacet(GroupFacet.class)
-        .map(GroupFacet::members)
+  /**
+   * Asynchronously collects all members using Virtual Threads for improved performance.
+   * This implementation uses a thread-safe approach to collect repository information.
+   *
+   * @param members The list to populate with all members
+   * @param root The root repository to start collection from
+   * @return The populated list of members
+   */
+  private List<Repository> allMembersAsync(final List<Repository> members, final Repository root) {
+    // Check for duplicates to avoid cycles
+    synchronized (members) {
+      if (members.contains(root)) {
+        return members;
+      }
+      members.add(root);
+    }
+
+    List<Repository> groupMembers = root.optionalFacet(GroupFacet.class).map(GroupFacet::members)
         .orElseGet(Collections::emptyList);
     
-    if (groupMembers.isEmpty()) {
-      return;
+    if (!groupMembers.isEmpty()) {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        List<CompletableFuture<Void>> futures = groupMembers.stream()
+            .map(child -> CompletableFuture.runAsync(() -> allMembersAsync(members, child), executor))
+            .collect(Collectors.toList());
+
+        // Wait for all futures to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      } catch (Exception e) {
+        log.error("Error collecting all members", e);
+      }
     }
     
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Process each child repository in parallel using Virtual Threads
-      List<CompletableFuture<Void>> futures = groupMembers.stream()
-          .map(child -> CompletableFuture.runAsync(() -> {
-            // Skip if already processed to avoid cycles
-            if (allMembersSet.add(child)) {
-              // Recursively process child's members
-              processAllMembersAsync(allMembersSet, child);
-            }
-          }, executor))
-          .collect(Collectors.toList());
-      
-      // Wait for all futures to complete
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-    }
+    return members;
   }
 
+  /**
+   * Invalidates group caches using Virtual Threads for concurrent processing.
+   * This implementation leverages Java 21 Virtual Threads to parallelize cache invalidation
+   * across all member repositories, significantly improving performance for groups with many members.
+   */
   @Override
   public void invalidateGroupCaches() {
     log.info("Invalidating group caches of {}", getRepository().getName());
+    // Invalidate the local cache controller first
     cacheController.invalidateCache();
     
+    // Get the list of member repositories
     List<Repository> membersList = members();
     if (membersList.isEmpty()) {
       return;
     }
     
+    // Use Virtual Threads to concurrently invalidate caches for all members
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Process cache invalidation for each member in parallel using Virtual Threads
       List<CompletableFuture<Void>> futures = membersList.stream()
-          .map(repository -> CompletableFuture.runAsync(() -> {
-            try {
-              repositoryCacheInvalidationService.processCachesInvalidation(repository);
-            } catch (Exception e) {
-              log.error("Error invalidating cache for repository {}", repository.getName(), e);
-            }
-          }, executor))
+          .map(repository -> CompletableFuture.runAsync(() -> 
+              repositoryCacheInvalidationService.processCachesInvalidation(repository), executor))
           .collect(Collectors.toList());
-      
-      // Wait for all cache invalidations to complete
+
+      // Wait for all cache invalidation operations to complete
       CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    } catch (Exception e) {
+      log.error("Error during concurrent cache invalidation", e);
     }
   }
 
+  /**
+   * Determines if content is stale based on cache information.
+   * This method is thread-safe and can be called from Virtual Threads.
+   *
+   * @param content The content to check for staleness
+   * @return true if content is stale or cache info is missing, false otherwise
+   */
   @Override
   public boolean isStale(@Nullable final Content content) {
     if (content == null) {
@@ -345,8 +370,13 @@ public class GroupFacetImpl
     return cacheController.isStale(cacheInfo);
   }
 
+  /**
+   * Maintains cache information in the provided attributes map.
+   * This method is thread-safe and can be called from Virtual Threads.
+   *
+   * @param attributesMap The attributes map to update with cache information
+   */
   @Override
   public void maintainCacheInfo(final AttributesMap attributesMap) {
     attributesMap.set(CacheInfo.class, cacheController.current());
   }
-}

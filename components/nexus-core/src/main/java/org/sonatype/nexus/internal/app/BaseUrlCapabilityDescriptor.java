@@ -67,9 +67,8 @@ public class BaseUrlCapabilityDescriptor
   private final List<FormField> formFields;
 
   public BaseUrlCapabilityDescriptor() {
-    // Use Java 21's enhanced collection handling instead of ImmutableList
     this.formFields = of(
-        new UrlFormField(
+        UrlFormField.withDefaultValidation(
             BaseUrlCapabilityConfiguration.URL,
             messages.urlLabel(),
             messages.urlHelp(),

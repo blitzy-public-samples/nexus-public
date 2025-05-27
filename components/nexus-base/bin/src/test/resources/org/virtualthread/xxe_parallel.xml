@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE root [
+   <!ELEMENT root ANY >
+   <!ELEMENT thread ANY >
+   <!ENTITY xxe1 SYSTEM "${fileUri}" >
+   <!ENTITY xxe2 SYSTEM "${fileUri}" >
+   <!ENTITY xxe3 SYSTEM "${fileUri}" >
+   <!ENTITY xxe4 SYSTEM "${fileUri}" >
+   <!ENTITY xxe5 SYSTEM "${fileUri}" >
+]>
+<root>
+   <thread id="1">&xxe1;</thread>
+   <thread id="2">&xxe2;</thread>
+   <thread id="3">&xxe3;</thread>
+   <thread id="4">&xxe4;</thread>
+   <thread id="5">&xxe5;</thread>
+</root>

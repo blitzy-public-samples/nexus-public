@@ -32,8 +32,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.mockito.Mockito.when;
 
-@Category(Java21TestGroup.class)
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class NestedAttributesMapStdValueInstantiatorTest
     extends TestSupport
 {
@@ -57,7 +57,7 @@ public class NestedAttributesMapStdValueInstantiatorTest
   }
 
   @Test
-  public void shouldReturnBackingMapWhenCreatingUsingDefault() {
+  public void createUsingDefaultReturnsBacking() {
     assertThat(underTest.createUsingDefault(context), equalTo(map));
   }
 }

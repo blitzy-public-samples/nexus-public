@@ -16,971 +16,686 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.LongSummaryStatistics;
-import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import javax.sql.DataSource;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.app.ApplicationDirectories;
-import org.sonatype.nexus.datastore.api.DataStore;
+import org.sonatype.nexus.common.app.FreezeService;
+import org.sonatype.nexus.common.stateguard.StateGuardModule;
+import org.sonatype.nexus.datastore.DataStoreSupport;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
-import org.sonatype.nexus.datastore.internal.DataStoreManagerImpl;
 
 import com.google.common.collect.ImmutableMap;
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
-import org.mockito.Mock;
+import com.google.inject.Injector;
+import org.h2.jdbcx.JdbcDataSource;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static com.google.inject.Guice.createInjector;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.lessThanOrEqualTo;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 /**
  * Performance test comparing Virtual Threads vs Platform Threads for database operations.
  * 
  * This test measures throughput, latency, and resource utilization under various load conditions
- * to verify performance improvements when using Virtual Threads for I/O-bound database operations.
- * 
- * @since 3.60
+ * to verify the performance improvements when using Java 21 Virtual Threads for I/O-bound
+ * database operations.
  */
-@RunWith(Parameterized.class)
-public class VirtualThreadPerformanceTest
-    extends TestSupport
+public class VirtualThreadPerformanceTest extends TestSupport
 {
-  private static final String TEST_DB_NAME = "virtualthread-performance-test";
+  private static final String DB_URL = "jdbc:h2:mem:virtualthread;DB_CLOSE_DELAY=-1";
   
-  private static final String CREATE_TEST_TABLE = 
-      "CREATE TABLE IF NOT EXISTS performance_test (" +
-      "  id VARCHAR(36) PRIMARY KEY, " +
-      "  name VARCHAR(100), " +
-      "  value VARCHAR(1000), " +
-      "  created_at TIMESTAMP " +
-      ")";
+  private static final String CREATE_TABLE_SQL = 
+      "CREATE TABLE IF NOT EXISTS test_data (id INT PRIMARY KEY, name VARCHAR(255))";
   
-  private static final String INSERT_TEST_RECORD = 
-      "INSERT INTO performance_test (id, name, value, created_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)";
+  private static final String INSERT_SQL = "INSERT INTO test_data (id, name) VALUES (?, ?)";
   
-  private static final String SELECT_TEST_RECORD = 
-      "SELECT id, name, value, created_at FROM performance_test WHERE id = ?";
+  private static final String SELECT_SQL = "SELECT name FROM test_data WHERE id = ?";
   
-  private static final String UPDATE_TEST_RECORD = 
-      "UPDATE performance_test SET value = ? WHERE id = ?";
+  private static final String DELETE_SQL = "DELETE FROM test_data WHERE id = ?";
   
-  private static final String DELETE_TEST_RECORD = 
-      "DELETE FROM performance_test WHERE id = ?";
+  private static final int WARMUP_COUNT = 100;
   
-  private static final String COUNT_TEST_RECORDS = 
-      "SELECT COUNT(*) FROM performance_test";
-  
-  private static final int WARMUP_ITERATIONS = 10;
-  private static final int TEST_ITERATIONS = 3;
-  private static final int OPERATION_TIMEOUT_SECONDS = 60;
-  
-  /**
-   * Test parameters for different concurrency levels.
-   */
-  @Parameters(name = "{0} concurrent operations")
-  public static Object[] concurrencyLevels() {
-    return new Object[] { 10, 100, 1000, 10000 };
-  }
-  
-  @Parameter
-  public int concurrencyLevel;
-  
-  @Mock
-  private ApplicationDirectories directories;
-  
-  private DataStoreManagerImpl dataStoreManager;
-  
-  private DataStore dataStore;
+  private static final int MEASUREMENT_ITERATIONS = 5;
   
   private DataSource dataSource;
   
-  @Before
-  public void setUp() throws Exception {
-    // Setup mock directories
-    when(directories.getWorkDirectory("db")).thenReturn(util.createTempDir("db"));
-    when(directories.getTemporaryDirectory()).thenReturn(util.createTempDir("tmp"));
+  private TestDataStore dataStore;
+  
+  /**
+   * Test data store implementation for performance testing.
+   */
+  static class TestDataStore extends DataStoreSupport<Connection>
+  {
+    private final DataSource dataSource;
     
-    // Create and initialize the DataStoreManager
-    dataStoreManager = new DataStoreManagerImpl(directories, null, null, null, null);
-    dataStoreManager.start();
+    public TestDataStore(DataSource dataSource) {
+      this.dataSource = dataSource;
+    }
     
-    // Create a test datastore
+    @Override
+    public void register(final Class<?> accessType) {
+      // no-op
+    }
+
+    @Override
+    public void unregister(final Class<?> accessType) {
+      // no-op
+    }
+
+    @Override
+    public Connection openSession() {
+      try {
+        return dataSource.getConnection();
+      }
+      catch (SQLException e) {
+        throw new RuntimeException("Failed to open connection", e);
+      }
+    }
+
+    @Override
+    public Connection openConnection() {
+      return openSession();
+    }
+
+    @Override
+    public DataSource getDataSource() {
+      return dataSource;
+    }
+
+    @Override
+    protected void doStart(final String storeName, final Map<String, String> attributes) throws Exception {
+      // no-op
+    }
+
+    @Override
+    public void freeze() {
+      // no-op
+    }
+
+    @Override
+    public void unfreeze() {
+      // no-op
+    }
+
+    @Override
+    public boolean isFrozen() {
+      return false;
+    }
+
+    @Override
+    public void backup(final String location) throws SQLException {
+      // no-op
+    }
+  }
+  
+  /**
+   * Performance result data container.
+   */
+  static class PerformanceResult
+  {
+    private final String threadType;
+    private final int concurrentOperations;
+    private final long totalOperations;
+    private final long durationMs;
+    private final double operationsPerSecond;
+    private final double avgLatencyMs;
+    private final double p95LatencyMs;
+    private final double p99LatencyMs;
+    private final long maxMemoryUsed;
+    
+    public PerformanceResult(String threadType, 
+                            int concurrentOperations,
+                            long totalOperations, 
+                            long durationMs, 
+                            List<Long> latencies,
+                            long maxMemoryUsed) {
+      this.threadType = threadType;
+      this.concurrentOperations = concurrentOperations;
+      this.totalOperations = totalOperations;
+      this.durationMs = durationMs;
+      this.operationsPerSecond = (double) totalOperations / (durationMs / 1000.0);
+      
+      // Calculate latency statistics
+      latencies.sort(Long::compare);
+      this.avgLatencyMs = latencies.stream().mapToLong(Long::longValue).average().orElse(0);
+      this.p95LatencyMs = percentile(latencies, 95);
+      this.p99LatencyMs = percentile(latencies, 99);
+      this.maxMemoryUsed = maxMemoryUsed;
+    }
+    
+    private double percentile(List<Long> sortedLatencies, int percentile) {
+      int index = (int) Math.ceil(percentile / 100.0 * sortedLatencies.size()) - 1;
+      return sortedLatencies.get(Math.max(0, Math.min(index, sortedLatencies.size() - 1)));
+    }
+    
+    @Override
+    public String toString() {
+      return String.format("%s (Concurrent: %d) - Ops: %d, Duration: %d ms, Throughput: %.2f ops/sec, " +
+          "Avg Latency: %.2f ms, P95: %.2f ms, P99: %.2f ms, Max Memory: %d MB",
+          threadType, concurrentOperations, totalOperations, durationMs, operationsPerSecond, 
+          avgLatencyMs, p95LatencyMs, p99LatencyMs, maxMemoryUsed / (1024 * 1024));
+    }
+    
+    public String getThreadType() {
+      return threadType;
+    }
+    
+    public int getConcurrentOperations() {
+      return concurrentOperations;
+    }
+    
+    public long getTotalOperations() {
+      return totalOperations;
+    }
+    
+    public long getDurationMs() {
+      return durationMs;
+    }
+    
+    public double getOperationsPerSecond() {
+      return operationsPerSecond;
+    }
+    
+    public double getAvgLatencyMs() {
+      return avgLatencyMs;
+    }
+    
+    public double getP95LatencyMs() {
+      return p95LatencyMs;
+    }
+    
+    public double getP99LatencyMs() {
+      return p99LatencyMs;
+    }
+    
+    public long getMaxMemoryUsed() {
+      return maxMemoryUsed;
+    }
+  }
+  
+  @BeforeEach
+  void setUp(TestInfo testInfo) throws Exception {
+    log.info("Setting up test: {}", testInfo.getDisplayName());
+    
+    // Initialize H2 in-memory database
+    JdbcDataSource h2DataSource = new JdbcDataSource();
+    h2DataSource.setURL(DB_URL);
+    h2DataSource.setUser("sa");
+    h2DataSource.setPassword("");
+    this.dataSource = h2DataSource;
+    
+    // Create test data store
+    Injector injector = createInjector(new StateGuardModule());
+    dataStore = injector.getInstance(TestDataStore.class);
+    dataStore.setDataSource(dataSource);
+    
     DataStoreConfiguration config = new DataStoreConfiguration();
-    config.setName(TEST_DB_NAME);
+    config.setName("virtualthread-test");
     config.setType("h2");
     config.setSource("local");
-    config.setAttributes(ImmutableMap.of(
-        "jdbcUrl", "jdbc:h2:file:${karaf.data}/db/" + TEST_DB_NAME,
-        "username", "sa",
-        "password", ""
-    ));
+    config.setAttributes(ImmutableMap.of("jdbcUrl", DB_URL));
+    dataStore.setConfiguration(config);
+    dataStore.setFreezeService(mock(FreezeService.class));
+    dataStore.start();
     
-    dataStore = dataStoreManager.create(config);
-    dataSource = dataStore.getDataSource();
-    
-    // Create test table
+    // Initialize database schema
     try (Connection conn = dataSource.getConnection();
-         Statement stmt = conn.createStatement()) {
-      stmt.execute(CREATE_TEST_TABLE);
+         PreparedStatement stmt = conn.prepareStatement(CREATE_TABLE_SQL)) {
+      stmt.execute();
     }
+    
+    // Perform warmup to stabilize JVM
+    warmup();
   }
   
-  @After
-  public void tearDown() throws Exception {
-    if (dataStoreManager != null) {
-      dataStoreManager.delete(TEST_DB_NAME);
-      dataStoreManager.stop();
-    }
-  }
-  
-  /**
-   * Test CRUD operations using platform threads vs virtual threads.
-   */
-  @Test
-  public void testCrudOperationsPerformance() throws Exception {
-    // Run warmup iterations
-    log.info("Running {} warmup iterations with {} concurrent operations", WARMUP_ITERATIONS, concurrencyLevel);
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runCrudOperations(createPlatformThreadExecutor(), "Platform Thread Warmup");
-      runCrudOperations(createVirtualThreadExecutor(), "Virtual Thread Warmup");
-    }
-    
-    // Run test iterations and collect metrics
-    log.info("Running {} test iterations with {} concurrent operations", TEST_ITERATIONS, concurrencyLevel);
-    
-    List<PerformanceResult> platformResults = new ArrayList<>();
-    List<PerformanceResult> virtualResults = new ArrayList<>();
-    
-    for (int i = 0; i < TEST_ITERATIONS; i++) {
-      platformResults.add(runCrudOperations(createPlatformThreadExecutor(), "Platform Thread Test"));
-      virtualResults.add(runCrudOperations(createVirtualThreadExecutor(), "Virtual Thread Test"));
-    }
-    
-    // Calculate average metrics
-    PerformanceResult avgPlatformResult = calculateAverageResult(platformResults);
-    PerformanceResult avgVirtualResult = calculateAverageResult(virtualResults);
-    
-    // Log results
-    log.info("\nPerformance comparison for {} concurrent operations:", concurrencyLevel);
-    log.info("Platform Threads - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgPlatformResult.throughput, avgPlatformResult.avgLatency, avgPlatformResult.p95Latency, 
-        avgPlatformResult.p99Latency, avgPlatformResult.memoryUsageMb);
-    log.info("Virtual Threads  - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgVirtualResult.throughput, avgVirtualResult.avgLatency, avgVirtualResult.p95Latency, 
-        avgVirtualResult.p99Latency, avgVirtualResult.memoryUsageMb);
-    
-    // Calculate improvement percentages
-    double throughputImprovement = ((double) avgVirtualResult.throughput / avgPlatformResult.throughput - 1) * 100;
-    double latencyImprovement = (1 - (double) avgVirtualResult.avgLatency / avgPlatformResult.avgLatency) * 100;
-    double p95LatencyImprovement = (1 - (double) avgVirtualResult.p95Latency / avgPlatformResult.p95Latency) * 100;
-    double p99LatencyImprovement = (1 - (double) avgVirtualResult.p99Latency / avgPlatformResult.p99Latency) * 100;
-    double memoryImprovement = (1 - (double) avgVirtualResult.memoryUsageMb / avgPlatformResult.memoryUsageMb) * 100;
-    
-    log.info("Improvements with Virtual Threads:");
-    log.info("  Throughput: {}{}", throughputImprovement > 0 ? "+" : "", String.format("%.2f%%", throughputImprovement));
-    log.info("  Avg Latency: {}{}", latencyImprovement > 0 ? "+" : "", String.format("%.2f%%", latencyImprovement));
-    log.info("  P95 Latency: {}{}", p95LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p95LatencyImprovement));
-    log.info("  P99 Latency: {}{}", p99LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p99LatencyImprovement));
-    log.info("  Memory Usage: {}{}", memoryImprovement > 0 ? "+" : "", String.format("%.2f%%", memoryImprovement));
-    
-    // Verify that Virtual Threads provide better performance for high concurrency
-    if (concurrencyLevel >= 1000) {
-      // For high concurrency, Virtual Threads should provide significant improvements
-      assertThat("Virtual Threads should provide higher throughput for high concurrency",
-          avgVirtualResult.throughput, greaterThan(avgPlatformResult.throughput));
-      
-      assertThat("Virtual Threads should provide lower latency for high concurrency",
-          avgVirtualResult.avgLatency, lessThan(avgPlatformResult.avgLatency));
-      
-      assertThat("Virtual Threads should use less memory for high concurrency",
-          avgVirtualResult.memoryUsageMb, lessThanOrEqualTo(avgPlatformResult.memoryUsageMb));
+  @AfterEach
+  void tearDown() throws Exception {
+    if (dataStore != null) {
+      dataStore.stop();
     }
   }
   
   /**
-   * Test read-heavy operations using platform threads vs virtual threads.
+   * Warm up the JVM to stabilize performance measurements.
    */
-  @Test
-  public void testReadOperationsPerformance() throws Exception {
-    // Prepare test data - insert records that will be read during the test
-    prepareTestData(1000);
+  private void warmup() throws Exception {
+    log.info("Warming up JVM with {} operations", WARMUP_COUNT);
     
-    // Run warmup iterations
-    log.info("Running {} warmup iterations with {} concurrent read operations", WARMUP_ITERATIONS, concurrencyLevel);
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runReadOperations(createPlatformThreadExecutor(), "Platform Thread Warmup");
-      runReadOperations(createVirtualThreadExecutor(), "Virtual Thread Warmup");
-    }
-    
-    // Run test iterations and collect metrics
-    log.info("Running {} test iterations with {} concurrent read operations", TEST_ITERATIONS, concurrencyLevel);
-    
-    List<PerformanceResult> platformResults = new ArrayList<>();
-    List<PerformanceResult> virtualResults = new ArrayList<>();
-    
-    for (int i = 0; i < TEST_ITERATIONS; i++) {
-      platformResults.add(runReadOperations(createPlatformThreadExecutor(), "Platform Thread Test"));
-      virtualResults.add(runReadOperations(createVirtualThreadExecutor(), "Virtual Thread Test"));
-    }
-    
-    // Calculate average metrics
-    PerformanceResult avgPlatformResult = calculateAverageResult(platformResults);
-    PerformanceResult avgVirtualResult = calculateAverageResult(virtualResults);
-    
-    // Log results
-    log.info("\nRead Performance comparison for {} concurrent operations:", concurrencyLevel);
-    log.info("Platform Threads - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgPlatformResult.throughput, avgPlatformResult.avgLatency, avgPlatformResult.p95Latency, 
-        avgPlatformResult.p99Latency, avgPlatformResult.memoryUsageMb);
-    log.info("Virtual Threads  - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgVirtualResult.throughput, avgVirtualResult.avgLatency, avgVirtualResult.p95Latency, 
-        avgVirtualResult.p99Latency, avgVirtualResult.memoryUsageMb);
-    
-    // Calculate improvement percentages
-    double throughputImprovement = ((double) avgVirtualResult.throughput / avgPlatformResult.throughput - 1) * 100;
-    double latencyImprovement = (1 - (double) avgVirtualResult.avgLatency / avgPlatformResult.avgLatency) * 100;
-    double p95LatencyImprovement = (1 - (double) avgVirtualResult.p95Latency / avgPlatformResult.p95Latency) * 100;
-    double p99LatencyImprovement = (1 - (double) avgVirtualResult.p99Latency / avgPlatformResult.p99Latency) * 100;
-    double memoryImprovement = (1 - (double) avgVirtualResult.memoryUsageMb / avgPlatformResult.memoryUsageMb) * 100;
-    
-    log.info("Improvements with Virtual Threads for read operations:");
-    log.info("  Throughput: {}{}", throughputImprovement > 0 ? "+" : "", String.format("%.2f%%", throughputImprovement));
-    log.info("  Avg Latency: {}{}", latencyImprovement > 0 ? "+" : "", String.format("%.2f%%", latencyImprovement));
-    log.info("  P95 Latency: {}{}", p95LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p95LatencyImprovement));
-    log.info("  P99 Latency: {}{}", p99LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p99LatencyImprovement));
-    log.info("  Memory Usage: {}{}", memoryImprovement > 0 ? "+" : "", String.format("%.2f%%", memoryImprovement));
-    
-    // Verify that Virtual Threads provide better performance for high concurrency read operations
-    if (concurrencyLevel >= 1000) {
-      assertThat("Virtual Threads should provide higher read throughput for high concurrency",
-          avgVirtualResult.throughput, greaterThan(avgPlatformResult.throughput));
-      
-      assertThat("Virtual Threads should provide lower read latency for high concurrency",
-          avgVirtualResult.avgLatency, lessThan(avgPlatformResult.avgLatency));
-    }
-  }
-  
-  /**
-   * Test write-heavy operations using platform threads vs virtual threads.
-   */
-  @Test
-  public void testWriteOperationsPerformance() throws Exception {
-    // Run warmup iterations
-    log.info("Running {} warmup iterations with {} concurrent write operations", WARMUP_ITERATIONS, concurrencyLevel);
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runWriteOperations(createPlatformThreadExecutor(), "Platform Thread Warmup");
-      runWriteOperations(createVirtualThreadExecutor(), "Virtual Thread Warmup");
-      
-      // Clean up after warmup
-      cleanupTestData();
-    }
-    
-    // Run test iterations and collect metrics
-    log.info("Running {} test iterations with {} concurrent write operations", TEST_ITERATIONS, concurrencyLevel);
-    
-    List<PerformanceResult> platformResults = new ArrayList<>();
-    List<PerformanceResult> virtualResults = new ArrayList<>();
-    
-    for (int i = 0; i < TEST_ITERATIONS; i++) {
-      platformResults.add(runWriteOperations(createPlatformThreadExecutor(), "Platform Thread Test"));
-      cleanupTestData();
-      
-      virtualResults.add(runWriteOperations(createVirtualThreadExecutor(), "Virtual Thread Test"));
-      cleanupTestData();
-    }
-    
-    // Calculate average metrics
-    PerformanceResult avgPlatformResult = calculateAverageResult(platformResults);
-    PerformanceResult avgVirtualResult = calculateAverageResult(virtualResults);
-    
-    // Log results
-    log.info("\nWrite Performance comparison for {} concurrent operations:", concurrencyLevel);
-    log.info("Platform Threads - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgPlatformResult.throughput, avgPlatformResult.avgLatency, avgPlatformResult.p95Latency, 
-        avgPlatformResult.p99Latency, avgPlatformResult.memoryUsageMb);
-    log.info("Virtual Threads  - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgVirtualResult.throughput, avgVirtualResult.avgLatency, avgVirtualResult.p95Latency, 
-        avgVirtualResult.p99Latency, avgVirtualResult.memoryUsageMb);
-    
-    // Calculate improvement percentages
-    double throughputImprovement = ((double) avgVirtualResult.throughput / avgPlatformResult.throughput - 1) * 100;
-    double latencyImprovement = (1 - (double) avgVirtualResult.avgLatency / avgPlatformResult.avgLatency) * 100;
-    double p95LatencyImprovement = (1 - (double) avgVirtualResult.p95Latency / avgPlatformResult.p95Latency) * 100;
-    double p99LatencyImprovement = (1 - (double) avgVirtualResult.p99Latency / avgPlatformResult.p99Latency) * 100;
-    double memoryImprovement = (1 - (double) avgVirtualResult.memoryUsageMb / avgPlatformResult.memoryUsageMb) * 100;
-    
-    log.info("Improvements with Virtual Threads for write operations:");
-    log.info("  Throughput: {}{}", throughputImprovement > 0 ? "+" : "", String.format("%.2f%%", throughputImprovement));
-    log.info("  Avg Latency: {}{}", latencyImprovement > 0 ? "+" : "", String.format("%.2f%%", latencyImprovement));
-    log.info("  P95 Latency: {}{}", p95LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p95LatencyImprovement));
-    log.info("  P99 Latency: {}{}", p99LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p99LatencyImprovement));
-    log.info("  Memory Usage: {}{}", memoryImprovement > 0 ? "+" : "", String.format("%.2f%%", memoryImprovement));
-    
-    // Verify that Virtual Threads provide better performance for high concurrency write operations
-    if (concurrencyLevel >= 1000) {
-      assertThat("Virtual Threads should provide higher write throughput for high concurrency",
-          avgVirtualResult.throughput, greaterThan(avgPlatformResult.throughput));
-      
-      assertThat("Virtual Threads should provide lower write latency for high concurrency",
-          avgVirtualResult.avgLatency, lessThan(avgPlatformResult.avgLatency));
-    }
-  }
-  
-  /**
-   * Test mixed read/write operations using platform threads vs virtual threads.
-   */
-  @Test
-  public void testMixedOperationsPerformance() throws Exception {
-    // Prepare some initial test data
-    prepareTestData(500);
-    
-    // Run warmup iterations
-    log.info("Running {} warmup iterations with {} concurrent mixed operations", WARMUP_ITERATIONS, concurrencyLevel);
-    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
-      runMixedOperations(createPlatformThreadExecutor(), "Platform Thread Warmup");
-      runMixedOperations(createVirtualThreadExecutor(), "Virtual Thread Warmup");
-      
-      // Reset data between runs
-      cleanupTestData();
-      prepareTestData(500);
-    }
-    
-    // Run test iterations and collect metrics
-    log.info("Running {} test iterations with {} concurrent mixed operations", TEST_ITERATIONS, concurrencyLevel);
-    
-    List<PerformanceResult> platformResults = new ArrayList<>();
-    List<PerformanceResult> virtualResults = new ArrayList<>();
-    
-    for (int i = 0; i < TEST_ITERATIONS; i++) {
-      platformResults.add(runMixedOperations(createPlatformThreadExecutor(), "Platform Thread Test"));
-      
-      // Reset data between runs
-      cleanupTestData();
-      prepareTestData(500);
-      
-      virtualResults.add(runMixedOperations(createVirtualThreadExecutor(), "Virtual Thread Test"));
-      
-      // Reset data between runs
-      cleanupTestData();
-      prepareTestData(500);
-    }
-    
-    // Calculate average metrics
-    PerformanceResult avgPlatformResult = calculateAverageResult(platformResults);
-    PerformanceResult avgVirtualResult = calculateAverageResult(virtualResults);
-    
-    // Log results
-    log.info("\nMixed Operations Performance comparison for {} concurrent operations:", concurrencyLevel);
-    log.info("Platform Threads - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgPlatformResult.throughput, avgPlatformResult.avgLatency, avgPlatformResult.p95Latency, 
-        avgPlatformResult.p99Latency, avgPlatformResult.memoryUsageMb);
-    log.info("Virtual Threads  - Throughput: {}/s, Avg Latency: {} ms, P95 Latency: {} ms, P99 Latency: {} ms, Memory: {} MB",
-        avgVirtualResult.throughput, avgVirtualResult.avgLatency, avgVirtualResult.p95Latency, 
-        avgVirtualResult.p99Latency, avgVirtualResult.memoryUsageMb);
-    
-    // Calculate improvement percentages
-    double throughputImprovement = ((double) avgVirtualResult.throughput / avgPlatformResult.throughput - 1) * 100;
-    double latencyImprovement = (1 - (double) avgVirtualResult.avgLatency / avgPlatformResult.avgLatency) * 100;
-    double p95LatencyImprovement = (1 - (double) avgVirtualResult.p95Latency / avgPlatformResult.p95Latency) * 100;
-    double p99LatencyImprovement = (1 - (double) avgVirtualResult.p99Latency / avgPlatformResult.p99Latency) * 100;
-    double memoryImprovement = (1 - (double) avgVirtualResult.memoryUsageMb / avgPlatformResult.memoryUsageMb) * 100;
-    
-    log.info("Improvements with Virtual Threads for mixed operations:");
-    log.info("  Throughput: {}{}", throughputImprovement > 0 ? "+" : "", String.format("%.2f%%", throughputImprovement));
-    log.info("  Avg Latency: {}{}", latencyImprovement > 0 ? "+" : "", String.format("%.2f%%", latencyImprovement));
-    log.info("  P95 Latency: {}{}", p95LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p95LatencyImprovement));
-    log.info("  P99 Latency: {}{}", p99LatencyImprovement > 0 ? "+" : "", String.format("%.2f%%", p99LatencyImprovement));
-    log.info("  Memory Usage: {}{}", memoryImprovement > 0 ? "+" : "", String.format("%.2f%%", memoryImprovement));
-    
-    // Verify that Virtual Threads provide better performance for high concurrency mixed operations
-    if (concurrencyLevel >= 1000) {
-      assertThat("Virtual Threads should provide higher mixed operation throughput for high concurrency",
-          avgVirtualResult.throughput, greaterThan(avgPlatformResult.throughput));
-      
-      assertThat("Virtual Threads should provide lower mixed operation latency for high concurrency",
-          avgVirtualResult.avgLatency, lessThan(avgPlatformResult.avgLatency));
-    }
-  }
-  
-  /**
-   * Create a platform thread executor with a fixed thread pool.
-   */
-  private ExecutorService createPlatformThreadExecutor() {
-    return Executors.newFixedThreadPool(Math.min(concurrencyLevel, 200), new ThreadFactory() {
-      private final AtomicInteger counter = new AtomicInteger();
-      
-      @Override
-      public Thread newThread(Runnable r) {
-        Thread t = new Thread(r);
-        t.setName("platform-thread-" + counter.incrementAndGet());
-        return t;
+    // Insert test data
+    try (Connection conn = dataSource.getConnection()) {
+      conn.setAutoCommit(false);
+      try (PreparedStatement stmt = conn.prepareStatement(INSERT_SQL)) {
+        for (int i = 0; i < WARMUP_COUNT; i++) {
+          stmt.setInt(1, i);
+          stmt.setString(2, "test-" + i);
+          stmt.addBatch();
+          
+          if (i % 100 == 0) {
+            stmt.executeBatch();
+          }
+        }
+        stmt.executeBatch();
+        conn.commit();
       }
-    });
+    }
+    
+    // Perform some reads to warm up the JVM
+    ExecutorService warmupExecutor = Executors.newFixedThreadPool(10);
+    try {
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
+      for (int i = 0; i < WARMUP_COUNT; i++) {
+        final int id = i;
+        futures.add(CompletableFuture.runAsync(() -> {
+          try (Connection conn = dataSource.getConnection();
+               PreparedStatement stmt = conn.prepareStatement(SELECT_SQL)) {
+            stmt.setInt(1, id);
+            try (ResultSet rs = stmt.executeQuery()) {
+              if (rs.next()) {
+                rs.getString(1);
+              }
+            }
+          }
+          catch (SQLException e) {
+            throw new RuntimeException(e);
+          }
+        }, warmupExecutor));
+      }
+      
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+    finally {
+      warmupExecutor.shutdown();
+      warmupExecutor.awaitTermination(1, TimeUnit.MINUTES);
+    }
+    
+    log.info("Warmup completed");
   }
   
   /**
-   * Create a virtual thread executor using Java 21's virtual thread per task executor.
+   * Creates a platform thread executor with the specified number of threads.
+   */
+  private ExecutorService createPlatformThreadExecutor(int threads) {
+    ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
+    return Executors.newFixedThreadPool(threads, platformThreadFactory);
+  }
+  
+  /**
+   * Creates a virtual thread executor.
    */
   private ExecutorService createVirtualThreadExecutor() {
     return Executors.newVirtualThreadPerTaskExecutor();
   }
   
   /**
-   * Run CRUD operations using the provided executor service.
+   * Runs a database operation benchmark with the specified executor and concurrency level.
    */
-  private PerformanceResult runCrudOperations(ExecutorService executor, String testName) throws Exception {
-    log.info("Running CRUD operations with {} ({})", testName, concurrencyLevel);
+  private PerformanceResult runBenchmark(String threadType, ExecutorService executor, int concurrentOperations) 
+      throws Exception {
+    log.info("Running benchmark with {} threads, concurrency: {}", threadType, concurrentOperations);
     
-    // Prepare latency tracking
-    ConcurrentHashMap<String, Long> operationLatencies = new ConcurrentHashMap<>();
-    CountDownLatch completionLatch = new CountDownLatch(concurrencyLevel);
+    // Reset memory counters
+    System.gc();
+    long initialMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+    AtomicLong maxMemoryUsed = new AtomicLong(0);
     
-    // Record start metrics
-    long startMemory = getUsedMemoryMb();
-    Instant startTime = Instant.now();
+    // Setup counters and latches
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(concurrentOperations);
+    AtomicInteger completedOperations = new AtomicInteger(0);
+    ConcurrentHashMap<Integer, Long> operationLatencies = new ConcurrentHashMap<>();
     
-    // Submit tasks
-    for (int i = 0; i < concurrencyLevel; i++) {
-      executor.submit(() -> {
+    // Prepare database operations
+    List<CompletableFuture<Void>> futures = new ArrayList<>();
+    for (int i = 0; i < concurrentOperations; i++) {
+      final int operationId = i;
+      futures.add(CompletableFuture.runAsync(() -> {
         try {
-          String id = UUID.randomUUID().toString();
-          Instant opStart = Instant.now();
+          // Wait for all threads to be ready
+          startLatch.await();
           
-          // Create
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(INSERT_TEST_RECORD)) {
-            stmt.setString(1, id);
-            stmt.setString(2, "Test Name " + id);
-            stmt.setString(3, "Test Value " + id);
-            stmt.executeUpdate();
-          }
+          // Record start time
+          long startTime = System.nanoTime();
           
-          // Read
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(SELECT_TEST_RECORD)) {
-            stmt.setString(1, id);
-            try (ResultSet rs = stmt.executeQuery()) {
-              assertThat(rs.next(), is(true));
-              assertThat(rs.getString("id"), is(id));
-              assertThat(rs.getString("name"), is("Test Name " + id));
-              assertThat(rs.getString("value"), is("Test Value " + id));
-              assertThat(rs.getTimestamp("created_at"), is(notNullValue()));
-            }
-          }
+          // Perform database operation (read-write cycle)
+          performDatabaseOperation(operationId);
           
-          // Update
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(UPDATE_TEST_RECORD)) {
-            stmt.setString(1, "Updated Value " + id);
-            stmt.setString(2, id);
-            stmt.executeUpdate();
-          }
+          // Record latency
+          long latencyNanos = System.nanoTime() - startTime;
+          operationLatencies.put(operationId, TimeUnit.NANOSECONDS.toMillis(latencyNanos));
           
-          // Verify update
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(SELECT_TEST_RECORD)) {
-            stmt.setString(1, id);
-            try (ResultSet rs = stmt.executeQuery()) {
-              assertThat(rs.next(), is(true));
-              assertThat(rs.getString("value"), is("Updated Value " + id));
-            }
-          }
+          // Update counters
+          completedOperations.incrementAndGet();
           
-          // Delete
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(DELETE_TEST_RECORD)) {
-            stmt.setString(1, id);
-            stmt.executeUpdate();
-          }
-          
-          // Record operation latency
-          long latencyMs = Duration.between(opStart, Instant.now()).toMillis();
-          operationLatencies.put(id, latencyMs);
-          
-        } catch (Exception e) {
-          log.error("Error in CRUD operation", e);
-        } finally {
+          // Track memory usage
+          long currentMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+          long memoryUsed = currentMemory - initialMemory;
+          maxMemoryUsed.updateAndGet(current -> Math.max(current, memoryUsed));
+        }
+        catch (Exception e) {
+          log.error("Error in database operation", e);
+        }
+        finally {
           completionLatch.countDown();
         }
-      });
+      }, executor));
     }
     
-    // Wait for completion with timeout
-    boolean completed = completionLatch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
+    // Start the benchmark
+    Instant startTime = Instant.now();
+    startLatch.countDown();
+    
+    // Wait for completion
+    boolean completed = completionLatch.await(5, TimeUnit.MINUTES);
     Instant endTime = Instant.now();
-    long endMemory = getUsedMemoryMb();
     
-    // Shutdown executor
-    executor.shutdown();
-    executor.awaitTermination(5, SECONDS);
-    
-    // Calculate metrics
     if (!completed) {
-      log.warn("Test did not complete within timeout period of {} seconds", OPERATION_TIMEOUT_SECONDS);
+      log.warn("Benchmark did not complete within timeout");
     }
     
+    // Calculate results
     long durationMs = Duration.between(startTime, endTime).toMillis();
-    long operationsCompleted = concurrencyLevel - completionLatch.getCount();
-    long throughput = operationsCompleted * 1000 / Math.max(durationMs, 1);
-    
-    // Calculate latency statistics
     List<Long> latencies = new ArrayList<>(operationLatencies.values());
-    LongSummaryStatistics latencyStats = latencies.stream().collect(Collectors.summarizingLong(Long::longValue));
     
-    // Calculate percentiles
-    long p95Latency = calculatePercentile(latencies, 95);
-    long p99Latency = calculatePercentile(latencies, 99);
-    
-    // Create result
     return new PerformanceResult(
-        throughput,
-        (long) latencyStats.getAverage(),
-        p95Latency,
-        p99Latency,
-        endMemory - startMemory
+        threadType,
+        concurrentOperations,
+        completedOperations.get(),
+        durationMs,
+        latencies,
+        maxMemoryUsed.get()
     );
   }
   
   /**
-   * Run read operations using the provided executor service.
+   * Performs a database read-write operation cycle.
    */
-  private PerformanceResult runReadOperations(ExecutorService executor, String testName) throws Exception {
-    log.info("Running read operations with {} ({})", testName, concurrencyLevel);
-    
-    // Get list of existing IDs
-    List<String> existingIds = getExistingIds();
-    if (existingIds.isEmpty()) {
-      throw new IllegalStateException("No test data available for read operations");
-    }
-    
-    // Prepare latency tracking
-    ConcurrentHashMap<String, Long> operationLatencies = new ConcurrentHashMap<>();
-    CountDownLatch completionLatch = new CountDownLatch(concurrencyLevel);
-    
-    // Record start metrics
-    long startMemory = getUsedMemoryMb();
-    Instant startTime = Instant.now();
-    
-    // Submit tasks
-    for (int i = 0; i < concurrencyLevel; i++) {
-      final int index = i;
-      executor.submit(() -> {
-        try {
-          // Select a random ID from existing data
-          String id = existingIds.get(index % existingIds.size());
-          Instant opStart = Instant.now();
-          
-          // Read operation
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(SELECT_TEST_RECORD)) {
-            stmt.setString(1, id);
-            try (ResultSet rs = stmt.executeQuery()) {
-              assertThat(rs.next(), is(true));
-              assertThat(rs.getString("id"), is(id));
-              assertThat(rs.getString("name"), is(notNullValue()));
-              assertThat(rs.getString("value"), is(notNullValue()));
-              assertThat(rs.getTimestamp("created_at"), is(notNullValue()));
-            }
-          }
-          
-          // Record operation latency
-          long latencyMs = Duration.between(opStart, Instant.now()).toMillis();
-          operationLatencies.put(id + "-" + index, latencyMs);
-          
-        } catch (Exception e) {
-          log.error("Error in read operation", e);
-        } finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Wait for completion with timeout
-    boolean completed = completionLatch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-    Instant endTime = Instant.now();
-    long endMemory = getUsedMemoryMb();
-    
-    // Shutdown executor
-    executor.shutdown();
-    executor.awaitTermination(5, SECONDS);
-    
-    // Calculate metrics
-    if (!completed) {
-      log.warn("Test did not complete within timeout period of {} seconds", OPERATION_TIMEOUT_SECONDS);
-    }
-    
-    long durationMs = Duration.between(startTime, endTime).toMillis();
-    long operationsCompleted = concurrencyLevel - completionLatch.getCount();
-    long throughput = operationsCompleted * 1000 / Math.max(durationMs, 1);
-    
-    // Calculate latency statistics
-    List<Long> latencies = new ArrayList<>(operationLatencies.values());
-    LongSummaryStatistics latencyStats = latencies.stream().collect(Collectors.summarizingLong(Long::longValue));
-    
-    // Calculate percentiles
-    long p95Latency = calculatePercentile(latencies, 95);
-    long p99Latency = calculatePercentile(latencies, 99);
-    
-    // Create result
-    return new PerformanceResult(
-        throughput,
-        (long) latencyStats.getAverage(),
-        p95Latency,
-        p99Latency,
-        endMemory - startMemory
-    );
-  }
-  
-  /**
-   * Run write operations using the provided executor service.
-   */
-  private PerformanceResult runWriteOperations(ExecutorService executor, String testName) throws Exception {
-    log.info("Running write operations with {} ({})", testName, concurrencyLevel);
-    
-    // Prepare latency tracking
-    ConcurrentHashMap<String, Long> operationLatencies = new ConcurrentHashMap<>();
-    CountDownLatch completionLatch = new CountDownLatch(concurrencyLevel);
-    
-    // Record start metrics
-    long startMemory = getUsedMemoryMb();
-    Instant startTime = Instant.now();
-    
-    // Submit tasks
-    for (int i = 0; i < concurrencyLevel; i++) {
-      executor.submit(() -> {
-        try {
-          String id = UUID.randomUUID().toString();
-          Instant opStart = Instant.now();
-          
-          // Write operation (insert)
-          try (Connection conn = dataSource.getConnection();
-               PreparedStatement stmt = conn.prepareStatement(INSERT_TEST_RECORD)) {
-            stmt.setString(1, id);
-            stmt.setString(2, "Test Name " + id);
-            stmt.setString(3, "Test Value " + id);
-            stmt.executeUpdate();
-          }
-          
-          // Record operation latency
-          long latencyMs = Duration.between(opStart, Instant.now()).toMillis();
-          operationLatencies.put(id, latencyMs);
-          
-        } catch (Exception e) {
-          log.error("Error in write operation", e);
-        } finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Wait for completion with timeout
-    boolean completed = completionLatch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-    Instant endTime = Instant.now();
-    long endMemory = getUsedMemoryMb();
-    
-    // Shutdown executor
-    executor.shutdown();
-    executor.awaitTermination(5, SECONDS);
-    
-    // Calculate metrics
-    if (!completed) {
-      log.warn("Test did not complete within timeout period of {} seconds", OPERATION_TIMEOUT_SECONDS);
-    }
-    
-    long durationMs = Duration.between(startTime, endTime).toMillis();
-    long operationsCompleted = concurrencyLevel - completionLatch.getCount();
-    long throughput = operationsCompleted * 1000 / Math.max(durationMs, 1);
-    
-    // Calculate latency statistics
-    List<Long> latencies = new ArrayList<>(operationLatencies.values());
-    LongSummaryStatistics latencyStats = latencies.stream().collect(Collectors.summarizingLong(Long::longValue));
-    
-    // Calculate percentiles
-    long p95Latency = calculatePercentile(latencies, 95);
-    long p99Latency = calculatePercentile(latencies, 99);
-    
-    // Create result
-    return new PerformanceResult(
-        throughput,
-        (long) latencyStats.getAverage(),
-        p95Latency,
-        p99Latency,
-        endMemory - startMemory
-    );
-  }
-  
-  /**
-   * Run mixed read/write operations using the provided executor service.
-   */
-  private PerformanceResult runMixedOperations(ExecutorService executor, String testName) throws Exception {
-    log.info("Running mixed operations with {} ({})", testName, concurrencyLevel);
-    
-    // Get list of existing IDs
-    List<String> existingIds = getExistingIds();
-    if (existingIds.isEmpty()) {
-      throw new IllegalStateException("No test data available for mixed operations");
-    }
-    
-    // Prepare latency tracking
-    ConcurrentHashMap<String, Long> operationLatencies = new ConcurrentHashMap<>();
-    CountDownLatch completionLatch = new CountDownLatch(concurrencyLevel);
-    
-    // Record start metrics
-    long startMemory = getUsedMemoryMb();
-    Instant startTime = Instant.now();
-    
-    // Submit tasks
-    for (int i = 0; i < concurrencyLevel; i++) {
-      final int index = i;
-      executor.submit(() -> {
-        try {
-          Instant opStart = Instant.now();
-          String operationId = UUID.randomUUID().toString();
-          
-          // Determine operation type: 70% read, 20% write, 10% update
-          int operationType = ThreadLocalRandom.current().nextInt(10);
-          
-          if (operationType < 7) {
-            // Read operation (70%)
-            String id = existingIds.get(index % existingIds.size());
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(SELECT_TEST_RECORD)) {
-              stmt.setString(1, id);
-              try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                  // Just read the data
-                  rs.getString("name");
-                  rs.getString("value");
-                  rs.getTimestamp("created_at");
-                }
-              }
-            }
-          } else if (operationType < 9) {
-            // Write operation (20%)
-            String id = UUID.randomUUID().toString();
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(INSERT_TEST_RECORD)) {
-              stmt.setString(1, id);
-              stmt.setString(2, "Mixed Test Name " + id);
-              stmt.setString(3, "Mixed Test Value " + id);
-              stmt.executeUpdate();
-            }
-          } else {
-            // Update operation (10%)
-            String id = existingIds.get(index % existingIds.size());
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(UPDATE_TEST_RECORD)) {
-              stmt.setString(1, "Updated in mixed test " + operationId);
-              stmt.setString(2, id);
-              stmt.executeUpdate();
-            }
-          }
-          
-          // Record operation latency
-          long latencyMs = Duration.between(opStart, Instant.now()).toMillis();
-          operationLatencies.put(operationId, latencyMs);
-          
-        } catch (Exception e) {
-          log.error("Error in mixed operation", e);
-        } finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Wait for completion with timeout
-    boolean completed = completionLatch.await(OPERATION_TIMEOUT_SECONDS, SECONDS);
-    Instant endTime = Instant.now();
-    long endMemory = getUsedMemoryMb();
-    
-    // Shutdown executor
-    executor.shutdown();
-    executor.awaitTermination(5, SECONDS);
-    
-    // Calculate metrics
-    if (!completed) {
-      log.warn("Test did not complete within timeout period of {} seconds", OPERATION_TIMEOUT_SECONDS);
-    }
-    
-    long durationMs = Duration.between(startTime, endTime).toMillis();
-    long operationsCompleted = concurrencyLevel - completionLatch.getCount();
-    long throughput = operationsCompleted * 1000 / Math.max(durationMs, 1);
-    
-    // Calculate latency statistics
-    List<Long> latencies = new ArrayList<>(operationLatencies.values());
-    LongSummaryStatistics latencyStats = latencies.stream().collect(Collectors.summarizingLong(Long::longValue));
-    
-    // Calculate percentiles
-    long p95Latency = calculatePercentile(latencies, 95);
-    long p99Latency = calculatePercentile(latencies, 99);
-    
-    // Create result
-    return new PerformanceResult(
-        throughput,
-        (long) latencyStats.getAverage(),
-        p95Latency,
-        p99Latency,
-        endMemory - startMemory
-    );
-  }
-  
-  /**
-   * Prepare test data by inserting records.
-   */
-  private void prepareTestData(int count) throws SQLException {
-    log.info("Preparing {} test records", count);
-    
-    try (Connection conn = dataSource.getConnection();
-         PreparedStatement stmt = conn.prepareStatement(INSERT_TEST_RECORD)) {
+  private void performDatabaseOperation(int id) throws SQLException {
+    // Simulate a realistic database operation with both reads and writes
+    try (Connection conn = dataSource.getConnection()) {
+      conn.setAutoCommit(false);
       
-      for (int i = 0; i < count; i++) {
-        String id = "test-" + i;
-        stmt.setString(1, id);
-        stmt.setString(2, "Test Name " + id);
-        stmt.setString(3, "Test Value " + id);
-        stmt.addBatch();
+      // First read the data
+      try (PreparedStatement selectStmt = conn.prepareStatement(SELECT_SQL)) {
+        selectStmt.setInt(1, id % WARMUP_COUNT);
+        try (ResultSet rs = selectStmt.executeQuery()) {
+          if (rs.next()) {
+            String name = rs.getString(1);
+            // Update the data
+            try (PreparedStatement updateStmt = conn.prepareStatement(INSERT_SQL)) {
+              updateStmt.setInt(1, id % WARMUP_COUNT);
+              updateStmt.setString(2, name + "-updated");
+              updateStmt.executeUpdate();
+            }
+          }
+        }
+      }
+      
+      // Simulate some processing time
+      try {
+        Thread.sleep(10);
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+      
+      conn.commit();
+    }
+  }
+  
+  /**
+   * Runs a benchmark comparing platform threads and virtual threads at the specified concurrency level.
+   */
+  private void runComparativeBenchmark(int concurrentOperations) throws Exception {
+    // Run platform thread benchmark
+    ExecutorService platformExecutor = createPlatformThreadExecutor(
+        Math.min(concurrentOperations, Runtime.getRuntime().availableProcessors() * 2));
+    try {
+      PerformanceResult platformResult = runBenchmark("Platform Threads", platformExecutor, concurrentOperations);
+      log.info("Platform Thread Result: {}", platformResult);
+      
+      // Run virtual thread benchmark
+      ExecutorService virtualExecutor = createVirtualThreadExecutor();
+      try {
+        PerformanceResult virtualResult = runBenchmark("Virtual Threads", virtualExecutor, concurrentOperations);
+        log.info("Virtual Thread Result: {}", virtualResult);
         
-        if (i % 100 == 0) {
-          stmt.executeBatch();
+        // Compare results
+        compareResults(platformResult, virtualResult);
+      }
+      finally {
+        virtualExecutor.shutdown();
+        virtualExecutor.awaitTermination(1, TimeUnit.MINUTES);
+      }
+    }
+    finally {
+      platformExecutor.shutdown();
+      platformExecutor.awaitTermination(1, TimeUnit.MINUTES);
+    }
+  }
+  
+  /**
+   * Compares performance results between platform threads and virtual threads.
+   */
+  private void compareResults(PerformanceResult platformResult, PerformanceResult virtualResult) {
+    log.info("Performance Comparison ({}):")
+        .add("Concurrent Operations", platformResult.getConcurrentOperations())
+        .add("Platform Thread Throughput", String.format("%.2f ops/sec", platformResult.getOperationsPerSecond()))
+        .add("Virtual Thread Throughput", String.format("%.2f ops/sec", virtualResult.getOperationsPerSecond()))
+        .add("Throughput Improvement", String.format("%.2f%%", 
+            (virtualResult.getOperationsPerSecond() / platformResult.getOperationsPerSecond() - 1) * 100))
+        .add("Platform Thread Avg Latency", String.format("%.2f ms", platformResult.getAvgLatencyMs()))
+        .add("Virtual Thread Avg Latency", String.format("%.2f ms", virtualResult.getAvgLatencyMs()))
+        .add("Latency Improvement", String.format("%.2f%%", 
+            (1 - virtualResult.getAvgLatencyMs() / platformResult.getAvgLatencyMs()) * 100))
+        .add("Platform Thread P95 Latency", String.format("%.2f ms", platformResult.getP95LatencyMs()))
+        .add("Virtual Thread P95 Latency", String.format("%.2f ms", virtualResult.getP95LatencyMs()))
+        .add("Platform Thread Memory", String.format("%d MB", platformResult.getMaxMemoryUsed() / (1024 * 1024)))
+        .add("Virtual Thread Memory", String.format("%d MB", virtualResult.getMaxMemoryUsed() / (1024 * 1024)))
+        .log();
+    
+    // For high concurrency operations, virtual threads should show better performance
+    if (platformResult.getConcurrentOperations() >= 100) {
+      assertThat("Virtual threads should have higher throughput for I/O-bound operations with high concurrency",
+          virtualResult.getOperationsPerSecond(), greaterThan(platformResult.getOperationsPerSecond()));
+      
+      assertThat("Virtual threads should have lower average latency for I/O-bound operations",
+          virtualResult.getAvgLatencyMs(), lessThan(platformResult.getAvgLatencyMs()));
+      
+      assertThat("Virtual threads should have lower P95 latency for I/O-bound operations",
+          virtualResult.getP95LatencyMs(), lessThan(platformResult.getP95LatencyMs()));
+      
+      assertThat("Virtual threads should use less memory per thread",
+          (double) virtualResult.getMaxMemoryUsed() / virtualResult.getConcurrentOperations(),
+          lessThan((double) platformResult.getMaxMemoryUsed() / platformResult.getConcurrentOperations()));
+    }
+  }
+  
+  /**
+   * Tests performance with a low concurrency level (10 operations).
+   */
+  @Test
+  void testLowConcurrencyPerformance() throws Exception {
+    runComparativeBenchmark(10);
+  }
+  
+  /**
+   * Tests performance with a medium concurrency level (100 operations).
+   */
+  @Test
+  void testMediumConcurrencyPerformance() throws Exception {
+    runComparativeBenchmark(100);
+  }
+  
+  /**
+   * Tests performance with a high concurrency level (1000 operations).
+   */
+  @Test
+  void testHighConcurrencyPerformance() throws Exception {
+    runComparativeBenchmark(1000);
+  }
+  
+  /**
+   * Tests performance with various concurrency levels to identify scaling characteristics.
+   */
+  @ParameterizedTest
+  @ValueSource(ints = {10, 100, 500, 1000, 5000, 10000})
+  void testScalabilityWithIncreasingConcurrency(int concurrentOperations) throws Exception {
+    runComparativeBenchmark(concurrentOperations);
+  }
+  
+  /**
+   * Tests memory efficiency of virtual threads compared to platform threads under high load.
+   */
+  @Test
+  void testMemoryEfficiency() throws Exception {
+    // Use a high concurrency level to highlight memory differences
+    int concurrentOperations = 5000;
+    
+    // Run platform thread benchmark with limited threads
+    ExecutorService platformExecutor = createPlatformThreadExecutor(
+        Math.min(concurrentOperations, Runtime.getRuntime().availableProcessors() * 2));
+    try {
+      System.gc();
+      long beforePlatform = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+      PerformanceResult platformResult = runBenchmark("Platform Threads", platformExecutor, concurrentOperations);
+      System.gc();
+      long afterPlatform = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+      long platformMemoryUsed = afterPlatform - beforePlatform;
+      
+      log.info("Platform Thread Memory Usage: {} MB", platformMemoryUsed / (1024 * 1024));
+      
+      // Run virtual thread benchmark
+      ExecutorService virtualExecutor = createVirtualThreadExecutor();
+      try {
+        System.gc();
+        long beforeVirtual = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        PerformanceResult virtualResult = runBenchmark("Virtual Threads", virtualExecutor, concurrentOperations);
+        System.gc();
+        long afterVirtual = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+        long virtualMemoryUsed = afterVirtual - beforeVirtual;
+        
+        log.info("Virtual Thread Memory Usage: {} MB", virtualMemoryUsed / (1024 * 1024));
+        
+        // Virtual threads should use significantly less memory per concurrent operation
+        double platformMemoryPerOperation = (double) platformMemoryUsed / concurrentOperations;
+        double virtualMemoryPerOperation = (double) virtualMemoryUsed / concurrentOperations;
+        
+        log.info("Memory per operation - Platform: {} KB, Virtual: {} KB",
+            platformMemoryPerOperation / 1024, virtualMemoryPerOperation / 1024);
+        
+        assertThat("Virtual threads should use less memory per concurrent operation",
+            virtualMemoryPerOperation, lessThan(platformMemoryPerOperation));
+      }
+      finally {
+        virtualExecutor.shutdown();
+        virtualExecutor.awaitTermination(1, TimeUnit.MINUTES);
+      }
+    }
+    finally {
+      platformExecutor.shutdown();
+      platformExecutor.awaitTermination(1, TimeUnit.MINUTES);
+    }
+  }
+  
+  /**
+   * Tests throughput under sustained load over time to verify stability.
+   */
+  @Test
+  void testSustainedLoadThroughput() throws Exception {
+    int concurrentOperations = 500;
+    int durationSeconds = 30;
+    
+    log.info("Testing sustained load throughput for {} seconds with {} concurrent operations",
+        durationSeconds, concurrentOperations);
+    
+    // Run platform thread benchmark
+    ExecutorService platformExecutor = createPlatformThreadExecutor(
+        Math.min(concurrentOperations, Runtime.getRuntime().availableProcessors() * 2));
+    try {
+      Supplier<PerformanceResult> platformBenchmark = () -> {
+        try {
+          return runBenchmark("Platform Threads", platformExecutor, concurrentOperations);
         }
+        catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      };
+      
+      List<PerformanceResult> platformResults = new ArrayList<>();
+      Instant platformStart = Instant.now();
+      while (Duration.between(platformStart, Instant.now()).getSeconds() < durationSeconds) {
+        platformResults.add(platformBenchmark.get());
       }
       
-      stmt.executeBatch();
-    }
-  }
-  
-  /**
-   * Clean up test data by deleting all records.
-   */
-  private void cleanupTestData() throws SQLException {
-    log.info("Cleaning up test data");
-    
-    try (Connection conn = dataSource.getConnection();
-         Statement stmt = conn.createStatement()) {
-      stmt.execute("DELETE FROM performance_test");
-    }
-  }
-  
-  /**
-   * Get a list of existing record IDs.
-   */
-  private List<String> getExistingIds() throws SQLException {
-    List<String> ids = new ArrayList<>();
-    
-    try (Connection conn = dataSource.getConnection();
-         Statement stmt = conn.createStatement();
-         ResultSet rs = stmt.executeQuery("SELECT id FROM performance_test")) {
+      double platformAvgThroughput = platformResults.stream()
+          .mapToDouble(PerformanceResult::getOperationsPerSecond)
+          .average()
+          .orElse(0);
       
-      while (rs.next()) {
-        ids.add(rs.getString("id"));
+      // Run virtual thread benchmark
+      ExecutorService virtualExecutor = createVirtualThreadExecutor();
+      try {
+        Supplier<PerformanceResult> virtualBenchmark = () -> {
+          try {
+            return runBenchmark("Virtual Threads", virtualExecutor, concurrentOperations);
+          }
+          catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        };
+        
+        List<PerformanceResult> virtualResults = new ArrayList<>();
+        Instant virtualStart = Instant.now();
+        while (Duration.between(virtualStart, Instant.now()).getSeconds() < durationSeconds) {
+          virtualResults.add(virtualBenchmark.get());
+        }
+        
+        double virtualAvgThroughput = virtualResults.stream()
+            .mapToDouble(PerformanceResult::getOperationsPerSecond)
+            .average()
+            .orElse(0);
+        
+        log.info("Sustained Load Results:")
+            .add("Platform Thread Avg Throughput", String.format("%.2f ops/sec", platformAvgThroughput))
+            .add("Virtual Thread Avg Throughput", String.format("%.2f ops/sec", virtualAvgThroughput))
+            .add("Throughput Improvement", String.format("%.2f%%", 
+                (virtualAvgThroughput / platformAvgThroughput - 1) * 100))
+            .log();
+        
+        assertThat("Virtual threads should maintain higher throughput under sustained load",
+            virtualAvgThroughput, greaterThan(platformAvgThroughput));
+      }
+      finally {
+        virtualExecutor.shutdown();
+        virtualExecutor.awaitTermination(1, TimeUnit.MINUTES);
       }
     }
-    
-    return ids;
-  }
-  
-  /**
-   * Calculate the used memory in MB.
-   */
-  private long getUsedMemoryMb() {
-    System.gc(); // Request garbage collection to get more accurate memory usage
-    Runtime runtime = Runtime.getRuntime();
-    return (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
-  }
-  
-  /**
-   * Calculate the nth percentile from a list of values.
-   */
-  private long calculatePercentile(List<Long> values, int percentile) {
-    if (values.isEmpty()) {
-      return 0;
-    }
-    
-    List<Long> sortedValues = new ArrayList<>(values);
-    sortedValues.sort(Long::compare);
-    
-    int index = (int) Math.ceil(percentile / 100.0 * sortedValues.size()) - 1;
-    return sortedValues.get(Math.max(0, Math.min(index, sortedValues.size() - 1)));
-  }
-  
-  /**
-   * Calculate the average performance result from multiple test runs.
-   */
-  private PerformanceResult calculateAverageResult(List<PerformanceResult> results) {
-    if (results.isEmpty()) {
-      return new PerformanceResult(0, 0, 0, 0, 0);
-    }
-    
-    long totalThroughput = 0;
-    long totalAvgLatency = 0;
-    long totalP95Latency = 0;
-    long totalP99Latency = 0;
-    long totalMemoryUsage = 0;
-    
-    for (PerformanceResult result : results) {
-      totalThroughput += result.throughput;
-      totalAvgLatency += result.avgLatency;
-      totalP95Latency += result.p95Latency;
-      totalP99Latency += result.p99Latency;
-      totalMemoryUsage += result.memoryUsageMb;
-    }
-    
-    return new PerformanceResult(
-        totalThroughput / results.size(),
-        totalAvgLatency / results.size(),
-        totalP95Latency / results.size(),
-        totalP99Latency / results.size(),
-        totalMemoryUsage / results.size()
-    );
-  }
-  
-  /**
-   * Class to hold performance test results.
-   */
-  private static class PerformanceResult {
-    final long throughput;       // Operations per second
-    final long avgLatency;       // Average latency in ms
-    final long p95Latency;       // 95th percentile latency in ms
-    final long p99Latency;       // 99th percentile latency in ms
-    final long memoryUsageMb;    // Memory usage in MB
-    
-    PerformanceResult(long throughput, long avgLatency, long p95Latency, long p99Latency, long memoryUsageMb) {
-      this.throughput = throughput;
-      this.avgLatency = avgLatency;
-      this.p95Latency = p95Latency;
-      this.p99Latency = p99Latency;
-      this.memoryUsageMb = memoryUsageMb;
+    finally {
+      platformExecutor.shutdown();
+      platformExecutor.awaitTermination(1, TimeUnit.MINUTES);
     }
   }
 }

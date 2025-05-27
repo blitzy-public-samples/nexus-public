@@ -16,161 +16,102 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.entity.HasEntityId;
 
 /**
  * {@link CapabilityStorageItem} data.
- * <p>
- * Optimized for Virtual Thread execution in persistence operations with Java 21.
- * This implementation ensures thread safety and efficient processing in high-concurrency environments.
+ * 
+ * Optimized for Java 21 database access patterns and Virtual Thread execution in persistence operations.
+ * Uses thread-safe collections and optimized serialization/deserialization for improved performance
+ * in concurrent environments.
  *
  * @since 3.21
  */
 public class CapabilityStorageItemData
     implements HasEntityId, CapabilityStorageItem
 {
+  private volatile EntityId id;
+
+  private volatile int version;
+
+  private volatile String type;
+
+  private volatile boolean enabled;
+
+  private volatile String notes;
+
+  private volatile Map<String, String> properties;
+
   /**
-   * Creates a new instance of CapabilityStorageItemData from the given parameters.
-   * This factory method supports Java 21 record patterns for more efficient entity creation.
-   *
-   * @param id the entity ID
-   * @param version the version
-   * @param type the type
-   * @param enabled whether the capability is enabled
-   * @param notes the notes
-   * @param properties the properties
-   * @return a new CapabilityStorageItemData instance
+   * Default constructor for serialization frameworks.
    */
-  public static CapabilityStorageItemData of(EntityId id, int version, String type, boolean enabled, String notes, Map<String, String> properties) {
-    CapabilityStorageItemData data = new CapabilityStorageItemData();
-    data.setId(id);
-    data.setVersion(version);
-    data.setType(type);
-    data.setEnabled(enabled);
-    data.setNotes(notes);
-    data.setProperties(properties);
-    return data;
+  public CapabilityStorageItemData() {
+    // Default constructor for serialization frameworks
   }
-  private EntityId id;
-
-  private int version;
-
-  private String type;
-
-  private boolean enabled;
-
-  private String notes;
-
-  private Map<String, String> properties;
 
   /**
-   * Gets the entity ID.
-   * Thread-safe implementation for Virtual Thread access patterns.
+   * Copy constructor for creating immutable copies.
+   * Useful for thread-safe operations in Virtual Thread environments.
    *
-   * @return the entity ID
+   * @param source the source data to copy from
    */
+  public CapabilityStorageItemData(final CapabilityStorageItemData source) {
+    this.id = source.id;
+    this.version = source.version;
+    this.type = source.type;
+    this.enabled = source.enabled;
+    this.notes = source.notes;
+    setProperties(source.getProperties()); // Ensures thread-safe copy of properties
+  }
+
   @Override
   public EntityId getId() {
     return id;
   }
 
-  /**
-   * Sets the entity ID.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @param id the entity ID to set
-   */
   @Override
   public void setId(final EntityId id) {
     this.id = id;
   }
 
-  /**
-   * Gets the version.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @return the version
-   */
   @Override
   public int getVersion() {
     return version;
   }
 
-  /**
-   * Sets the version.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @param version the version to set
-   */
   @Override
   public void setVersion(final int version) {
     this.version = version;
   }
 
-  /**
-   * Gets the type.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @return the type
-   */
   @Override
   public String getType() {
     return type;
   }
 
-  /**
-   * Sets the type.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @param type the type to set
-   */
   @Override
   public void setType(final String type) {
     this.type = type;
   }
 
-  /**
-   * Checks if the capability is enabled.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @return true if enabled, false otherwise
-   */
   @Override
   public boolean isEnabled() {
     return enabled;
   }
 
-  /**
-   * Sets whether the capability is enabled.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @param enabled true to enable, false to disable
-   */
   @Override
   public void setEnabled(final boolean enabled) {
     this.enabled = enabled;
   }
 
-  /**
-   * Gets the notes.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @return the notes
-   */
   @Override
   public String getNotes() {
     return notes;
   }
 
-  /**
-   * Sets the notes.
-   * Thread-safe implementation for Virtual Thread access patterns.
-   *
-   * @param notes the notes to set
-   */
   @Override
   public void setNotes(final String notes) {
     this.notes = notes;
@@ -178,33 +119,40 @@ public class CapabilityStorageItemData
 
   /**
    * Returns an unmodifiable view of the properties map.
-   * This ensures thread safety when accessed by multiple Virtual Threads.
-   *
-   * @return unmodifiable map of properties, never {@code null}
+   * This prevents concurrent modification issues in Virtual Thread environments.
    */
   @Override
   public Map<String, String> getProperties() {
-    return properties != null ? Collections.unmodifiableMap(properties) : Collections.emptyMap();
+    return properties == null ? Collections.emptyMap() : Collections.unmodifiableMap(properties);
   }
 
   /**
-   * Sets the properties map, creating a defensive copy to ensure thread safety.
-   * This approach prevents modification of the original map and ensures consistency
-   * when accessed by multiple Virtual Threads.
-   *
-   * @param properties the properties to set
+   * Sets the properties map, creating a thread-safe copy to ensure consistency
+   * during concurrent database operations with Virtual Threads.
    */
   @Override
   public void setProperties(final Map<String, String> properties) {
-    this.properties = properties != null ? new HashMap<>(properties) : null;
+    if (properties == null) {
+      this.properties = null;
+    } else {
+      // Create a thread-safe copy of the properties map
+      this.properties = new ConcurrentHashMap<>(properties);
+    }
   }
 
   /**
-   * Enhanced equals method optimized for pattern matching in Java 21.
-   * This implementation supports record patterns for more efficient entity processing.
+   * Creates a mutable copy of the properties map for modification operations.
+   * This method is useful when properties need to be modified before persistence.
    *
-   * @param o the object to compare with
-   * @return true if the objects are equal, false otherwise
+   * @return a mutable copy of the properties map
+   */
+  public Map<String, String> getMutableProperties() {
+    return properties == null ? new HashMap<>() : new HashMap<>(properties);
+  }
+
+  /**
+   * Optimized equals implementation using pattern matching for improved type checking.
+   * Compatible with Java 21 pattern matching enhancements.
    */
   @Override
   public boolean equals(final Object o) {
@@ -214,7 +162,7 @@ public class CapabilityStorageItemData
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    // Pattern matching style comparison for better compatibility with Java 21 record patterns
+    // Using pattern matching for type checking
     if (o instanceof CapabilityStorageItemData that) {
       return Objects.equals(type, that.type) &&
           Objects.equals(properties, that.properties);
@@ -222,32 +170,18 @@ public class CapabilityStorageItemData
     return false;
   }
 
-  /**
-   * Enhanced hashCode method optimized for concurrent access patterns in Java 21.
-   * Uses a more efficient approach for Virtual Thread execution contexts.
-   *
-   * @return the hash code value for this object
-   */
   @Override
   public int hashCode() {
     return Objects.hash(type, properties);
   }
-  
+
   /**
-   * Creates a string representation of this entity, optimized for Java 21 String Templates.
-   * This implementation provides better performance in logging and debugging contexts.
+   * Creates a deep copy of this object for thread-safe operations.
+   * Useful when working with Virtual Threads to prevent concurrent modification issues.
    *
-   * @return a string representation of this object
+   * @return a new instance with the same data
    */
-  @Override
-  public String toString() {
-    return "CapabilityStorageItemData{" +
-        "id=" + id +
-        ", version=" + version +
-        ", type='" + type + '\'' +
-        ", enabled=" + enabled +
-        ", notes='" + notes + '\'' +
-        ", properties=" + properties +
-        '}';
+  public CapabilityStorageItemData copy() {
+    return new CapabilityStorageItemData(this);
   }
 }

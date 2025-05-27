@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
+import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityDescriptorRegistry;
 import org.sonatype.nexus.capability.CapabilityEvent;
 import org.sonatype.nexus.capability.CapabilityReference;
@@ -45,9 +46,10 @@ public class CapabilityOfTypeActiveCondition
       return false;
     }
     
-    // Apply Pattern Matching for switch to check capability state
-    return switch (reference.context()) {
-      case var context when context.isActive() -> true;
+    // Use pattern matching for switch to check capability state
+    CapabilityContext context = reference.context();
+    return switch (context) {
+      case CapabilityContext c when c.isActive() -> true;
       default -> false;
     };
   }
@@ -55,28 +57,28 @@ public class CapabilityOfTypeActiveCondition
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.AfterActivated event) {
+    // Ensure thread safety when handling events from Virtual Threads
+    long stamp = lock.readLock();
     try {
-      bindLock.readLock().lock();
       if (!isSatisfied() && type.equals(event.getReference().context().type())) {
         checkAllCapabilities();
       }
-    }
-    finally {
-      bindLock.readLock().unlock();
+    } finally {
+      lock.unlockRead(stamp);
     }
   }
 
   @AllowConcurrentEvents
   @Subscribe
   public void handle(final CapabilityEvent.BeforePassivated event) {
+    // Ensure thread safety when handling events from Virtual Threads
+    long stamp = lock.readLock();
     try {
-      bindLock.readLock().lock();
       if (isSatisfied() && type.equals(event.getReference().context().type())) {
         checkAllCapabilities();
       }
-    }
-    finally {
-      bindLock.readLock().unlock();
+    } finally {
+      lock.unlockRead(stamp);
     }
   }
 

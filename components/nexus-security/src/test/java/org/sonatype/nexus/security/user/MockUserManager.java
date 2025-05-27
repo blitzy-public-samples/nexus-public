@@ -13,6 +13,7 @@
 package org.sonatype.nexus.security.user;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,38 +23,14 @@ import org.sonatype.nexus.security.role.RoleIdentifier;
 /**
  * Mock implementation of UserManager for testing purposes.
  * This implementation is thread-safe and compatible with Java 21 virtual threads.
- * 
+ * It avoids using synchronized blocks or methods that could cause virtual thread pinning.
+ *
  * @see ExternalRoleMappedTest
  * @see UserManagementTest
  */
 public class MockUserManager
     extends AbstractReadOnlyUserManager
 {
-  // Thread-safe cache of users to avoid recreating them on every call
-  private final Set<User> userCache = createUserCache();
-  
-  /**
-   * Creates and initializes the user cache with mock data.
-   * This is called only once during initialization to ensure thread safety.
-   */
-  private Set<User> createUserCache() {
-    Set<User> users = ConcurrentHashMap.newKeySet();
-
-    User jcohen = new User();
-    jcohen.setEmailAddress("JamesDCohen@example.com");
-    jcohen.setFirstName("James");
-    jcohen.setLastName("Cohen");
-    // jcohen.setName( "James E. Cohen" );
-    // jcohen.setReadOnly( true );
-    jcohen.setSource("Mock");
-    jcohen.setStatus(UserStatus.active);
-    jcohen.setUserId("jcohen");
-    jcohen.addRole(new RoleIdentifier("Mock", "mockrole1"));
-    users.add(jcohen);
-
-    return users;
-  }
-
   @Override
   public String getSource() {
     return "Mock";
@@ -64,23 +41,37 @@ public class MockUserManager
     return "Mock";
   }
 
+  // Cache of users to avoid recreating them on every call, making the implementation more efficient with virtual threads
+  private final Set<User> userCache = Collections.newSetFromMap(new ConcurrentHashMap<>());
+  
   /**
-   * Returns a thread-safe view of all users.
-   * Safe for concurrent access by multiple threads, including virtual threads.
+   * Initialize the user cache with a mock user
    */
-  @Override
-  public Set<User> listUsers() {
-    return Collections.unmodifiableSet(userCache);
+  {  
+    User jcohen = new User();
+    jcohen.setEmailAddress("JamesDCohen@example.com");
+    jcohen.setFirstName("James");
+    jcohen.setLastName("Cohen");
+    // jcohen.setName( "James E. Cohen" );
+    // jcohen.setReadOnly( true );
+    jcohen.setSource("Mock");
+    jcohen.setStatus(UserStatus.active);
+    jcohen.setUserId("jcohen");
+    jcohen.addRole(new RoleIdentifier("Mock", "mockrole1"));
+    userCache.add(jcohen);
   }
 
-  /**
-   * Returns a thread-safe set of all user IDs.
-   * Safe for concurrent access by multiple threads, including virtual threads.
-   */
+  @Override
+  public Set<User> listUsers() {
+    // Return a copy of the user cache to prevent concurrent modification issues
+    return new HashSet<>(userCache);
+  }
+
   @Override
   public Set<String> listUserIds() {
-    Set<String> userIds = ConcurrentHashMap.newKeySet();
-    for (User user : this.userCache) {
+    // Create a thread-safe set for user IDs
+    Set<String> userIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    for (User user : this.listUsers()) {
       userIds.add(user.getUserId());
     }
     return userIds;
@@ -88,26 +79,47 @@ public class MockUserManager
 
   @Override
   public Set<User> searchUsers(UserSearchCriteria criteria) {
+    // This implementation is intentionally left as a stub
+    // In a real implementation, this would need to be thread-safe as well
     return null;
   }
 
-  /**
-   * Retrieves a user by ID.
-   * Thread-safe implementation that works with virtual threads.
-   */
   @Override
   public User getUser(String userId) throws UserNotFoundException {
-    // Using Java 21 pattern matching for instanceof with a binding variable
+    // Efficiently find user by ID without synchronization blocks that could cause virtual thread pinning
     for (User user : this.userCache) {
-      if (userId.equals(user.getUserId())) {
-        return user;
+      if (user.getUserId().equals(userId)) {
+        // Return a copy to prevent modification of the cached user
+        return cloneUser(user);
       }
     }
     throw new UserNotFoundException(userId);
   }
+  
+  /**
+   * Creates a copy of a user to prevent modification of cached instances
+   * This helps maintain thread safety without using synchronized blocks
+   */
+  private User cloneUser(User source) {
+    User clone = new User();
+    clone.setEmailAddress(source.getEmailAddress());
+    clone.setFirstName(source.getFirstName());
+    clone.setLastName(source.getLastName());
+    clone.setSource(source.getSource());
+    clone.setStatus(source.getStatus());
+    clone.setUserId(source.getUserId());
+    
+    // Copy roles
+    for (RoleIdentifier role : source.getRoles()) {
+      clone.addRole(new RoleIdentifier(role.getSource(), role.getRoleId()));
+    }
+    
+    return clone;
+  }
 
   @Override
   public User getUser(final String userId, final Set<String> roleIds) throws UserNotFoundException {
+    // Delegate to the main getUser method which is already thread-safe and virtual thread compatible
     return getUser(userId);
   }
 

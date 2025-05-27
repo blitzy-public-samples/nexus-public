@@ -27,9 +27,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.when;
 
-/**
- * Tests for {@link InstanceStatus} that verify the instance status determination logic.
- */
 @ExtendWith(MockitoExtension.class)
 public class InstanceStatusTest
     extends TestSupport
@@ -51,23 +48,16 @@ public class InstanceStatusTest
     when(onboardingCapabilityHelper.getOnboardingCapability()).thenReturn(onboardingCapability);
   }
 
-  /**
-   * Verifies that the instance is considered new when anonymous access is not configured.
-   */
   @Test
-  public void shouldReturnInstanceIsNewWhenAnonymousNotConfigured() {
+  public void instanceIsNewWhenAnonymousNotConfigured() {
     when(anonymousManager.isConfigured()).thenReturn(false);
 
     assertThat(underTest.isNew(), is(true));
     assertThat(underTest.isUpgraded(), is(false));
   }
 
-  /**
-   * Verifies that the instance is considered upgraded when anonymous access is configured
-   * but registration has not been started.
-   */
   @Test
-  public void shouldReturnInstanceIsUpgradedWhenAnonymousConfiguredButRegistrationNotStarted() {
+  public void instanceIsUpgradedWhenAnonymousConfiguredButRegistrationNotStarted() {
     when(anonymousManager.isConfigured()).thenReturn(true);
     when(onboardingCapability.isRegistrationStarted()).thenReturn(false);
 
@@ -75,17 +65,67 @@ public class InstanceStatusTest
     assertThat(underTest.isUpgraded(), is(true));
   }
 
-  /**
-   * Verifies that the instance is considered new when anonymous access is configured,
-   * registration has been started, but not yet completed.
-   */
   @Test
-  public void shouldReturnInstanceIsNewWhenAnonymousConfiguredAndRegistrationStartedButNotCompleted() {
+  public void instanceIsNewWhenAnonymousConfiguredAndRegistrationStartedButNotCompleted() {
     when(anonymousManager.isConfigured()).thenReturn(true);
     when(onboardingCapability.isRegistrationStarted()).thenReturn(true);
     when(onboardingCapability.isRegistrationCompleted()).thenReturn(false);
 
     assertThat(underTest.isNew(), is(true));
     assertThat(underTest.isUpgraded(), is(false));
+  }
+  
+  /**
+   * This test demonstrates Java 21 pattern matching for switch statements
+   * to test different instance status scenarios using a record to represent state.
+   */
+  @Test
+  public void patternMatchingForInstanceStatus() {
+    // Define a record to represent instance state
+    record InstanceState(boolean anonymousConfigured, boolean registrationStarted, boolean registrationCompleted) {}
+    
+    // Test all possible combinations of instance state
+    for (boolean anonymousConfigured : new boolean[] {true, false}) {
+      for (boolean registrationStarted : new boolean[] {true, false}) {
+        for (boolean registrationCompleted : new boolean[] {true, false}) {
+          // Skip invalid state: if registration is not started, it cannot be completed
+          if (!registrationStarted && registrationCompleted) {
+            continue;
+          }
+          
+          // Set up the mocks for this state combination
+          when(anonymousManager.isConfigured()).thenReturn(anonymousConfigured);
+          when(onboardingCapability.isRegistrationStarted()).thenReturn(registrationStarted);
+          when(onboardingCapability.isRegistrationCompleted()).thenReturn(registrationCompleted);
+          
+          // Create an instance state record for this combination
+          InstanceState state = new InstanceState(anonymousConfigured, registrationStarted, registrationCompleted);
+          
+          // Use pattern matching with switch to determine expected behavior
+          boolean expectedIsNew = switch (state) {
+            // Anonymous not configured -> instance is new
+            case InstanceState(false, _, _) -> true;
+            
+            // Anonymous configured, registration started but not completed -> instance is new
+            case InstanceState(true, true, false) -> true;
+            
+            // All other cases -> instance is not new
+            default -> false;
+          };
+          
+          boolean expectedIsUpgraded = switch (state) {
+            // Anonymous configured, registration not started -> instance is upgraded
+            case InstanceState(true, false, _) -> true;
+            
+            // All other cases -> instance is not upgraded
+            default -> false;
+          };
+          
+          // Assert that the actual behavior matches the expected behavior
+          assertThat("isNew() for state: " + state, underTest.isNew(), is(expectedIsNew));
+          assertThat("isUpgraded() for state: " + state, underTest.isUpgraded(), is(expectedIsUpgraded));
+        }
+      }
+    }
   }
 }

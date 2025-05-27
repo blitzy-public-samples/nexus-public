@@ -15,7 +15,6 @@ package org.sonatype.nexus.coreui;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -86,26 +85,30 @@ public class UploadResource extends ComponentSupport implements Resource
         throw new WebApplicationException(Response.Status.NOT_FOUND);
       }
       
-      // Use a virtual thread for the I/O-bound upload operation
+      // Use CompletableFuture with Virtual Thread for I/O-bound operation
       CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
         try {
-          String result = uploadService.upload(repositoryName, request);
-          Packet responseJson = new Packet(result);
+          Packet responseJson = new Packet(uploadService.upload(repositoryName, request));
           return objectMapper.writeValueAsString(responseJson);
         }
         catch (Exception e) {
-          log.error("Unable to perform upload to repository {} in virtual thread", repositoryName, e);
-          throw new RuntimeException(e);
+          log.error("Unable to perform upload to repository {}", repositoryName, e);
+          try {
+            ErrorPacket responseJson = new ErrorPacket(e.getMessage());
+            return objectMapper.writeValueAsString(Arrays.asList(responseJson));
+          }
+          catch (Exception jsonException) {
+            log.error("Error serializing error response", jsonException);
+            throw new RuntimeException("Error processing upload", e);
+          }
         }
-      }, Executors.newVirtualThreadPerTaskExecutor());
+      }, runnable -> Thread.startVirtualThread(runnable));
       
-      return future.join(); // Wait for the virtual thread to complete
+      return future.join();
     }
-    catch (RuntimeException e) {
-      // Unwrap the original exception if it was wrapped by the CompletableFuture
-      Throwable cause = e.getCause() != null ? e.getCause() : e;
-      log.error("Unable to perform upload to repository {}", repositoryName, cause);
-      ErrorPacket responseJson = new ErrorPacket(cause.getMessage());
+    catch (Exception e) {
+      log.error("Unexpected error during upload to repository {}", repositoryName, e);
+      ErrorPacket responseJson = new ErrorPacket(e.getMessage());
       return objectMapper.writeValueAsString(Arrays.asList(responseJson));
     }
   }
@@ -122,7 +125,18 @@ public class UploadResource extends ComponentSupport implements Resource
                                                 @Context final HttpServletRequest request)
       throws IOException
   {
-    return htmlWrap(postComponent(repositoryName, request));
+    // Use CompletableFuture with Virtual Thread for I/O-bound operation
+    CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        return htmlWrap(postComponent(repositoryName, request));
+      }
+      catch (Exception e) {
+        log.error("Error generating HTML response for repository {}", repositoryName, e);
+        throw new RuntimeException("Error generating HTML response", e);
+      }
+    }, runnable -> Thread.startVirtualThread(runnable));
+    
+    return future.join();
   }
 
   public static class Packet

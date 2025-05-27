@@ -29,10 +29,6 @@ import static org.mockito.Mockito.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
-/**
- * Tests for {@link EmailComponent} using JUnit Jupiter (JUnit 5) with Mockito 4.11.0 extension.
- * Updated for Java 21 compatibility.
- */
 @ExtendWith(MockitoExtension.class)
 public class EmailComponentTest
     extends TestSupport
@@ -62,12 +58,8 @@ public class EmailComponentTest
     when(emailConfiguration.getSubjectPrefix()).thenReturn("prefix");
   }
 
-  /**
-   * Tests that reading the configuration returns the current configuration with a password placeholder
-   * when a password is set.
-   */
   @Test
-  public void readReturnsCurrentConfigurationWithPasswordPlaceHolder() {
+  public void readShouldReturnCurrentConfigurationWithPasswordPlaceHolder() {
     when(emailConfiguration.getPassword()).thenReturn(mock(Secret.class));
 
     EmailConfigurationXO actualConfig = underTest.read();
@@ -87,12 +79,8 @@ public class EmailComponentTest
     assertThat(actualConfig.isSslCheckServerIdentityEnabled(), is(false));
   }
 
-  /**
-   * Tests that reading the configuration returns the current configuration with a null password
-   * when no password is set.
-   */
   @Test
-  public void readReturnsCurrentConfigurationWithEmptyPasswordPlaceHolder() {
+  public void readShouldReturnCurrentConfigurationWithEmptyPasswordPlaceHolder() {
     when(emailConfiguration.getPassword()).thenReturn(null);
 
     EmailConfigurationXO actualConfig = underTest.read();
@@ -112,11 +100,8 @@ public class EmailComponentTest
     assertThat(actualConfig.isSslCheckServerIdentityEnabled(), is(false));
   }
 
-  /**
-   * Tests that updating the configuration saves it correctly.
-   */
   @Test
-  public void updateSavesConfiguration() {
+  public void updateShouldSaveConfiguration() {
     when(emailManager.newConfiguration()).thenReturn(emailConfiguration);
 
     underTest.update(getConfigurationXO("baz"));
@@ -125,11 +110,8 @@ public class EmailComponentTest
     verify(emailManager).getConfiguration();
   }
 
-  /**
-   * Tests that sending a verification email works correctly.
-   */
   @Test
-  public void sendVerification() throws Exception {
+  public void sendVerificationShouldSendEmailToAddress() throws Exception {
     EmailConfigurationXO formCredentials = getConfigurationXO("baz");
     EmailConfiguration emailConfig = mock(EmailConfiguration.class);
     when(emailManager.newConfiguration()).thenReturn(emailConfig);
@@ -139,12 +121,6 @@ public class EmailComponentTest
     verify(emailManager).sendVerification(emailConfig, "baz", ADDRESS);
   }
 
-  /**
-   * Helper method to create an {@link EmailConfigurationXO} with the given password.
-   * 
-   * @param password the password to set in the configuration
-   * @return a new email configuration object
-   */
   private static EmailConfigurationXO getConfigurationXO(final String password) {
     return new EmailConfigurationXO(
         false, "localhost", 25,

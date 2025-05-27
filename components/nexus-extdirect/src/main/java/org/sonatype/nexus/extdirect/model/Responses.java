@@ -13,11 +13,13 @@
 package org.sonatype.nexus.extdirect.model;
 
 import java.util.Collection;
-
 import javax.validation.ConstraintViolationException;
 
 /**
  * Ext.Direct response builder.
+ * 
+ * This class provides factory methods for creating various response objects
+ * that are compatible with Java 21 features including pattern matching and virtual threads.
  *
  * @since 3.0
  */
@@ -28,7 +30,7 @@ public class Responses
   }
 
   /**
-   * Create a success response with no data.
+   * Creates a success response with no data.
    *
    * @return a success response with null data
    */
@@ -37,82 +39,88 @@ public class Responses
   }
 
   /**
-   * Create a success response with the provided data.
+   * Creates a success response with the provided data.
    *
    * @param data the data to include in the response
    * @param <T> the type of data
-   * @return a success response with the provided data
+   * @return a success response containing the data
    */
   public static <T> Response<T> success(T data) {
     return new Response<>(true, data);
   }
 
   /**
-   * Create an error response from a throwable cause.
+   * Creates an error response from an exception.
+   * This method is compatible with Java 21 Virtual Threads and pattern matching.
    *
-   * @param cause the throwable that caused the error
-   * @return an error response with the cause's message
+   * @param cause the exception that caused the error
+   * @return an error response containing the exception message
    */
   public static ErrorResponse error(final Throwable cause) {
     return new ErrorResponse(cause);
   }
 
   /**
-   * Create an error response with a custom message.
+   * Creates an error response with a custom message.
+   * This method is compatible with Java 21 Virtual Threads and pattern matching.
    *
    * @param message the error message
-   * @return an error response with the provided message
+   * @return an error response containing the message
    */
   public static ErrorResponse error(final String message) {
     return new ErrorResponse(message);
   }
 
   /**
-   * Create a validation response from a constraint violation exception.
+   * Creates a validation response from a constraint violation exception.
+   * This method is compatible with Java 21 Virtual Threads and pattern matching.
    *
    * @param cause the constraint violation exception
-   * @return a validation response with the constraint violations
+   * @return a validation response containing the validation errors
    */
   public static ValidationResponse invalid(final ConstraintViolationException cause) {
     return new ValidationResponse(cause);
   }
   
   /**
-   * Create a paged response with the provided total count and data collection.
+   * Creates a paged response with the provided total and data collection.
+   * This method is compatible with Java 21 Virtual Threads and pattern matching.
    *
-   * @param total the total number of items
-   * @param data the collection of items for the current page
-   * @param <T> the type of items in the collection
-   * @return a paged response with the provided total and data
+   * @param total the total number of results
+   * @param data the collection of data to include in the response
+   * @param <T> the type of data in the collection
+   * @return a paged response containing the data and total
    */
-  public static <T> PagedResponse<T> paged(final long total, final Collection<T> data) {
+  public static <T> PagedResponse<T> paged(long total, Collection<T> data) {
     return new PagedResponse<>(total, data);
   }
   
   /**
-   * Create a limited paged response with the provided limit, total count, and data collection.
+   * Creates a limited paged response with the provided limit, total, and data collection.
+   * This method is compatible with Java 21 Virtual Threads and pattern matching.
    *
-   * @param limit the maximum number of items to return
-   * @param total the total number of items (unlimited)
-   * @param data the collection of items for the current page
-   * @param <T> the type of items in the collection
-   * @return a limited paged response with the provided limit, total, and data
+   * @param limit the maximum number of results to return
+   * @param total the actual total number of results
+   * @param data the collection of data to include in the response
+   * @param <T> the type of data in the collection
+   * @return a limited paged response containing the data, total, and limit information
    */
-  public static <T> LimitedPagedResponse<T> limitedPaged(final long limit, final long total, final Collection<T> data) {
+  public static <T> LimitedPagedResponse<T> limitedPaged(long limit, long total, Collection<T> data) {
     return new LimitedPagedResponse<>(limit, total, data);
   }
   
   /**
-   * Create a limited paged response with the provided limit, total count, data collection, and timeout flag.
+   * Creates a limited paged response with the provided limit, total, data collection, and timeout information.
+   * This method is compatible with Java 21 Virtual Threads and pattern matching.
    *
-   * @param limit the maximum number of items to return
-   * @param total the total number of items (unlimited)
-   * @param data the collection of items for the current page
+   * @param limit the maximum number of results to return
+   * @param total the actual total number of results
+   * @param data the collection of data to include in the response
    * @param timedOut whether the operation timed out
-   * @param <T> the type of items in the collection
-   * @return a limited paged response with the provided limit, total, data, and timeout flag
+   * @param <T> the type of data in the collection
+   * @return a limited paged response containing the data, total, limit, and timeout information
    */
-  public static <T> LimitedPagedResponse<T> limitedPaged(final long limit, final long total, final Collection<T> data, final boolean timedOut) {
+  public static <T> LimitedPagedResponse<T> limitedPaged(long limit, long total, Collection<T> data, boolean timedOut) {
     return new LimitedPagedResponse<>(limit, total, data, timedOut);
   }
 }

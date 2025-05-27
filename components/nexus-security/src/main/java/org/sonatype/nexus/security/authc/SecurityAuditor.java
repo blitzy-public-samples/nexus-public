@@ -12,26 +12,23 @@
  */
 package org.sonatype.nexus.security.authc;
 
-import java.util.concurrent.CompletableFuture;
-import javax.inject.Inject;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
-import org.sonatype.nexus.common.event.EventManager;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 /**
- * Security auditor that records authentication events.
+ * Security auditor that records security events using virtual threads for asynchronous processing.
  * 
- * This implementation leverages Java 21 Virtual Threads for asynchronous audit event processing
- * and String Templates for consistent log message generation.
- * 
- * @since 3.0
+ * @since 3.60
  */
 @Named
 @Singleton
@@ -39,56 +36,51 @@ public class SecurityAuditor
     extends AuditorSupport
     implements EventAware
 {
-  private final EventManager eventManager;
+  /**
+   * Virtual thread executor for processing audit events asynchronously.
+   */
+  private final Executor virtualThreadExecutor;
 
-  @Inject
-  public SecurityAuditor(EventManager eventManager) {
-    this.eventManager = eventManager;
+  public SecurityAuditor() {
     registerType(LoginEvent.class, "login");
     registerType(LogoutEvent.class, "logout");
+    
+    // Create a virtual thread per task executor for asynchronous audit processing
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
-   * Handles security events by recording them in the audit log.
+   * Handles security events by processing them asynchronously using virtual threads.
    * 
-   * This method is annotated with @AllowConcurrentEvents to enable concurrent processing
-   * which works well with Java 21 Virtual Threads for high-throughput event handling.
-   * 
-   * @param event The security event to be audited
+   * @param event the security event to process
    */
   @Subscribe
   @AllowConcurrentEvents
   public void on(final SecurityEvent event) {
+    // Process the event asynchronously using a virtual thread
+    virtualThreadExecutor.execute(() -> processSecurityEvent(event));
+  }
+  
+  /**
+   * Processes a security event by creating audit data and recording it.
+   * Uses String Templates for consistent log message generation.
+   * 
+   * @param event the security event to process
+   */
+  private void processSecurityEvent(final SecurityEvent event) {
     if (!isRecording()) {
       return;
     }
     
-    // Create audit data using String Templates for consistent formatting
     AuditData data = new AuditData();
-    data.setDomain(event.realm());
+    data.setDomain(event.getRealm());
     data.setType(type(event.getClass()));
+    data.getAttributes().put("principal", event.getPrincipal());
     
-    // Use String Templates for attribute values
-    String principalInfo = STR."User \{event.principal()} in realm \{event.realm()}";
-    data.getAttributes().put("principal", event.principal());
-    data.getAttributes().put("info", principalInfo);
+    // Use String Templates for consistent log message generation
+    String eventDescription = STR."Security event: \{type(event.getClass())} for principal \{event.getPrincipal()} in realm \{event.getRealm()}";
+    data.getAttributes().put("description", eventDescription);
     
-    // Process audit asynchronously using Virtual Threads
-    if (eventManager.isVirtualThreadsEnabled()) {
-      CompletableFuture.runAsync(() -> record(data));
-    } else {
-      record(data);
-    }
-  }
-  
-  /**
-   * Processes a security event asynchronously using Java 21 Virtual Threads.
-   * This method provides an alternative way to handle events outside the EventBus.
-   * 
-   * @param event The security event to process
-   * @return A CompletableFuture that completes when the event is processed
-   */
-  public CompletableFuture<Void> processAsync(final SecurityEvent event) {
-    return eventManager.postAsync(event);
+    record(data);
   }
 }

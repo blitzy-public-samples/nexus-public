@@ -13,18 +13,17 @@
 package org.sonatype.nexus.formfields;
 
 /**
- * Task scope field.
+ * Task scope field with Java 21 compatibility.
  * 
- * @since 3.0
- * @see AbstractFormField
+ * @since 3.60
  */
 public class TaskScopeFormField
     extends AbstractFormField<Void>
 {
   /**
-   * Creates a new task scope form field.
+   * Creates a new task scope field with the specified ID.
    *
-   * @param id the field identifier
+   * @param id The field identifier
    */
   public TaskScopeFormField(final String id) {
     super(id, "", "", false);
@@ -33,5 +32,16 @@ public class TaskScopeFormField
   @Override
   public String getType() {
     return "taskScope";
+  }
+  
+  /**
+   * Returns a string representation of this task scope field.
+   * 
+   * @return a string representation of this task scope field
+   * @since 3.60
+   */
+  @Override
+  public String toString() {
+    return STR."TaskScopeFormField{id=\{getId()}, type=\{getType()}}";
   }
 }

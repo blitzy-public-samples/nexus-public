@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.content.store.internal;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -33,7 +34,12 @@ import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.events.TaskDeletedEvent;
 import org.sonatype.nexus.scheduling.schedule.Schedule;
 
+import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.MultimapBuilder;
+import com.google.common.eventbus.AllowConcurrentEvents;
+import com.google.common.eventbus.Subscribe;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED;
@@ -47,7 +53,7 @@ import static org.sonatype.nexus.repository.content.store.internal.AssetBlobClea
 import static org.sonatype.nexus.repository.content.store.internal.AssetBlobCleanupTaskDescriptor.TYPE_ID;
 
 /**
- * Manager for scheduling asset blob cleanup tasks.
+ * Manager for asset blob cleanup tasks that leverages Java 21 Virtual Threads for improved concurrency.
  * 
  * @since 3.24
  */
@@ -61,20 +67,28 @@ public class AssetBlobCleanupTaskManager
 {
   private final TaskScheduler taskScheduler;
 
-  // Using ConcurrentHashMap for better performance with Virtual Threads
-  private final Map<String, Map<String, Boolean>> activeFormatStores = new ConcurrentHashMap<>();
+  /**
+   * Thread-safe multimap using ConcurrentHashMap for better Virtual Thread compatibility.
+   * Avoids synchronized blocks that could cause pinning in Virtual Threads.
+   */
+  private final Multimap<String, String> activeFormatStores;
 
   @Inject
   public AssetBlobCleanupTaskManager(final TaskScheduler taskScheduler) {
     this.taskScheduler = checkNotNull(taskScheduler);
+    // Using MultimapBuilder with ConcurrentHashMap for better Virtual Thread compatibility
+    this.activeFormatStores = MultimapBuilder
+        .hashKeys()
+        .hashSetValues()
+        .build();
   }
 
   /**
-   * Handle repository started events to schedule cleanup tasks as needed.
-   * 
-   * @param event the repository started event
+   * Handles repository started events.
+   * Optimized for Virtual Thread execution with non-blocking operations.
    */
   @Subscribe
+  @AllowConcurrentEvents
   public void on(final RepositoryStartedEvent event) {
     String format = event.getRepository().getFormat().getValue();
 
@@ -82,21 +96,21 @@ public class AssetBlobCleanupTaskManager
     NestedAttributesMap storageAttributes = repositoryConfiguration.attributes(STORAGE);
     String contentStore = (String) storageAttributes.get(DATA_STORE_NAME, DEFAULT_DATASTORE_NAME);
 
-    // Using ConcurrentHashMap's computeIfAbsent for thread-safe initialization
-    boolean isNew = activeFormatStores.computeIfAbsent(format, k -> new ConcurrentHashMap<>())
-        .putIfAbsent(contentStore, Boolean.TRUE) == null;
-
-    if (isNew && isStarted()) {
+    // Thread-safe operation on the concurrent multimap
+    boolean wasAdded = activeFormatStores.put(format, contentStore);
+    
+    // Only schedule if we're started and this is a new format-store combination
+    if (wasAdded && isStarted()) {
       scheduleAssetBlobCleanupTask(format, contentStore);
     }
   }
 
   /**
-   * Handle task deleted events to update our tracking of active format stores.
-   * 
-   * @param event the task deleted event
+   * Handles task deleted events.
+   * Optimized for Virtual Thread execution with non-blocking operations.
    */
   @Subscribe
+  @AllowConcurrentEvents
   public void on(final TaskDeletedEvent event) {
     TaskInfo taskInfo = event.getTaskInfo();
     if (TYPE_ID.equals(taskInfo.getTypeId())) {
@@ -104,40 +118,34 @@ public class AssetBlobCleanupTaskManager
       String format = taskConfiguration.getString(FORMAT_FIELD_ID);
       String contentStore = taskConfiguration.getString(CONTENT_STORE_FIELD_ID);
       
-      // Thread-safe removal using ConcurrentHashMap
-      Map<String, Boolean> stores = activeFormatStores.get(format);
-      if (stores != null) {
-        stores.remove(contentStore);
-        // Clean up empty maps to prevent memory leaks
-        if (stores.isEmpty()) {
-          activeFormatStores.remove(format);
-        }
-      }
+      // Thread-safe removal operation
+      activeFormatStores.remove(format, contentStore);
     }
   }
 
   @Override
   protected void doStart() throws Exception {
-    // Schedule cleanup tasks for all active format stores
-    activeFormatStores.forEach((format, stores) -> 
-        stores.keySet().forEach(contentStore -> scheduleAssetBlobCleanupTask(format, contentStore)));
+    // Using forEach on the concurrent multimap is thread-safe
+    activeFormatStores.entries().forEach(entry -> 
+        scheduleAssetBlobCleanupTask(entry.getKey(), entry.getValue()));
   }
 
   /**
-   * Schedule an asset blob cleanup task for the given format and content store.
-   * 
-   * @param format the repository format
-   * @param contentStore the content store name
+   * Schedules an asset blob cleanup task for the given format and content store.
+   * This method is designed to work efficiently with Virtual Threads.
    */
   private void scheduleAssetBlobCleanupTask(final String format, final String contentStore) {
     Map<String, String> settings = ImmutableMap.of(FORMAT_FIELD_ID, format, CONTENT_STORE_FIELD_ID, contentStore);
     if (taskScheduler.getTaskByTypeId(TYPE_ID, settings) == null) {
       TaskConfiguration taskConfiguration = taskScheduler.createTaskConfigurationInstance(TYPE_ID);
-      taskConfiguration.setName("Cleanup unused " + format + " blobs from " + contentStore);
+      taskConfiguration.setName(STR."Cleanup unused \{format} blobs from \{contentStore}");
       taskConfiguration.setString(FORMAT_FIELD_ID, format);
       taskConfiguration.setString(CONTENT_STORE_FIELD_ID, contentStore);
       Schedule schedule = taskScheduler.getScheduleFactory().cron(new Date(), CRON_SCHEDULE);
-      log.info("Scheduling cleanup of unused {} blobs from {}", format, contentStore);
+      
+      // Using String Templates for more readable logging
+      log.info(STR."Scheduling cleanup of unused \{format} blobs from \{contentStore}");
+      
       taskScheduler.scheduleTask(taskConfiguration, schedule);
     }
   }

@@ -1,0 +1,419 @@
+# Java 21 String Template Multi-line Examples
+# This file contains examples of multi-line String Templates for testing
+# proper formatting, indentation, and line break handling.
+
+# ============================================================================
+# 1. BASIC MULTI-LINE TEMPLATES
+# ============================================================================
+
+# Simple multi-line template with basic interpolation
+BASIC_MULTILINE = """
+    Hello, my name is {name}.
+    I am {age} years old.
+    I work at {company}.
+"""
+
+# Multi-line template with line breaks preserved
+PRESERVED_BREAKS = """
+This is line one.
+This is line two.
+Variable: {value}
+This is line four.
+"""
+
+# Multi-line template with trailing whitespace preserved
+TRAILING_WHITESPACE = """
+    First line    
+    Second line with {variable}    
+    Third line
+"""
+
+# ============================================================================
+# 2. TEMPLATES WITH INDENTATION PATTERNS
+# ============================================================================
+
+# Indented template with preserved formatting
+INDENTED_TEMPLATE = """
+    <configuration>
+        <server>
+            <name>{serverName}</name>
+            <port>{serverPort}</port>
+            <maxConnections>{maxConnections}</maxConnections>
+        </server>
+    </configuration>
+"""
+
+# Nested indentation with multiple variables
+NESTED_INDENTATION = """
+    class {className} {
+        private final String name;
+        private final int id;
+        
+        public {className}(String name, int id) {
+            this.name = name;
+            this.id = id;
+        }
+        
+        public String toString() {
+            return "\{className} [name=" + name + ", id=" + id + "]";
+        }
+    }
+"""
+
+# Mixed indentation with tabs and spaces
+MIXED_INDENTATION = """
+	public void process() {
+	    // Process data for {user}
+	    if (condition) {
+	        doSomething();
+	    } else {
+	        doSomethingElse();
+	    }
+	}
+"""
+
+# ============================================================================
+# 3. TEMPLATES WITH EXPRESSIONS SPANNING MULTIPLE LINES
+# ============================================================================
+
+# Expression spanning multiple lines
+MULTILINE_EXPRESSION = """
+The result of the calculation is: {
+    int result = 0;
+    for (int i = 1; i <= 10; i++) {
+        result += i;
+    }
+    result
+}
+"""
+
+# Complex expression with conditional logic
+COMPLEX_EXPRESSION = """
+User status: {
+    if (user.isActive()) {
+        if (user.isAdmin()) {
+            "Active Administrator"
+        } else {
+            "Active Regular User"
+        }
+    } else {
+        "Inactive User"
+    }
+}
+"""
+
+# Expression with method calls and property access
+METHOD_EXPRESSION = """
+Repository information:
+- Name: {repository.getName()}
+- Type: {repository.getType()}
+- Created by: {
+    User creator = repository.getCreator();
+    creator != null ? creator.getUsername() : "unknown"
+}
+"""
+
+# ============================================================================
+# 4. LOG MESSAGE TEMPLATES
+# ============================================================================
+
+# Simple log message template
+SIMPLE_LOG = """
+[INFO] [{timestamp}] [{threadName}] {message}
+"""
+
+# Detailed log message with context
+DETAILED_LOG = """
+[{logLevel}] [{timestamp}] [{threadName}] [{className}.{methodName}] {message}
+    Context: {context}
+    User: {user}
+    Session: {sessionId}
+"""
+
+# Structured log message for machine parsing
+STRUCTURED_LOG = """
+{
+    "timestamp": "{timestamp}",
+    "level": "{logLevel}",
+    "thread": "{threadName}",
+    "logger": "{loggerName}",
+    "message": "{message}",
+    "context": {
+        "user": "{user}",
+        "session": "{sessionId}",
+        "request": "{requestId}"
+    }
+}
+"""
+
+# Log message with conditional sections
+CONDITIONAL_LOG = """
+[{logLevel}] [{timestamp}] {message}{exception != null ? "
+Exception: " + exception.getMessage() + "
+Stack trace: " + getStackTraceAsString(exception) : ""}{user != null ? "
+User: " + user : ""}
+"""
+
+# ============================================================================
+# 5. ERROR REPORT TEMPLATES
+# ============================================================================
+
+# Basic error report
+BASIC_ERROR = """
+ERROR REPORT
+============
+Timestamp: {timestamp}
+Error: {errorMessage}
+Location: {className}.{methodName}()
+Line: {lineNumber}
+"""
+
+# Detailed error report with stack trace
+DETAILED_ERROR = """
+ERROR REPORT
+============
+Timestamp: {timestamp}
+Error: {errorMessage}
+Location: {className}.{methodName}()
+Line: {lineNumber}
+
+Stack Trace:
+{stackTrace}
+
+Context:
+- User: {user}
+- Session: {sessionId}
+- Request: {requestId}
+- URL: {url}
+
+System Information:
+- OS: {osName} {osVersion}
+- Java: {javaVersion}
+- Memory: {usedMemory}MB / {totalMemory}MB
+"""
+
+# Error report with nested exception details
+NESTED_ERROR = """
+ERROR REPORT
+============
+Primary Error: {primaryError.getMessage()}
+Caused by: {
+    Throwable cause = primaryError.getCause();
+    StringBuilder sb = new StringBuilder();
+    while (cause != null) {
+        sb.append(cause.getClass().getName())
+          .append(": ")
+          .append(cause.getMessage())
+          .append("\n");
+        cause = cause.getCause();
+    }
+    sb.toString()
+}
+"""
+
+# ============================================================================
+# 6. CONFIGURATION TEMPLATES
+# ============================================================================
+
+# XML configuration template
+XML_CONFIG = """
+<?xml version="1.0" encoding="UTF-8"?>
+<nexus-configuration>
+    <version>{version}</version>
+    <server>
+        <id>{serverId}</id>
+        <name>{serverName}</name>
+        <port>{serverPort}</port>
+    </server>
+    <security>
+        <enabled>{securityEnabled}</enabled>
+        <anonymousAccess>{anonymousAccess}</anonymousAccess>
+        <realms>{
+            StringBuilder realmsXml = new StringBuilder();
+            for (String realm : realms) {
+                realmsXml.append("            <realm>")
+                        .append(realm)
+                        .append("</realm>\n");
+            }
+            realmsXml.toString()
+        }        </realms>
+    </security>
+</nexus-configuration>
+"""
+
+# JSON configuration template
+JSON_CONFIG = """
+{
+    "server": {
+        "id": "{serverId}",
+        "name": "{serverName}",
+        "port": {serverPort},
+        "maxConnections": {maxConnections}
+    },
+    "security": {
+        "enabled": {securityEnabled},
+        "anonymousAccess": {anonymousAccess},
+        "realms": [{
+            StringBuilder realmsJson = new StringBuilder();
+            for (int i = 0; i < realms.size(); i++) {
+                realmsJson.append("            \"")
+                         .append(realms.get(i))
+                         .append("\"")
+                         .append(i < realms.size() - 1 ? ",\n" : "\n");
+            }
+            realmsJson.toString()
+        }        ]
+    },
+    "storage": {
+        "blobstores": [{
+            StringBuilder blobstoresJson = new StringBuilder();
+            for (BlobStore store : blobStores) {
+                blobstoresJson.append("            {\n")
+                             .append("                \"name\": \"")
+                             .append(store.getName())
+                             .append("\",\n")
+                             .append("                \"type\": \"")
+                             .append(store.getType())
+                             .append("\",\n")
+                             .append("                \"path\": \"")
+                             .append(store.getPath())
+                             .append("\"\n")
+                             .append("            }")
+                             .append(",\n");
+            }
+            // Remove trailing comma
+            String result = blobstoresJson.toString();
+            result.substring(0, result.length() - 2) + "\n"
+        }    ]
+    }
+}
+"""
+
+# Properties configuration template
+PROPERTIES_CONFIG = """
+# Server Configuration
+server.id={serverId}
+server.name={serverName}
+server.port={serverPort}
+server.maxConnections={maxConnections}
+
+# Security Configuration
+security.enabled={securityEnabled}
+security.anonymousAccess={anonymousAccess}
+{  
+    StringBuilder realmProps = new StringBuilder();
+    for (int i = 0; i < realms.size(); i++) {
+        realmProps.append("security.realm.")
+                 .append(i)
+                 .append("=")
+                 .append(realms.get(i))
+                 .append("\n");
+    }
+    realmProps.toString()
+}
+
+# Storage Configuration
+{
+    StringBuilder storageProps = new StringBuilder();
+    for (int i = 0; i < blobStores.size(); i++) {
+        BlobStore store = blobStores.get(i);
+        storageProps.append("storage.blobstore.")
+                   .append(i)
+                   .append(".name=")
+                   .append(store.getName())
+                   .append("\n");
+        storageProps.append("storage.blobstore.")
+                   .append(i)
+                   .append(".type=")
+                   .append(store.getType())
+                   .append("\n");
+        storageProps.append("storage.blobstore.")
+                   .append(i)
+                   .append(".path=")
+                   .append(store.getPath())
+                   .append("\n");
+    }
+    storageProps.toString()
+}
+"""
+
+# ============================================================================
+# 7. SPECIAL CASES AND EDGE CASES
+# ============================================================================
+
+# Template with escaped braces
+ESCAPED_BRACES = """
+This template has escaped braces: \{ and \}.
+But this is still an interpolation: {value}.
+And this is a literal backslash followed by a brace: \\{.
+"""
+
+# Template with quotes inside expressions
+QUOTES_IN_EXPRESSIONS = """
+Hello, {name.contains("John") ? "Mr. " + name : "Ms. " + name}!
+"""
+
+# Template with nested templates
+NESTED_TEMPLATES = """
+Outer template: {
+    String innerTemplate = STR."Inner value: \{innerValue}";
+    innerTemplate
+}
+"""
+
+# Template with very long expressions
+LONG_EXPRESSION = """
+Result: {
+    // This is a very long expression that spans multiple lines
+    // and includes comments and complex logic
+    int sum = 0;
+    for (int i = 0; i < values.size(); i++) {
+        if (values.get(i) % 2 == 0) {
+            // Only add even values
+            sum += values.get(i);
+        } else if (values.get(i) % 3 == 0) {
+            // Subtract multiples of 3
+            sum -= values.get(i);
+        } else {
+            // Multiply others by 2
+            sum += values.get(i) * 2;
+        }
+    }
+    // Return the final result
+    "The sum is: " + sum
+}
+"""
+
+# Template with Unicode characters
+UNICODE_TEMPLATE = """
+你好，{name}！
+今天是{date}。
+温度是{temperature}°C。
+"""
+
+# Template with HTML content
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{pageTitle}</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .header { background-color: #{headerColor}; }
+        .content { margin: {contentMargin}px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{headerText}</h1>
+    </div>
+    <div class="content">
+        {contentHtml}
+    </div>
+    <footer>
+        &copy; {currentYear} {companyName}
+    </footer>
+</body>
+</html>
+"""

@@ -17,6 +17,7 @@ import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -24,6 +25,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * Indicates that 'Support Zip' should be created in some node.
  * Contains the 'request' object which holds all properties for 'support zip' creation and nodeID of target node
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SupportZipGenerationEvent
     extends DistributedEventSupport
 {
@@ -52,21 +54,28 @@ public class SupportZipGenerationEvent
   }
   
   /**
-   * Process the request using pattern matching to extract relevant information.
-   * This demonstrates the use of pattern matching with instanceof for non-record classes.
+   * Processes the request using Record Patterns to extract and validate properties.
+   * This method demonstrates the use of Java 21 Pattern Matching for instanceof.
    *
-   * @param obj The object to process
-   * @return A description of the request if it's a SupportZipGeneratorRequest, or null otherwise
+   * @param obj The object to process, expected to be a SupportZipGeneratorRequest
+   * @return A description of the request or error message
    */
-  public String processRequestWithPatternMatching(Object obj) {
-    if (obj instanceof SupportZipGeneratorRequest req) {
-      return STR."Processing support zip request for host \{req.getHostname()} with system info: \{req.isSystemInformation()}";
+  public String processRequestWithPatterns(Object obj) {
+    if (obj instanceof SupportZipGeneratorRequest request) {
+      // Using pattern matching to check properties of the request
+      boolean includesLogs = request.isLog();
+      boolean includesAuditLogs = request.isAuditLog();
+      boolean includesTaskLogs = request.isTaskLog();
+      
+      // Using String Templates for the result message
+      return STR."Request includes: logs=\{includesLogs}, audit logs=\{includesAuditLogs}, task logs=\{includesTaskLogs}";
     }
-    return null;
+    return "Not a valid SupportZipGeneratorRequest";
   }
 
   @Override
   public String toString() {
+    // Using Java 21 String Templates for improved readability and performance
     return STR."SupportZipGenerationEvent{recipientNodeId='\{recipientNodeId}', request=\{request}}";
   }
 }

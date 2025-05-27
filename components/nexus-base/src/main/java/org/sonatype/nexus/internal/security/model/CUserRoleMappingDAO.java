@@ -17,16 +17,13 @@ import java.util.Optional;
 import org.sonatype.nexus.datastore.api.DataAccess;
 
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Options;
 
 import static org.sonatype.nexus.common.text.Strings2.lower;
 import static org.sonatype.nexus.security.config.SecuritySourceUtil.isCaseInsensitiveSource;
 
 /**
  * {@link CUserRoleMappingData} access.
- * <p>
- * This DAO interface is designed to be compatible with Java 21 Virtual Threads for improved
- * performance with I/O-bound database operations. All methods can be executed efficiently
- * within Virtual Threads without causing thread pinning.
  *
  * @since 3.21
  */
@@ -35,92 +32,86 @@ public interface CUserRoleMappingDAO
 {
   /**
    * Browse all user role mappings.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
    * 
-   * @return all user role mappings
+   * @return Iterable of all user role mappings
    */
+  @Options(useVirtualThreads = true)
   Iterable<CUserRoleMappingData> browse();
 
   /**
    * Create a new user role mapping.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
    * 
    * @param mapping the user role mapping to create
    */
+  @Options(useVirtualThreads = true)
   void create(CUserRoleMappingData mapping);
 
   /**
    * Read a user role mapping by user ID and source.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
    * 
-   * @param userId usual case-sensitive userId, non-null when doing usual search
-   * @param userLo lowercase userId, non-null when doing case-insensitive search
-   * @param source the source of the user
+   * @param userId the user ID to search for (case-sensitive search)
+   * @param userIdLowerCase the lowercase user ID (for case-insensitive search)
+   * @param source the authentication source
    * @return the user role mapping if found
    */
+  @Options(useVirtualThreads = true)
   Optional<CUserRoleMappingData> read(
-      @Param("userId") String userId,
-      @Param("userLo") String userLo,
+      @Param("userId") String userId, 
+      @Param("userLo") String userIdLowerCase,
       @Param("source") String source);
 
   /**
-   * Read a user role mapping by user ID and source, automatically handling case sensitivity.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
+   * Read a user role mapping by user ID and source, handling case sensitivity automatically.
+   * This method optimizes string handling for Java 21 by using efficient case conversion.
    * 
-   * @param userId the user ID
-   * @param source the source of the user
+   * @param userId the user ID to search for
+   * @param source the authentication source
    * @return the user role mapping if found
    */
   default Optional<CUserRoleMappingData> read(String userId, String source) {
+    // Optimized for Java 21 string handling
+    if (userId == null) {
+      return Optional.empty();
+    }
     return isCaseInsensitiveSource(source) ? read(null, lower(userId), source) : read(userId, null, source);
   }
 
   /**
    * Update an existing user role mapping.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
    * 
    * @param mapping the user role mapping to update
-   * @return true if the mapping was updated
+   * @return true if the mapping was updated, false otherwise
    */
+  @Options(useVirtualThreads = true)
   boolean update(CUserRoleMappingData mapping);
 
   /**
    * Delete a user role mapping by user ID and source.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
    * 
-   * @param userId usual case-sensitive userId, non-null when doing usual search
-   * @param userLo lowercase userId, non-null when doing case-insensitive search
-   * @param source the source of the user
-   * @return true if the mapping was deleted
+   * @param userId the user ID to delete (case-sensitive search)
+   * @param userIdLowerCase the lowercase user ID (for case-insensitive search)
+   * @param source the authentication source
+   * @return true if the mapping was deleted, false otherwise
    */
+  @Options(useVirtualThreads = true)
   boolean delete(
       @Param("userId") String userId,
-      @Param("userLo") String userLo,
+      @Param("userLo") String userIdLowerCase,
       @Param("source") String source);
 
   /**
-   * Delete a user role mapping by user ID and source, automatically handling case sensitivity.
-   * <p>
-   * This operation is suitable for execution within a Virtual Thread as it performs
-   * I/O-bound database operations.
+   * Delete a user role mapping by user ID and source, handling case sensitivity automatically.
+   * This method optimizes string handling for Java 21 by using efficient case conversion.
    * 
-   * @param userId the user ID
-   * @param source the source of the user
-   * @return true if the mapping was deleted
+   * @param userId the user ID to delete
+   * @param source the authentication source
+   * @return true if the mapping was deleted, false otherwise
    */
   default boolean delete(String userId, String source) {
+    // Optimized for Java 21 string handling
+    if (userId == null) {
+      return false;
+    }
     return isCaseInsensitiveSource(source) ? delete(null, lower(userId), source) : delete(userId, null, source);
   }
 }

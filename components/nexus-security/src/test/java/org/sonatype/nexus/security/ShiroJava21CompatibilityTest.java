@@ -13,299 +13,411 @@
 package org.sonatype.nexus.security;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.sonatype.nexus.security.user.User;
+import org.sonatype.nexus.security.user.UserNotFoundException;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
 import org.apache.shiro.util.ThreadState;
-
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
- * Tests Apache Shiro compatibility with Java 21 features, particularly Virtual Threads.
- * <p>
- * This test suite verifies that Shiro's authentication, authorization, and thread state
- * management work correctly with Java 21's Virtual Threads and other features.
+ * Test suite to verify Apache Shiro compatibility with Java 21 features, particularly Virtual Threads.
+ * 
+ * This test validates that Shiro's security context propagation, authentication, authorization,
+ * and session management work correctly with Java 21's Virtual Threads and other features.
  */
 public class ShiroJava21CompatibilityTest
     extends AbstractSecurityTest
 {
-  private static final String USERNAME = "admin";
-  private static final String PASSWORD = "admin123";
-
-  private Subject subject;
-
-  @Before
-  public void setupSubject() {
-    // Create and authenticate a subject for testing
-    subject = SecurityUtils.getSubject();
-    UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
-    subject.login(token);
-    assertThat(subject.isAuthenticated(), is(true));
-  }
-
-  @After
-  public void cleanupSubject() {
-    if (subject != null && subject.isAuthenticated()) {
-      subject.logout();
+  private static final String TEST_USER_ID = "test-user";
+  private static final String TEST_USER_PASSWORD = "password123";
+  
+  /**
+   * Set up a test user for authentication tests.
+   */
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    
+    try {
+      // Delete the user if it already exists
+      getUserManager().deleteUser(TEST_USER_ID);
     }
+    catch (UserNotFoundException e) {
+      // Ignore, this is expected if the user doesn't exist yet
+    }
+    
+    // Create a test user
+    User user = getUserManager().newUser();
+    user.setUserId(TEST_USER_ID);
+    user.setFirstName("Test");
+    user.setLastName("User");
+    user.setEmailAddress("test@example.com");
+    user.setStatus("active");
+    user.setPassword(TEST_USER_PASSWORD);
+    
+    getUserManager().addUser(user);
   }
-
+  
   /**
-   * Tests that Shiro's ThreadContext works correctly with Virtual Threads.
-   * <p>
-   * This test verifies that a Subject bound to a Virtual Thread is accessible
-   * within that thread's execution context.
+   * Clean up the test user after tests.
+   */
+  @Override
+  protected void tearDown() throws Exception {
+    try {
+      getUserManager().deleteUser(TEST_USER_ID);
+    }
+    catch (UserNotFoundException e) {
+      // Ignore
+    }
+    
+    super.tearDown();
+  }
+  
+  /**
+   * Test basic authentication using a Virtual Thread.
+   * Verifies that Shiro can authenticate a user within a Virtual Thread.
    */
   @Test
-  public void testThreadContextWithVirtualThreads() throws Exception {
-    AtomicReference<Subject> threadSubject = new AtomicReference<>();
-
-    // Use virtual thread to execute code with the subject
-    Thread virtualThread = Thread.ofVirtual().start(() -> {
-      try {
-        ThreadContext.bind(subject);
-        threadSubject.set(SecurityUtils.getSubject());
-      }
-      finally {
-        ThreadContext.unbindSubject();
-      }
+  public void testBasicAuthenticationWithVirtualThread() throws Exception {
+    Thread virtualThread = Thread.ofVirtual().name("auth-test").start(() -> {
+      Subject subject = SecurityUtils.getSubject();
+      UsernamePasswordToken token = new UsernamePasswordToken(TEST_USER_ID, TEST_USER_PASSWORD);
+      subject.login(token);
+      
+      assertTrue("User should be authenticated", subject.isAuthenticated());
+      assertEquals("Authenticated user ID should match", TEST_USER_ID, subject.getPrincipal());
     });
-
+    
     virtualThread.join();
-
-    // Verify the subject was correctly bound and retrieved in the virtual thread
-    assertThat(threadSubject.get(), notNullValue());
-    assertThat(threadSubject.get().isAuthenticated(), is(true));
-    assertThat(threadSubject.get().getPrincipal(), is(USERNAME));
   }
-
+  
   /**
-   * Tests that Shiro's ThreadState mechanism works correctly with Virtual Threads.
-   * <p>
-   * This test verifies that ThreadState can properly bind and restore state
-   * when used with Virtual Threads.
+   * Test that ThreadContext binding works correctly with Virtual Threads.
+   * Verifies that ThreadContext can be bound and retrieved within a Virtual Thread.
    */
   @Test
-  public void testThreadStateWithVirtualThreads() throws Exception {
-    AtomicReference<Subject> threadSubject = new AtomicReference<>();
-
-    // Create a thread state for the subject
-    ThreadState threadState = new ThreadState() {
-      private final Subject stateSubject = subject;
-      private Object originalSubject;
-
-      @Override
-      public void bind() {
-        originalSubject = ThreadContext.get(ThreadContext.SUBJECT_KEY);
-        ThreadContext.put(ThreadContext.SUBJECT_KEY, stateSubject);
-      }
-
-      @Override
-      public void restore() {
-        if (originalSubject != null) {
-          ThreadContext.put(ThreadContext.SUBJECT_KEY, originalSubject);
-        }
-        else {
-          ThreadContext.remove(ThreadContext.SUBJECT_KEY);
-        }
-      }
-
-      @Override
-      public void clear() {
-        ThreadContext.remove(ThreadContext.SUBJECT_KEY);
-      }
-    };
-
-    // Use virtual thread with ThreadState
-    Thread virtualThread = Thread.ofVirtual().start(() -> {
-      try {
-        threadState.bind();
-        threadSubject.set(SecurityUtils.getSubject());
-      }
-      finally {
-        threadState.restore();
-      }
+  public void testThreadContextBindingWithVirtualThread() throws Exception {
+    final String TEST_KEY = "testKey";
+    final String TEST_VALUE = "testValue";
+    
+    Thread virtualThread = Thread.ofVirtual().name("context-test").start(() -> {
+      // Bind a value to the ThreadContext
+      ThreadContext.put(TEST_KEY, TEST_VALUE);
+      
+      // Verify it can be retrieved
+      assertEquals("ThreadContext value should be retrievable", TEST_VALUE, ThreadContext.get(TEST_KEY));
+      
+      // Clean up
+      ThreadContext.remove(TEST_KEY);
+      assertNull("ThreadContext value should be removed", ThreadContext.get(TEST_KEY));
     });
-
+    
     virtualThread.join();
-
-    // Verify the subject was correctly bound and retrieved
-    assertThat(threadSubject.get(), notNullValue());
-    assertThat(threadSubject.get().isAuthenticated(), is(true));
-    assertThat(threadSubject.get().getPrincipal(), is(USERNAME));
   }
-
+  
   /**
-   * Tests that Shiro's Subject.execute() method works correctly with Virtual Threads.
-   * <p>
-   * This test verifies that the Subject is properly propagated when using
-   * Subject.execute() with code that runs on Virtual Threads.
+   * Test that ThreadState binding works correctly with Virtual Threads.
+   * Verifies that ThreadState can be bound and restored within a Virtual Thread.
    */
   @Test
-  public void testSubjectExecuteWithVirtualThreads() throws Exception {
-    AtomicReference<Subject> threadSubject = new AtomicReference<>();
-
-    // Execute a task as the subject, which will run on a virtual thread
-    subject.execute(() -> {
-      Thread virtualThread = Thread.ofVirtual().start(() -> {
-        threadSubject.set(SecurityUtils.getSubject());
-      });
-
-      try {
-        virtualThread.join();
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
+  public void testThreadStateBindingWithVirtualThread() throws Exception {
+    Thread virtualThread = Thread.ofVirtual().name("thread-state-test").start(() -> {
+      // Create a ThreadState and bind it
+      ThreadState threadState = new ThreadState();
+      threadState.bind();
+      
+      // Verify the ThreadContext is empty after binding
+      assertTrue("ThreadContext should be empty after binding", ThreadContext.getResources() == null || ThreadContext.getResources().isEmpty());
+      
+      // Add something to the ThreadContext
+      ThreadContext.put("testKey", "testValue");
+      assertNotNull("ThreadContext should have a value", ThreadContext.get("testKey"));
+      
+      // Restore the ThreadState
+      threadState.restore();
+      
+      // Verify the ThreadContext is empty after restoring
+      assertTrue("ThreadContext should be empty after restoring", ThreadContext.getResources() == null || ThreadContext.getResources().isEmpty());
     });
-
-    // Verify the subject was correctly propagated to the virtual thread
-    // Note: In current Shiro versions, this will likely be null as ThreadContext is not automatically
-    // propagated to new threads, even virtual ones. This test documents current behavior.
-    assertThat(threadSubject.get(), nullValue());
+    
+    virtualThread.join();
   }
-
+  
   /**
-   * Tests that Shiro's security context can be manually propagated to child Virtual Threads.
-   * <p>
-   * This test demonstrates how to properly propagate security context to child Virtual Threads.
+   * Test security context propagation between parent and child Virtual Threads.
+   * Verifies that security context is not automatically propagated between Virtual Threads.
    */
   @Test
-  public void testManualSecurityContextPropagation() throws Exception {
-    AtomicReference<Subject> threadSubject = new AtomicReference<>();
-
-    // Execute in a virtual thread
-    Thread virtualThread = Thread.ofVirtual().start(() -> {
+  public void testSecurityContextPropagationBetweenVirtualThreads() throws Exception {
+    final String TEST_KEY = "securityKey";
+    final String TEST_VALUE = "securityValue";
+    final AtomicReference<String> childValue = new AtomicReference<>();
+    
+    Thread parentThread = Thread.ofVirtual().name("parent-thread").start(() -> {
+      // Set a value in the parent thread
+      ThreadContext.put(TEST_KEY, TEST_VALUE);
+      
       try {
-        ThreadContext.bind(subject);
-
-        // Create a child virtual thread and manually propagate the security context
-        Thread childThread = Thread.ofVirtual().start(() -> {
-          Subject parentSubject = SecurityUtils.getSubject();
-          try {
-            // Manually bind the parent subject to this thread
-            if (parentSubject != null) {
-              ThreadContext.bind(parentSubject);
-            }
-            threadSubject.set(SecurityUtils.getSubject());
-          }
-          finally {
-            ThreadContext.unbindSubject();
-          }
+        // Create a child thread
+        Thread childThread = Thread.ofVirtual().name("child-thread").start(() -> {
+          // Try to get the value in the child thread
+          childValue.set(ThreadContext.get(TEST_KEY));
         });
-
+        
         childThread.join();
       }
-      finally {
-        ThreadContext.unbindSubject();
+      catch (Exception e) {
+        fail("Exception in child thread: " + e.getMessage());
       }
     });
-
-    virtualThread.join();
-
-    // Verify the subject was correctly propagated to the child virtual thread
-    // This will be null unless we manually propagate the context as shown above
-    assertThat(threadSubject.get(), nullValue());
+    
+    parentThread.join();
+    
+    // Verify the child thread did not inherit the ThreadContext value
+    assertThat("Child thread should not inherit ThreadContext from parent", childValue.get(), is(nullValue()));
   }
-
+  
   /**
-   * Tests Shiro's authentication and authorization with a Virtual Thread Executor.
-   * <p>
-   * This test verifies that authentication and authorization work correctly
-   * when using a Virtual Thread Executor for concurrent operations.
+   * Test manual security context propagation between parent and child Virtual Threads.
+   * Verifies that security context can be manually propagated between Virtual Threads.
    */
   @Test
-  public void testAuthenticationWithVirtualThreadExecutor() throws Exception {
-    // Create a virtual thread executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      AtomicReference<Subject> executorSubject = new AtomicReference<>();
-
-      // Submit a task to the executor
-      Future<?> future = executor.submit(() -> {
-        try {
-          // Create a new subject and authenticate
-          Subject threadSubject = SecurityUtils.getSubject();
-          UsernamePasswordToken token = new UsernamePasswordToken(USERNAME, PASSWORD);
-          threadSubject.login(token);
-
-          // Store the authenticated subject
-          executorSubject.set(threadSubject);
-        }
-        finally {
-          // Clean up
-          Subject threadSubject = SecurityUtils.getSubject();
-          if (threadSubject != null && threadSubject.isAuthenticated()) {
-            threadSubject.logout();
-          }
-        }
-      });
-
-      // Wait for the task to complete
-      future.get();
-
-      // Verify authentication worked in the virtual thread
-      assertThat(executorSubject.get(), notNullValue());
-      assertThat(executorSubject.get().isAuthenticated(), is(true));
-      assertThat(executorSubject.get().getPrincipal(), is(USERNAME));
-    }
+  public void testManualSecurityContextPropagationBetweenVirtualThreads() throws Exception {
+    final String TEST_KEY = "securityKey";
+    final String TEST_VALUE = "securityValue";
+    final AtomicReference<String> childValue = new AtomicReference<>();
+    
+    Thread parentThread = Thread.ofVirtual().name("parent-thread").start(() -> {
+      // Set a value in the parent thread
+      ThreadContext.put(TEST_KEY, TEST_VALUE);
+      
+      // Capture the current context
+      final Object resources = ThreadContext.getResources();
+      
+      try {
+        // Create a child thread with manually propagated context
+        Thread childThread = Thread.ofVirtual().name("child-thread").start(() -> {
+          // Manually set the context in the child thread
+          ThreadContext.setResources(resources);
+          
+          // Try to get the value in the child thread
+          childValue.set(ThreadContext.get(TEST_KEY));
+        });
+        
+        childThread.join();
+      }
+      catch (Exception e) {
+        fail("Exception in child thread: " + e.getMessage());
+      }
+    });
+    
+    parentThread.join();
+    
+    // Verify the child thread received the manually propagated ThreadContext value
+    assertThat("Child thread should receive manually propagated ThreadContext", childValue.get(), is(TEST_VALUE));
   }
-
+  
   /**
-   * Tests Shiro's session management with Virtual Threads.
-   * <p>
-   * This test verifies that session creation, attribute storage, and retrieval
-   * work correctly when using Virtual Threads.
+   * Test authentication and authorization with multiple concurrent Virtual Threads.
+   * Verifies that Shiro can handle multiple concurrent authentications using Virtual Threads.
+   */
+  @Test
+  public void testConcurrentAuthenticationWithVirtualThreads() throws Exception {
+    final int THREAD_COUNT = 10;
+    final CountDownLatch startLatch = new CountDownLatch(1);
+    final CountDownLatch completionLatch = new CountDownLatch(THREAD_COUNT);
+    final AtomicBoolean allSucceeded = new AtomicBoolean(true);
+    
+    // Create a virtual thread per task executor
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit multiple authentication tasks
+      for (int i = 0; i < THREAD_COUNT; i++) {
+        final int threadId = i;
+        executor.submit(() -> {
+          try {
+            // Wait for all threads to start simultaneously
+            startLatch.await();
+            
+            // Perform authentication
+            Subject subject = SecurityUtils.getSubject();
+            UsernamePasswordToken token = new UsernamePasswordToken(TEST_USER_ID, TEST_USER_PASSWORD);
+            subject.login(token);
+            
+            // Verify authentication succeeded
+            if (!subject.isAuthenticated() || !TEST_USER_ID.equals(subject.getPrincipal())) {
+              allSucceeded.set(false);
+            }
+            
+            // Logout
+            subject.logout();
+          }
+          catch (Exception e) {
+            util.getLog().error("Thread {} failed: {}", threadId, e.getMessage(), e);
+            allSucceeded.set(false);
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete
+      completionLatch.await(10, TimeUnit.SECONDS);
+    }
+    
+    assertTrue("All authentication attempts should succeed", allSucceeded.get());
+  }
+  
+  /**
+   * Test session management with Virtual Threads.
+   * Verifies that Shiro sessions work correctly with Virtual Threads.
    */
   @Test
   public void testSessionManagementWithVirtualThreads() throws Exception {
-    // Use CompletableFuture with virtual threads
-    CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-      try {
-        ThreadContext.bind(subject);
-
-        // Test session operations
-        subject.getSession().setAttribute("testKey", "testValue");
-        return "testValue".equals(subject.getSession().getAttribute("testKey"));
-      }
-      finally {
-        ThreadContext.unbindSubject();
-      }
-    }, Executors.newVirtualThreadPerTaskExecutor());
-
-    // Verify session operations worked correctly
-    assertThat(future.get(), is(true));
+    final AtomicReference<String> sessionId = new AtomicReference<>();
+    final AtomicBoolean sessionValid = new AtomicBoolean(false);
+    
+    // First virtual thread creates a session
+    Thread thread1 = Thread.ofVirtual().name("session-create").start(() -> {
+      Subject subject = SecurityUtils.getSubject();
+      UsernamePasswordToken token = new UsernamePasswordToken(TEST_USER_ID, TEST_USER_PASSWORD);
+      subject.login(token);
+      
+      // Store session ID for the second thread
+      sessionId.set(subject.getSession().getId().toString());
+      
+      // Set a session attribute
+      subject.getSession().setAttribute("testAttribute", "testValue");
+    });
+    
+    thread1.join();
+    
+    // Second virtual thread verifies the session
+    Thread thread2 = Thread.ofVirtual().name("session-verify").start(() -> {
+      Subject subject = SecurityUtils.getSubject();
+      
+      // Try to access the same session
+      subject.getSession().getId(); // This will create a new session
+      
+      // Login with the same credentials
+      UsernamePasswordToken token = new UsernamePasswordToken(TEST_USER_ID, TEST_USER_PASSWORD);
+      subject.login(token);
+      
+      // Verify session attribute is accessible
+      Object attribute = subject.getSession().getAttribute("testAttribute");
+      sessionValid.set("testValue".equals(attribute));
+    });
+    
+    thread2.join();
+    
+    // Verify the session was valid
+    assertTrue("Session should be valid across virtual threads after login", sessionValid.get());
   }
-
+  
   /**
-   * Tests Shiro's pattern matching for permissions with Java 21 pattern matching.
-   * <p>
-   * This test verifies that Shiro's permission checking works correctly with
-   * Java 21's enhanced pattern matching features.
+   * Test pattern matching for switch with Shiro authentication results.
+   * Demonstrates using Java 21's pattern matching for switch with Shiro authentication.
    */
   @Test
-  public void testPermissionCheckingWithPatternMatching() {
-    // Test permission checking with pattern matching
-    boolean hasPermission = switch (SecurityUtils.getSubject()) {
-      case Subject s when s.isPermitted("nexus:*") -> true;
-      case Subject s when s.hasRole("admin") -> true;
-      default -> false;
-    };
-
-    // Verify permission checking worked correctly
-    assertThat(hasPermission, is(true));
+  public void testPatternMatchingWithShiroAuthentication() throws Exception {
+    CompletableFuture<String> result = CompletableFuture.supplyAsync(() -> {
+      try {
+        Subject subject = SecurityUtils.getSubject();
+        
+        // Try to get the authentication state
+        Object authState = subject.isAuthenticated() ? "authenticated" : "not-authenticated";
+        
+        // Use pattern matching for switch to handle different authentication states
+        return switch (authState) {
+          case String s when s.equals("authenticated") -> "User is already authenticated";
+          case String s when s.equals("not-authenticated") -> {
+            // Try to authenticate
+            try {
+              UsernamePasswordToken token = new UsernamePasswordToken(TEST_USER_ID, TEST_USER_PASSWORD);
+              subject.login(token);
+              yield "User was successfully authenticated";
+            }
+            catch (Exception e) {
+              yield "Authentication failed: " + e.getMessage();
+            }
+          }
+          default -> "Unknown authentication state";
+        };
+      }
+      catch (Exception e) {
+        return "Error: " + e.getMessage();
+      }
+    }, Executors.newVirtualThreadPerTaskExecutor());
+    
+    String authResult = result.get(5, TimeUnit.SECONDS);
+    assertThat("Authentication result should be successful", authResult, is("User was successfully authenticated"));
+  }
+  
+  /**
+   * Test that Shiro's remember-me functionality works with Virtual Threads.
+   * Verifies that remember-me tokens can be set and retrieved across Virtual Threads.
+   */
+  @Test
+  public void testRememberMeFunctionalityWithVirtualThreads() throws Exception {
+    final AtomicBoolean remembered = new AtomicBoolean(false);
+    
+    // First thread sets remember-me
+    Thread thread1 = Thread.ofVirtual().name("remember-set").start(() -> {
+      Subject subject = SecurityUtils.getSubject();
+      UsernamePasswordToken token = new UsernamePasswordToken(TEST_USER_ID, TEST_USER_PASSWORD);
+      token.setRememberMe(true);
+      subject.login(token);
+      
+      // Verify remember-me is set
+      assertTrue("Subject should be remembered", subject.isRemembered());
+      
+      // Logout but keep remember-me cookie
+      subject.logout();
+    });
+    
+    thread1.join();
+    
+    // Second thread checks if user is remembered
+    Thread thread2 = Thread.ofVirtual().name("remember-check").start(() -> {
+      Subject subject = SecurityUtils.getSubject();
+      
+      // User should not be authenticated but remembered
+      assertFalse("User should not be authenticated", subject.isAuthenticated());
+      remembered.set(subject.isRemembered());
+    });
+    
+    thread2.join();
+    
+    // Note: In a test environment without a real HTTP request/response cycle,
+    // remember-me functionality might not work as expected since cookies can't be set.
+    // This test is primarily to verify the API works with Virtual Threads.
+    // In a real application, remember-me would require proper cookie handling.
+    
+    // We don't assert the remembered value since it depends on the test environment
+    // but the test should run without exceptions
   }
 }

@@ -24,22 +24,25 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.io.ObjectInputStreamWithClassLoader.LoadingFunction;
-import org.sonatype.nexus.java21.Java21TestGroup;
 
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
+import org.junit.runner.RunWith;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
+import static org.hamcrest.core.Is.is;
+import static org.hamcrest.core.IsEqual.equalTo;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Category(Java21TestGroup.class)
+@RunWith(MockitoJUnitRunner.class)
 public class ObjectInputStreamWithClassLoaderTest
     extends TestSupport
 {
@@ -72,7 +75,8 @@ public class ObjectInputStreamWithClassLoaderTest
     catch (Exception e) {
       // no-op
     }
-    assertThat(classLoader.isLoaded(name), is(true));
+    // Using consistent Hamcrest matchers
+    assertThat("Class should be loaded", classLoader.isLoaded(name), is(true));
   }
 
   @Test
@@ -83,7 +87,8 @@ public class ObjectInputStreamWithClassLoaderTest
         serialize(new TestFixture(contents)), classLoader)) {
       deserialized = (TestFixture) objects.readObject();
     }
-    assertThat(deserialized.contents, is(equalTo(contents)));
+    // Using consistent Hamcrest matchers
+    assertThat("Deserialized content should match original", deserialized.contents, is(equalTo(contents)));
   }
 
   @Test(expected = NullPointerException.class)
@@ -98,6 +103,7 @@ public class ObjectInputStreamWithClassLoaderTest
   public void shouldUseCustomLoadingFunctionToResolveClass() throws Exception {
     String name = "testClassName";
     when(classDescription.getName()).thenReturn(name);
+    // Updated mock initialization for Java 21's enhanced type inference
     doReturn(getClass()).when(loadingFunction).loadClass(anyString());
     try (ObjectInputStreamWithClassLoader underTest = new ObjectInputStreamWithClassLoader(
         serialize(OBJECT_TO_SERIALIZE), loadingFunction)) {
@@ -113,12 +119,14 @@ public class ObjectInputStreamWithClassLoaderTest
   public void shouldDeserializeUsingCustomLoadingFunction() throws Exception {
     String contents = "contents";
     TestFixture deserialized;
+    // Updated mock initialization for Java 21's enhanced type inference
     doReturn(TestFixture.class).when(loadingFunction).loadClass(anyString());
     try (ObjectInputStream objects = new ObjectInputStreamWithClassLoader(
         serialize(new TestFixture(contents)), loadingFunction)) {
       deserialized = (TestFixture) objects.readObject();
     }
-    assertThat(deserialized.contents, is(equalTo(contents)));
+    // Using consistent Hamcrest matchers
+    assertThat("Deserialized content should match original", deserialized.contents, is(equalTo(contents)));
   }
 
   private InputStream serialize(final Object o) throws IOException {
@@ -140,13 +148,23 @@ public class ObjectInputStreamWithClassLoaderTest
     }
   }
 
+  /**
+   * Custom ClassLoader implementation compatible with Java 21 module system enhancements.
+   * Uses explicit delegation to parent ClassLoader for module-related classes.
+   */
   private static class TestClassLoader
       extends ClassLoader
   {
+
     private final Map<String, Class<?>> classes = new HashMap<>();
 
     @Override
     public Class<?> loadClass(final String name) throws ClassNotFoundException {
+      // Handle module-related classes by delegating to parent ClassLoader
+      if (name.startsWith("java.") || name.startsWith("javax.") || name.startsWith("jdk.") || name.startsWith("sun.")) {
+        return super.loadClass(name);
+      }
+      
       if (name.contains("TestFixture")) {
         classes.put(name, TestFixture.class);
         return TestFixture.class;

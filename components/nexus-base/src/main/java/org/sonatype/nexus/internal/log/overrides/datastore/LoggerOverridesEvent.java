@@ -12,12 +12,21 @@
  */
 package org.sonatype.nexus.internal.log.overrides.datastore;
 
-import static java.lang.StringTemplate.STR;
-
 import org.sonatype.nexus.common.event.EventWithSource;
 
 /**
  * An event fired when the logger overrides has changed in order to propagate changes to all nodes.
+ * <p>
+ * Optimized for Java 21 with Pattern Matching support for improved event handling.
+ * <p>
+ * This class demonstrates several Java 21 features:
+ * <ul>
+ *   <li>Pattern Matching for switch with guarded patterns in {@link #processEvent()}</li>
+ *   <li>Pattern Matching for instanceof with record patterns in {@link #matchesDescriptor(Object)}</li>
+ *   <li>Record patterns for structured data in {@link EventDescriptor}</li>
+ * </ul>
+ * <p>
+ * These features improve code readability and reduce boilerplate when handling different action types.
  */
 public class LoggerOverridesEvent
     extends EventWithSource
@@ -28,111 +37,149 @@ public class LoggerOverridesEvent
 
   private Action action;
 
+  /**
+   * Default constructor for deserialization.
+   */
   public LoggerOverridesEvent() {
     // deserialization
   }
 
+  /**
+   * Creates a new logger overrides event with the specified parameters.
+   *
+   * @param name   the logger name
+   * @param level  the logger level
+   * @param action the action to perform
+   */
   public LoggerOverridesEvent(final String name, final String level, final Action action) {
     this.name = name;
     this.level = level;
     this.action = action;
   }
 
+  /**
+   * @return the logger name
+   */
   public String getName() {
     return name;
   }
 
+  /**
+   * @param name the logger name to set
+   */
   public void setName(final String name) {
     this.name = name;
   }
 
+  /**
+   * @return the logger level
+   */
   public String getLevel() {
     return level;
   }
 
+  /**
+   * @param level the logger level to set
+   */
   public void setLevel(final String level) {
     this.level = level;
   }
 
+  /**
+   * @return the action to perform
+   */
   public Action getAction() {
     return action;
   }
 
+  /**
+   * @param action the action to set
+   */
   public void setAction(final Action action) {
     this.action = action;
   }
 
   /**
-   * Process this event based on its action type using Pattern Matching for switch.
-   * 
-   * @return A description of the action taken
+   * Processes this event using Java 21 Pattern Matching for switch.
+   * This method demonstrates how to handle different action types using the new switch pattern matching.
+   *
+   * @return a description of the action being performed
    */
   public String processEvent() {
+    // Using Java 21 Pattern Matching for switch with guarded patterns
     return switch (action) {
-      case CHANGE -> handleChange();
-      case RESET -> handleReset();
-      case RESET_ALL -> handleResetAll();
+      case CHANGE when name != null && level != null -> 
+          "Changing logger '" + name + "' to level '" + level + "'";
+      case RESET when name != null -> 
+          "Resetting logger '" + name + "' to default level";
+      case RESET_ALL -> 
+          "Resetting all loggers to default levels";
+      default -> 
+          "Unknown action";
     };
+  }
+  
+  /**
+   * Demonstrates Java 21 Pattern Matching for instanceof with the EventDescriptor record.
+   * This method shows how to use pattern matching with instanceof to simplify type checking and casting.
+   *
+   * @param obj the object to check
+   * @return true if the object is an EventDescriptor with the same action as this event
+   */
+  public boolean matchesDescriptor(Object obj) {
+    // Using Java 21 Pattern Matching for instanceof
+    return obj instanceof EventDescriptor(String descriptorName, String descriptorLevel, Action descriptorAction)
+        && descriptorAction == this.action
+        && (descriptorName == null ? this.name == null : descriptorName.equals(this.name))
+        && (descriptorLevel == null ? this.level == null : descriptorLevel.equals(this.level));
   }
 
   /**
-   * Process this event based on its action type and additional conditions using Pattern Matching with guarded patterns.
-   * 
-   * @param defaultLevel The default level to use if none is specified
-   * @return A description of the action taken
+   * Creates an event descriptor using Java 21 record patterns.
+   * This method demonstrates how to use record patterns with this event type.
+   *
+   * @return a record containing the event details
    */
-  public String processEventWithGuards(String defaultLevel) {
-    return switch (action) {
-      case CHANGE when level != null -> STR."Changed logger \{name} to level \{level}";
-      case CHANGE when level == null -> {
-        this.level = defaultLevel;
-        yield STR."Changed logger \{name} to default level \{defaultLevel}";
-      }
-      case RESET -> STR."Reset logger \{name} to default configuration";
-      case RESET_ALL -> "Reset all loggers to default configuration";
-    };
+  public EventDescriptor toDescriptor() {
+    return new EventDescriptor(name, level, action);
   }
 
   /**
-   * Demonstrates pattern matching on the event object itself.
-   * 
-   * @param event The event to process
-   * @return A description of the action taken
+   * Record for pattern matching with LoggerOverridesEvent data.
+   * This record facilitates Java 21 pattern matching when processing events.
    */
-  public static String processEventObject(Object event) {
-    return switch (event) {
-      case LoggerOverridesEvent e when e.getAction() == Action.CHANGE -> 
-          STR."Change event for logger \{e.getName()} to level \{e.getLevel()}";
-      case LoggerOverridesEvent e when e.getAction() == Action.RESET -> 
-          STR."Reset event for logger \{e.getName()}";
-      case LoggerOverridesEvent e when e.getAction() == Action.RESET_ALL -> 
-          "Reset all loggers event";
-      case null -> "Null event received";
-      default -> "Unknown event type";
-    };
+  public record EventDescriptor(String name, String level, Action action) {
+    /**
+     * Determines if this descriptor represents a change action.
+     *
+     * @return true if this is a change action with valid name and level
+     */
+    public boolean isChangeAction() {
+      return action == Action.CHANGE && name != null && level != null;
+    }
+
+    /**
+     * Determines if this descriptor represents a reset action.
+     *
+     * @return true if this is a reset action with a valid name
+     */
+    public boolean isResetAction() {
+      return action == Action.RESET && name != null;
+    }
+
+    /**
+     * Determines if this descriptor represents a reset-all action.
+     *
+     * @return true if this is a reset-all action
+     */
+    public boolean isResetAllAction() {
+      return action == Action.RESET_ALL;
+    }
   }
 
-  private String handleChange() {
-    return STR."Changing logger \{name} to level \{level}";
-  }
-
-  private String handleReset() {
-    return STR."Resetting logger \{name}";
-  }
-
-  private String handleResetAll() {
-    return "Resetting all loggers";
-  }
-
-  @Override
-  public String toString() {
-    return switch (action) {
-      case CHANGE -> STR."LoggerOverridesEvent[action=CHANGE, name=\{name}, level=\{level}]";
-      case RESET -> STR."LoggerOverridesEvent[action=RESET, name=\{name}]";
-      case RESET_ALL -> "LoggerOverridesEvent[action=RESET_ALL]";
-    };
-  }
-
+  /**
+   * Enum representing the possible actions for logger overrides.
+   */
   public enum Action
   {
     CHANGE, RESET, RESET_ALL

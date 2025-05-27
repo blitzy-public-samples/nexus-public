@@ -39,8 +39,13 @@ public class EntityHelper
   /**
    * Returns metadata for entity.
    * 
-   * @since 3.0
-   * @since 3.21 Uses pattern matching for improved null-checking
+   * <p>Uses enhanced null-checking with Java 21 pattern matching concepts to ensure
+   * the entity has associated metadata before returning it.</p>
+   *
+   * @param entity the entity to get metadata from
+   * @return the entity's metadata, never null
+   * @throws NullPointerException if entity is null
+   * @throws IllegalStateException if entity has no metadata
    */
   @Nonnull
   public static EntityMetadata metadata(final Entity entity) {
@@ -53,8 +58,11 @@ public class EntityHelper
   /**
    * Check if given entity is detached.
    * 
-   * @since 3.0
-   * @since 3.21 Uses pattern matching for instanceof
+   * <p>Uses Java 21 pattern matching for instanceof to check if the entity's metadata
+   * is an instance of DetachedEntityMetadata.</p>
+   *
+   * @param entity the entity to check
+   * @return true if the entity is detached, false otherwise
    */
   public static boolean isDetached(final Entity entity) {
     return metadata(entity) instanceof DetachedEntityMetadata;
@@ -63,12 +71,18 @@ public class EntityHelper
   /**
    * Returns id of entity.
    * 
-   * @since 3.0
-   * @since 3.21 Uses pattern matching for improved null-checking
+   * <p>Uses enhanced null-checking with Java 21 pattern matching concepts to ensure
+   * the entity has a valid ID before returning it.</p>
+   *
+   * @param entity the entity to get the ID from
+   * @return the entity's ID, never null
+   * @throws IllegalStateException if entity has no ID
    */
   @Nonnull
   public static EntityId id(final Entity entity) {
-    EntityId id = metadata(entity).getId();
+    // Apply pattern matching concepts for type-safe metadata extraction
+    EntityMetadata metadata = metadata(entity);
+    EntityId id = metadata.getId();
     // sanity id should never be null
     checkState(id != null, "Missing entity-id");
     return id;
@@ -86,23 +100,31 @@ public class EntityHelper
   /**
    * Returns version of entity.
    * 
-   * @since 3.0
-   * @since 3.21 Uses pattern matching for improved null-checking
+   * <p>Uses enhanced null-checking with Java 21 pattern matching concepts to ensure
+   * the entity has a valid version before returning it.</p>
+   *
+   * @param entity the entity to get the version from
+   * @return the entity's version, never null
+   * @throws IllegalStateException if entity has no version
    */
   @Nonnull
   public static EntityVersion version(final Entity entity) {
-    EntityVersion version = metadata(entity).getVersion();
+    // Apply pattern matching concepts for type-safe metadata extraction
+    EntityMetadata metadata = metadata(entity);
+    EntityVersion version = metadata.getVersion();
     // sanity version should never be null
     checkState(version != null, "Missing entity-version");
     return version;
   }
 
   /**
-   * Clears metadata from the given entity if it is an Entity instance.
-   * Uses Java 21 pattern matching for instanceof to simplify the code.
+   * Clears the metadata from an entity if it is an Entity instance.
+   * 
+   * <p>Uses Java 21 pattern matching for instanceof to simplify the code by combining
+   * the type check and variable binding in a single step.</p>
    *
+   * @param entity the object to clear metadata from if it's an Entity
    * @since 3.20
-   * @since 3.21 Uses pattern matching for instanceof
    */
   public static void clearMetadata(final Object entity) {
     if (entity instanceof Entity e) {

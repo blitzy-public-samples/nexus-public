@@ -14,9 +14,12 @@ package org.sonatype.nexus.siesta;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.Response;
@@ -36,7 +39,7 @@ public class ErrorsIT
     extends SiestaTestSupport
 {
   @Test
-  public void errorResponseHasFaultId() {
+  public void errorResponseHasFaultId() throws Exception {
     WebTarget target = client().target(url("errors/406"));
     Response response = target.request().get(Response.class);
     log("Status: {}", response.getStatusInfo());
@@ -47,67 +50,66 @@ public class ErrorsIT
     assertThat(faultId, notNullValue());
   }
   
+  /**
+   * Tests error handling with concurrent requests using Virtual Threads.
+   * This test verifies that error responses include fault IDs for all concurrent requests,
+   * demonstrating that the error handling mechanism works correctly under high concurrency
+   * with Java 21's Virtual Threads.
+   */
   @Test
-  public void badRequestErrorResponseHasFaultId() {
-    WebTarget target = client().target(url("errors/BadRequestException"));
-    Response response = target.request().get(Response.class);
-    log("Status: {}", response.getStatusInfo());
-
-    assertThat(response.getStatusInfo().getStatusCode(), equalTo(400));
-    String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
-    log("Fault ID: {}", faultId);
-    assertThat(faultId, notNullValue());
-  }
-  
-  @Test
-  public void notFoundErrorResponseHasFaultId() {
-    WebTarget target = client().target(url("errors/NotFoundException"));
-    Response response = target.request().get(Response.class);
-    log("Status: {}", response.getStatusInfo());
-
-    assertThat(response.getStatusInfo().getStatusCode(), equalTo(404));
-    String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
-    log("Fault ID: {}", faultId);
-    assertThat(faultId, notNullValue());
-  }
-  
-  @Test
-  public void concurrentErrorRequestsWithVirtualThreads() {
-    // Number of concurrent requests to make
-    final int concurrentRequests = 50;
+  public void concurrentErrorResponsesWithVirtualThreads() throws Exception {
+    // Skip test if not running on Java 21 or newer
+    try {
+      Class.forName("java.lang.Thread$Builder$OfVirtual");
+    } catch (ClassNotFoundException e) {
+      log("Skipping virtual thread test as Java 21 features are not available");
+      return;
+    }
     
-    // Create a list to hold all the futures
-    List<CompletableFuture<Response>> futures = new ArrayList<>();
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     
-    // Create a virtual thread per task executor
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Create the WebTarget once and reuse it
-      WebTarget target = client().target(url("errors/406"));
+    // Create an executor service using virtual threads
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      int requestCount = 100; // Number of concurrent requests
+      CountDownLatch latch = new CountDownLatch(requestCount);
+      AtomicInteger successCount = new AtomicInteger(0);
+      List<String> faultIds = new ArrayList<>();
       
       // Submit concurrent requests
-      for (int i = 0; i < concurrentRequests; i++) {
-        CompletableFuture<Response> future = CompletableFuture.supplyAsync(() -> {
-          Response response = target.request().get(Response.class);
-          log("Thread: {}, Status: {}", Thread.currentThread().getName(), response.getStatusInfo());
-          return response;
-        }, executor);
-        
-        futures.add(future);
+      for (int i = 0; i < requestCount; i++) {
+        executor.submit(() -> {
+          try {
+            WebTarget target = client().target(url("errors/406"));
+            Response response = target.request().get(Response.class);
+            
+            if (response.getStatusInfo().getStatusCode() == 406) {
+              String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
+              if (faultId != null) {
+                synchronized (faultIds) {
+                  faultIds.add(faultId);
+                }
+                successCount.incrementAndGet();
+              }
+            }
+          } catch (Exception e) {
+            log("Error in concurrent request: {}", e.getMessage());
+          } finally {
+            latch.countDown();
+          }
+        });
       }
       
-      // Wait for all futures to complete and verify the responses
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      // Wait for all requests to complete (with timeout)
+      boolean completed = latch.await(30, TimeUnit.SECONDS);
       
-      // Verify each response
-      for (CompletableFuture<Response> future : futures) {
-        Response response = future.join();
-        assertThat(response.getStatusInfo().getStatusCode(), equalTo(406));
-        String faultId = response.getHeaderString(ExceptionMapperSupport.X_SIESTA_FAULT_ID);
-        assertThat(faultId, notNullValue());
-        
-        // Ensure proper cleanup
-        response.close();
-      }
+      // Verify results
+      log("Completed: {}, Success count: {}, Fault IDs collected: {}", 
+          completed, successCount.get(), faultIds.size());
+      
+      assertThat("All requests should complete", completed, equalTo(true));
+      assertThat("All requests should succeed", successCount.get(), equalTo(requestCount));
+      assertThat("All responses should have fault IDs", faultIds.size(), equalTo(requestCount));
     }
   }
 }

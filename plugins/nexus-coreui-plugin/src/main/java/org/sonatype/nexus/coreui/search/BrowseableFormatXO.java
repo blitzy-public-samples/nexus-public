@@ -14,9 +14,7 @@ package org.sonatype.nexus.coreui.search;
 
 /**
  * BrowseableFormat exchange object.
- * 
- * Implemented as a Java 21 record for simplified data transfer object pattern.
- * Records automatically provide accessors, equals/hashCode, and toString methods.
  */
-public record BrowseableFormatXO(String id) {
+public record BrowseableFormatXO(String id)
+{
 }

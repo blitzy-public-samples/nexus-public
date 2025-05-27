@@ -18,6 +18,8 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.lucene.queryparser.classic.QueryParserBase;
 import org.elasticsearch.index.query.QueryBuilder;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * Support for {@link ElasticSearchContribution} implementations.
  *
@@ -33,11 +35,11 @@ public class ElasticSearchContributionSupport
   }
 
   /**
-   * Escapes special characters in Lucene query strings while preserving certain characters that should remain unescaped.
-   * Uses Java 21 String Templates and Pattern Matching for improved readability and maintainability.
+   * Escapes special characters in the input string for Elasticsearch queries,
+   * while preserving certain supported special characters.
    *
-   * @param value the string to escape
-   * @return the escaped string, or null if the input was null
+   * @param value The string to escape
+   * @return The escaped string, or null if the input was null
    */
   public String escape(final String value) {
     if (null == value) {
@@ -47,17 +49,18 @@ public class ElasticSearchContributionSupport
     String escaped = QueryParserBase.escape(value);
     
     // Use pattern matching to determine which characters to unescape
-    return switch (StringUtils.countMatches(value, "\"") % 2) {
-      case 0 -> {
+    return switch (value) {
+      case String s when StringUtils.countMatches(s, "\"") % 2 != 0 -> {
+        // Odd number of double quotes - leave double quotes escaped but unescape ? and *
+        String regex = STR."\\\\([?*])";
+        yield escaped.replaceAll(regex, "$1");
+      }
+      case String s -> {
         // Even number of double quotes - unescape ?, *, and "
         String regex = STR."\\\\([?*\"])";
         yield escaped.replaceAll(regex, "$1");
       }
-      default -> {
-        // Odd number of double quotes - only unescape ? and *
-        String regex = STR."\\\\([?*])";
-        yield escaped.replaceAll(regex, "$1");
-      }
     };
   }
+
 }

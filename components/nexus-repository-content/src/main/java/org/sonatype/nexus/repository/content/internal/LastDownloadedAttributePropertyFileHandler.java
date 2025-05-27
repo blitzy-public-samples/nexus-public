@@ -14,8 +14,7 @@ package org.sonatype.nexus.repository.content.internal;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -38,7 +37,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Update the asset last downloaded time in corresponding blob's '.properties' file.
- * Uses Java 21 Virtual Threads for I/O operations to improve performance and scalability.
  */
 @Named
 @Singleton
@@ -57,13 +55,13 @@ public class LastDownloadedAttributePropertyFileHandler
   public void writeLastDownloadedAttribute(final FluentAsset asset) {
     FluentAsset reloadedAsset = reloadAsset(asset);
     if (reloadedAsset != null && reloadedAsset.lastDownloaded().isPresent()) {
-      // Use Virtual Thread to execute I/O operations asynchronously
-      Thread.startVirtualThread(() -> {
+      // Use Virtual Thread for I/O-bound operation
+      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         try {
           updateLastDownloadedPropertyIfNeeded(reloadedAsset);
-        }
+        } 
         catch (Exception e) {
-          log.error(STR."Error updating last downloaded attribute for asset \{reloadedAsset}: \{e.getMessage()}", e);
+          log.error(STR."Error updating last downloaded property for asset \{reloadedAsset}: \{e.getMessage()}", e);
         }
       });
     }
@@ -72,9 +70,9 @@ public class LastDownloadedAttributePropertyFileHandler
   @Nullable
   @Override
   public OffsetDateTime readLastDownloadedAttribute(final String blobstore, final Blob blob) {
+    // Use Virtual Thread for blob attribute retrieval
     try {
-      // Use CompletableFuture with Virtual Thread to retrieve blob attributes
-      CompletableFuture<OffsetDateTime> future = CompletableFuture.supplyAsync(() -> {
+      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         BlobStore blobStore = blobStoreManager.get(blobstore);
         if (blobStore == null) {
           log.warn(STR."Blob store not loaded: \{blobstore}");
@@ -89,17 +87,10 @@ public class LastDownloadedAttributePropertyFileHandler
         return Optional.ofNullable(blobAttributes.getMetrics())
             .map(BlobMetrics::getLastDownloaded)
             .orElse(null);
-      }, Thread.ofVirtual().factory());
-
-      return future.get();
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      log.warn(STR."Thread interrupted while reading last downloaded attribute for blob \{blob.getId()} in store \{blobstore}");
-      return null;
-    }
-    catch (ExecutionException e) {
-      log.error(STR."Error reading last downloaded attribute for blob \{blob.getId()} in store \{blobstore}: \{e.getCause().getMessage()}", e.getCause());
+      }).get();
+    } 
+    catch (Exception e) {
+      log.error(STR."Error reading last downloaded attribute for blob \{blob.getId()} in store \{blobstore}: \{e.getMessage()}", e);
       return null;
     }
   }
@@ -137,10 +128,10 @@ public class LastDownloadedAttributePropertyFileHandler
         try {
           blobAttributes.getMetrics().setLastDownloaded(lastDownloaded);
           blobStore.setBlobAttributes(blobId, blobAttributes);
-          log.debug(STR."Successfully updated last downloaded attribute to \{lastDownloaded} for blob \{blobId}");
+          log.debug(STR."Updated last downloaded time to \{lastDownloaded} for blob ID: \{blobId}");
         }
         catch (Exception e) {
-          log.error(STR."Failed to update last downloaded attribute for blob \{blobId}: \{e.getMessage()}", e);
+          log.error(STR."Failed to set blob attributes for blob ID \{blobId}: \{e.getMessage()}", e);
         }
       });
     });

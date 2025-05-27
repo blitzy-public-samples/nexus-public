@@ -22,40 +22,26 @@ import javax.validation.Validator;
 import javax.validation.ValidatorFactory;
 
 import com.google.common.base.Strings;
-
-// Updated imports for JUnit Jupiter (JUnit 5) - Java 21 compatible
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 
-/**
- * Tests for {@link BlobStoreXO} validation.
- * <p>
- * This test has been updated for Java 21 compatibility using JUnit Jupiter (JUnit 5.10.1)
- * and Hamcrest 2.2 for assertions.
- */
 public class BlobStoreXOTest
 {
   public static final String NULL_VIOLATES_RULE = "'null' violates rule";
 
   private static Validator validator;
 
-  /**
-   * Set up the validator before each test.
-   */
   @BeforeEach
   public void setUp() {
     ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
     validator = factory.getValidator();
   }
 
-  /**
-   * Verify validation behavior with null values in the BlobStoreXO.
-   */
   @Test
-  public void checkNullValues() {
+  public void validationShouldDetectNullValues() {
     BlobStoreXO blobStoreXOAllNullValues = new BlobStoreXO();
     Set<ConstraintViolation<BlobStoreXO>> violationsAllNullValues = validator.validate(blobStoreXOAllNullValues);
     assertThat(NULL_VIOLATES_RULE, violationsAllNullValues, hasSize(3));
@@ -72,11 +58,8 @@ public class BlobStoreXOTest
     assertThat(NULL_VIOLATES_RULE, violationsNoAttributes, hasSize(1));
   }
 
-  /**
-   * Verify validation behavior with different name values in the BlobStoreXO.
-   */
   @Test
-  public void checkNameRestrictions() {
+  public void validationShouldEnforceNameRestrictions() {
     BlobStoreXO blobStoreEmptyName = createBlobStoreXO("");
     Set<ConstraintViolation<BlobStoreXO>> violationsEmptytName = validator.validate(blobStoreEmptyName);
     assertThat(NULL_VIOLATES_RULE, violationsEmptytName, hasSize(2));
@@ -95,12 +78,6 @@ public class BlobStoreXOTest
     assertThat(NULL_VIOLATES_RULE, violationsLongerName, hasSize(1));
   }
 
-  /**
-   * Helper method to create a BlobStoreXO with the given name and default values for other fields.
-   *
-   * @param name the name to set on the BlobStoreXO
-   * @return a new BlobStoreXO instance with the given name and default values
-   */
   private BlobStoreXO createBlobStoreXO(final String name) {
     Map<String, Map<String, Object>> attributes = new HashMap<>();
     Map<String, Object> attribute = new HashMap<>();
@@ -111,6 +88,6 @@ public class BlobStoreXOTest
     blobStore.withType("someType");
     blobStore.withAttributes(attributes);
     blobStore.withName(name);
-    return blobStore;
+    return(blobStore);
   }
 }

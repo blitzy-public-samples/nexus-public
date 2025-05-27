@@ -14,6 +14,9 @@ package org.sonatype.nexus.coreui;
 
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Provider;
 import javax.validation.Validator;
 
@@ -38,21 +41,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests {@link TaskComponent}.
- * <p>
- * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5.10.1) and Mockito 4.11.0.
  */
 @ExtendWith(MockitoExtension.class)
-public class TaskComponentTest
+class TaskComponentTest
     extends TestSupport
 {
   private TaskComponent component;
 
-  @Mock
   private TaskScheduler scheduler;
 
   @Mock
@@ -61,14 +63,13 @@ public class TaskComponentTest
   private final Provider<Validator> validatorProvider = () -> validator;
 
   @BeforeEach
-  public void setUp() {
-    // Configure scheduler with deep stubs since @Mock doesn't support it directly
+  void setUp() {
     scheduler = mock(TaskScheduler.class, Mockito.RETURNS_DEEP_STUBS);
     component = new TaskComponent(scheduler, validatorProvider, false);
   }
 
   @Test
-  public void testValidateState_running() {
+  void validateStateShouldThrowExceptionWhenTaskIsRunning() {
     TaskInfo taskInfo = mock(TaskInfo.class);
     CurrentState localState = mock(CurrentState.class);
     ExternalTaskState extState = mock(ExternalTaskState.class);
@@ -78,15 +79,14 @@ public class TaskComponentTest
     when(extState.getState()).thenReturn(TaskState.RUNNING);
     when(scheduler.toExternalTaskState(taskInfo)).thenReturn(extState);
 
-    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
-      component.validateState("taskId", taskInfo);
-    });
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> component.validateState("taskId", taskInfo));
     assertEquals("Task can not be edited while it is being executed or it is in line to be executed", 
         exception.getMessage());
   }
 
   @Test
-  public void testValidateState_notRunning() {
+  void validateStateShouldSucceedWhenTaskIsNotRunning() {
     TaskInfo taskInfo = mock(TaskInfo.class);
     CurrentState localState = mock(CurrentState.class);
     ExternalTaskState extState = mock(ExternalTaskState.class);
@@ -100,7 +100,7 @@ public class TaskComponentTest
   }
 
   @Test
-  public void testValidateScriptUpdate_noSourceChange() {
+  void validateScriptUpdateShouldSucceedWhenNoSourceChange() {
     TaskConfiguration taskConfiguration = new TaskConfiguration();
     taskConfiguration.setString("source", "println 'hello'");
 
@@ -114,7 +114,7 @@ public class TaskComponentTest
   }
 
   @Test
-  public void testValidateScriptUpdate_sourceChange_allowCreation() {
+  void validateScriptUpdateShouldSucceedWhenSourceChangeIsAllowed() {
     TaskConfiguration taskConfiguration = new TaskConfiguration();
     taskConfiguration.setString("source", "println 'hello'");
 
@@ -129,7 +129,7 @@ public class TaskComponentTest
   }
 
   @Test
-  public void testValidateScriptUpdate_sourceChange_doNotAllowCreation() {
+  void validateScriptUpdateShouldThrowExceptionWhenSourceChangeIsNotAllowed() {
     TaskConfiguration taskConfiguration = new TaskConfiguration();
     taskConfiguration.setString("source", "println 'hello'");
 
@@ -139,14 +139,13 @@ public class TaskComponentTest
     TaskXO taskXO = new TaskXO();
     taskXO.setProperties(ImmutableMap.of("source", "println 'hello world'"));
 
-    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
-      component.validateScriptUpdate(taskInfo, taskXO);
-    });
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> component.validateScriptUpdate(taskInfo, taskXO));
     assertEquals("Script source updates are not allowed", exception.getMessage());
   }
 
   @Test
-  public void testNotExposedTaskCannotBeCreated() {
+  void createShouldThrowExceptionWhenTaskIsNotExposed() {
     TaskConfiguration taskConfiguration = new TaskConfiguration();
     taskConfiguration.setString("source", "println 'hello'");
     taskConfiguration.setExposed(false);
@@ -159,14 +158,13 @@ public class TaskComponentTest
     taskXO.setProperties(ImmutableMap.of("source", "println 'hello world'"));
     taskXO.setSchedule("manual");
 
-    IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
-      component.create(taskXO);
-    });
+    IllegalStateException exception = assertThrows(IllegalStateException.class, 
+        () -> component.create(taskXO));
     assertEquals("This task is not allowed to be created", exception.getMessage());
   }
 
   @Test
-  public void testAppendPlanReconciliationText() {
+  void readShouldAppendPlanReconciliationText() {
     TaskConfiguration taskConfiguration = mock(TaskConfiguration.class);
     when(taskConfiguration.isVisible()).thenReturn(true);
     when(taskConfiguration.getTypeId()).thenReturn(TaskComponent.PLAN_RECONCILIATION_TASK_ID);
@@ -193,5 +191,32 @@ public class TaskComponentTest
     assertEquals(1, tasks.size());
     assertEquals(TaskComponent.PLAN_RECONCILIATION_TASK_ID, tasks.get(0).getTypeId());
     assertEquals("Ok [0s]" + TaskComponent.PLAN_RECONCILIATION_TASK_OK_TEXT, tasks.get(0).getLastRunResult());
+  }
+  
+  @Test
+  void taskExecutionShouldWorkWithVirtualThreads() throws Exception {
+    // Create a simple task to execute
+    Runnable task = () -> {
+      try {
+        Thread.sleep(100); // Simulate some work
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    };
+    
+    // Create an executor service with virtual threads
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Submit the task
+      executor.submit(task);
+      
+      // Verify the thread is a virtual thread
+      executor.submit(() -> {
+        assertTrue(Thread.currentThread().isVirtual(), "Thread should be a virtual thread");
+      });
+      
+      // Shutdown gracefully
+      executor.shutdown();
+      assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS), "Executor should terminate within timeout");
+    }
   }
 }

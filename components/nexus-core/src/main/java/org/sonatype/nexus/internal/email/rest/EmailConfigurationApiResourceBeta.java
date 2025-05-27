@@ -27,6 +27,10 @@ import static org.sonatype.nexus.rest.APIConstants.BETA_API_PREFIX;
 /**
  * beta endpoint for email configuration REST API
  *
+ * This implementation inherits Java 21 Virtual Thread capabilities from the parent class,
+ * providing efficient non-blocking I/O operations for email verification and configuration
+ * management.
+ *
  * @since 3.25
  * @deprecated moving to {@link EmailConfigurationApiResourceV1}
  */

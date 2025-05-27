@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.virtualthread;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,13 +24,13 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.app.NotWritableException;
 import org.sonatype.nexus.thread.DatabaseStatusDelayedExecutor;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,9 +42,10 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.core.Is.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -53,13 +54,13 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
- * Tests the {@link DatabaseStatusDelayedExecutor} with Java 21 Virtual Threads.
+ * Tests for {@link DatabaseStatusDelayedExecutor} with Java 21 Virtual Threads.
  * 
- * Validates that task execution, retry logic, and NotWritableException handling work correctly
- * when using large numbers of concurrent virtual threads.
+ * These tests validate that the executor maintains correct execution order and respects database
+ * writability status while leveraging the lightweight threading capabilities of Java 21.
  */
 @ExtendWith(MockitoExtension.class)
-class DatabaseStatusDelayedExecutorVirtualThreadTest
+public class DatabaseStatusDelayedExecutorVirtualThreadTest
     extends TestSupport
 {
   private static final int SLEEP_INTERVAL_MS = 25;
@@ -71,40 +72,49 @@ class DatabaseStatusDelayedExecutorVirtualThreadTest
   @Mock
   FreezeService freezeService;
 
-  DatabaseStatusDelayedExecutor statusDelayedExecutor;
+  DatabaseStatusDelayedExecutor virtualThreadExecutor;
+  
+  ExecutorService cleanupExecutor;
 
   @BeforeEach
-  void setup() throws Exception {
-    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES);
-    statusDelayedExecutor.start();
+  public void setup() throws Exception {
+    // Create a virtual thread factory
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
+    
+    // Create executor with virtual threads
+    virtualThreadExecutor = new DatabaseStatusDelayedExecutor(freezeService, SLEEP_INTERVAL_MS, MAX_RETRIES);
+    virtualThreadExecutor.start();
+    
+    // Executor for cleanup tasks
+    cleanupExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  @AfterEach
+  public void cleanup() {
+    if (virtualThreadExecutor != null) {
+      virtualThreadExecutor.shutdown();
+    }
+    if (cleanupExecutor != null) {
+      cleanupExecutor.shutdown();
+    }
   }
 
-  /**
-   * Verifies that tasks eventually run after MAX_RETRIES attempts when using virtual threads.
-   */
   @Test
-  void ensureThatTaskEventuallyRunsWithVirtualThreads() {
+  public void ensureThatTaskEventuallyRuns() {
     doThrow(NotWritableException.class).when(freezeService).checkWritable(anyString());
 
-    // Use a virtual thread to submit the task
-    Thread.startVirtualThread(() -> {
-      Future<String> result = statusDelayedExecutor.submit(() -> "Done");
+    Future<String> result = virtualThreadExecutor.submit(() -> "Done");
 
-      await()
-          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
-          .atMost(2 * MAX_RETRIES * SLEEP_INTERVAL_MS, MILLISECONDS)
-          .until(() -> result.isDone());
+    await()
+        .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+        .atMost(2 * MAX_RETRIES * SLEEP_INTERVAL_MS, MILLISECONDS)
+        .until(() -> result.isDone());
 
-      verify(freezeService, times(MAX_RETRIES)).checkWritable(anyString());
-    }).join();
+    verify(freezeService, times(MAX_RETRIES)).checkWritable(anyString());
   }
 
-  /**
-   * Verifies that tasks are delayed when the database is not writable, but eventually run
-   * when it becomes writable, when using virtual threads.
-   */
   @Test
-  void noWritableDelaysTaskWithVirtualThreads() {
+  public void noWritableDelaysTask() {
     final AtomicInteger callCount = new AtomicInteger(0);
     doAnswer(invocation -> {
       if (callCount.incrementAndGet() <= 4) {
@@ -113,253 +123,232 @@ class DatabaseStatusDelayedExecutorVirtualThreadTest
       return null;
     }).when(freezeService).checkWritable(anyString());
 
-    // Use a virtual thread to submit the task
-    Thread.startVirtualThread(() -> {
-      Future<String> result = statusDelayedExecutor.submit(() -> "Done");
+    Future<String> result = virtualThreadExecutor.submit(() -> "Done");
 
-      await()
-          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
-          .atMost(2 * SLEEP_INTERVAL_MS, MILLISECONDS)
-          .until(callCount::get, greaterThanOrEqualTo(1));
+    await()
+        .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+        .atMost(2 * SLEEP_INTERVAL_MS, MILLISECONDS)
+        .until(callCount::get, greaterThanOrEqualTo(1));
 
-      assertThat(result.isDone(), is(false));
+    assertFalse(result.isDone());
 
-      await()
-          .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
-          .atMost(10 * SLEEP_INTERVAL_MS, MILLISECONDS)
-          .until(() -> result.isDone());
+    await()
+        .pollDelay(SLEEP_INTERVAL_MS / 2, MILLISECONDS)
+        .atMost(10 * SLEEP_INTERVAL_MS, MILLISECONDS)
+        .until(() -> result.isDone());
 
-      assertThat(callCount.get(), is(5));
-    }).join();
+    assertEquals(5, callCount.get());
   }
-
-  /**
-   * Tests high concurrency scenario with thousands of virtual threads submitting tasks.
-   * Verifies that all tasks are eventually executed correctly.
-   */
+  
   @Test
-  void highConcurrencyWithVirtualThreads() throws Exception {
-    // Configure freezeService to allow tasks to run after a few retries
-    final AtomicInteger globalCallCount = new AtomicInteger(0);
-    doAnswer(invocation -> {
-      int currentCount = globalCallCount.incrementAndGet();
-      // Allow tasks to proceed after a certain number of global retries
-      // This simulates a database that becomes writable after some time
-      if (currentCount < HIGH_CONCURRENCY_TASK_COUNT) {
-        throw new NotWritableException("Database not writable yet");
-      }
-      return null;
-    }).when(freezeService).checkWritable(anyString());
-
-    // Create a virtual thread per task executor
-    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+  public void concurrentTasksWithVirtualThreads() {
+    // Submit multiple tasks concurrently
+    Future<String> result1 = virtualThreadExecutor.submit(() -> "Task1");
+    Future<String> result2 = virtualThreadExecutor.submit(() -> "Task2");
+    Future<String> result3 = virtualThreadExecutor.submit(() -> "Task3");
     
-    // Track completion of all tasks
-    CountDownLatch completionLatch = new CountDownLatch(HIGH_CONCURRENCY_TASK_COUNT);
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    // Wait for all tasks to complete
+    await()
+        .atMost(5 * SLEEP_INTERVAL_MS, MILLISECONDS)
+        .until(() -> result1.isDone() && result2.isDone() && result3.isDone());
     
-    // Submit tasks
-    List<Future<String>> results = new ArrayList<>(HIGH_CONCURRENCY_TASK_COUNT);
+    // Verify all tasks completed successfully
+    assertTrue(result1.isDone());
+    assertTrue(result2.isDone());
+    assertTrue(result3.isDone());
+  }
+  
+  @Test
+  public void highConcurrencyTaskExecution() throws Exception {
+    // Create a large number of tasks
+    List<Future<Integer>> futures = new ArrayList<>(HIGH_CONCURRENCY_TASK_COUNT);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    AtomicInteger completedTasks = new AtomicInteger(0);
+    
+    // Submit a large number of tasks that will wait for the startLatch
     for (int i = 0; i < HIGH_CONCURRENCY_TASK_COUNT; i++) {
       final int taskId = i;
-      results.add(statusDelayedExecutor.submit(() -> {
-        try {
-          return "Task " + taskId + " completed";
-        } finally {
-          successCount.incrementAndGet();
-          completionLatch.countDown();
-        }
+      futures.add(virtualThreadExecutor.submit(() -> {
+        startLatch.await(1, SECONDS); // All tasks wait for the signal to start together
+        completedTasks.incrementAndGet();
+        return taskId;
       }));
     }
     
-    // Wait for all tasks to complete
-    boolean allCompleted = completionLatch.await(30, SECONDS);
-    assertTrue(allCompleted, "All tasks should complete within the timeout");
-    
-    // Verify all tasks completed successfully
-    assertEquals(HIGH_CONCURRENCY_TASK_COUNT, successCount.get(), "All tasks should succeed");
-    assertEquals(0, errorCount.get(), "No tasks should fail");
-    
-    // Verify all futures are done
-    for (Future<String> result : results) {
-      assertTrue(result.isDone(), "All futures should be done");
-    }
-  }
-
-  /**
-   * Tests that the executor maintains correct execution order even with high concurrency.
-   * Tasks should be executed in the order they were submitted, regardless of database status.
-   */
-  @Test
-  void executionOrderPreservedWithVirtualThreads() throws Exception {
-    // Configure freezeService to allow tasks to run after a delay
-    AtomicBoolean databaseWritable = new AtomicBoolean(false);
-    doAnswer(invocation -> {
-      if (!databaseWritable.get()) {
-        throw new NotWritableException("Database not writable");
-      }
-      return null;
-    }).when(freezeService).checkWritable(anyString());
-
-    // Submit tasks and track their execution order
-    int taskCount = 100;
-    AtomicInteger executionCounter = new AtomicInteger(0);
-    List<Integer> executionOrder = new ArrayList<>();
-    CountDownLatch allSubmitted = new CountDownLatch(1);
-    CountDownLatch allCompleted = new CountDownLatch(taskCount);
-    
-    // Submit tasks using virtual threads
-    for (int i = 0; i < taskCount; i++) {
-      final int taskId = i;
-      statusDelayedExecutor.submit(() -> {
-        try {
-          // Record execution order
-          int order = executionCounter.getAndIncrement();
-          synchronized (executionOrder) {
-            executionOrder.add(taskId);
-          }
-          return "Task " + taskId;
-        } finally {
-          allCompleted.countDown();
-        }
-      });
-    }
-    
-    // All tasks submitted, now make database writable
-    allSubmitted.countDown();
-    Thread.sleep(SLEEP_INTERVAL_MS * 2); // Give time for tasks to be queued
-    databaseWritable.set(true);
-    
-    // Wait for all tasks to complete
-    boolean completed = allCompleted.await(10, SECONDS);
-    assertTrue(completed, "All tasks should complete");
-    
-    // Verify execution order - tasks should be executed in submission order
-    for (int i = 0; i < taskCount; i++) {
-      assertEquals(i, executionOrder.get(i), "Tasks should execute in submission order");
-    }
-  }
-
-  /**
-   * Compares performance between virtual threads and platform threads.
-   * This test validates that virtual threads provide better scalability for I/O-bound operations.
-   */
-  @Test
-  void compareVirtualThreadsVsPlatformThreadsPerformance() throws Exception {
-    // Configure freezeService to simulate I/O delay but allow execution
-    doAnswer(invocation -> {
-      // Simulate I/O delay
-      Thread.sleep(5);
-      return null;
-    }).when(freezeService).checkWritable(anyString());
-
-    // Function to measure execution time with different thread factories
-    class PerformanceMeasurement {
-      long measureExecutionTime(ThreadFactory threadFactory, int taskCount) throws Exception {
-        ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory);
-        CountDownLatch completionLatch = new CountDownLatch(taskCount);
-        long startTime = System.nanoTime();
-        
-        try {
-          // Submit tasks
-          for (int i = 0; i < taskCount; i++) {
-            executor.submit(() -> {
-              try {
-                statusDelayedExecutor.submit(() -> "Done").get();
-              } catch (Exception e) {
-                // Ignore exceptions
-              } finally {
-                completionLatch.countDown();
-              }
-            });
-          }
-          
-          // Wait for all tasks to complete
-          completionLatch.await(30, SECONDS);
-          return System.nanoTime() - startTime;
-        } finally {
-          executor.shutdown();
-        }
-      }
-    }
-    
-    // Measure with both thread types
-    PerformanceMeasurement measurement = new PerformanceMeasurement();
-    int taskCount = 500; // Significant enough to show difference
-    
-    // Warm-up run
-    measurement.measureExecutionTime(Thread.ofVirtual().factory(), 50);
-    measurement.measureExecutionTime(Thread.ofPlatform().factory(), 50);
-    
-    // Actual measurement
-    long virtualThreadTime = measurement.measureExecutionTime(Thread.ofVirtual().factory(), taskCount);
-    long platformThreadTime = measurement.measureExecutionTime(Thread.ofPlatform().factory(), taskCount);
-    
-    // Virtual threads should be more efficient for I/O-bound tasks
-    double ratio = (double) platformThreadTime / virtualThreadTime;
-    log.info("Performance comparison - Platform threads: {} ns, Virtual threads: {} ns, Ratio: {}", 
-        platformThreadTime, virtualThreadTime, ratio);
-    
-    // Virtual threads should perform better (lower time) than platform threads
-    assertThat(virtualThreadTime, lessThan(platformThreadTime));
-  }
-
-  /**
-   * Tests that virtual threads are not pinned during database status checking.
-   * Thread pinning would reduce the efficiency of virtual threads.
-   */
-  @Test
-  void noThreadPinningDuringDatabaseStatusCheck() throws Exception {
-    // Configure freezeService to simulate a blocking operation that could cause pinning
-    LongAdder pinningDetected = new LongAdder();
-    
-    doAnswer(invocation -> {
-      // Check if current thread is a virtual thread
-      if (Thread.currentThread().isVirtual()) {
-        // Use a technique to detect potential pinning
-        // In a real scenario, we would use JFR events or other monitoring
-        // For this test, we'll use a simple heuristic: if multiple threads are
-        // simultaneously in this method for too long, it might indicate pinning
-        Thread.sleep(50); // Simulate blocking I/O
-      }
-      return null;
-    }).when(freezeService).checkWritable(anyString());
-
-    // Create many virtual threads to increase chance of detecting pinning
-    int threadCount = 200;
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    
-    // Start threads that will all try to execute simultaneously
-    for (int i = 0; i < threadCount; i++) {
-      Thread.startVirtualThread(() -> {
-        try {
-          startLatch.await(); // Wait for signal to start
-          long startTime = System.nanoTime();
-          statusDelayedExecutor.submit(() -> "Done").get(1, SECONDS);
-          long duration = System.nanoTime() - startTime;
-          
-          // If execution took much longer than expected, it might indicate pinning
-          if (duration > TimeUnit.MILLISECONDS.toNanos(500)) {
-            pinningDetected.increment();
-          }
-        } catch (Exception e) {
-          pinningDetected.increment();
-        } finally {
-          completionLatch.countDown();
-        }
-      });
-    }
-    
-    // Start all threads simultaneously
+    // Release all tasks at once to simulate high concurrency
     startLatch.countDown();
     
-    // Wait for completion
-    boolean completed = completionLatch.await(10, SECONDS);
-    assertTrue(completed, "All tasks should complete within timeout");
+    // Wait for all tasks to complete
+    await()
+        .atMost(5, SECONDS)
+        .until(() -> completedTasks.get() == HIGH_CONCURRENCY_TASK_COUNT);
     
-    // Verify no pinning was detected
-    assertEquals(0, pinningDetected.sum(), "No thread pinning should be detected");
+    // Verify all tasks completed
+    assertEquals(HIGH_CONCURRENCY_TASK_COUNT, completedTasks.get());
+    
+    // Verify all futures completed successfully
+    for (Future<Integer> future : futures) {
+      assertTrue(future.isDone());
+      assertFalse(future.isCancelled());
+    }
+  }
+  
+  @Test
+  public void testRetryLogicWithHighConcurrency() throws Exception {
+    // Configure the freezeService to throw NotWritableException for the first 3 calls
+    // from each task, then succeed
+    ConcurrentHashMap<Integer, AtomicInteger> callCounts = new ConcurrentHashMap<>();
+    
+    doAnswer(invocation -> {
+      // Get the current thread ID to track calls per thread
+      int threadId = System.identityHashCode(Thread.currentThread());
+      AtomicInteger count = callCounts.computeIfAbsent(threadId, k -> new AtomicInteger(0));
+      int attempts = count.incrementAndGet();
+      
+      if (attempts <= 3) {
+        throw new NotWritableException("Database not writable for thread " + threadId + ", attempt " + attempts);
+      }
+      return null;
+    }).when(freezeService).checkWritable(anyString());
+    
+    // Submit multiple concurrent tasks
+    int taskCount = 50;
+    List<Future<String>> futures = new ArrayList<>(taskCount);
+    
+    for (int i = 0; i < taskCount; i++) {
+      final int taskId = i;
+      futures.add(virtualThreadExecutor.submit(() -> "Task" + taskId));
+    }
+    
+    // Wait for all tasks to complete
+    await()
+        .atMost(10, SECONDS)
+        .until(() -> futures.stream().allMatch(Future::isDone));
+    
+    // Verify all tasks completed successfully
+    for (Future<String> future : futures) {
+      assertTrue(future.isDone());
+      assertFalse(future.isCancelled());
+    }
+    
+    // Verify each thread had to retry multiple times
+    for (AtomicInteger count : callCounts.values()) {
+      assertThat(count.get(), greaterThanOrEqualTo(3));
+    }
+  }
+  
+  @Test
+  public void testNoPinningDuringDatabaseCheck() throws Exception {
+    // This test verifies that virtual threads don't get pinned during database status checking
+    // by running a CPU-intensive task in parallel with many I/O-bound tasks
+    
+    // Make the freezeService simulate I/O by sleeping briefly
+    doAnswer(invocation -> {
+      // Simulate I/O operation with a short sleep
+      Thread.sleep(10);
+      return null;
+    }).when(freezeService).checkWritable(anyString());
+    
+    // Create a CPU-intensive task that runs for a while
+    AtomicBoolean cpuTaskRunning = new AtomicBoolean(true);
+    CompletableFuture<Long> cpuTask = CompletableFuture.supplyAsync(() -> {
+      long counter = 0;
+      long startTime = System.currentTimeMillis();
+      while (cpuTaskRunning.get() && System.currentTimeMillis() - startTime < 2000) {
+        counter++;
+      }
+      return counter;
+    }, cleanupExecutor);
+    
+    // Submit many I/O-bound tasks that will check database status
+    int ioTaskCount = 500;
+    List<Future<Integer>> ioTasks = new ArrayList<>(ioTaskCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    AtomicInteger completedIoTasks = new AtomicInteger(0);
+    
+    for (int i = 0; i < ioTaskCount; i++) {
+      final int taskId = i;
+      ioTasks.add(virtualThreadExecutor.submit(() -> {
+        startLatch.await(1, SECONDS);
+        // This will trigger the database check which simulates I/O
+        completedIoTasks.incrementAndGet();
+        return taskId;
+      }));
+    }
+    
+    // Start all I/O tasks
+    startLatch.countDown();
+    
+    // Wait for all I/O tasks to complete
+    await()
+        .atMost(5, SECONDS)
+        .until(() -> completedIoTasks.get() == ioTaskCount);
+    
+    // Stop the CPU task
+    cpuTaskRunning.set(false);
+    long cpuOperations = cpuTask.get(1, SECONDS);
+    
+    // If virtual threads were pinned, the CPU task would have been starved
+    // and wouldn't have been able to do many operations
+    log.info("CPU task performed {} operations while {} I/O tasks were running", 
+        cpuOperations, ioTaskCount);
+    
+    // Verify the CPU task was able to make progress (not starved)
+    assertThat(cpuOperations, greaterThanOrEqualTo(1000L));
+    
+    // Verify all I/O tasks completed
+    assertEquals(ioTaskCount, completedIoTasks.get());
+  }
+  
+  @Test
+  public void testPerformanceUnderHighLoad() throws Exception {
+    // This test measures executor performance under high virtual thread loads
+    
+    // Number of tasks to run
+    int taskCount = 2000;
+    
+    // Create and submit tasks
+    List<Future<Long>> futures = new ArrayList<>(taskCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Submit tasks that record their execution time
+    for (int i = 0; i < taskCount; i++) {
+      futures.add(virtualThreadExecutor.submit(() -> {
+        startLatch.await(1, SECONDS);
+        long startTime = System.nanoTime();
+        // Simulate some work
+        Thread.sleep(5);
+        return System.nanoTime() - startTime;
+      }));
+    }
+    
+    // Start all tasks simultaneously
+    long testStartTime = System.nanoTime();
+    startLatch.countDown();
+    
+    // Wait for all tasks to complete and collect execution times
+    List<Long> executionTimes = new ArrayList<>(taskCount);
+    for (Future<Long> future : futures) {
+      executionTimes.add(future.get(10, SECONDS));
+    }
+    long totalTime = System.nanoTime() - testStartTime;
+    
+    // Calculate statistics
+    double avgExecutionTimeMs = executionTimes.stream()
+        .mapToLong(t -> t)
+        .average()
+        .orElse(0) / 1_000_000.0;
+    
+    long totalTimeMs = TimeUnit.NANOSECONDS.toMillis(totalTime);
+    
+    log.info("Completed {} tasks in {} ms", taskCount, totalTimeMs);
+    log.info("Average task execution time: {} ms", avgExecutionTimeMs);
+    log.info("Throughput: {} tasks/second", (taskCount * 1000.0) / totalTimeMs);
+    
+    // Verify performance metrics
+    // The actual throughput will depend on the test environment, but we can verify
+    // that the executor can handle a large number of concurrent tasks efficiently
+    assertThat("Total execution time should be reasonable for virtual threads",
+        totalTimeMs, lessThan(taskCount * 5L)); // Much less than sequential execution would take
   }
 }

@@ -20,79 +20,54 @@ import org.sonatype.nexus.repository.types.GroupType;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * REST API model for group repository requests.
- *
  * @since 3.20
  */
 @JsonIgnoreProperties({"type"})
 public class GroupRepositoryApiRequest
     extends AbstractRepositoryApiRequest
 {
-  @ApiModelProperty
+  @Schema(description = "Storage attributes for the repository")
   @NotNull
   @Valid
-  protected final StorageAttributes storage;
+  protected final StorageAttributesRecord storage;
 
-  @ApiModelProperty
+  @Schema(description = "Group attributes for the repository")
   @NotNull
   @Valid
-  protected final GroupAttributes group;
+  protected final GroupAttributesRecord group;
 
   @JsonCreator
   public GroupRepositoryApiRequest(
       @JsonProperty("name") final String name,
       @JsonProperty("format") final String format,
       @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final StorageAttributes storage,
-      @JsonProperty("group") final GroupAttributes group)
+      @JsonProperty("storage") final Object storageObj,
+      @JsonProperty("group") final Object groupObj)
   {
     super(name, format, GroupType.NAME, online);
-    this.storage = storage;
-    this.group = group;
+    
+    // Handle both legacy and record-based attribute objects using pattern matching
+    this.storage = switch (storageObj) {
+      case StorageAttributesRecord record -> record;
+      case StorageAttributes attributes -> StorageAttributesRecord.from(attributes);
+      default -> throw new IllegalArgumentException("Invalid storage attributes type: " + storageObj.getClass().getName());
+    };
+    
+    this.group = switch (groupObj) {
+      case GroupAttributesRecord record -> record;
+      case GroupAttributes attributes -> GroupAttributesRecord.from(attributes);
+      default -> throw new IllegalArgumentException("Invalid group attributes type: " + groupObj.getClass().getName());
+    };
   }
 
-  /**
-   * Returns the storage attributes for this repository.
-   *
-   * @return the storage attributes record
-   */
-  public StorageAttributes getStorage() {
+  public StorageAttributesRecord getStorage() {
     return storage;
   }
 
-  /**
-   * Returns the group attributes for this repository.
-   *
-   * @return the group attributes record
-   */
-  public GroupAttributes getGroup() {
+  public GroupAttributesRecord getGroup() {
     return group;
-  }
-  
-  /**
-   * Utility method to extract storage components using record pattern matching.
-   * 
-   * @return a tuple containing the blobStoreName and strictContentTypeValidation values
-   */
-  public Object[] extractStorageComponents() {
-    if (storage instanceof StorageAttributes(String blobStoreName, Boolean strictContentTypeValidation)) {
-      return new Object[]{blobStoreName, strictContentTypeValidation};
-    }
-    return new Object[]{storage.blobStoreName(), storage.strictContentTypeValidation()};
-  }
-  
-  /**
-   * Utility method to check if this repository uses a specific blob store.
-   * Demonstrates the use of record patterns with conditional checks.
-   * 
-   * @param blobStoreName the blob store name to check
-   * @return true if this repository uses the specified blob store
-   */
-  public boolean usesBlobStore(String blobStoreName) {
-    return storage instanceof StorageAttributes(String storageName, var _) && 
-           storageName.equals(blobStoreName);
   }
 }

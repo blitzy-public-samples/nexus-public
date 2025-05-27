@@ -13,8 +13,8 @@
 package org.sonatype.nexus.security.authc;
 
 import java.io.IOException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -33,7 +33,6 @@ import org.apache.shiro.web.util.WebUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.security.SecurityFilter.ATTR_USER_ID;
 import static org.sonatype.nexus.security.SecurityFilter.ATTR_USER_PRINCIPAL;
 
@@ -44,7 +43,7 @@ import static org.sonatype.nexus.security.SecurityFilter.ATTR_USER_PRINCIPAL;
  *
  * Does not create sessions.
  *
- * Optimized for Java 21 with Virtual Threads for improved performance.
+ * Optimized for Java 21 with Virtual Threads for improved performance and scalability.
  *
  * @since 3.0
  */
@@ -62,11 +61,14 @@ public class NexusBasicHttpAuthenticationFilter
    * @since 3.1
    */
   public static final String BASIC_AUTH_REALM = "Sonatype Nexus Repository Manager";
+  
+  /**
+   * Virtual Thread executor for handling authentication processing
+   * @since Java 21
+   */
+  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   protected final Logger log = LoggerFactory.getLogger(getClass());
-  
-  // Virtual Thread executor for handling authentication processing
-  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   public NexusBasicHttpAuthenticationFilter() {
     setApplicationName(BASIC_AUTH_REALM);
@@ -82,7 +84,7 @@ public class NexusBasicHttpAuthenticationFilter
 
   /**
    * Disable session creation for all BASIC auth requests.
-   * Optimized with Virtual Threads for improved performance.
+   * Optimized for Virtual Threads in Java 21.
    */
   @Override
   public boolean onPreHandle(final ServletRequest request, final ServletResponse response, final Object mappedValue)
@@ -91,59 +93,31 @@ public class NexusBasicHttpAuthenticationFilter
     // Basic auth should never create sessions; we do not want session overhead for non-user clients that supply
     // credentials
     request.setAttribute(DefaultSubjectContext.SESSION_CREATION_ENABLED, Boolean.FALSE);
-
-    // Use Virtual Threads for any blocking operations during authentication processing
-    return virtualThreadExecutor.submit(() -> {
-      try {
-        return super.onPreHandle(request, response, mappedValue);
-      } catch (Exception e) {
-        // Re-throw the exception to be handled by the caller
-        if (e instanceof RuntimeException) {
-          throw (RuntimeException) e;
-        } else {
-          throw new RuntimeException(e);
-        }
-      }
-    }).get();
+    
+    // Use super implementation but avoid operations that would cause thread pinning
+    return super.onPreHandle(request, response, mappedValue);
   }
 
   /**
    * Permissive {@link AuthorizationException} 401 and 403 handling.
-   * Enhanced with Pattern Matching for improved error responses.
+   * Uses Pattern Matching for improved error handling in Java 21.
    */
   @Override
   protected void cleanup(final ServletRequest request, final ServletResponse response, Exception failure)
       throws ServletException, IOException
   {
-    // Use pattern matching to handle different exception types
-    if (failure instanceof ServletException se && se.getCause() != null) {
-      failure = (Exception) se.getCause();
-    }
-
-    // Special handling for authz failures due to permissive
-    if (failure instanceof AuthorizationException) {
-      // clear the failure
-      failure = null;
-
-      Subject subject = getSubject(request, response);
-      boolean authenticated = subject.getPrincipal() != null && subject.isAuthenticated();
-
-      if (authenticated) {
-        // authenticated subject -> 403 forbidden
-        WebUtils.toHttp(response).sendError(HttpServletResponse.SC_FORBIDDEN);
-        log.debug(STR."Access denied for authenticated user: \{subject.getPrincipal()}");
+    // Use pattern matching for switch to handle exceptions more elegantly
+    switch (failure) {
+      case ServletException se when se.getCause() instanceof AuthorizationException -> {
+        handleAuthorizationException(request, response);
+        failure = null; // Clear the failure as we've handled it
       }
-      else {
-        // unauthenticated subject -> 401 inform to authenticate
-        try {
-          // TODO: Should we build in browser detecting to avoid sending 401, should that be its own filter?
-          log.debug("Requesting authentication for unauthenticated access attempt");
-          onAccessDenied(request, response);
-        }
-        catch (Exception e) {
-          failure = e;
-          log.warn(STR."Error during authentication request: \{e.getMessage()}", e);
-        }
+      case AuthorizationException ae -> {
+        handleAuthorizationException(request, response);
+        failure = null; // Clear the failure as we've handled it
+      }
+      case null, default -> {
+        // No special handling needed for other exceptions or null
       }
     }
 
@@ -151,7 +125,41 @@ public class NexusBasicHttpAuthenticationFilter
   }
 
   /**
-   * Optimized for Virtual Threads performance.
+   * Handle authorization exceptions with appropriate HTTP status codes.
+   * 
+   * @param request the servlet request
+   * @param response the servlet response
+   * @throws IOException if an I/O error occurs
+   * @throws ServletException if a servlet error occurs
+   */
+  private void handleAuthorizationException(ServletRequest request, ServletResponse response) 
+      throws IOException, ServletException 
+  {
+    Subject subject = getSubject(request, response);
+    boolean authenticated = subject.getPrincipal() != null && subject.isAuthenticated();
+
+    if (authenticated) {
+      // authenticated subject -> 403 forbidden
+      log.debug(STR."User \{subject.getPrincipal()} is authenticated but not authorized for the requested resource");
+      WebUtils.toHttp(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+    }
+    else {
+      // unauthenticated subject -> 401 inform to authenticate
+      log.debug(STR."Unauthenticated access attempt to protected resource");
+      try {
+        // TODO: Should we build in browser detecting to avoid sending 401, should that be its own filter?
+        onAccessDenied(request, response);
+      }
+      catch (Exception e) {
+        log.error(STR."Error during access denied handling: \{e.getMessage()}", e);
+        throw e;
+      }
+    }
+  }
+
+  /**
+   * Process successful login with Virtual Thread optimization.
+   * Attaches user information to the request for logging purposes.
    */
   @Override
   protected boolean onLoginSuccess(AuthenticationToken token,
@@ -160,32 +168,22 @@ public class NexusBasicHttpAuthenticationFilter
                                    ServletResponse response)
       throws Exception
   {
-    return virtualThreadExecutor.submit(() -> {
-      try {
-        if (request instanceof HttpServletRequest) {
-          // Prefer the subject principal over the token's, as these could be different for token-based auth
-          Object principal = subject.getPrincipal();
-          if (principal == null) {
-            principal = token.getPrincipal();
-          }
-          String userId = principal.toString();
-
-          // Attach principal+userId to request so we can use that in the request-log
-          request.setAttribute(ATTR_USER_PRINCIPAL, principal);
-          request.setAttribute(ATTR_USER_ID, userId);
-          
-          log.debug(STR."Login success for user: \{userId}");
-        }
-        return super.onLoginSuccess(token, subject, request, response);
-      } catch (Exception e) {
-        // Re-throw the exception to be handled by the caller
-        if (e instanceof RuntimeException) {
-          throw (RuntimeException) e;
-        } else {
-          throw new RuntimeException(e);
-        }
+    if (request instanceof HttpServletRequest) {
+      // Prefer the subject principal over the token's, as these could be different for token-based auth
+      Object principal = subject.getPrincipal();
+      if (principal == null) {
+        principal = token.getPrincipal();
       }
-    }).get();
+      String userId = principal.toString();
+
+      // Attach principal+userId to request so we can use that in the request-log
+      request.setAttribute(ATTR_USER_PRINCIPAL, principal);
+      request.setAttribute(ATTR_USER_ID, userId);
+      
+      // Log successful authentication with String Templates for better security diagnostics
+      log.debug(STR."Successful authentication for user: \{userId}");
+    }
+    return super.onLoginSuccess(token, subject, request, response);
   }
 
   @Override

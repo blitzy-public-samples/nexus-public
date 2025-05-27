@@ -21,7 +21,7 @@ import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.scheduling.TaskDescriptorSupport;
 
 /**
- * This task should only be run on systems where {@link SecretsService#SECRETS_MIGRATION_VERSION} is valid, for
+ * This task should only be run on systems where {@link SecretsService.SECRETS_MIGRATION_VERSION} is valid, for
  * as it's intended to be invoked in the context of an upgrade step in the same context as the database upgrade we use
  * 1.0 for the availability version.
  */
@@ -40,7 +40,7 @@ public class SecretsMigrationTaskDescriptor
   /**
    * Constructor for the SecretsMigrationTaskDescriptor.
    * 
-   * @param exposed whether the task is exposed in the UI/API
+   * @param exposed whether the task is exposed in the UI
    * @param visible whether the task is visible in the UI
    */
   @Inject

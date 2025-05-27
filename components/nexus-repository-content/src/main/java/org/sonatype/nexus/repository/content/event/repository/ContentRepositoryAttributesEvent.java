@@ -13,10 +13,9 @@
 package org.sonatype.nexus.repository.content.event.repository;
 
 import java.io.Serializable;
-import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nullable;
 
@@ -28,17 +27,12 @@ import static java.util.Optional.ofNullable;
 
 /**
  * Event sent whenever a {@link ContentRepository}'s attributes change.
- * <p>
- * This implementation is optimized for Java 21 with support for:
- * <ul>
- *   <li>Record patterns for concise attribute operation handling</li>
- *   <li>Virtual threads for efficient event processing</li>
- *   <li>Thread-safe handling of attribute key-value pairs</li>
- *   <li>Optimized serialization for cluster distribution</li>
- * </ul>
- * <p>
- * This class is immutable and thread-safe, making it suitable for processing with virtual threads
- * in high-concurrency environments.
+ * 
+ * This implementation is optimized for Java 21 features including:
+ * - Record patterns for concise attribute operation representation
+ * - Thread safety for concurrent attribute modification scenarios
+ * - Compatibility with Virtual Threads for efficient event processing
+ * - Optimized serialization for cluster distribution
  *
  * @since 3.26
  */
@@ -46,164 +40,147 @@ public class ContentRepositoryAttributesEvent
     extends ContentRepositoryUpdatedEvent
 {
   /**
-   * Thread-safe cache for attribute operations to optimize repeated access patterns.
+   * Record representing attribute operation details for pattern matching.
+   * This enables concise pattern matching in switch expressions and instanceof checks.
    */
-  private static final Map<String, AttributeChange> ATTRIBUTE_CHANGE_CACHE = new ConcurrentHashMap<>();
-
-  /**
-   * Record that encapsulates an attribute change operation with its key and value.
-   * <p>
-   * Using records provides immutability and pattern matching capabilities in Java 21.
-   */
-  public record AttributeChange(
-      AttributeOperation operation,
-      String key,
-      @Nullable Object value) implements Serializable 
-  {
+  public record AttributeOperationDetails(AttributeOperation operation, String key, Object value) 
+      implements Serializable {
     /**
-     * Creates a new attribute change with validation.
-     *
-     * @param operation the attribute operation
-     * @param key the attribute key
-     * @param value the attribute value (may be null for REMOVE operations)
+     * Creates attribute operation details with null-safe validation.
      */
-    public AttributeChange {
-      checkNotNull(operation, "Attribute operation cannot be null");
-      checkNotNull(key, "Attribute key cannot be null");
+    public AttributeOperationDetails {
+      Objects.requireNonNull(operation, "Operation cannot be null");
+      Objects.requireNonNull(key, "Key cannot be null");
       // value can be null for REMOVE operations
     }
     
     /**
-     * Applies this attribute change to the given attributes map.
-     * <p>
-     * Uses pattern matching for switch to handle different operations concisely.
-     *
-     * @param attributes the attributes map to modify
-     * @return the modified attributes map
+     * Checks if this operation matches the specified key.
      */
-    public Map<String, Object> applyTo(final Map<String, Object> attributes) {
-      // Create an entry for the operation to use
-      Map.Entry<String, Object> entry = Map.entry(key, value);
-      
-      // Use pattern matching with switch for concise operation handling
-      return switch (operation) {
-        case SET -> { attributes.put(key, value); yield attributes; }
-        case REMOVE -> { attributes.remove(key); yield attributes; }
-        case APPEND, PREPEND, OVERLAY -> operation.apply(attributes, entry);
-      };
+    public boolean isKeyOperation(String keyName) {
+      return key.equals(keyName);
     }
     
     /**
-     * Gets a description of this attribute change suitable for logging.
-     * <p>
-     * Uses pattern matching with switch for concise operation descriptions.
-     *
-     * @return a human-readable description of the attribute change
+     * Checks if this operation is of the specified type.
      */
-    public String getDescription() {
-      return switch (operation) {
-        case SET -> "Setting '" + key + "' to '" + value + "'";
-        case REMOVE -> "Removing '" + key + "'";
-        case APPEND -> "Appending '" + value + "' to '" + key + "' list";
-        case PREPEND -> "Prepending '" + value + "' to '" + key + "' list";
-        case OVERLAY -> "Overlaying '" + value + "' onto '" + key + "' map";
-      };
+    public boolean isOperationType(AttributeOperation operationType) {
+      return operation.equals(operationType);
+    }
+    
+    /**
+     * Returns the value with the expected type, if compatible.
+     */
+    @SuppressWarnings("unchecked")
+    public <T> Optional<T> getTypedValue(Class<T> type) {
+      return ofNullable(value)
+          .filter(v -> type.isInstance(v))
+          .map(v -> (T) v);
     }
   }
-
-  private final AttributeChange attributeChange;
-
+  
+  private final AtomicReference<AttributeOperationDetails> attributeDetails;
+  
   /**
    * Creates a new event for the repository attribute change.
-   * <p>
-   * This constructor creates an immutable event with thread-safe handling of attribute operations.
-   *
+   * 
    * @param contentRepository the repository whose attributes changed
-   * @param operation the attribute operation performed
-   * @param key the attribute key that was changed
+   * @param change the attribute operation type
+   * @param key the attribute key
    * @param value the attribute value (may be null for REMOVE operations)
    */
   public ContentRepositoryAttributesEvent(
       final ContentRepository contentRepository,
-      final AttributeOperation operation,
+      final AttributeOperation change,
       final String key,
       @Nullable final Object value)
   {
     super(contentRepository);
-    
-    // Create or reuse an AttributeChange record for this operation
-    String cacheKey = operation.name() + ":" + key;
-    this.attributeChange = ATTRIBUTE_CHANGE_CACHE.computeIfAbsent(cacheKey,
-        k -> new AttributeChange(operation, key, value));
+    this.attributeDetails = new AtomicReference<>(new AttributeOperationDetails(change, key, value));
   }
 
   /**
-   * Gets the attribute operation that was performed.
-   *
-   * @return the attribute operation
+   * Returns the attribute operation type.
    */
   public AttributeOperation getChange() {
-    return attributeChange.operation();
+    return attributeDetails.get().operation();
   }
 
   /**
-   * Gets the attribute key that was changed.
-   *
-   * @return the attribute key
+   * Returns the attribute key.
    */
   public String getKey() {
-    return attributeChange.key();
+    return attributeDetails.get().key();
   }
 
   /**
-   * Gets the attribute value, if present.
-   * <p>
-   * Uses Java 21's pattern matching capabilities for type safety.
-   *
-   * @param <T> the expected type of the value
-   * @return an optional containing the value, or empty if no value or incompatible type
+   * Returns the attribute value with the expected type, if present.
    */
   @SuppressWarnings("unchecked")
   public <T> Optional<T> getValue() {
-    return ofNullable((T) attributeChange.value());
+    return ofNullable((T) attributeDetails.get().value());
   }
   
   /**
-   * Gets the complete attribute change record.
-   * <p>
-   * This method provides access to the immutable record representing the attribute change,
-   * enabling pattern matching in the calling code.
-   *
-   * @return the attribute change record
+   * Returns the attribute operation details.
    */
-  public AttributeChange getAttributeChange() {
-    return attributeChange;
+  public AttributeOperationDetails getAttributeDetails() {
+    return attributeDetails.get();
   }
   
   /**
-   * Applies this event's attribute change to the given attributes map.
-   * <p>
-   * This method demonstrates the use of record patterns for concise attribute handling.
-   *
-   * @param attributes the attributes map to modify
-   * @return the modified attributes map
+   * Checks if this event represents an operation on the specified key.
+   * Demonstrates Java 21 record pattern matching usage.
+   * 
+   * @param keyName the key name to check
+   * @return true if this event operates on the specified key
    */
-  public Map<String, Object> applyTo(final Map<String, Object> attributes) {
-    return attributeChange.applyTo(attributes);
+  public boolean isKeyOperation(String keyName) {
+    return switch(attributeDetails.get()) {
+      case AttributeOperationDetails(var op, var k, var v) when k.equals(keyName) -> true;
+      default -> false;
+    };
   }
   
   /**
-   * Processes this attribute change with the given function.
-   * <p>
-   * This method demonstrates pattern matching with records for concise data extraction.
-   *
-   * @param <R> the result type of the function
-   * @param processor the function to process the attribute change
-   * @return the result of the function
+   * Checks if this event represents the specified operation type.
+   * Demonstrates Java 21 record pattern matching usage.
+   * 
+   * @param operationType the operation type to check
+   * @return true if this event is of the specified operation type
    */
-  public <R> R process(Function<AttributeChange, R> processor) {
-    // Using record pattern matching for concise data extraction
-    var AttributeChange(var op, var k, var v) = attributeChange;
-    return processor.apply(new AttributeChange(op, k, v));
+  public boolean isOperationType(AttributeOperation operationType) {
+    return switch(attributeDetails.get()) {
+      case AttributeOperationDetails(var op, var k, var v) when op.equals(operationType) -> true;
+      default -> false;
+    };
+  }
+  
+  /**
+   * Extracts the value for a specific key and operation type.
+   * Demonstrates Java 21 record pattern matching usage.
+   * 
+   * @param <T> the expected type of the value
+   * @param keyName the key name to check
+   * @param operationType the operation type to check
+   * @param type the class of the expected type
+   * @return optional containing the value if this event matches the key and operation type
+   */
+  @SuppressWarnings("unchecked")
+  public <T> Optional<T> getValueForKeyAndOperation(String keyName, AttributeOperation operationType, Class<T> type) {
+    return switch(attributeDetails.get()) {
+      case AttributeOperationDetails(var op, var k, var v) 
+          when op.equals(operationType) && k.equals(keyName) && (v == null || type.isInstance(v)) -> 
+              ofNullable((T) v);
+      default -> Optional.empty();
+    };
+  }
+  
+  @Override
+  public String toString() {
+    return "ContentRepositoryAttributesEvent{" +
+        "attributeDetails=" + attributeDetails.get() +
+        ", contentRepository=" + getContentRepository() +
+        "} " + super.toString();
   }
 }

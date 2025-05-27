@@ -1,484 +1,507 @@
 {
   "items": [
     {
-      "id": "bWF2ZW4tY2VudHJhbDoxMjM0NTY3ODkwYWJjZGVmMTIzNDU2Nzg5MGFiY2RlZg",
+      "id": "bWF2ZW4tY2VudHJhbDoyZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
       "repository": "maven-central",
       "format": "maven2",
-      "group": "org.apache.commons",
-      "name": "commons-lang3",
-      "version": "3.12.0",
+      "group": "org.apache.karaf",
+      "name": "apache-karaf",
+      "version": "4.4.4",
       "assets": [
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
-          "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
-          "id": "bWF2ZW4tY2VudHJhbDphYmNkZWYxMjM0NTY3ODkwYWJjZGVmMTIzNDU2Nzg5MA",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/karaf/apache-karaf/4.4.4/apache-karaf-4.4.4.jar",
+          "path": "org/apache/karaf/apache-karaf/4.4.4/apache-karaf-4.4.4.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "c6842c86792ff03b9f1d1fe2aab8dc23aa6c6f0e",
-            "md5": "d3b2d9e6a08a5a6d1c7a7a1df4e8b7a3",
-            "sha256": "26e5a8008a8a7e5c5cd04e0a70b8f7c6a678e3c9e6e6c8a8a0a0a0a0a0a0a0a0",
-            "sha512": "1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0h1i2j3k4l5m6n7o8p9q0r1s2t3u4v5w6x7y8z9"
+            "sha1": "5458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "8053bbc1b55d51f5abae005625209d08",
+            "sha256": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2ca1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2021-03-01T12:34:56.789Z",
-          "fileSize": 587402
+          "lastModified": "2023-09-15T14:42:25.000Z",
+          "fileSize": 18650624
         },
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0-sources.jar",
-          "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0-sources.jar",
-          "id": "bWF2ZW4tY2VudHJhbDoxMjM0NTY3ODkwYWJjZGVmMTIzNDU2Nzg5MGFiY2RlZg",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/karaf/apache-karaf/4.4.4/apache-karaf-4.4.4-sources.jar",
+          "path": "org/apache/karaf/apache-karaf/4.4.4/apache-karaf-4.4.4-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "8f9a5b730c8da7a7a5a8a8a7a5a8a7a5a8a8a7a5",
-            "md5": "e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9",
-            "sha256": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
-            "sha512": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
+            "sha1": "80bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "87ee0258b79dc852626b91818316b9c3",
+            "sha256": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2db1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2021-03-01T12:34:56.789Z",
-          "fileSize": 745123
+          "lastModified": "2023-09-15T14:42:28.000Z",
+          "fileSize": 4562178
         },
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.pom",
-          "path": "org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.pom",
-          "id": "bWF2ZW4tY2VudHJhbDo5ODc2NTQzMjEwOTg3NjU0MzIxMDk4NzY1NDMyMTA5OA",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/karaf/apache-karaf/4.4.4/apache-karaf-4.4.4.pom",
+          "path": "org/apache/karaf/apache-karaf/4.4.4/apache-karaf-4.4.4.pom",
+          "id": "bWF2ZW4tY2VudHJhbDpmMTI4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
-            "md5": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
-            "sha256": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
-            "sha512": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f"
+            "sha1": "90bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "97ee0258b79dc852626b91818316b9c3",
+            "sha256": "c1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "c1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dc1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
           "contentType": "application/xml",
-          "lastModified": "2021-03-01T12:34:56.789Z",
-          "fileSize": 18345
-        }
-      ],
-      "securityData": {
-        "securityIssues": [
-          {
-            "severity": "MODERATE",
-            "source": "cve",
-            "reference": "CVE-2021-12345",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-12345",
-            "description": "A moderate severity issue in Apache Commons Lang3 before 3.12.0 allows attackers to cause a denial of service via crafted input to StringUtils."
-          }
-        ]
-      },
-      "quality": {
-        "qualityGate": "PASSED",
-        "qualityAttributes": [
-          {
-            "key": "testCoverage",
-            "value": "87.5"
-          },
-          {
-            "key": "codeSmells",
-            "value": "12"
-          }
-        ]
-      }
-    },
-    {
-      "id": "bWF2ZW4tY2VudHJhbDo1NDMyMTA5ODc2NTQzMjEwOTg3NjU0MzIxMDk4NzY1NA",
-      "repository": "maven-central",
-      "format": "maven2",
-      "group": "com.google.guava",
-      "name": "guava",
-      "version": "31.1-jre",
-      "assets": [
-        {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/com/google/guava/guava/31.1-jre/guava-31.1-jre.jar",
-          "path": "com/google/guava/guava/31.1-jre/guava-31.1-jre.jar",
-          "id": "bWF2ZW4tY2VudHJhbDo3YTdhN2E3YTdhN2E3YTdhN2E3YTdhN2E3YTdhN2E3YTdh",
-          "repository": "maven-central",
-          "format": "maven2",
-          "checksum": {
-            "sha1": "8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b",
-            "md5": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
-            "sha256": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
-            "sha512": "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e"
-          },
-          "contentType": "application/java-archive",
-          "lastModified": "2022-02-15T09:45:23.456Z",
-          "fileSize": 3027342
-        },
-        {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/com/google/guava/guava/31.1-jre/guava-31.1-jre-sources.jar",
-          "path": "com/google/guava/guava/31.1-jre/guava-31.1-jre-sources.jar",
-          "id": "bWF2ZW4tY2VudHJhbDo4YjhiOGI4YjhiOGI4YjhiOGI4YjhiOGI4YjhiOGI4Yjhi",
-          "repository": "maven-central",
-          "format": "maven2",
-          "checksum": {
-            "sha1": "2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f",
-            "md5": "3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e",
-            "sha256": "4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f",
-            "sha512": "5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g5g"
-          },
-          "contentType": "application/java-archive",
-          "lastModified": "2022-02-15T09:45:23.456Z",
-          "fileSize": 2134567
-        },
-        {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/com/google/guava/guava/31.1-jre/guava-31.1-jre.pom",
-          "path": "com/google/guava/guava/31.1-jre/guava-31.1-jre.pom",
-          "id": "bWF2ZW4tY2VudHJhbDo5YzljOWM5YzljOWM5YzljOWM5YzljOWM5YzljOWM5Yzlj",
-          "repository": "maven-central",
-          "format": "maven2",
-          "checksum": {
-            "sha1": "6h6h6h6h6h6h6h6h6h6h6h6h6h6h6h6h6h6h6h6h",
-            "md5": "7i7i7i7i7i7i7i7i7i7i7i7i7i7i7i7i",
-            "sha256": "8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j8j",
-            "sha512": "9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k9k"
-          },
-          "contentType": "application/xml",
-          "lastModified": "2022-02-15T09:45:23.456Z",
+          "lastModified": "2023-09-15T14:42:30.000Z",
           "fileSize": 24680
         }
       ],
-      "securityData": {
-        "securityIssues": [
-          {
-            "severity": "HIGH",
-            "source": "cve",
-            "reference": "CVE-2022-67890",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-67890",
-            "description": "A high severity vulnerability in Guava before 31.1-jre allows attackers to execute arbitrary code via crafted input to the cache implementation."
-          },
-          {
-            "severity": "LOW",
-            "source": "sonatype",
-            "reference": "sonatype-2022-1234",
-            "url": "https://ossindex.sonatype.org/vulnerability/sonatype-2022-1234",
-            "description": "A low severity issue in Guava's EventBus implementation could lead to information disclosure."
-          }
-        ]
-      },
-      "quality": {
-        "qualityGate": "PASSED",
-        "qualityAttributes": [
-          {
-            "key": "testCoverage",
-            "value": "92.3"
-          },
-          {
-            "key": "codeSmells",
-            "value": "8"
-          }
-        ]
+      "tags": ["osgi", "container", "runtime"],
+      "componentMetadata": {
+        "groupId": "org.apache.karaf",
+        "artifactId": "apache-karaf",
+        "version": "4.4.4",
+        "extension": "jar",
+        "baseVersion": "4.4.4",
+        "snapshot": false
       }
     },
     {
-      "id": "bWF2ZW4tY2VudHJhbDoxMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE",
+      "id": "bWF2ZW4tY2VudHJhbDozZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
       "repository": "maven-central",
       "format": "maven2",
-      "group": "org.springframework",
-      "name": "spring-core",
-      "version": "5.3.20",
+      "group": "org.apache.shiro",
+      "name": "shiro-core",
+      "version": "2.0.0",
       "assets": [
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/springframework/spring-core/5.3.20/spring-core-5.3.20.jar",
-          "path": "org/springframework/spring-core/5.3.20/spring-core-5.3.20.jar",
-          "id": "bWF2ZW4tY2VudHJhbDoyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/shiro/shiro-core/2.0.0/shiro-core-2.0.0.jar",
+          "path": "org/apache/shiro/shiro-core/2.0.0/shiro-core-2.0.0.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "md5": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-            "sha512": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            "sha1": "6458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "9053bbc1b55d51f5abae005625209d08",
+            "sha256": "d1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "d1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2cd1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2022-05-10T14:22:33.123Z",
-          "fileSize": 1456789
+          "lastModified": "2023-10-20T09:15:45.000Z",
+          "fileSize": 2345678
         },
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/springframework/spring-core/5.3.20/spring-core-5.3.20-sources.jar",
-          "path": "org/springframework/spring-core/5.3.20/spring-core-5.3.20-sources.jar",
-          "id": "bWF2ZW4tY2VudHJhbDozMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMz",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/shiro/shiro-core/2.0.0/shiro-core-2.0.0-sources.jar",
+          "path": "org/apache/shiro/shiro-core/2.0.0/shiro-core-2.0.0-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-            "md5": "ffffffffffffffffffffffffffffffff",
-            "sha256": "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
-            "sha512": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+            "sha1": "81bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "88ee0258b79dc852626b91818316b9c3",
+            "sha256": "e1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "e1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2de1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2022-05-10T14:22:33.123Z",
+          "lastModified": "2023-10-20T09:15:48.000Z",
           "fileSize": 1234567
-        },
-        {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/springframework/spring-core/5.3.20/spring-core-5.3.20.pom",
-          "path": "org/springframework/spring-core/5.3.20/spring-core-5.3.20.pom",
-          "id": "bWF2ZW4tY2VudHJhbDo0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0",
-          "repository": "maven-central",
-          "format": "maven2",
-          "checksum": {
-            "sha1": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
-            "md5": "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj",
-            "sha256": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
-            "sha512": "llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll"
-          },
-          "contentType": "application/xml",
-          "lastModified": "2022-05-10T14:22:33.123Z",
-          "fileSize": 32109
         }
       ],
-      "securityData": {
-        "securityIssues": [
-          {
-            "severity": "CRITICAL",
-            "source": "cve",
-            "reference": "CVE-2022-98765",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-98765",
-            "description": "A critical severity vulnerability in Spring Core before 5.3.20 allows remote attackers to execute arbitrary code via crafted input to the class loader."
-          },
-          {
-            "severity": "HIGH",
-            "source": "cve",
-            "reference": "CVE-2022-54321",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-54321",
-            "description": "A high severity vulnerability in Spring Core before 5.3.19 allows attackers to cause a denial of service via crafted input to the resource loader."
-          },
-          {
-            "severity": "MODERATE",
-            "source": "sonatype",
-            "reference": "sonatype-2022-5678",
-            "url": "https://ossindex.sonatype.org/vulnerability/sonatype-2022-5678",
-            "description": "A moderate severity issue in Spring Core's property handling could lead to information disclosure."
-          }
-        ]
-      },
-      "quality": {
-        "qualityGate": "FAILED",
-        "qualityAttributes": [
-          {
-            "key": "testCoverage",
-            "value": "78.9"
-          },
-          {
-            "key": "codeSmells",
-            "value": "24"
-          }
-        ]
+      "tags": ["security", "authentication", "authorization"],
+      "componentMetadata": {
+        "groupId": "org.apache.shiro",
+        "artifactId": "shiro-core",
+        "version": "2.0.0",
+        "extension": "jar",
+        "baseVersion": "2.0.0",
+        "snapshot": false
       }
     },
     {
-      "id": "bWF2ZW4tY2VudHJhbDo1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1NTU1",
+      "id": "bWF2ZW4tY2VudHJhbDo0ZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
       "repository": "maven-central",
       "format": "maven2",
       "group": "com.fasterxml.jackson.core",
       "name": "jackson-databind",
-      "version": "2.13.3",
+      "version": "2.16.1",
       "assets": [
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/com/fasterxml/jackson/core/jackson-databind/2.13.3/jackson-databind-2.13.3.jar",
-          "path": "com/fasterxml/jackson/core/jackson-databind/2.13.3/jackson-databind-2.13.3.jar",
-          "id": "bWF2ZW4tY2VudHJhbDo2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.jar",
+          "path": "com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
-            "md5": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
-            "sha256": "oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo",
-            "sha512": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+            "sha1": "7458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "1053bbc1b55d51f5abae005625209d08",
+            "sha256": "f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2cf1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2022-06-20T08:15:30.987Z",
+          "lastModified": "2024-01-15T11:22:33.000Z",
           "fileSize": 1567890
         },
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/com/fasterxml/jackson/core/jackson-databind/2.13.3/jackson-databind-2.13.3-sources.jar",
-          "path": "com/fasterxml/jackson/core/jackson-databind/2.13.3/jackson-databind-2.13.3-sources.jar",
-          "id": "bWF2ZW4tY2VudHJhbDo3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1-sources.jar",
+          "path": "com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
-            "md5": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr",
-            "sha256": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
-            "sha512": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+            "sha1": "82bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "89ee0258b79dc852626b91818316b9c3",
+            "sha256": "g1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "g1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dg1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2022-06-20T08:15:30.987Z",
-          "fileSize": 1345678
+          "lastModified": "2024-01-15T11:22:36.000Z",
+          "fileSize": 987654
         },
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/com/fasterxml/jackson/core/jackson-databind/2.13.3/jackson-databind-2.13.3.pom",
-          "path": "com/fasterxml/jackson/core/jackson-databind/2.13.3/jackson-databind-2.13.3.pom",
-          "id": "bWF2ZW4tY2VudHJhbDo4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.pom",
+          "path": "com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.pom",
+          "id": "bWF2ZW4tY2VudHJhbDpmMTI4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu",
-            "md5": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
-            "sha256": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
-            "sha512": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            "sha1": "91bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "98ee0258b79dc852626b91818316b9c3",
+            "sha256": "h1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "h1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dh1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
           "contentType": "application/xml",
-          "lastModified": "2022-06-20T08:15:30.987Z",
-          "fileSize": 28976
+          "lastModified": "2024-01-15T11:22:39.000Z",
+          "fileSize": 12345
         }
       ],
-      "securityData": {
-        "securityIssues": [
-          {
-            "severity": "CRITICAL",
-            "source": "cve",
-            "reference": "CVE-2022-12345",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-12345",
-            "description": "A critical severity vulnerability in Jackson Databind before 2.13.3 allows remote attackers to execute arbitrary code via crafted JSON input."
-          },
-          {
-            "severity": "HIGH",
-            "source": "cve",
-            "reference": "CVE-2022-23456",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-23456",
-            "description": "A high severity vulnerability in Jackson Databind before 2.13.2 allows attackers to cause a denial of service via crafted input to the deserializer."
-          },
-          {
-            "severity": "HIGH",
-            "source": "cve",
-            "reference": "CVE-2022-34567",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-34567",
-            "description": "A high severity vulnerability in Jackson Databind before 2.13.1 allows attackers to bypass security restrictions via crafted input to the polymorphic deserializer."
-          },
-          {
-            "severity": "MODERATE",
-            "source": "sonatype",
-            "reference": "sonatype-2022-9012",
-            "url": "https://ossindex.sonatype.org/vulnerability/sonatype-2022-9012",
-            "description": "A moderate severity issue in Jackson Databind's type handling could lead to information disclosure."
-          }
-        ]
-      },
-      "quality": {
-        "qualityGate": "FAILED",
-        "qualityAttributes": [
-          {
-            "key": "testCoverage",
-            "value": "65.4"
-          },
-          {
-            "key": "codeSmells",
-            "value": "37"
-          }
-        ]
+      "tags": ["json", "serialization", "deserialization"],
+      "componentMetadata": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.16.1",
+        "extension": "jar",
+        "baseVersion": "2.16.1",
+        "snapshot": false
       }
     },
     {
-      "id": "bWF2ZW4tY2VudHJhbDo5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5",
+      "id": "bWF2ZW4tY2VudHJhbDo1ZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
       "repository": "maven-central",
       "format": "maven2",
-      "group": "org.apache.logging.log4j",
-      "name": "log4j-core",
-      "version": "2.17.2",
+      "group": "org.quartz-scheduler",
+      "name": "quartz",
+      "version": "2.3.2",
       "assets": [
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/logging/log4j/log4j-core/2.17.2/log4j-core-2.17.2.jar",
-          "path": "org/apache/logging/log4j/log4j-core/2.17.2/log4j-core-2.17.2.jar",
-          "id": "bWF2ZW4tY2VudHJhbDowMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMA",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/quartz-scheduler/quartz/2.3.2/quartz-2.3.2.jar",
+          "path": "org/quartz-scheduler/quartz/2.3.2/quartz-2.3.2.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
-            "md5": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
-            "sha256": "111111111111111111111111111111111111111111111111111111111111111111",
-            "sha512": "222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222"
+            "sha1": "8458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "2053bbc1b55d51f5abae005625209d08",
+            "sha256": "i1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "i1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2ci1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2022-04-05T11:22:33.444Z",
-          "fileSize": 1789012
+          "lastModified": "2023-05-10T08:30:15.000Z",
+          "fileSize": 789012
         },
         {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/logging/log4j/log4j-core/2.17.2/log4j-core-2.17.2-sources.jar",
-          "path": "org/apache/logging/log4j/log4j-core/2.17.2/log4j-core-2.17.2-sources.jar",
-          "id": "bWF2ZW4tY2VudHJhbDphYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFh",
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/quartz-scheduler/quartz/2.3.2/quartz-2.3.2-sources.jar",
+          "path": "org/quartz-scheduler/quartz/2.3.2/quartz-2.3.2-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
           "repository": "maven-central",
           "format": "maven2",
           "checksum": {
-            "sha1": "333333333333333333333333333333333333333333",
-            "md5": "444444444444444444444444444444444",
-            "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
-            "sha512": "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+            "sha1": "83bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "90ee0258b79dc852626b91818316b9c3",
+            "sha256": "j1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "j1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dj1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
           "contentType": "application/java-archive",
-          "lastModified": "2022-04-05T11:22:33.444Z",
-          "fileSize": 1456789
-        },
-        {
-          "downloadUrl": "http://localhost:8081/repository/maven-central/org/apache/logging/log4j/log4j-core/2.17.2/log4j-core-2.17.2.pom",
-          "path": "org/apache/logging/log4j/log4j-core/2.17.2/log4j-core-2.17.2.pom",
-          "id": "bWF2ZW4tY2VudHJhbDpiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJi",
-          "repository": "maven-central",
-          "format": "maven2",
-          "checksum": {
-            "sha1": "777777777777777777777777777777777777777777",
-            "md5": "888888888888888888888888888888888",
-            "sha256": "9999999999999999999999999999999999999999999999999999999999999999",
-            "sha512": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          },
-          "contentType": "application/xml",
-          "lastModified": "2022-04-05T11:22:33.444Z",
-          "fileSize": 21345
+          "lastModified": "2023-05-10T08:30:18.000Z",
+          "fileSize": 456789
         }
       ],
-      "securityData": {
-        "securityIssues": [
-          {
-            "severity": "CRITICAL",
-            "source": "cve",
-            "reference": "CVE-2021-44228",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-44228",
-            "description": "A critical severity vulnerability in Log4j before 2.15.0 allows remote attackers to execute arbitrary code via a crafted JNDI lookup pattern."
+      "tags": ["scheduler", "job", "cron"],
+      "componentMetadata": {
+        "groupId": "org.quartz-scheduler",
+        "artifactId": "quartz",
+        "version": "2.3.2",
+        "extension": "jar",
+        "baseVersion": "2.3.2",
+        "snapshot": false
+      }
+    },
+    {
+      "id": "bWF2ZW4tY2VudHJhbDo2ZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
+      "repository": "maven-central",
+      "format": "maven2",
+      "group": "io.dropwizard.metrics",
+      "name": "metrics-core",
+      "version": "4.2.25",
+      "assets": [
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/io/dropwizard/metrics/metrics-core/4.2.25/metrics-core-4.2.25.jar",
+          "path": "io/dropwizard/metrics/metrics-core/4.2.25/metrics-core-4.2.25.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "9458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "3053bbc1b55d51f5abae005625209d08",
+            "sha256": "k1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "k1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2ck1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
           },
-          {
-            "severity": "HIGH",
-            "source": "cve",
-            "reference": "CVE-2021-45046",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-45046",
-            "description": "A high severity vulnerability in Log4j before 2.16.0 allows attackers to cause a denial of service via crafted input to the JNDI lookup feature."
+          "contentType": "application/java-archive",
+          "lastModified": "2024-02-05T16:45:30.000Z",
+          "fileSize": 345678
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/io/dropwizard/metrics/metrics-core/4.2.25/metrics-core-4.2.25-sources.jar",
+          "path": "io/dropwizard/metrics/metrics-core/4.2.25/metrics-core-4.2.25-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "84bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "91ee0258b79dc852626b91818316b9c3",
+            "sha256": "l1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "l1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dl1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
-          {
-            "severity": "MODERATE",
-            "source": "cve",
-            "reference": "CVE-2021-45105",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2021-45105",
-            "description": "A moderate severity vulnerability in Log4j before 2.17.0 allows attackers to cause a denial of service via crafted input to the recursive pattern layout."
+          "contentType": "application/java-archive",
+          "lastModified": "2024-02-05T16:45:33.000Z",
+          "fileSize": 234567
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/io/dropwizard/metrics/metrics-core/4.2.25/metrics-core-4.2.25.pom",
+          "path": "io/dropwizard/metrics/metrics-core/4.2.25/metrics-core-4.2.25.pom",
+          "id": "bWF2ZW4tY2VudHJhbDpmMTI4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "92bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "99ee0258b79dc852626b91818316b9c3",
+            "sha256": "m1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "m1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dm1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
           },
-          {
-            "severity": "LOW",
-            "source": "cve",
-            "reference": "CVE-2022-23302",
-            "url": "https://nvd.nist.gov/vuln/detail/CVE-2022-23302",
-            "description": "A low severity vulnerability in Log4j before 2.17.1 allows attackers to cause a denial of service via crafted input to the ThreadContext map pattern."
-          }
-        ]
-      },
-      "quality": {
-        "qualityGate": "PASSED",
-        "qualityAttributes": [
-          {
-            "key": "testCoverage",
-            "value": "89.7"
+          "contentType": "application/xml",
+          "lastModified": "2024-02-05T16:45:36.000Z",
+          "fileSize": 9876
+        }
+      ],
+      "tags": ["metrics", "monitoring", "instrumentation"],
+      "componentMetadata": {
+        "groupId": "io.dropwizard.metrics",
+        "artifactId": "metrics-core",
+        "version": "4.2.25",
+        "extension": "jar",
+        "baseVersion": "4.2.25",
+        "snapshot": false
+      }
+    },
+    {
+      "id": "bWF2ZW4tY2VudHJhbDo3ZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
+      "repository": "maven-central",
+      "format": "maven2",
+      "group": "io.prometheus",
+      "name": "simpleclient",
+      "version": "0.16.0",
+      "assets": [
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/io/prometheus/simpleclient/0.16.0/simpleclient-0.16.0.jar",
+          "path": "io/prometheus/simpleclient/0.16.0/simpleclient-0.16.0.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "0458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "4053bbc1b55d51f5abae005625209d08",
+            "sha256": "n1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "n1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2cn1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
           },
-          {
-            "key": "codeSmells",
-            "value": "15"
-          }
-        ]
+          "contentType": "application/java-archive",
+          "lastModified": "2023-11-12T10:20:30.000Z",
+          "fileSize": 123456
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/io/prometheus/simpleclient/0.16.0/simpleclient-0.16.0-sources.jar",
+          "path": "io/prometheus/simpleclient/0.16.0/simpleclient-0.16.0-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "85bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "92ee0258b79dc852626b91818316b9c3",
+            "sha256": "o1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "o1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2do1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+          },
+          "contentType": "application/java-archive",
+          "lastModified": "2023-11-12T10:20:33.000Z",
+          "fileSize": 98765
+        }
+      ],
+      "tags": ["prometheus", "monitoring", "metrics"],
+      "componentMetadata": {
+        "groupId": "io.prometheus",
+        "artifactId": "simpleclient",
+        "version": "0.16.0",
+        "extension": "jar",
+        "baseVersion": "0.16.0",
+        "snapshot": false
+      }
+    },
+    {
+      "id": "bWF2ZW4tY2VudHJhbDo4ZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
+      "repository": "maven-central",
+      "format": "maven2",
+      "group": "org.bouncycastle",
+      "name": "bcprov-jdk18on",
+      "version": "1.78.1",
+      "assets": [
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/bouncycastle/bcprov-jdk18on/1.78.1/bcprov-jdk18on-1.78.1.jar",
+          "path": "org/bouncycastle/bcprov-jdk18on/1.78.1/bcprov-jdk18on-1.78.1.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "1458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "5053bbc1b55d51f5abae005625209d08",
+            "sha256": "p1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "p1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2cp1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
+          },
+          "contentType": "application/java-archive",
+          "lastModified": "2024-03-01T09:10:11.000Z",
+          "fileSize": 5678901
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/bouncycastle/bcprov-jdk18on/1.78.1/bcprov-jdk18on-1.78.1-sources.jar",
+          "path": "org/bouncycastle/bcprov-jdk18on/1.78.1/bcprov-jdk18on-1.78.1-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "86bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "93ee0258b79dc852626b91818316b9c3",
+            "sha256": "q1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "q1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dq1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+          },
+          "contentType": "application/java-archive",
+          "lastModified": "2024-03-01T09:10:14.000Z",
+          "fileSize": 4567890
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/org/bouncycastle/bcprov-jdk18on/1.78.1/bcprov-jdk18on-1.78.1.pom",
+          "path": "org/bouncycastle/bcprov-jdk18on/1.78.1/bcprov-jdk18on-1.78.1.pom",
+          "id": "bWF2ZW4tY2VudHJhbDpmMTI4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "93bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "94ee0258b79dc852626b91818316b9c3",
+            "sha256": "r1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "r1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dr1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+          },
+          "contentType": "application/xml",
+          "lastModified": "2024-03-01T09:10:17.000Z",
+          "fileSize": 7654
+        }
+      ],
+      "tags": ["security", "cryptography", "encryption"],
+      "componentMetadata": {
+        "groupId": "org.bouncycastle",
+        "artifactId": "bcprov-jdk18on",
+        "version": "1.78.1",
+        "extension": "jar",
+        "baseVersion": "1.78.1",
+        "snapshot": false
+      }
+    },
+    {
+      "id": "bWF2ZW4tY2VudHJhbDo5ZTQ3ZGRhMGYxYjU1NWUwNzE1OWRjOWY5ZGQzZmVmNA",
+      "repository": "maven-central",
+      "format": "maven2",
+      "group": "com.auth0",
+      "name": "java-jwt",
+      "version": "4.4.0",
+      "assets": [
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/com/auth0/java-jwt/4.4.0/java-jwt-4.4.0.jar",
+          "path": "com/auth0/java-jwt/4.4.0/java-jwt-4.4.0.jar",
+          "id": "bWF2ZW4tY2VudHJhbDpkMDY0ODA0YThlZDVhZDZlNjhmZGU5MWNmM2NiZTgzMw",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "2458ffe2ba049e76c29f2df2dc3ffccddf8b839e",
+            "md5": "6053bbc1b55d51f5abae005625209d08",
+            "sha256": "s1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+            "sha512": "s1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2cs1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
+          },
+          "contentType": "application/java-archive",
+          "lastModified": "2024-01-25T14:15:16.000Z",
+          "fileSize": 87654
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/com/auth0/java-jwt/4.4.0/java-jwt-4.4.0-sources.jar",
+          "path": "com/auth0/java-jwt/4.4.0/java-jwt-4.4.0-sources.jar",
+          "id": "bWF2ZW4tY2VudHJhbDplMDE4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "87bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "95ee0258b79dc852626b91818316b9c3",
+            "sha256": "t1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "t1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2dt1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+          },
+          "contentType": "application/java-archive",
+          "lastModified": "2024-01-25T14:15:19.000Z",
+          "fileSize": 76543
+        },
+        {
+          "downloadUrl": "http://localhost:8081/repository/maven-central/com/auth0/java-jwt/4.4.0/java-jwt-4.4.0.pom",
+          "path": "com/auth0/java-jwt/4.4.0/java-jwt-4.4.0.pom",
+          "id": "bWF2ZW4tY2VudHJhbDpmMTI4OGVkMDcyOGZhNjhmNDExNzU2OGU1MjQ2NjZiYg",
+          "repository": "maven-central",
+          "format": "maven2",
+          "checksum": {
+            "sha1": "94bfafcf783988442b3a58318face1d2132db33d",
+            "md5": "96ee0258b79dc852626b91818316b9c3",
+            "sha256": "u1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+            "sha512": "u1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2du1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+          },
+          "contentType": "application/xml",
+          "lastModified": "2024-01-25T14:15:22.000Z",
+          "fileSize": 6543
+        }
+      ],
+      "tags": ["jwt", "authentication", "token"],
+      "componentMetadata": {
+        "groupId": "com.auth0",
+        "artifactId": "java-jwt",
+        "version": "4.4.0",
+        "extension": "jar",
+        "baseVersion": "4.4.0",
+        "snapshot": false
       }
     }
   ],
-  "continuationToken": "bWF2ZW4tY2VudHJhbDpjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2Nj",
-  "totalItems": 127,
-  "itemsPerPage": 5,
-  "currentPage": 1,
-  "totalPages": 26,
-  "searchTimeTaken": 235,
-  "searchDate": "2022-07-15T10:30:45.678Z"
-}
+  "continuationToken": null,
+  "searchTimeTotalSeconds": 0.235,
+  "totalItems": 9,
+  "metadata": {
+    "timestamp": "2024-05-23T10:15:30.123Z",
+    "requestId": "f8a9b0c1-d2e3-f4a5-b6c7-d8e9f0a1b2c3",
+    "apiVersion": "v1",
+    "virtualThreadEnabled": true,
+    "queryParams": {
+      "repository": "maven-central",
+      "format": "maven2",
+      "sort": "version",
+      "direction": "desc",
+      "limit": 10
+    }
+  }

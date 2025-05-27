@@ -18,18 +18,10 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 
 /**
- * Mock implementation of UserManager for testing purposes.
+ * Mock user manager implementation for testing.
  * <p>
- * This implementation is compatible with Java 21 and optimized for virtual threads.
- * It leverages the thread-safe implementation provided by {@link MockUserManagerSupport}
- * which uses non-blocking concurrent collections and operations.
- * </p>
- * <p>
- * The JSR-330 annotations (@Named, @Singleton) ensure proper dependency injection
- * in the Java 21 environment. The singleton scope guarantees that the constructor
- * is called only once during application initialization, making the user setup
- * thread-safe by design.
- * </p>
+ * This implementation is thread-safe and compatible with Java 21 virtual threads.
+ * It uses JSR-330 annotations for dependency injection in the Java 21 environment.
  */
 @Singleton
 @Named("MockUserManagerA")
@@ -37,13 +29,23 @@ public class MockUserManagerA
     extends MockUserManagerSupport
 {
   /**
-   * Constructs a new instance with predefined test users.
-   * <p>
-   * This constructor is called only once during application initialization due to
-   * the @Singleton annotation, making the user setup thread-safe by design.
-   * </p>
+   * Constructor that initializes mock users.
+   * Thread-safe implementation compatible with virtual threads.
+   * User initialization is done once during construction and the parent class
+   * uses thread-safe collections for storing users.
    */
   public MockUserManagerA() {
+    // Create and initialize users in a thread-safe manner
+    // The parent class uses ConcurrentHashMap.newKeySet() for thread-safe storage
+    initializeUsers();
+  }
+
+  /**
+   * Initialize the mock users.
+   * This method is called only from the constructor and is effectively thread-safe
+   * as the parent class uses thread-safe collections.
+   */
+  private void initializeUsers() {
     User a = new User();
     a.setName("Joe Coder");
     a.setEmailAddress("jcoder@sonatype.org");
@@ -80,7 +82,7 @@ public class MockUserManagerA
     e.setSource(this.getSource());
     e.setUserId("anonymous-user");
 
-    // Thread-safe operations inherited from MockUserManagerSupport
+    // Add users to the thread-safe collection in the parent class
     this.addUser(a, a.getUserId());
     this.addUser(b, b.getUserId());
     this.addUser(c, c.getUserId());
@@ -89,9 +91,10 @@ public class MockUserManagerA
   }
 
   /**
-   * Returns the source identifier for this user manager.
-   *
-   * @return the source identifier string
+   * Get the source identifier for this user manager.
+   * Thread-safe method with no state modification.
+   * 
+   * @return The source identifier string
    */
   @Override
   public String getSource() {
@@ -99,9 +102,10 @@ public class MockUserManagerA
   }
 
   /**
-   * Returns the authentication realm name for this user manager.
-   *
-   * @return the realm name string
+   * Get the authentication realm name for this user manager.
+   * Thread-safe method with no state modification.
+   * 
+   * @return The realm name string
    */
   @Override
   public String getAuthenticationRealmName() {

@@ -12,11 +12,14 @@
  */
 package org.sonatype.nexus.script.plugin.internal;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import java.util.Objects;
-import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventManager;
@@ -31,12 +34,13 @@ import org.sonatype.nexus.script.ScriptUpdatedEvent;
 import com.google.common.collect.ImmutableList;
 import groovy.transform.CompileStatic;
 
-import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Default {@link ScriptManager}.
+ * Default {@link ScriptManager} implementation using Java 21 Virtual Threads for improved
+ * concurrent script management performance.
  *
  * @since 3.0
  */
@@ -54,27 +58,42 @@ public class ScriptManagerImpl
 
   private final boolean allowCreation;
 
+  /**
+   * Virtual thread executor for I/O-bound operations.
+   */
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
   @Inject
   public ScriptManagerImpl(
       final EventManager eventManager,
       final ScriptStore scriptStore,
       @Named("${nexus.scripts.allowCreation:-false}") final boolean allowCreation)
   {
-    this.eventManager = Objects.requireNonNull(eventManager, "eventManager");
-    this.scriptStore = Objects.requireNonNull(scriptStore, "scriptStore");
-    this.allowCreation = Objects.requireNonNull(allowCreation, "allowCreation");
+    this.eventManager = checkNotNull(eventManager);
+    this.scriptStore = checkNotNull(scriptStore);
+    this.allowCreation = checkNotNull(allowCreation);
   }
 
   @Override
   @Guarded(by = STARTED)
   public Iterable<Script> browse() {
-    return ImmutableList.copyOf(scriptStore.list());
+    // Use virtual threads for I/O-bound operation to improve concurrent performance
+    CompletableFuture<Iterable<Script>> future = CompletableFuture.supplyAsync(
+        () -> ImmutableList.copyOf(scriptStore.list()),
+        virtualThreadExecutor
+    );
+    return future.join();
   }
 
   @Override
   @Guarded(by = STARTED)
   public Script get(final String name) {
-    return scriptStore.get(name);
+    // Use virtual threads for I/O-bound operation to improve concurrent performance
+    CompletableFuture<Script> future = CompletableFuture.supplyAsync(
+        () -> scriptStore.get(name),
+        virtualThreadExecutor
+    );
+    return future.join();
   }
 
   @Override
@@ -82,17 +101,18 @@ public class ScriptManagerImpl
   public Script create(final String name, final String content, final String type) {
     validateCreationIsAllowed();
 
-    Script script = scriptStore.newScript();
-    script.setName(name);
-    script.setContent(content);
-    script.setType(type);
-    scriptStore.create(script);
+    // Use virtual threads for I/O-bound operation to improve concurrent performance
+    CompletableFuture<Script> future = CompletableFuture.supplyAsync(() -> {
+      Script script = scriptStore.newScript();
+      script.setName(name);
+      script.setContent(content);
+      script.setType(type);
+      scriptStore.create(script);
+      eventManager.post(new ScriptCreatedEvent(script));
+      return script;
+    }, virtualThreadExecutor);
     
-    // Use virtual thread for event posting to improve concurrency
-    Executors.newVirtualThreadPerTaskExecutor().execute(() -> 
-        eventManager.post(new ScriptCreatedEvent(script)));
-    
-    return script;
+    return future.join();
   }
 
   @Override
@@ -100,31 +120,34 @@ public class ScriptManagerImpl
   public Script update(final String name, final String content) {
     validateCreationIsAllowed();
 
-    Script script = scriptStore.get(name);
-    if (script == null) {
-      return null;
-    }
-    script.setContent(content);
-    scriptStore.update(script);
+    // Use virtual threads for I/O-bound operation to improve concurrent performance
+    CompletableFuture<Script> future = CompletableFuture.supplyAsync(() -> {
+      Script script = scriptStore.get(name);
+      if (script == null) {
+        return null;
+      }
+      script.setContent(content);
+      scriptStore.update(script);
+      eventManager.post(new ScriptUpdatedEvent(script));
+      return script;
+    }, virtualThreadExecutor);
     
-    // Use virtual thread for event posting to improve concurrency
-    Executors.newVirtualThreadPerTaskExecutor().execute(() -> 
-        eventManager.post(new ScriptUpdatedEvent(script)));
-    
-    return script;
+    return future.join();
   }
 
   @Override
   @Guarded(by = STARTED)
   public void delete(final String name) {
-    Script script = scriptStore.get(name);
-    if (script != null) {
-      scriptStore.delete(script);
-      
-      // Use virtual thread for event posting to improve concurrency
-      Executors.newVirtualThreadPerTaskExecutor().execute(() -> 
-          eventManager.post(new ScriptDeletedEvent(script)));
-    }
+    // Use virtual threads for I/O-bound operation to improve concurrent performance
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      Script script = scriptStore.get(name);
+      if (script != null) {
+        scriptStore.delete(script);
+        eventManager.post(new ScriptDeletedEvent(script));
+      }
+    }, virtualThreadExecutor);
+    
+    future.join();
   }
 
   @Override
@@ -134,7 +157,14 @@ public class ScriptManagerImpl
 
   private void validateCreationIsAllowed() {
     if (!allowCreation) {
-      throw new ScriptingDisabledException(STR."Creating and updating scripts is disabled");
+      // Using Java 21 String Template for improved readability
+      throw new ScriptingDisabledException(STR."Creating and updating scripts is disabled. Enable with nexus.scripts.allowCreation=true");
     }
+  }
+  
+  @Override
+  protected void doStop() throws Exception {
+    virtualThreadExecutor.close();
+    super.doStop();
   }
 }

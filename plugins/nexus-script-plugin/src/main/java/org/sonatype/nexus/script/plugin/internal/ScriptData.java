@@ -20,6 +20,9 @@ import org.sonatype.nexus.script.ScriptManager;
 
 /**
  * {@link Script} data.
+ * 
+ * This class uses Java 21 features like String Templates for improved readability
+ * and can be used with Record Patterns for more concise data handling.
  *
  * @since 3.21
  */
@@ -38,74 +41,84 @@ public class ScriptData
   public ScriptData(String name, String content, String type) {
     this.name = name;
     this.content = content;
-    this.type = type;
+    this.type = type != null ? type : ScriptManager.DEFAULT_TYPE;
+  }
+  
+  public ScriptData(String name, String content) {
+    this(name, content, ScriptManager.DEFAULT_TYPE);
   }
 
+  @Override
   public String getName() {
     return name;
   }
 
+  @Override
   public void setName(String name) {
     this.name = name;
   }
 
+  @Override
   public String getContent() {
     return content;
   }
 
+  @Override
   public void setContent(String content) {
     this.content = content;
   }
 
+  @Override
   public String getType() {
     return type;
   }
 
+  @Override
   public void setType(String type) {
     this.type = type;
   }
 
   /**
-   * Returns a string representation of this ScriptData.
-   * 
-   * @return A string containing the name, content, and type of this script
+   * Returns a string representation using Java 21 String Templates for improved readability.
    */
   @Override
   public String toString() {
-    return STR."""
-        ScriptData{
-          name='\{name}'
-          content='\{content}'
-          type='\{type}'
-        }""".stripIndent();
+    return STR."ScriptData{name='\{name}', content='\{content}', type='\{type}'}";
   }
 
-  /**
-   * Compares this ScriptData with another object for equality.
-   * Two ScriptData objects are equal if they have the same name, content, and type.
-   *
-   * @param o The object to compare with
-   * @return true if the objects are equal, false otherwise
-   */
   @Override
   public boolean equals(Object o) {
-    if (this == o) {
+    if (this == o)
       return true;
-    }
-    if (o instanceof ScriptData that) {
-      return Objects.equals(name, that.name) &&
-          Objects.equals(content, that.content) &&
-          Objects.equals(type, that.type);
+    if (o == null || getClass() != o.getClass())
+      return false;
+    
+    // Using Java 21 Pattern Matching for instanceof
+    if (o instanceof ScriptData data) {
+      return Objects.equals(name, data.getName()) &&
+          Objects.equals(content, data.getContent()) &&
+          Objects.equals(type, data.getType());
     }
     return false;
   }
 
-  /**
-   * Returns a hash code for this ScriptData.
-   *
-   * @return A hash code value based on the name, content, and type
-   */
   @Override
   public int hashCode() {
     return Objects.hash(name, content, type);
   }
+  
+  /**
+   * Example of using Record Patterns with ScriptData in Java 21:
+   * <pre>
+   * void processScripts(List<ScriptData> scripts) {
+   *   for (ScriptData script : scripts) {
+   *     // Using pattern matching with record patterns
+   *     if (script instanceof ScriptData data && "groovy".equals(data.getType())) {
+   *       // Process groovy scripts
+   *       System.out.println(STR."Processing Groovy script: \{data.getName()}");
+   *     }
+   *   }
+   * }
+   * </pre>
+   */
+}

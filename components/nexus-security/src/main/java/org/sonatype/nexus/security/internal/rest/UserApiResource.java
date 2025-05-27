@@ -15,11 +15,9 @@ package org.sonatype.nexus.security.internal.rest;
 
 import java.util.Collection;
 import java.util.Set;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-
 import javax.inject.Inject;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -60,6 +58,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Resource for REST API to perform operations on the user.
+ * Implements Virtual Threads for improved performance on I/O-bound operations.
  *
  * @since 3.17
  */
@@ -74,14 +73,12 @@ public class UserApiResource
 
   private final SecuritySystem securitySystem;
   private final AdminPasswordFileManager adminPasswordFileManager;
-  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public UserApiResource(final SecuritySystem securitySystem,
                          final AdminPasswordFileManager adminPasswordFileManager) {
     this.securitySystem = checkNotNull(securitySystem);
     this.adminPasswordFileManager = checkNotNull(adminPasswordFileManager);
-    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   @Override
@@ -92,26 +89,34 @@ public class UserApiResource
       @QueryParam("userId") final String userId,
       @QueryParam("source") final String source)
   {
-    try {
-      var future = virtualThreadExecutor.submit(() -> {
-        UserSearchCriteria criteria = new UserSearchCriteria(userId, null, source);
+    UserSearchCriteria criteria = new UserSearchCriteria(userId, null, source);
 
-        if (!UserManager.DEFAULT_SOURCE.equals(source)) {
-          // we limit the number of users here to avoid issues with remote sources
-          criteria.setLimit(100);
-        }
+    if (!UserManager.DEFAULT_SOURCE.equals(source)) {
+      // we limit the number of users here to avoid issues with remote sources
+      criteria.setLimit(100);
+    }
 
-        return securitySystem.searchUsers(criteria).stream().map(this::fromUser)
+    // Using virtual thread for I/O-bound operation
+    CompletableFuture<Collection<ApiUser>> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        return securitySystem.searchUsers(criteria).stream()
+            .map(this::fromUser)
             .collect(Collectors.toList());
-      });
-      return future.get();
-    } 
-    catch (Exception e) {
-      log.error("Error retrieving users with virtual thread", e);
-      if (e.getCause() instanceof RuntimeException) {
-        throw (RuntimeException) e.getCause();
+      } catch (Exception e) {
+        log.error(STR."Error searching users with criteria: \{criteria}", e);
+        throw e;
       }
-      throw new RuntimeException("Error retrieving users", e);
+    }, runnable -> Thread.startVirtualThread(runnable));
+
+    try {
+      return future.join();
+    } catch (Exception e) {
+      log.error("Failed to retrieve users", e);
+      throw new WebApplicationMessageException(
+          Status.INTERNAL_SERVER_ERROR, 
+          STR."\"Failed to retrieve users: \{e.getMessage()}\"", 
+          MediaType.APPLICATION_JSON
+      );
     }
   }
 
@@ -125,28 +130,31 @@ public class UserApiResource
       throw createWebException(Status.BAD_REQUEST, "A non-empty password is required.");
     }
     
+    // Using virtual thread for I/O-bound operation
+    CompletableFuture<ApiUser> future = CompletableFuture.supplyAsync(() -> {
+      try {
+        User user = securitySystem.addUser(createUser.toUser(), createUser.getPassword());
+        return fromUser(user);
+      } catch (NoSuchUserManagerException e) {
+        log.error(STR."Unable to locate default usermanager for user: \{createUser.getUserId()}", e);
+        throw createNoSuchUserManagerException(UserManager.DEFAULT_SOURCE);
+      } catch (Exception e) {
+        log.error(STR."Error creating user: \{createUser.getUserId()}", e);
+        throw e;
+      }
+    }, runnable -> Thread.startVirtualThread(runnable));
+
     try {
-      var future = virtualThreadExecutor.submit(() -> {
-        try {
-          User user = securitySystem.addUser(createUser.toUser(), createUser.getPassword());
-          return fromUser(user);
-        }
-        catch (NoSuchUserManagerException e) {
-          log.error("Unable to locate default usermanager.", e);
-          throw createNoSuchUserManagerException(UserManager.DEFAULT_SOURCE);
-        }
-      });
-      return future.get();
-    }
-    catch (Exception e) {
-      log.error("Error creating user with virtual thread", e);
-      if (e.getCause() instanceof WebApplicationMessageException) {
-        throw (WebApplicationMessageException) e.getCause();
-      }
-      if (e.getCause() instanceof RuntimeException) {
-        throw (RuntimeException) e.getCause();
-      }
-      throw new RuntimeException(STR."Error creating user: \{e.getMessage()}", e);
+      return future.join();
+    } catch (WebApplicationMessageException e) {
+      throw e; // Re-throw our custom exceptions
+    } catch (Exception e) {
+      log.error("Failed to create user", e);
+      throw new WebApplicationMessageException(
+          Status.INTERNAL_SERVER_ERROR, 
+          STR."\"Failed to create user: \{e.getMessage()}\"", 
+          MediaType.APPLICATION_JSON
+      );
     }
   }
 
@@ -163,44 +171,46 @@ public class UserApiResource
       throw createWebException(Status.BAD_REQUEST, "The path's userId does not match the body");
     }
 
-    try {
-      var future = virtualThreadExecutor.submit(() -> {
-        try {
-          validateRoles(apiUser.getRoles());
+    // Using virtual thread for I/O-bound operation
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        validateRoles(apiUser.getRoles());
 
-          if (UserManager.DEFAULT_SOURCE.equals(apiUser.getSource())) {
-            securitySystem.updateUser(apiUser.toUser());
-          }
-          else {
+        switch (apiUser.getSource()) {
+          case UserManager.DEFAULT_SOURCE -> securitySystem.updateUser(apiUser.toUser());
+          default -> {
             // Ensure user exists
             securitySystem.getUser(userId, apiUser.getSource());
 
             Set<RoleIdentifier> roleIdentifiers = apiUser.getRoles().stream()
-                .map(roleId -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, roleId)).collect(Collectors.toSet());
+                .map(roleId -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, roleId))
+                .collect(Collectors.toSet());
             securitySystem.setUsersRoles(userId, apiUser.getSource(), roleIdentifiers);
           }
-          return null;
         }
-        catch (UserNotFoundException e) {
-          log.debug("Unable to locate userId: {}", userId, e);
-          throw createUnknownUserException(userId);
-        }
-        catch (NoSuchUserManagerException e) {
-          log.debug("Unable to locate source: {}", apiUser.getSource(), e);
-          throw createNoSuchUserManagerException(apiUser.getSource());
-        }
-      });
-      future.get();
-    }
-    catch (Exception e) {
-      log.error("Error updating user with virtual thread", e);
-      if (e.getCause() instanceof WebApplicationMessageException) {
-        throw (WebApplicationMessageException) e.getCause();
+      } catch (UserNotFoundException e) {
+        log.debug(STR."Unable to locate userId: \{userId}", e);
+        throw createUnknownUserException(userId);
+      } catch (NoSuchUserManagerException e) {
+        log.debug(STR."Unable to locate source: \{apiUser.getSource()} for userId: \{userId}", e);
+        throw createNoSuchUserManagerException(apiUser.getSource());
+      } catch (Exception e) {
+        log.error(STR."Error updating user: \{userId}", e);
+        throw e;
       }
-      if (e.getCause() instanceof RuntimeException) {
-        throw (RuntimeException) e.getCause();
-      }
-      throw new RuntimeException(STR."Error updating user: \{e.getMessage()}", e);
+    }, runnable -> Thread.startVirtualThread(runnable));
+
+    try {
+      future.join();
+    } catch (WebApplicationMessageException e) {
+      throw e; // Re-throw our custom exceptions
+    } catch (Exception e) {
+      log.error("Failed to update user", e);
+      throw new WebApplicationMessageException(
+          Status.INTERNAL_SERVER_ERROR, 
+          STR."\"Failed to update user: \{e.getMessage()}\"", 
+          MediaType.APPLICATION_JSON
+      );
     }
   }
 
@@ -211,49 +221,53 @@ public class UserApiResource
   @RequiresPermissions("nexus:users:delete")
   public void deleteUser(@PathParam("userId") final String userId,
                          @QueryParam("realm") final String realm) {
-    try {
-      var future = virtualThreadExecutor.submit(() -> {
-        User user = null;
-        try {
-          if (realm == null) {
-            user = securitySystem.getUser(userId);
-            if (!UserManager.DEFAULT_SOURCE.equals(user.getSource()) && !SAML_SOURCE.equals(user.getSource())) {
-              throw createWebException(Status.BAD_REQUEST, "Non-local user cannot be deleted.");
-            }
-          } else {
-            if (!securitySystem.isValidRealm(realm)) {
-              throw createWebException(Status.BAD_REQUEST, "Invalid or empty realm name.");
-            }
-            else {
-              user = securitySystem.getUser(userId, RealmToSource.getSource(realm));
-            }
+    // Using virtual thread for I/O-bound operation
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      User user = null;
+      try {
+        if (realm == null) {
+          user = securitySystem.getUser(userId);
+          if (!UserManager.DEFAULT_SOURCE.equals(user.getSource()) && !SAML_SOURCE.equals(user.getSource())) {
+            throw createWebException(Status.BAD_REQUEST, "Non-local user cannot be deleted.");
           }
+        } else {
+          if (!securitySystem.isValidRealm(realm)) {
+            throw createWebException(Status.BAD_REQUEST, "Invalid or empty realm name.");
+          }
+          else {
+            user = securitySystem.getUser(userId, RealmToSource.getSource(realm));
+          }
+        }
 
-          securitySystem.deleteUser(userId, user.getSource());
-          return null;
-        }
-        catch (NoSuchUserManagerException e) {
-          // this should never actually happen
-          String source = user != null && user.getSource() != null ? user.getSource() : "";
-          log.error("Unable to locate source: {} for userId: {}", source, userId, e);
-          throw createNoSuchUserManagerException(source);
-        }
-        catch (UserNotFoundException e) {
-          log.debug("Unable to locate userId: {}", userId, e);
-          throw createUnknownUserException(userId);
-        }
-      });
-      future.get();
-    }
-    catch (Exception e) {
-      log.error("Error deleting user with virtual thread", e);
-      if (e.getCause() instanceof WebApplicationMessageException) {
-        throw (WebApplicationMessageException) e.getCause();
+        securitySystem.deleteUser(userId, user.getSource());
       }
-      if (e.getCause() instanceof RuntimeException) {
-        throw (RuntimeException) e.getCause();
+      catch (NoSuchUserManagerException e) {
+        // this should never actually happen
+        String source = user != null && user.getSource() != null ? user.getSource() : "";
+        log.error(STR."Unable to locate source: \{source} for userId: \{userId}", e);
+        throw createNoSuchUserManagerException(source);
       }
-      throw new RuntimeException(STR."Error deleting user: \{e.getMessage()}", e);
+      catch (UserNotFoundException e) {
+        log.debug(STR."Unable to locate userId: \{userId}", e);
+        throw createUnknownUserException(userId);
+      }
+      catch (Exception e) {
+        log.error(STR."Error deleting user: \{userId}", e);
+        throw e;
+      }
+    }, runnable -> Thread.startVirtualThread(runnable));
+
+    try {
+      future.join();
+    } catch (WebApplicationMessageException e) {
+      throw e; // Re-throw our custom exceptions
+    } catch (Exception e) {
+      log.error("Failed to delete user", e);
+      throw new WebApplicationMessageException(
+          Status.INTERNAL_SERVER_ERROR, 
+          STR."\"Failed to delete user: \{e.getMessage()}\"", 
+          MediaType.APPLICATION_JSON
+      );
     }
   }
 
@@ -269,33 +283,37 @@ public class UserApiResource
       throw createWebException(Status.BAD_REQUEST, "Password must be supplied.");
     }
 
-    try {
-      var future = virtualThreadExecutor.submit(() -> {
-        try {
-          securitySystem.changePassword(userId, password);
+    // Using virtual thread for I/O-bound operation
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+      try {
+        securitySystem.changePassword(userId, password);
 
-          if (ADMIN_USER_ID.equals(userId)) {
-            // Ensure proper thread context when using AdminPasswordFileManager with Virtual Threads
-            adminPasswordFileManager.removeFile();
-          }
-          return null;
+        // Ensure proper thread context management when using AdminPasswordFileManager
+        if (ADMIN_USER_ID.equals(userId)) {
+          adminPasswordFileManager.removeFile();
         }
-        catch (UserNotFoundException e) { // NOSONAR
-          log.debug("Request to change password for invalid user '{}'.", userId);
-          throw createUnknownUserException(userId);
-        }
-      });
-      future.get();
-    }
-    catch (Exception e) {
-      log.error("Error changing password with virtual thread", e);
-      if (e.getCause() instanceof WebApplicationMessageException) {
-        throw (WebApplicationMessageException) e.getCause();
       }
-      if (e.getCause() instanceof RuntimeException) {
-        throw (RuntimeException) e.getCause();
+      catch (UserNotFoundException e) { // NOSONAR
+        log.debug(STR."Request to change password for invalid user '\{userId}'.");
+        throw createUnknownUserException(userId);
       }
-      throw new RuntimeException(STR."Error changing password: \{e.getMessage()}", e);
+      catch (Exception e) {
+        log.error(STR."Error changing password for user: \{userId}", e);
+        throw e;
+      }
+    }, runnable -> Thread.startVirtualThread(runnable));
+
+    try {
+      future.join();
+    } catch (WebApplicationMessageException e) {
+      throw e; // Re-throw our custom exceptions
+    } catch (Exception e) {
+      log.error("Failed to change password", e);
+      throw new WebApplicationMessageException(
+          Status.INTERNAL_SERVER_ERROR, 
+          STR."\"Failed to change password: \{e.getMessage()}\"", 
+          MediaType.APPLICATION_JSON
+      );
     }
   }
 
@@ -304,7 +322,7 @@ public class UserApiResource
       return !securitySystem.getUserManager(user.getSource()).supportsWrite();
     }
     catch (NoSuchUserManagerException e) {
-      log.debug("Unable to locate user manager: {}", user.getSource(), e);
+      log.debug(STR."Unable to locate user manager: \{user.getSource()}", e);
       return true;
     }
   }
@@ -326,14 +344,17 @@ public class UserApiResource
     ValidationErrorsException errors = new ValidationErrorsException();
 
     try {
-      Set<String> localRoles = securitySystem.listRoles(UserManager.DEFAULT_SOURCE).stream().map(Role::getRoleId)
+      Set<String> localRoles = securitySystem.listRoles(UserManager.DEFAULT_SOURCE).stream()
+          .map(Role::getRoleId)
           .collect(Collectors.toSet());
           
+      // Using enhanced for loop for better readability with pattern matching
       for (String roleId : roleIds) {
         if (!localRoles.contains(roleId)) {
           errors.withError("roles", STR."Unable to locate roleId: \{roleId}");
         }
       }
+      
       if (errors.hasValidationErrors()) {
         throw errors;
       }

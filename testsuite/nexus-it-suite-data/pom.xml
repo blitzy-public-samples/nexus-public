@@ -21,20 +21,10 @@
   <parent>
     <groupId>org.sonatype.nexus.testsuite</groupId>
     <artifactId>nexus-testsuite</artifactId>
-    <version>3.77.0-08</version>
+    <version>3.80.0-01</version>
   </parent>
 
   <artifactId>nexus-it-suite-data</artifactId>
   <name>${project.groupId}:${project.artifactId}</name>
-  
-  <!-- 
-    Java 21 Configuration:
-    This module provides test fixtures and data for integration tests that run on Java 21.
-    The test data must be compatible with Java 21 runtime environment to ensure proper test execution.
-  -->
-  <properties>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
-  </properties>
 
 </project>

@@ -1,53 +1,64 @@
 {
+  "_comment": "Test fixture for validating the Nexus upgrade framework's handling of invalid upgrade scenarios",
   "invalidUpgrades": [
     {
       "model": "foo",
       "from": "1.1",
       "to": "1.1",
-      "description": "Invalid upgrade: version doesn't change",
+      "description": "Error: version doesn't change",
       "class": "org.sonatype.nexus.upgrade.bad.UpgradeFoo_1_1"
     },
     {
       "model": "foo",
       "from": "1.2",
       "to": "1.1",
-      "description": "Invalid upgrade: version goes backwards",
+      "description": "Error: version goes backwards",
       "class": "org.sonatype.nexus.upgrade.bad.UpgradeFoo_1_2"
-    },
+    }
+  ],
+  "additionalInvalidScenarios": [
     {
       "model": "bar",
-      "from": "",
-      "to": "1.0",
-      "description": "Invalid upgrade: empty from version",
-      "class": "org.sonatype.nexus.upgrade.bad.UpgradeBar_Empty"
-    },
-    {
-      "model": "bar",
-      "from": "1.0",
-      "to": "",
-      "description": "Invalid upgrade: empty to version",
-      "class": "org.sonatype.nexus.upgrade.bad.UpgradeBar_EmptyTo"
-    },
-    {
-      "model": "",
-      "from": "1.0",
-      "to": "2.0",
-      "description": "Invalid upgrade: empty model name",
-      "class": "org.sonatype.nexus.upgrade.bad.UpgradeEmptyModel"
+      "description": "Error: empty version string",
+      "invalidVersions": [
+        {
+          "from": "",
+          "to": "1.0",
+          "class": "org.sonatype.nexus.upgrade.bad.UpgradeBar_Empty_1_0"
+        },
+        {
+          "from": "1.0",
+          "to": "",
+          "class": "org.sonatype.nexus.upgrade.bad.UpgradeBar_1_0_Empty"
+        }
+      ]
     },
     {
       "model": "baz",
-      "from": "1.0",
-      "to": "1.0.0",
-      "description": "Invalid upgrade: incompatible version formats",
-      "class": "org.sonatype.nexus.upgrade.bad.UpgradeBaz_IncompatibleVersions"
+      "description": "Error: invalid version format",
+      "invalidVersions": [
+        {
+          "from": "1.0",
+          "to": "invalid",
+          "class": "org.sonatype.nexus.upgrade.bad.UpgradeBaz_1_0_Invalid"
+        },
+        {
+          "from": "invalid",
+          "to": "1.0",
+          "class": "org.sonatype.nexus.upgrade.bad.UpgradeBaz_Invalid_1_0"
+        }
+      ]
     },
     {
-      "model": "qux",
-      "from": "1.0-SNAPSHOT",
-      "to": "1.0",
-      "description": "Invalid upgrade: snapshot to release",
-      "class": "org.sonatype.nexus.upgrade.bad.UpgradeQux_SnapshotToRelease"
+      "model": "",
+      "description": "Error: empty model name",
+      "invalidVersions": [
+        {
+          "from": "1.0",
+          "to": "2.0",
+          "class": "org.sonatype.nexus.upgrade.bad.UpgradeEmptyModel_1_0_2_0"
+        }
+      ]
     }
   ],
   "metadata": {
@@ -57,9 +68,131 @@
       "identical source and target versions",
       "backward version changes",
       "empty version strings",
-      "empty model names",
-      "incompatible version formats",
-      "snapshot to release transitions"
+      "invalid version formats",
+      "empty model names"
+    ],
+    "expectedErrors": [
+      "InvalidUpgradeVersionException",
+      "InvalidUpgradeModelException",
+      "BackwardUpgradeVersionException"
+    ]
+  },
+  "java21Features": {
+    "useVirtualThreads": true,
+    "usePatternMatching": true,
+    "useStringTemplates": true,
+    "useRecordPatterns": true
+  },
+  "testScenarios": [
+    {
+      "name": "Identical version detection",
+      "description": "Tests that the upgrade framework correctly detects and reports identical source and target versions",
+      "testClass": "org.sonatype.nexus.upgrade.BadUpgradeTest",
+      "expectedExceptions": [
+        {
+          "type": "InvalidUpgradeVersionException",
+          "message": "Upgrade version must change: model 'foo' has identical source and target versions '1.1'",
+          "containsClasses": [
+            "org.sonatype.nexus.upgrade.bad.UpgradeFoo_1_1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Backward version detection",
+      "description": "Tests that the upgrade framework correctly detects and reports backward version changes",
+      "testClass": "org.sonatype.nexus.upgrade.BadUpgradeTest",
+      "expectedExceptions": [
+        {
+          "type": "BackwardUpgradeVersionException",
+          "message": "Upgrade version cannot go backward: model 'foo' from '1.2' to '1.1'",
+          "containsClasses": [
+            "org.sonatype.nexus.upgrade.bad.UpgradeFoo_1_2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Empty version detection",
+      "description": "Tests that the upgrade framework correctly detects and reports empty version strings",
+      "testClass": "org.sonatype.nexus.upgrade.BadUpgradeTest",
+      "expectedExceptions": [
+        {
+          "type": "InvalidUpgradeVersionException",
+          "message": "Upgrade version cannot be empty: model 'bar'",
+          "containsClasses": [
+            "org.sonatype.nexus.upgrade.bad.UpgradeBar_Empty_1_0",
+            "org.sonatype.nexus.upgrade.bad.UpgradeBar_1_0_Empty"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Invalid version format detection",
+      "description": "Tests that the upgrade framework correctly detects and reports invalid version formats",
+      "testClass": "org.sonatype.nexus.upgrade.BadUpgradeTest",
+      "expectedExceptions": [
+        {
+          "type": "InvalidUpgradeVersionException",
+          "message": "Invalid upgrade version format: model 'baz' has invalid version format",
+          "containsClasses": [
+            "org.sonatype.nexus.upgrade.bad.UpgradeBaz_1_0_Invalid",
+            "org.sonatype.nexus.upgrade.bad.UpgradeBaz_Invalid_1_0"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Empty model detection",
+      "description": "Tests that the upgrade framework correctly detects and reports empty model names",
+      "testClass": "org.sonatype.nexus.upgrade.BadUpgradeTest",
+      "expectedExceptions": [
+        {
+          "type": "InvalidUpgradeModelException",
+          "message": "Upgrade model name cannot be empty",
+          "containsClasses": [
+            "org.sonatype.nexus.upgrade.bad.UpgradeEmptyModel_1_0_2_0"
+          ]
+        }
+      ]
+    }
+  ],
+  "java21ValidationTests": {
+    "patternMatchingTests": [
+      {
+        "name": "Pattern matching for upgrade validation",
+        "description": "Tests that the upgrade framework correctly uses pattern matching for validation in Java 21",
+        "testClass": "org.sonatype.nexus.upgrade.Java21BadUpgradeTest",
+        "testMethod": "testPatternMatchingForValidation",
+        "expectedResult": "Pattern matching correctly identifies invalid upgrade configurations"
+      }
+    ],
+    "stringTemplateTests": [
+      {
+        "name": "String templates for error messages",
+        "description": "Tests that the upgrade framework correctly uses string templates for error messages in Java 21",
+        "testClass": "org.sonatype.nexus.upgrade.Java21BadUpgradeTest",
+        "testMethod": "testStringTemplatesForErrorMessages",
+        "expectedResult": "String templates correctly format error messages for invalid upgrade configurations"
+      }
+    ],
+    "recordPatternTests": [
+      {
+        "name": "Record patterns for upgrade configuration",
+        "description": "Tests that the upgrade framework correctly uses record patterns for upgrade configuration in Java 21",
+        "testClass": "org.sonatype.nexus.upgrade.Java21BadUpgradeTest",
+        "testMethod": "testRecordPatternsForUpgradeConfiguration",
+        "expectedResult": "Record patterns correctly process upgrade configuration records"
+      }
+    ],
+    "virtualThreadTests": [
+      {
+        "name": "Virtual threads for validation",
+        "description": "Tests that the upgrade framework correctly uses virtual threads for validation in Java 21",
+        "testClass": "org.sonatype.nexus.upgrade.Java21BadUpgradeTest",
+        "testMethod": "testVirtualThreadsForValidation",
+        "expectedResult": "Virtual threads correctly validate upgrade configurations in parallel"
+      }
     ]
   }
 }

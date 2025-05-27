@@ -12,8 +12,9 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -37,9 +38,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Anonymous Security Settings {@link DirectComponent}.
- * 
- * Updated for Java 21 compatibility with Virtual Threads for improved concurrency
- * and pattern matching for type-safe data handling.
  */
 @Named
 @Singleton
@@ -48,10 +46,12 @@ public class AnonymousSettingsComponent
     extends DirectComponentSupport
 {
   private final AnonymousManager anonymousManager;
+  private final ExecutorService virtualThreadExecutor;
 
   @Inject
   public AnonymousSettingsComponent(final AnonymousManager anonymousManager) {
     this.anonymousManager = checkNotNull(anonymousManager);
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -64,22 +64,22 @@ public class AnonymousSettingsComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public AnonymousSettingsXO read() {
-    // Get configuration from the manager
-    AnonymousConfiguration config = anonymousManager.getConfiguration();
+    // Use CompletableFuture with virtual threads for I/O-bound operations
+    CompletableFuture<AnonymousSettingsXO> future = CompletableFuture.supplyAsync(() -> {
+      AnonymousConfiguration config = anonymousManager.getConfiguration();
+      AnonymousSettingsXO xo = new AnonymousSettingsXO();
+      xo.setEnabled(config.isEnabled());
+      xo.setUserId(config.getUserId());
+      xo.setRealmName(config.getRealmName());
+      return xo;
+    }, virtualThreadExecutor);
     
-    // Create a new record instance with the configuration values
-    // Using Java 21 record pattern for immutable data transfer
-    return new AnonymousSettingsXO(
-        config.isEnabled(),
-        config.getUserId(),
-        config.getRealmName()
-    );
+    return future.join();
   }
 
   /**
    * Updates anonymous security settings.
    *
-   * @param anonymousXO the settings to update
    * @return updated anonymous security settings
    */
   @DirectMethod
@@ -88,32 +88,17 @@ public class AnonymousSettingsComponent
   @RequiresAuthentication
   @RequiresPermissions("nexus:settings:update")
   public AnonymousSettingsXO update(@NotNull @Valid final AnonymousSettingsXO anonymousXO) {
-    // Using Java 21 pattern matching for improved type safety and readability
-    // This deconstructs the record into its components in a type-safe manner
-    if (anonymousXO instanceof AnonymousSettingsXO(Boolean enabled, String userId, String realmName)) {
-      // Create and configure a new configuration instance
+    // Use CompletableFuture with virtual threads for I/O-bound operations
+    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       AnonymousConfiguration configuration = anonymousManager.newConfiguration();
-      configuration.setEnabled(enabled);
-      configuration.setRealmName(realmName);
-      configuration.setUserId(userId);
-      
-      // Use a virtual thread for this I/O-bound operation
-      // Virtual threads are lightweight and perfect for I/O operations
-      // We create a new virtual thread for each task rather than maintaining an executor
-      try {
-        Future<?> future = Executors.newVirtualThreadPerTaskExecutor()
-            .submit(() -> anonymousManager.setConfiguration(configuration));
-        
-        // Wait for the operation to complete
-        future.get();
-      }
-      catch (Exception e) {
-        log.error("Failed to update anonymous configuration: {}", e.getMessage(), e);
-        throw new RuntimeException("Failed to update anonymous configuration", e);
-      }
-    }
+      configuration.setEnabled(anonymousXO.getEnabled());
+      configuration.setRealmName(anonymousXO.getRealmName());
+      configuration.setUserId(anonymousXO.getUserId());
+      anonymousManager.setConfiguration(configuration);
+    }, virtualThreadExecutor);
     
-    // Return the updated configuration
+    // Wait for the update to complete and then read the updated configuration
+    future.join();
     return read();
   }
 }

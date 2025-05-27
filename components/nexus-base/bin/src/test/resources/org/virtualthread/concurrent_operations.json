@@ -1,0 +1,517 @@
+{
+  "metadata": {
+    "description": "Test fixture for validating concurrent operations with Java 21 Virtual Threads",
+    "version": "1.0",
+    "targetJavaVersion": 21,
+    "notes": "This file contains structured test data for parallel execution scenarios using Virtual Threads"
+  },
+  "configuration": {
+    "defaultTimeUnit": "MILLISECONDS",
+    "maxConcurrentOperations": 10000,
+    "simulateNetworkLatency": true,
+    "networkLatencyRange": [5, 50],
+    "simulateDiskLatency": true,
+    "diskLatencyRange": [1, 10]
+  },
+  "scenarios": [
+    {
+      "id": "parallel_independent_operations",
+      "name": "Parallel Independent Operations",
+      "description": "Multiple operations that can run completely in parallel with no dependencies",
+      "operations": [
+        {
+          "id": "op1",
+          "type": "IO_BOUND",
+          "description": "Simulated network request",
+          "executionTime": 100,
+          "dependencies": []
+        },
+        {
+          "id": "op2",
+          "type": "IO_BOUND",
+          "description": "Simulated database query",
+          "executionTime": 150,
+          "dependencies": []
+        },
+        {
+          "id": "op3",
+          "type": "CPU_BOUND",
+          "description": "Computation task",
+          "executionTime": 50,
+          "dependencies": []
+        },
+        {
+          "id": "op4",
+          "type": "IO_BOUND",
+          "description": "File read operation",
+          "executionTime": 75,
+          "dependencies": []
+        },
+        {
+          "id": "op5",
+          "type": "IO_BOUND",
+          "description": "External API call",
+          "executionTime": 200,
+          "dependencies": []
+        }
+      ],
+      "expectedResults": {
+        "maxExecutionTime": 220,
+        "allOperationsComplete": true,
+        "operationsExecutedInParallel": true
+      }
+    },
+    {
+      "id": "sequential_dependency_chain",
+      "name": "Sequential Dependency Chain",
+      "description": "Operations that must execute in sequence due to dependencies",
+      "operations": [
+        {
+          "id": "seq1",
+          "type": "IO_BOUND",
+          "description": "Initial data fetch",
+          "executionTime": 50,
+          "dependencies": []
+        },
+        {
+          "id": "seq2",
+          "type": "CPU_BOUND",
+          "description": "Process fetched data",
+          "executionTime": 30,
+          "dependencies": ["seq1"]
+        },
+        {
+          "id": "seq3",
+          "type": "IO_BOUND",
+          "description": "Store processed data",
+          "executionTime": 40,
+          "dependencies": ["seq2"]
+        },
+        {
+          "id": "seq4",
+          "type": "IO_BOUND",
+          "description": "Notify completion",
+          "executionTime": 20,
+          "dependencies": ["seq3"]
+        }
+      ],
+      "expectedResults": {
+        "minExecutionTime": 140,
+        "allOperationsComplete": true,
+        "operationsExecutedInSequence": true
+      }
+    },
+    {
+      "id": "fan_out_pattern",
+      "name": "Fan-out Pattern",
+      "description": "One operation spawns multiple parallel operations",
+      "operations": [
+        {
+          "id": "source",
+          "type": "CPU_BOUND",
+          "description": "Initial task that spawns multiple operations",
+          "executionTime": 25,
+          "dependencies": []
+        },
+        {
+          "id": "fan1",
+          "type": "IO_BOUND",
+          "description": "Parallel task 1",
+          "executionTime": 100,
+          "dependencies": ["source"]
+        },
+        {
+          "id": "fan2",
+          "type": "IO_BOUND",
+          "description": "Parallel task 2",
+          "executionTime": 120,
+          "dependencies": ["source"]
+        },
+        {
+          "id": "fan3",
+          "type": "IO_BOUND",
+          "description": "Parallel task 3",
+          "executionTime": 80,
+          "dependencies": ["source"]
+        },
+        {
+          "id": "fan4",
+          "type": "CPU_BOUND",
+          "description": "Parallel task 4",
+          "executionTime": 60,
+          "dependencies": ["source"]
+        },
+        {
+          "id": "fan5",
+          "type": "IO_BOUND",
+          "description": "Parallel task 5",
+          "executionTime": 110,
+          "dependencies": ["source"]
+        }
+      ],
+      "expectedResults": {
+        "maxExecutionTime": 150,
+        "allOperationsComplete": true,
+        "fanOutOperationsExecutedInParallel": true
+      }
+    },
+    {
+      "id": "fan_in_pattern",
+      "name": "Fan-in Pattern",
+      "description": "Multiple parallel operations feed into a single operation",
+      "operations": [
+        {
+          "id": "input1",
+          "type": "IO_BOUND",
+          "description": "Data source 1",
+          "executionTime": 80,
+          "dependencies": []
+        },
+        {
+          "id": "input2",
+          "type": "IO_BOUND",
+          "description": "Data source 2",
+          "executionTime": 100,
+          "dependencies": []
+        },
+        {
+          "id": "input3",
+          "type": "IO_BOUND",
+          "description": "Data source 3",
+          "executionTime": 60,
+          "dependencies": []
+        },
+        {
+          "id": "input4",
+          "type": "CPU_BOUND",
+          "description": "Data source 4",
+          "executionTime": 40,
+          "dependencies": []
+        },
+        {
+          "id": "aggregator",
+          "type": "CPU_BOUND",
+          "description": "Aggregates results from all inputs",
+          "executionTime": 50,
+          "dependencies": ["input1", "input2", "input3", "input4"]
+        }
+      ],
+      "expectedResults": {
+        "minExecutionTime": 150,
+        "allOperationsComplete": true,
+        "inputsExecutedInParallel": true
+      }
+    },
+    {
+      "id": "nested_operations",
+      "name": "Nested Operations",
+      "description": "Operations that spawn child operations, testing recursive virtual thread creation",
+      "operations": [
+        {
+          "id": "parent1",
+          "type": "IO_BOUND",
+          "description": "Parent operation 1",
+          "executionTime": 30,
+          "dependencies": [],
+          "childOperations": [
+            {
+              "id": "child1_1",
+              "type": "IO_BOUND",
+              "description": "Child operation 1-1",
+              "executionTime": 50,
+              "dependencies": []
+            },
+            {
+              "id": "child1_2",
+              "type": "CPU_BOUND",
+              "description": "Child operation 1-2",
+              "executionTime": 40,
+              "dependencies": ["child1_1"]
+            }
+          ]
+        },
+        {
+          "id": "parent2",
+          "type": "CPU_BOUND",
+          "description": "Parent operation 2",
+          "executionTime": 20,
+          "dependencies": [],
+          "childOperations": [
+            {
+              "id": "child2_1",
+              "type": "IO_BOUND",
+              "description": "Child operation 2-1",
+              "executionTime": 60,
+              "dependencies": [],
+              "childOperations": [
+                {
+                  "id": "grandchild2_1_1",
+                  "type": "IO_BOUND",
+                  "description": "Grandchild operation 2-1-1",
+                  "executionTime": 30,
+                  "dependencies": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedResults": {
+        "allOperationsComplete": true,
+        "nestedOperationsExecutedCorrectly": true
+      }
+    },
+    {
+      "id": "mixed_io_cpu_workload",
+      "name": "Mixed I/O and CPU Workload",
+      "description": "Mix of I/O-bound and CPU-bound operations to test virtual thread scheduling",
+      "operations": [
+        {
+          "id": "io1",
+          "type": "IO_BOUND",
+          "description": "Network operation 1",
+          "executionTime": 100,
+          "dependencies": []
+        },
+        {
+          "id": "cpu1",
+          "type": "CPU_BOUND",
+          "description": "Computation 1",
+          "executionTime": 80,
+          "dependencies": []
+        },
+        {
+          "id": "io2",
+          "type": "IO_BOUND",
+          "description": "Database operation",
+          "executionTime": 120,
+          "dependencies": ["cpu1"]
+        },
+        {
+          "id": "cpu2",
+          "type": "CPU_BOUND",
+          "description": "Computation 2",
+          "executionTime": 60,
+          "dependencies": ["io1"]
+        },
+        {
+          "id": "io3",
+          "type": "IO_BOUND",
+          "description": "File operation",
+          "executionTime": 90,
+          "dependencies": []
+        },
+        {
+          "id": "cpu3",
+          "type": "CPU_BOUND",
+          "description": "Computation 3",
+          "executionTime": 70,
+          "dependencies": ["io3"]
+        }
+      ],
+      "expectedResults": {
+        "allOperationsComplete": true,
+        "ioOperationsOptimized": true,
+        "dependenciesRespected": true
+      }
+    },
+    {
+      "id": "high_concurrency",
+      "name": "High Concurrency Test",
+      "description": "Large number of concurrent operations to test virtual thread scalability",
+      "operationTemplate": {
+        "type": "IO_BOUND",
+        "executionTimeRange": [10, 100],
+        "dependencies": []
+      },
+      "operationCount": 1000,
+      "expectedResults": {
+        "allOperationsComplete": true,
+        "executionTimeWithinRange": true,
+        "noThreadExhaustion": true
+      }
+    },
+    {
+      "id": "varying_execution_times",
+      "name": "Operations with Varying Execution Times",
+      "description": "Operations with widely varying execution times to test scheduler fairness",
+      "operations": [
+        {
+          "id": "quick1",
+          "type": "IO_BOUND",
+          "description": "Very quick operation",
+          "executionTime": 5,
+          "dependencies": []
+        },
+        {
+          "id": "quick2",
+          "type": "IO_BOUND",
+          "description": "Quick operation",
+          "executionTime": 10,
+          "dependencies": []
+        },
+        {
+          "id": "medium1",
+          "type": "IO_BOUND",
+          "description": "Medium duration operation",
+          "executionTime": 100,
+          "dependencies": []
+        },
+        {
+          "id": "medium2",
+          "type": "CPU_BOUND",
+          "description": "Medium duration computation",
+          "executionTime": 150,
+          "dependencies": []
+        },
+        {
+          "id": "long1",
+          "type": "IO_BOUND",
+          "description": "Long duration operation",
+          "executionTime": 500,
+          "dependencies": []
+        },
+        {
+          "id": "very_long",
+          "type": "IO_BOUND",
+          "description": "Very long duration operation",
+          "executionTime": 1000,
+          "dependencies": []
+        }
+      ],
+      "expectedResults": {
+        "allOperationsComplete": true,
+        "shortOperationsNotStarved": true
+      }
+    },
+    {
+      "id": "pinning_test",
+      "name": "Thread Pinning Test",
+      "description": "Test operations that may cause thread pinning (synchronized blocks, native methods)",
+      "operations": [
+        {
+          "id": "normal_io",
+          "type": "IO_BOUND",
+          "description": "Normal I/O operation",
+          "executionTime": 100,
+          "dependencies": [],
+          "usesSynchronized": false
+        },
+        {
+          "id": "synchronized_io",
+          "type": "IO_BOUND",
+          "description": "I/O operation with synchronized blocks",
+          "executionTime": 100,
+          "dependencies": [],
+          "usesSynchronized": true
+        },
+        {
+          "id": "native_call",
+          "type": "IO_BOUND",
+          "description": "Operation with native method calls",
+          "executionTime": 100,
+          "dependencies": [],
+          "usesNativeMethods": true
+        },
+        {
+          "id": "normal_cpu",
+          "type": "CPU_BOUND",
+          "description": "Normal CPU operation",
+          "executionTime": 100,
+          "dependencies": [],
+          "usesSynchronized": false
+        },
+        {
+          "id": "synchronized_cpu",
+          "type": "CPU_BOUND",
+          "description": "CPU operation with synchronized blocks",
+          "executionTime": 100,
+          "dependencies": [],
+          "usesSynchronized": true
+        }
+      ],
+      "expectedResults": {
+        "allOperationsComplete": true,
+        "pinnedThreadsIdentified": true,
+        "nonPinnedThreadsYield": true
+      }
+    },
+    {
+      "id": "structured_concurrency",
+      "name": "Structured Concurrency Pattern",
+      "description": "Test for structured concurrency patterns with proper scoping and lifecycle management",
+      "operations": [
+        {
+          "id": "scope1",
+          "type": "SCOPE",
+          "description": "Structured concurrency scope 1",
+          "executionTime": 0,
+          "dependencies": [],
+          "childOperations": [
+            {
+              "id": "task1_1",
+              "type": "IO_BOUND",
+              "description": "Task 1-1 within scope 1",
+              "executionTime": 80,
+              "dependencies": []
+            },
+            {
+              "id": "task1_2",
+              "type": "IO_BOUND",
+              "description": "Task 1-2 within scope 1",
+              "executionTime": 120,
+              "dependencies": []
+            }
+          ],
+          "scopeType": "ShutdownOnFailure"
+        },
+        {
+          "id": "scope2",
+          "type": "SCOPE",
+          "description": "Structured concurrency scope 2",
+          "executionTime": 0,
+          "dependencies": ["scope1"],
+          "childOperations": [
+            {
+              "id": "task2_1",
+              "type": "IO_BOUND",
+              "description": "Task 2-1 within scope 2",
+              "executionTime": 50,
+              "dependencies": []
+            },
+            {
+              "id": "task2_2",
+              "type": "IO_BOUND",
+              "description": "Task 2-2 within scope 2",
+              "executionTime": 70,
+              "dependencies": []
+            },
+            {
+              "id": "task2_3",
+              "type": "IO_BOUND",
+              "description": "Task 2-3 within scope 2 (fails)",
+              "executionTime": 30,
+              "dependencies": [],
+              "simulateFailure": true
+            }
+          ],
+          "scopeType": "ShutdownOnFailure"
+        }
+      ],
+      "expectedResults": {
+        "scope1Complete": true,
+        "scope2FailedCorrectly": true,
+        "allTasksInScope1Complete": true,
+        "someTasksInScope2Cancelled": true
+      }
+    }
+  ],
+  "validationRules": {
+    "ensureAllOperationsComplete": true,
+    "validateExecutionOrder": true,
+    "checkThreadUtilization": true,
+    "verifyNoDeadlocks": true,
+    "measureThroughput": true,
+    "compareWithPlatformThreads": true
+  }
+}

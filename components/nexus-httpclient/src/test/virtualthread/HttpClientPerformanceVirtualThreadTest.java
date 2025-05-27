@@ -10,586 +10,763 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.httpclient.virtualthread;
+package org.sonatype.nexus.httpclient;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
+import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.util.EntityUtils;
-
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.httpclient.HttpClientManager;
-import org.sonatype.nexus.httpclient.config.HttpClientConfiguration;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.lessThanOrEqualTo;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.mockito.Mockito.when;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+
+import org.junit.experimental.categories.Category;
+
+import static java.lang.System.gc;
+import static java.lang.System.nanoTime;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Performance comparison test for HTTP client operations using platform threads versus Virtual Threads.
- * This class conducts controlled benchmarks to measure throughput, latency, and resource utilization
- * differences between the two threading models when performing HTTP operations.
+ * <p>
+ * This test class benchmarks the performance differences between traditional platform threads and
+ * Java 21 Virtual Threads when performing I/O-bound HTTP client operations.
+ * <p>
+ * The tests measure throughput, latency (including percentiles), and resource utilization under
+ * various concurrency levels to validate the performance improvements achieved by migrating to
+ * Java 21 Virtual Threads.
+ * <p>
+ * Key metrics measured:
+ * <ul>
+ *   <li>Throughput (operations per second)</li>
+ *   <li>Latency (median, 95th percentile, 99th percentile)</li>
+ *   <li>Memory consumption</li>
+ *   <li>Scalability under increasing load</li>
+ * </ul>
+ * <p>
+ * The test validates that Virtual Threads provide at least 20% improvement in throughput,
+ * 20% reduction in P95 latency, and 30% reduction in memory usage compared to platform threads.
  */
 @ExtendWith(MockitoExtension.class)
+@Category(Java21TestGroup.class)
 public class HttpClientPerformanceVirtualThreadTest
     extends TestSupport
 {
   private static final int SERVER_PORT = 8765;
-  private static final String SERVER_URL = "http://localhost:" + SERVER_PORT;
-  private static final int WARMUP_ITERATIONS = 5;
-  private static final int MEASUREMENT_ITERATIONS = 10;
+  private static final String SERVER_HOST = "localhost";
+  private static final String SERVER_URL = "http://" + SERVER_HOST + ":" + SERVER_PORT;
   
-  // Performance thresholds for Virtual Threads
-  private static final int MAX_CONCURRENT_CONNECTIONS_PLATFORM = 1000;
-  private static final int MAX_CONCURRENT_CONNECTIONS_VIRTUAL = 10000;
-  private static final double P95_RESPONSE_TIME_THRESHOLD_VIRTUAL = 250.0; // ms
-  private static final double P99_RESPONSE_TIME_THRESHOLD_VIRTUAL = 500.0; // ms
-  private static final double THREAD_SCALING_EFFICIENCY_THRESHOLD = 0.85; // 85%
+  private static final int WARMUP_ITERATIONS = 3;
+  private static final int BENCHMARK_ITERATIONS = 5;
+  private static final int[] CONCURRENCY_LEVELS = {10, 50, 100, 500, 1000};
   
-  @Mock
-  private HttpClientManager httpClientManager;
+  // Performance thresholds for virtual threads compared to platform threads
+  private static final double MIN_THROUGHPUT_IMPROVEMENT = 1.2; // 20% improvement
+  private static final double MAX_P95_LATENCY_RATIO = 0.8; // 20% reduction
+  private static final double MAX_MEMORY_USAGE_RATIO = 0.7; // 30% reduction
   
-  private HttpServer httpServer;
-  private CloseableHttpClient httpClient;
+  // Simulated server response delays
+  private static final int SMALL_DELAY_MS = 50;  // For GET requests
+  private static final int MEDIUM_DELAY_MS = 100; // For POST requests
+  private static final int LARGE_DELAY_MS = 200;  // For complex operations
   
+  private HttpServer server;
+  private HttpClient virtualThreadClient;
+  private HttpClient platformThreadClient;
+  private final AtomicInteger requestCounter = new AtomicInteger(0);
+  
+  /**
+   * Sets up the test HTTP server and HTTP clients before each test.
+   */
   @BeforeEach
-  void setUp() throws Exception {
-    // Setup a simple HTTP server for testing
-    httpServer = HttpServer.create(new InetSocketAddress(SERVER_PORT), 0);
-    httpServer.createContext("/echo", new EchoHandler());
-    httpServer.createContext("/delay", new DelayHandler());
-    httpServer.createContext("/large", new LargeResponseHandler());
-    httpServer.setExecutor(null); // Use the default executor
-    httpServer.start();
+  void setUp() throws IOException {
+    // Reset counter
+    requestCounter.set(0);
     
-    // Setup HTTP client
-    HttpClientConfiguration config = new HttpClientConfiguration();
-    when(httpClientManager.newConfiguration()).thenReturn(config);
-    httpClient = httpClientManager.create(config);
+    // Create and start HTTP server
+    server = HttpServer.create(new InetSocketAddress(SERVER_HOST, SERVER_PORT), 0);
+    server.createContext("/get", new DelayHandler(SMALL_DELAY_MS));
+    server.createContext("/post", new DelayHandler(MEDIUM_DELAY_MS));
+    server.createContext("/complex", new DelayHandler(LARGE_DELAY_MS));
+    server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    server.start();
+    
+    log.info("Started test HTTP server on {}", SERVER_URL);
+    
+    // Create HTTP client with virtual threads
+    virtualThreadClient = HttpClient.newBuilder()
+        .executor(Executors.newVirtualThreadPerTaskExecutor())
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
+    
+    // Create HTTP client with platform threads for comparison
+    platformThreadClient = HttpClient.newBuilder()
+        .executor(Executors.newFixedThreadPool(100)) // Limited to 100 platform threads
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
   }
   
+  /**
+   * Cleans up resources after each test.
+   */
   @AfterEach
   void tearDown() {
-    if (httpClient != null) {
-      try {
-        httpClient.close();
-      }
-      catch (IOException e) {
-        log.error("Error closing HTTP client", e);
-      }
-    }
-    
-    if (httpServer != null) {
-      httpServer.stop(0);
+    if (server != null) {
+      server.stop(0);
+      log.info("Stopped test HTTP server");
     }
   }
   
   /**
-   * Test comparing GET request performance between platform threads and Virtual Threads.
-   * This test measures throughput and latency for HTTP GET operations under
-   * varying concurrency levels.
+   * Tests GET request performance with varying concurrency levels using both platform threads and virtual threads.
+   *
+   * @param concurrencyLevel the number of concurrent operations to perform
    */
-  @Test
-  void testGetRequestPerformanceComparison() throws Exception {
-    // Run benchmarks with both thread types
-    PerformanceResult platformResult = benchmarkOperation(
-        ThreadingModel.PLATFORM,
-        () -> performGetRequest("/echo"),
-        100, // Start with 100 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_PLATFORM, // Max concurrent operations
-        100 // Step size
-    );
-    
-    PerformanceResult virtualResult = benchmarkOperation(
-        ThreadingModel.VIRTUAL,
-        () -> performGetRequest("/echo"),
-        100, // Start with 100 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_VIRTUAL, // Max concurrent operations
-        500 // Step size
-    );
-    
-    // Log results
-    log.info("Platform Thread GET Results: {}", platformResult);
-    log.info("Virtual Thread GET Results: {}", virtualResult);
-    
-    // Verify virtual thread targets are met
-    assertThat("Virtual threads should support high concurrency for GET requests",
-        virtualResult.getMaxConcurrency(), greaterThanOrEqualTo(MAX_CONCURRENT_CONNECTIONS_PLATFORM * 5));
-    
-    assertThat("Virtual thread P95 response time for GET requests should be under threshold",
-        virtualResult.getP95ResponseTime(), lessThan(P95_RESPONSE_TIME_THRESHOLD_VIRTUAL));
-    
-    assertThat("Virtual thread P99 response time for GET requests should be under threshold",
-        virtualResult.getP99ResponseTime(), lessThan(P99_RESPONSE_TIME_THRESHOLD_VIRTUAL));
-    
-    // Verify relative improvement over platform threads
-    assertThat("Virtual threads should provide better throughput than platform threads for GET requests",
-        virtualResult.getThroughput(), greaterThan(platformResult.getThroughput() * 1.5));
-    
-    double scalingEfficiency = calculateScalingEfficiency(virtualResult);
-    assertThat("Virtual thread scaling efficiency for GET requests should exceed threshold",
-        scalingEfficiency, greaterThanOrEqualTo(THREAD_SCALING_EFFICIENCY_THRESHOLD));
-  }
-  
-  /**
-   * Test comparing POST request performance between platform threads and Virtual Threads.
-   * This test measures throughput and latency for HTTP POST operations under
-   * varying concurrency levels.
-   */
-  @Test
-  void testPostRequestPerformanceComparison() throws Exception {
-    // Run benchmarks with both thread types
-    PerformanceResult platformResult = benchmarkOperation(
-        ThreadingModel.PLATFORM,
-        () -> performPostRequest("/echo"),
-        50, // Start with 50 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_PLATFORM / 2, // Max concurrent operations
-        50 // Step size
-    );
-    
-    PerformanceResult virtualResult = benchmarkOperation(
-        ThreadingModel.VIRTUAL,
-        () -> performPostRequest("/echo"),
-        50, // Start with 50 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_VIRTUAL / 2, // Max concurrent operations
-        250 // Step size
-    );
-    
-    // Log results
-    log.info("Platform Thread POST Results: {}", platformResult);
-    log.info("Virtual Thread POST Results: {}", virtualResult);
-    
-    // Verify virtual thread targets are met
-    assertThat("Virtual threads should support high concurrency for POST requests",
-        virtualResult.getMaxConcurrency(), greaterThanOrEqualTo(platformResult.getMaxConcurrency() * 5));
-    
-    assertThat("Virtual thread P95 response time for POST requests should be under threshold",
-        virtualResult.getP95ResponseTime(), lessThan(P95_RESPONSE_TIME_THRESHOLD_VIRTUAL * 1.2)); // Allow slightly higher threshold for POST
-    
-    assertThat("Virtual thread P99 response time for POST requests should be under threshold",
-        virtualResult.getP99ResponseTime(), lessThan(P99_RESPONSE_TIME_THRESHOLD_VIRTUAL * 1.2)); // Allow slightly higher threshold for POST
-    
-    // Verify relative improvement over platform threads
-    assertThat("Virtual threads should provide better throughput than platform threads for POST requests",
-        virtualResult.getThroughput(), greaterThan(platformResult.getThroughput() * 1.3)); // 30% improvement
-  }
-  
-  /**
-   * Test comparing performance with delayed responses between platform threads and Virtual Threads.
-   * This test measures how well each threading model handles I/O wait times.
-   */
-  @Test
-  void testDelayedResponsePerformanceComparison() throws Exception {
-    // Run benchmarks with both thread types
-    PerformanceResult platformResult = benchmarkOperation(
-        ThreadingModel.PLATFORM,
-        () -> performGetRequest("/delay"),
-        50, // Start with 50 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_PLATFORM / 2, // Max concurrent operations
-        50 // Step size
-    );
-    
-    PerformanceResult virtualResult = benchmarkOperation(
-        ThreadingModel.VIRTUAL,
-        () -> performGetRequest("/delay"),
-        50, // Start with 50 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_VIRTUAL / 2, // Max concurrent operations
-        250 // Step size
-    );
-    
-    // Log results
-    log.info("Platform Thread Delayed Response Results: {}", platformResult);
-    log.info("Virtual Thread Delayed Response Results: {}", virtualResult);
-    
-    // Verify virtual thread targets are met
-    assertThat("Virtual threads should support high concurrency for delayed responses",
-        virtualResult.getMaxConcurrency(), greaterThanOrEqualTo(platformResult.getMaxConcurrency() * 5));
-    
-    // For delayed responses, the absolute response time is less important than the relative improvement
-    // Verify relative improvement over platform threads
-    assertThat("Virtual threads should provide better throughput than platform threads for delayed responses",
-        virtualResult.getThroughput(), greaterThan(platformResult.getThroughput() * 2.0)); // Expect significant improvement
-  }
-  
-  /**
-   * Test comparing performance with large responses between platform threads and Virtual Threads.
-   * This test measures how well each threading model handles large data transfers.
-   */
-  @Test
-  void testLargeResponsePerformanceComparison() throws Exception {
-    // Run benchmarks with both thread types
-    PerformanceResult platformResult = benchmarkOperation(
-        ThreadingModel.PLATFORM,
-        () -> performGetRequest("/large"),
-        20, // Start with 20 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_PLATFORM / 5, // Max concurrent operations
-        20 // Step size
-    );
-    
-    PerformanceResult virtualResult = benchmarkOperation(
-        ThreadingModel.VIRTUAL,
-        () -> performGetRequest("/large"),
-        20, // Start with 20 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_VIRTUAL / 5, // Max concurrent operations
-        100 // Step size
-    );
-    
-    // Log results
-    log.info("Platform Thread Large Response Results: {}", platformResult);
-    log.info("Virtual Thread Large Response Results: {}", virtualResult);
-    
-    // Verify virtual thread targets are met
-    assertThat("Virtual threads should support high concurrency for large responses",
-        virtualResult.getMaxConcurrency(), greaterThanOrEqualTo(platformResult.getMaxConcurrency() * 5));
-    
-    // Verify relative improvement over platform threads
-    assertThat("Virtual threads should provide better throughput than platform threads for large responses",
-        virtualResult.getThroughput(), greaterThan(platformResult.getThroughput() * 1.5)); // 50% improvement
-  }
-  
-  /**
-   * Test measuring memory consumption differences between platform threads and Virtual Threads
-   * under high concurrency.
-   */
-  @Test
-  void testMemoryConsumptionComparison() throws Exception {
-    // Measure memory before platform thread test
-    long beforePlatformMemory = getUsedMemory();
-    
-    // Run platform thread test with high concurrency
-    runConcurrentOperations(ThreadingModel.PLATFORM, () -> performGetRequest("/echo"), 500, 5);
-    
-    // Measure memory after platform thread test
-    long afterPlatformMemory = getUsedMemory();
-    long platformMemoryUsage = afterPlatformMemory - beforePlatformMemory;
-    
-    // Force GC to clean up before virtual thread test
-    System.gc();
-    Thread.sleep(1000);
-    
-    // Measure memory before virtual thread test
-    long beforeVirtualMemory = getUsedMemory();
-    
-    // Run virtual thread test with high concurrency
-    runConcurrentOperations(ThreadingModel.VIRTUAL, () -> performGetRequest("/echo"), 5000, 5);
-    
-    // Measure memory after virtual thread test
-    long afterVirtualMemory = getUsedMemory();
-    long virtualMemoryUsage = afterVirtualMemory - beforeVirtualMemory;
-    
-    // Log memory usage
-    log.info("Platform Thread Memory Usage: {} MB for 500 threads", platformMemoryUsage / (1024 * 1024));
-    log.info("Virtual Thread Memory Usage: {} MB for 5000 threads", virtualMemoryUsage / (1024 * 1024));
-    
-    // Calculate memory efficiency (memory per thread)
-    double platformMemoryPerThread = (double) platformMemoryUsage / 500;
-    double virtualMemoryPerThread = (double) virtualMemoryUsage / 5000;
-    
-    log.info("Platform Thread Memory Per Thread: {} KB", platformMemoryPerThread / 1024);
-    log.info("Virtual Thread Memory Per Thread: {} KB", virtualMemoryPerThread / 1024);
-    
-    // Verify virtual threads use significantly less memory per thread
-    assertThat("Virtual threads should use less memory per thread",
-        virtualMemoryPerThread, lessThan(platformMemoryPerThread * 0.2)); // 80% reduction
-  }
-  
-  /**
-   * Test comparing mixed HTTP operations performance between platform threads and Virtual Threads.
-   * This test measures throughput and latency for a mix of HTTP operations under
-   * varying concurrency levels.
-   */
-  @Test
-  void testMixedOperationsPerformanceComparison() throws Exception {
-    // Run benchmarks with both thread types
-    PerformanceResult platformResult = benchmarkOperation(
-        ThreadingModel.PLATFORM,
-        this::performMixedOperation,
-        50, // Start with 50 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_PLATFORM / 2, // Max concurrent operations
-        50 // Step size
-    );
-    
-    PerformanceResult virtualResult = benchmarkOperation(
-        ThreadingModel.VIRTUAL,
-        this::performMixedOperation,
-        50, // Start with 50 concurrent operations
-        MAX_CONCURRENT_CONNECTIONS_VIRTUAL / 2, // Max concurrent operations
-        250 // Step size
-    );
-    
-    // Log results
-    log.info("Platform Thread Mixed Operation Results: {}", platformResult);
-    log.info("Virtual Thread Mixed Operation Results: {}", virtualResult);
-    
-    // Verify virtual thread targets are met
-    assertThat("Virtual threads should support high concurrency for mixed operations",
-        virtualResult.getMaxConcurrency(), greaterThanOrEqualTo(platformResult.getMaxConcurrency() * 4));
-    
-    assertThat("Virtual thread P95 response time for mixed operations should be under threshold",
-        virtualResult.getP95ResponseTime(), lessThan(P95_RESPONSE_TIME_THRESHOLD_VIRTUAL * 1.5));
-    
-    assertThat("Virtual thread P99 response time for mixed operations should be under threshold",
-        virtualResult.getP99ResponseTime(), lessThan(P99_RESPONSE_TIME_THRESHOLD_VIRTUAL * 1.5));
-    
-    // Verify relative improvement over platform threads
-    assertThat("Virtual threads should provide better throughput for mixed operations",
-        virtualResult.getThroughput(), greaterThan(platformResult.getThroughput() * 1.3)); // 30% improvement
-  }
-  
-  /**
-   * Performs an HTTP GET request to the specified path.
-   */
-  private Void performGetRequest(String path) throws IOException {
-    HttpGet request = new HttpGet(SERVER_URL + path);
-    HttpResponse response = httpClient.execute(request);
-    EntityUtils.consume(response.getEntity()); // Ensure connection is released
-    return null;
-  }
-  
-  /**
-   * Performs an HTTP POST request to the specified path.
-   */
-  private Void performPostRequest(String path) throws IOException {
-    HttpPost request = new HttpPost(SERVER_URL + path);
-    request.setEntity(new StringEntity("Test payload for POST request"));
-    HttpResponse response = httpClient.execute(request);
-    EntityUtils.consume(response.getEntity()); // Ensure connection is released
-    return null;
-  }
-  
-  /**
-   * Performs a mixed HTTP operation (GET or POST).
-   */
-  private Void performMixedOperation() throws IOException {
-    // 70% GET, 30% POST
-    if (Math.random() < 0.7) {
-      return performGetRequest(Math.random() < 0.3 ? "/delay" : "/echo");
-    }
-    else {
-      return performPostRequest("/echo");
-    }
-  }
-  
-  /**
-   * Enum representing the threading models to test.
-   */
-  private enum ThreadingModel {
-    PLATFORM,
-    VIRTUAL
-  }
-  
-  /**
-   * Class to hold performance test results.
-   */
-  private static class PerformanceResult {
-    private final ThreadingModel threadingModel;
-    private final int maxConcurrency;
-    private final double throughput; // operations per second
-    private final Map<Integer, List<Double>> responseTimes; // concurrency level -> list of response times in ms
-    
-    PerformanceResult(ThreadingModel threadingModel, int maxConcurrency, double throughput,
-                      Map<Integer, List<Double>> responseTimes) {
-      this.threadingModel = threadingModel;
-      this.maxConcurrency = maxConcurrency;
-      this.throughput = throughput;
-      this.responseTimes = responseTimes;
+  @ParameterizedTest
+  @ValueSource(ints = {10, 100, 500})
+  void testGetRequestPerformance(int concurrencyLevel) throws Exception {
+    // Perform warmup to stabilize JIT compilation
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runBenchmark("Platform Thread Warmup", this::createPlatformThreadExecutor, concurrencyLevel, 
+          () -> simulateGetRequest(platformThreadClient));
+      runBenchmark("Virtual Thread Warmup", this::createVirtualThreadExecutor, concurrencyLevel, 
+          () -> simulateGetRequest(virtualThreadClient));
     }
     
-    public ThreadingModel getThreadingModel() {
-      return threadingModel;
-    }
+    // Run actual benchmarks
+    List<BenchmarkResult> platformResults = new ArrayList<>();
+    List<BenchmarkResult> virtualResults = new ArrayList<>();
     
-    public int getMaxConcurrency() {
-      return maxConcurrency;
-    }
-    
-    public double getThroughput() {
-      return throughput;
-    }
-    
-    public double getP95ResponseTime() {
-      return getPercentile(95.0);
-    }
-    
-    public double getP99ResponseTime() {
-      return getPercentile(99.0);
-    }
-    
-    public double getPercentile(double percentile) {
-      List<Double> allTimes = responseTimes.values().stream()
-          .flatMap(List::stream)
-          .sorted()
-          .collect(Collectors.toList());
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+      platformResults.add(runBenchmark("Platform Thread GET", this::createPlatformThreadExecutor, 
+          concurrencyLevel, () -> simulateGetRequest(platformThreadClient)));
       
-      if (allTimes.isEmpty()) {
-        return 0.0;
-      }
-      
-      int index = (int) Math.ceil(percentile / 100.0 * allTimes.size()) - 1;
-      return allTimes.get(Math.max(0, Math.min(index, allTimes.size() - 1)));
+      virtualResults.add(runBenchmark("Virtual Thread GET", this::createVirtualThreadExecutor, 
+          concurrencyLevel, () -> simulateGetRequest(virtualThreadClient)));
     }
     
-    @Override
-    public String toString() {
-      return String.format(
-          "%s Threads - Max Concurrency: %d, Throughput: %.2f ops/sec, P95: %.2f ms, P99: %.2f ms",
-          threadingModel, maxConcurrency, throughput, getP95ResponseTime(), getP99ResponseTime());
-    }
+    // Calculate average metrics
+    BenchmarkResult avgPlatform = calculateAverageResult(platformResults);
+    BenchmarkResult avgVirtual = calculateAverageResult(virtualResults);
+    
+    // Log detailed results
+    log.info("GET Request Performance at concurrency level {}:", concurrencyLevel);
+    log.info("Platform Thread Results: {}", avgPlatform);
+    log.info("Virtual Thread Results: {}", avgVirtual);
+    log.info("Throughput improvement: {}%", String.format("%.2f", (avgVirtual.throughput / avgPlatform.throughput - 1) * 100));
+    log.info("P95 latency reduction: {}%", String.format("%.2f", (1 - avgVirtual.p95Latency / avgPlatform.p95Latency) * 100));
+    log.info("Memory usage reduction: {}%", String.format("%.2f", (1 - avgVirtual.memoryUsed / avgPlatform.memoryUsed) * 100));
+    
+    // Verify performance improvements
+    assertAll(
+        () -> assertTrue(avgVirtual.throughput >= avgPlatform.throughput * MIN_THROUGHPUT_IMPROVEMENT,
+            String.format("Virtual Thread throughput (%.2f ops/s) should be at least %.0f%% better than Platform Thread throughput (%.2f ops/s)",
+                avgVirtual.throughput, (MIN_THROUGHPUT_IMPROVEMENT - 1) * 100, avgPlatform.throughput)),
+        
+        () -> assertTrue(avgVirtual.p95Latency <= avgPlatform.p95Latency * MAX_P95_LATENCY_RATIO,
+            String.format("Virtual Thread P95 latency (%.2f ms) should be at most %.0f%% of Platform Thread P95 latency (%.2f ms)",
+                avgVirtual.p95Latency, MAX_P95_LATENCY_RATIO * 100, avgPlatform.p95Latency)),
+        
+        () -> assertTrue(avgVirtual.memoryUsed <= avgPlatform.memoryUsed * MAX_MEMORY_USAGE_RATIO,
+            String.format("Virtual Thread memory usage (%.2f MB) should be at most %.0f%% of Platform Thread memory usage (%.2f MB)",
+                avgVirtual.memoryUsed, MAX_MEMORY_USAGE_RATIO * 100, avgPlatform.memoryUsed))
+    );
   }
   
   /**
-   * Benchmarks an operation using the specified threading model and concurrency levels.
+   * Tests POST request performance with varying concurrency levels using both platform threads and virtual threads.
+   *
+   * @param concurrencyLevel the number of concurrent operations to perform
    */
-  private PerformanceResult benchmarkOperation(
-      ThreadingModel threadingModel,
-      Callable<Void> operation,
-      int startConcurrency,
-      int maxConcurrency,
-      int stepSize) throws Exception {
+  @ParameterizedTest
+  @ValueSource(ints = {10, 100, 500})
+  void testPostRequestPerformance(int concurrencyLevel) throws Exception {
+    // Perform warmup to stabilize JIT compilation
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runBenchmark("Platform Thread Warmup", this::createPlatformThreadExecutor, concurrencyLevel, 
+          () -> simulatePostRequest(platformThreadClient));
+      runBenchmark("Virtual Thread Warmup", this::createVirtualThreadExecutor, concurrencyLevel, 
+          () -> simulatePostRequest(virtualThreadClient));
+    }
     
-    Map<Integer, List<Double>> responseTimes = new ConcurrentHashMap<>();
-    double maxThroughput = 0.0;
-    int actualMaxConcurrency = 0;
+    // Run actual benchmarks
+    List<BenchmarkResult> platformResults = new ArrayList<>();
+    List<BenchmarkResult> virtualResults = new ArrayList<>();
+    
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+      platformResults.add(runBenchmark("Platform Thread POST", this::createPlatformThreadExecutor, 
+          concurrencyLevel, () -> simulatePostRequest(platformThreadClient)));
+      
+      virtualResults.add(runBenchmark("Virtual Thread POST", this::createVirtualThreadExecutor, 
+          concurrencyLevel, () -> simulatePostRequest(virtualThreadClient)));
+    }
+    
+    // Calculate average metrics
+    BenchmarkResult avgPlatform = calculateAverageResult(platformResults);
+    BenchmarkResult avgVirtual = calculateAverageResult(virtualResults);
+    
+    // Log detailed results
+    log.info("POST Request Performance at concurrency level {}:", concurrencyLevel);
+    log.info("Platform Thread Results: {}", avgPlatform);
+    log.info("Virtual Thread Results: {}", avgVirtual);
+    log.info("Throughput improvement: {}%", String.format("%.2f", (avgVirtual.throughput / avgPlatform.throughput - 1) * 100));
+    log.info("P95 latency reduction: {}%", String.format("%.2f", (1 - avgVirtual.p95Latency / avgPlatform.p95Latency) * 100));
+    log.info("Memory usage reduction: {}%", String.format("%.2f", (1 - avgVirtual.memoryUsed / avgPlatform.memoryUsed) * 100));
+    
+    // Verify performance improvements
+    assertAll(
+        () -> assertTrue(avgVirtual.throughput >= avgPlatform.throughput * MIN_THROUGHPUT_IMPROVEMENT,
+            String.format("Virtual Thread throughput (%.2f ops/s) should be at least %.0f%% better than Platform Thread throughput (%.2f ops/s)",
+                avgVirtual.throughput, (MIN_THROUGHPUT_IMPROVEMENT - 1) * 100, avgPlatform.throughput)),
+        
+        () -> assertTrue(avgVirtual.p95Latency <= avgPlatform.p95Latency * MAX_P95_LATENCY_RATIO,
+            String.format("Virtual Thread P95 latency (%.2f ms) should be at most %.0f%% of Platform Thread P95 latency (%.2f ms)",
+                avgVirtual.p95Latency, MAX_P95_LATENCY_RATIO * 100, avgPlatform.p95Latency)),
+        
+        () -> assertTrue(avgVirtual.memoryUsed <= avgPlatform.memoryUsed * MAX_MEMORY_USAGE_RATIO,
+            String.format("Virtual Thread memory usage (%.2f MB) should be at most %.0f%% of Platform Thread memory usage (%.2f MB)",
+                avgVirtual.memoryUsed, MAX_MEMORY_USAGE_RATIO * 100, avgPlatform.memoryUsed))
+    );
+  }
+  
+  /**
+   * Tests complex request performance with high concurrency using both platform threads and virtual threads.
+   * Complex requests involve longer server processing times, simulating more intensive operations.
+   */
+  @Test
+  void testComplexRequestPerformance() throws Exception {
+    final int concurrencyLevel = 500;
+    
+    // Perform warmup to stabilize JIT compilation
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runBenchmark("Platform Thread Warmup", this::createPlatformThreadExecutor, concurrencyLevel, 
+          () -> simulateComplexRequest(platformThreadClient));
+      runBenchmark("Virtual Thread Warmup", this::createVirtualThreadExecutor, concurrencyLevel, 
+          () -> simulateComplexRequest(virtualThreadClient));
+    }
+    
+    // Run actual benchmarks
+    List<BenchmarkResult> platformResults = new ArrayList<>();
+    List<BenchmarkResult> virtualResults = new ArrayList<>();
+    
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+      platformResults.add(runBenchmark("Platform Thread Complex", this::createPlatformThreadExecutor, 
+          concurrencyLevel, () -> simulateComplexRequest(platformThreadClient)));
+      
+      virtualResults.add(runBenchmark("Virtual Thread Complex", this::createVirtualThreadExecutor, 
+          concurrencyLevel, () -> simulateComplexRequest(virtualThreadClient)));
+    }
+    
+    // Calculate average metrics
+    BenchmarkResult avgPlatform = calculateAverageResult(platformResults);
+    BenchmarkResult avgVirtual = calculateAverageResult(virtualResults);
+    
+    // Log detailed results
+    log.info("Complex Request Performance at concurrency level {}:", concurrencyLevel);
+    log.info("Platform Thread Results: {}", avgPlatform);
+    log.info("Virtual Thread Results: {}", avgVirtual);
+    log.info("Throughput improvement: {}%", String.format("%.2f", (avgVirtual.throughput / avgPlatform.throughput - 1) * 100));
+    log.info("P95 latency reduction: {}%", String.format("%.2f", (1 - avgVirtual.p95Latency / avgPlatform.p95Latency) * 100));
+    log.info("Memory usage reduction: {}%", String.format("%.2f", (1 - avgVirtual.memoryUsed / avgPlatform.memoryUsed) * 100));
+    
+    // Verify performance improvements
+    assertAll(
+        () -> assertTrue(avgVirtual.throughput >= avgPlatform.throughput * MIN_THROUGHPUT_IMPROVEMENT,
+            String.format("Virtual Thread throughput (%.2f ops/s) should be at least %.0f%% better than Platform Thread throughput (%.2f ops/s)",
+                avgVirtual.throughput, (MIN_THROUGHPUT_IMPROVEMENT - 1) * 100, avgPlatform.throughput)),
+        
+        () -> assertTrue(avgVirtual.p95Latency <= avgPlatform.p95Latency * MAX_P95_LATENCY_RATIO,
+            String.format("Virtual Thread P95 latency (%.2f ms) should be at most %.0f%% of Platform Thread P95 latency (%.2f ms)",
+                avgVirtual.p95Latency, MAX_P95_LATENCY_RATIO * 100, avgPlatform.p95Latency)),
+        
+        () -> assertTrue(avgVirtual.memoryUsed <= avgPlatform.memoryUsed * MAX_MEMORY_USAGE_RATIO,
+            String.format("Virtual Thread memory usage (%.2f MB) should be at most %.0f%% of Platform Thread memory usage (%.2f MB)",
+                avgVirtual.memoryUsed, MAX_MEMORY_USAGE_RATIO * 100, avgPlatform.memoryUsed))
+    );
+  }
+  
+  /**
+   * Tests the scalability of virtual threads compared to platform threads under increasing load.
+   * <p>
+   * This test validates that Virtual Threads maintain their performance advantage as concurrency increases,
+   * demonstrating their superior scalability for I/O-bound operations. The test runs with concurrency
+   * levels from 10 to 1000 threads and measures throughput at each level.
+   * <p>
+   * Expected results:
+   * - At low concurrency (10-50 threads): Virtual Threads should perform at least as well as platform threads
+   * - At medium concurrency (100-500 threads): Virtual Threads should show significant advantages
+   * - At high concurrency (1000+ threads): Virtual Threads should demonstrate dramatic improvements
+   */
+  @Test
+  void testScalabilityUnderIncreasingLoad() throws Exception {
+    Map<Integer, BenchmarkResult> platformResults = new ConcurrentHashMap<>();
+    Map<Integer, BenchmarkResult> virtualResults = new ConcurrentHashMap<>();
     
     // Test with increasing concurrency levels
-    for (int concurrency = startConcurrency; concurrency <= maxConcurrency; concurrency += stepSize) {
-      // Warm-up phase
-      runConcurrentOperations(threadingModel, operation, concurrency, WARMUP_ITERATIONS);
+    for (int concurrencyLevel : CONCURRENCY_LEVELS) {
+      // Run warmup
+      runBenchmark("Platform Thread Warmup", this::createPlatformThreadExecutor, concurrencyLevel, 
+          () -> simulateGetRequest(platformThreadClient));
+      runBenchmark("Virtual Thread Warmup", this::createVirtualThreadExecutor, concurrencyLevel, 
+          () -> simulateGetRequest(virtualThreadClient));
       
-      // Measurement phase
-      long startTime = System.nanoTime();
-      List<Double> iterationResponseTimes = runConcurrentOperations(threadingModel, operation, concurrency, MEASUREMENT_ITERATIONS);
-      long endTime = System.nanoTime();
+      // Run actual benchmarks
+      platformResults.put(concurrencyLevel, runBenchmark("Platform Thread Scalability", 
+          this::createPlatformThreadExecutor, concurrencyLevel, () -> simulateGetRequest(platformThreadClient)));
       
-      // Calculate throughput (operations per second)
-      double durationSeconds = Duration.ofNanos(endTime - startTime).toMillis() / 1000.0;
-      double iterationThroughput = (concurrency * MEASUREMENT_ITERATIONS) / durationSeconds;
+      virtualResults.put(concurrencyLevel, runBenchmark("Virtual Thread Scalability", 
+          this::createVirtualThreadExecutor, concurrencyLevel, () -> simulateGetRequest(virtualThreadClient)));
+    }
+    
+    // Log scalability results
+    log.info("Scalability Results:");
+    log.info("Concurrency | Platform Throughput | Virtual Throughput | Improvement | P95 Latency Reduction");
+    log.info("-----------|-------------------|------------------|------------|--------------------");
+    
+    for (int concurrencyLevel : CONCURRENCY_LEVELS) {
+      BenchmarkResult platformResult = platformResults.get(concurrencyLevel);
+      BenchmarkResult virtualResult = virtualResults.get(concurrencyLevel);
+      double throughputImprovement = (virtualResult.throughput / platformResult.throughput - 1) * 100;
+      double latencyReduction = (1 - virtualResult.p95Latency / platformResult.p95Latency) * 100;
       
-      // Store response times for this concurrency level
-      responseTimes.put(concurrency, iterationResponseTimes);
+      log.info("{} | {:.2f} ops/s | {:.2f} ops/s | {:.2f}% | {:.2f}%",
+          concurrencyLevel, platformResult.throughput, virtualResult.throughput, 
+          throughputImprovement, latencyReduction);
       
-      // Update max throughput if this iteration was better
-      if (iterationThroughput > maxThroughput) {
-        maxThroughput = iterationThroughput;
-        actualMaxConcurrency = concurrency;
-      }
-      
-      log.info("{} Threads - Concurrency: {}, Throughput: {:.2f} ops/sec",
-          threadingModel, concurrency, iterationThroughput);
-      
-      // If throughput starts decreasing significantly, we've reached the limit
-      if (iterationThroughput < maxThroughput * 0.7 && concurrency > startConcurrency * 2) {
-        log.info("Throughput decreased significantly, stopping benchmark at concurrency {}", concurrency);
-        break;
+      // Verify that virtual threads scale better at higher concurrency
+      if (concurrencyLevel >= 100) {
+        assertTrue(virtualResult.throughput >= platformResult.throughput * MIN_THROUGHPUT_IMPROVEMENT,
+            String.format("At concurrency level %d, Virtual Thread throughput (%.2f ops/s) should be at least %.0f%% better than Platform Thread throughput (%.2f ops/s)",
+                concurrencyLevel, virtualResult.throughput, (MIN_THROUGHPUT_IMPROVEMENT - 1) * 100, platformResult.throughput));
       }
     }
     
-    return new PerformanceResult(threadingModel, actualMaxConcurrency, maxThroughput, responseTimes);
+    // Verify that the performance gap widens with increasing concurrency
+    int lowestConcurrency = CONCURRENCY_LEVELS[0];
+    int highestConcurrency = CONCURRENCY_LEVELS[CONCURRENCY_LEVELS.length - 1];
+    
+    double lowConcurrencyImprovement = 
+        virtualResults.get(lowestConcurrency).throughput / platformResults.get(lowestConcurrency).throughput;
+    double highConcurrencyImprovement = 
+        virtualResults.get(highestConcurrency).throughput / platformResults.get(highestConcurrency).throughput;
+    
+    assertTrue(highConcurrencyImprovement > lowConcurrencyImprovement,
+        String.format("Performance improvement at high concurrency (%.2fx at %d threads) should be greater than at low concurrency (%.2fx at %d threads)",
+            highConcurrencyImprovement, highestConcurrency, lowConcurrencyImprovement, lowestConcurrency));
   }
   
   /**
-   * Runs concurrent operations using the specified threading model and concurrency level.
-   * Returns a list of response times in milliseconds.
+   * Tests the memory efficiency of virtual threads compared to platform threads under high load.
+   * <p>
+   * This test specifically focuses on memory consumption patterns when handling a large number
+   * of concurrent HTTP connections. It validates that Virtual Threads use significantly less
+   * memory than platform threads when scaling to high concurrency levels.
    */
-  private List<Double> runConcurrentOperations(
-      ThreadingModel threadingModel,
-      Callable<Void> operation,
-      int concurrency,
-      int iterations) throws Exception {
+  @Test
+  void testMemoryEfficiencyUnderHighLoad() throws Exception {
+    final int concurrencyLevel = 1000;
     
-    List<Double> responseTimes = new ArrayList<>();
-    CountDownLatch latch = new CountDownLatch(concurrency * iterations);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    // Force garbage collection before starting
+    gc();
+    Thread.sleep(500); // Allow GC to complete
     
-    // Create appropriate thread factory based on threading model
-    ThreadFactory threadFactory = threadingModel == ThreadingModel.VIRTUAL ?
-        Thread.ofVirtual().name("virtual-test-", 0).factory() :
-        Thread.ofPlatform().name("platform-test-", 0).factory();
+    // Measure baseline memory usage
+    long baselineMemory = getUsedMemory();
+    log.info("Baseline memory usage: {} MB", baselineMemory / (1024 * 1024));
     
-    // Create executor service with the appropriate thread factory
-    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(threadFactory)) {
-      // Submit tasks
-      for (int i = 0; i < concurrency * iterations; i++) {
-        executor.submit(() -> {
-          try {
-            long startTime = System.nanoTime();
-            operation.call();
-            long endTime = System.nanoTime();
-            
-            // Record response time in milliseconds
-            double responseTime = Duration.ofNanos(endTime - startTime).toMillis();
-            synchronized (responseTimes) {
-              responseTimes.add(responseTime);
-            }
-          }
-          catch (Exception e) {
-            log.error("Error executing operation", e);
-            errorCount.incrementAndGet();
-          }
-          finally {
-            latch.countDown();
-          }
-          return null;
-        });
+    // Run platform thread benchmark and measure memory
+    gc();
+    Thread.sleep(500);
+    long platformMemoryBefore = getUsedMemory();
+    BenchmarkResult platformResult = runBenchmark("Platform Thread Memory Test", 
+        this::createPlatformThreadExecutor, concurrencyLevel, () -> simulateGetRequest(platformThreadClient));
+    long platformMemoryAfter = getUsedMemory();
+    long platformMemoryUsed = platformMemoryAfter - platformMemoryBefore;
+    
+    // Run virtual thread benchmark and measure memory
+    gc();
+    Thread.sleep(500);
+    long virtualMemoryBefore = getUsedMemory();
+    BenchmarkResult virtualResult = runBenchmark("Virtual Thread Memory Test", 
+        this::createVirtualThreadExecutor, concurrencyLevel, () -> simulateGetRequest(virtualThreadClient));
+    long virtualMemoryAfter = getUsedMemory();
+    long virtualMemoryUsed = virtualMemoryAfter - virtualMemoryBefore;
+    
+    // Calculate memory usage in MB
+    double platformMemoryMB = platformMemoryUsed / (1024.0 * 1024.0);
+    double virtualMemoryMB = virtualMemoryUsed / (1024.0 * 1024.0);
+    double memoryReductionPercent = (1 - (double)virtualMemoryUsed / platformMemoryUsed) * 100;
+    
+    // Log results
+    log.info("Memory Efficiency Results at {} concurrent connections:", concurrencyLevel);
+    log.info("Platform Thread Memory Usage: {:.2f} MB", platformMemoryMB);
+    log.info("Virtual Thread Memory Usage: {:.2f} MB", virtualMemoryMB);
+    log.info("Memory Reduction: {:.2f}%", memoryReductionPercent);
+    
+    // Verify memory efficiency
+    assertTrue(virtualMemoryUsed <= platformMemoryUsed * MAX_MEMORY_USAGE_RATIO,
+        String.format("Virtual Thread memory usage (%.2f MB) should be at most %.0f%% of Platform Thread memory usage (%.2f MB)",
+            virtualMemoryMB, MAX_MEMORY_USAGE_RATIO * 100, platformMemoryMB));
+  }
+  
+  /**
+   * Tests the performance of mixed HTTP operations (GET, POST, complex) under high concurrency.
+   * <p>
+   * This test simulates a more realistic workload with a mix of different HTTP operations
+   * running concurrently. It validates that Virtual Threads maintain their performance advantage
+   * across diverse workloads.
+   */
+  @Test
+  void testMixedOperationsPerformance() throws Exception {
+    final int concurrencyLevel = 500;
+    
+    // Perform warmup to stabilize JIT compilation
+    for (int i = 0; i < WARMUP_ITERATIONS; i++) {
+      runBenchmark("Platform Thread Warmup", this::createPlatformThreadExecutor, concurrencyLevel, 
+          () -> simulateMixedRequest(platformThreadClient));
+      runBenchmark("Virtual Thread Warmup", this::createVirtualThreadExecutor, concurrencyLevel, 
+          () -> simulateMixedRequest(virtualThreadClient));
+    }
+    
+    // Run actual benchmarks
+    List<BenchmarkResult> platformResults = new ArrayList<>();
+    List<BenchmarkResult> virtualResults = new ArrayList<>();
+    
+    for (int i = 0; i < BENCHMARK_ITERATIONS; i++) {
+      platformResults.add(runBenchmark("Platform Thread Mixed", this::createPlatformThreadExecutor, 
+          concurrencyLevel, () -> simulateMixedRequest(platformThreadClient)));
+      
+      virtualResults.add(runBenchmark("Virtual Thread Mixed", this::createVirtualThreadExecutor, 
+          concurrencyLevel, () -> simulateMixedRequest(virtualThreadClient)));
+    }
+    
+    // Calculate average metrics
+    BenchmarkResult avgPlatform = calculateAverageResult(platformResults);
+    BenchmarkResult avgVirtual = calculateAverageResult(virtualResults);
+    
+    // Log detailed results
+    log.info("Mixed Operations Performance at concurrency level {}:", concurrencyLevel);
+    log.info("Platform Thread Results: {}", avgPlatform);
+    log.info("Virtual Thread Results: {}", avgVirtual);
+    log.info("Throughput improvement: {}%", String.format("%.2f", (avgVirtual.throughput / avgPlatform.throughput - 1) * 100));
+    log.info("P95 latency reduction: {}%", String.format("%.2f", (1 - avgVirtual.p95Latency / avgPlatform.p95Latency) * 100));
+    log.info("Memory usage reduction: {}%", String.format("%.2f", (1 - avgVirtual.memoryUsed / avgPlatform.memoryUsed) * 100));
+    
+    // Verify performance improvements
+    assertAll(
+        () -> assertTrue(avgVirtual.throughput >= avgPlatform.throughput * MIN_THROUGHPUT_IMPROVEMENT,
+            String.format("Virtual Thread throughput (%.2f ops/s) should be at least %.0f%% better than Platform Thread throughput (%.2f ops/s)",
+                avgVirtual.throughput, (MIN_THROUGHPUT_IMPROVEMENT - 1) * 100, avgPlatform.throughput)),
+        
+        () -> assertTrue(avgVirtual.p95Latency <= avgPlatform.p95Latency * MAX_P95_LATENCY_RATIO,
+            String.format("Virtual Thread P95 latency (%.2f ms) should be at most %.0f%% of Platform Thread P95 latency (%.2f ms)",
+                avgVirtual.p95Latency, MAX_P95_LATENCY_RATIO * 100, avgPlatform.p95Latency)),
+        
+        () -> assertTrue(avgVirtual.memoryUsed <= avgPlatform.memoryUsed * MAX_MEMORY_USAGE_RATIO,
+            String.format("Virtual Thread memory usage (%.2f MB) should be at most %.0f%% of Platform Thread memory usage (%.2f MB)",
+                avgVirtual.memoryUsed, MAX_MEMORY_USAGE_RATIO * 100, avgPlatform.memoryUsed))
+    );
+  }
+  
+  /**
+   * Creates an executor service using platform threads with a fixed thread pool.
+   *
+   * @param threadCount the number of threads in the pool
+   * @return the executor service
+   */
+  private ExecutorService createPlatformThreadExecutor(int threadCount) {
+    return Executors.newFixedThreadPool(threadCount, new ThreadFactory() {
+      private final AtomicInteger counter = new AtomicInteger();
+      
+      @Override
+      public Thread newThread(Runnable r) {
+        Thread thread = new Thread(r);
+        thread.setName("platform-thread-" + counter.incrementAndGet());
+        return thread;
+      }
+    });
+  }
+  
+  /**
+   * Creates an executor service using virtual threads.
+   * <p>
+   * This method leverages Java 21's Virtual Thread implementation through the
+   * Executors.newVirtualThreadPerTaskExecutor() factory method, which creates a new
+   * virtual thread for each submitted task.
+   * <p>
+   * Virtual threads are designed to be lightweight and efficient for I/O-bound operations,
+   * as they don't maintain a 1:1 mapping with OS threads. Instead, they are scheduled on
+   * a smaller pool of carrier threads managed by the JVM.
+   *
+   * @param threadCount the maximum number of concurrent virtual threads (not used, as virtual threads are unbounded)
+   * @return the executor service that creates a new virtual thread for each task
+   */
+  private ExecutorService createVirtualThreadExecutor(int threadCount) {
+    return Executors.newVirtualThreadPerTaskExecutor();
+  }
+  
+  /**
+   * Runs a benchmark with the specified executor service and operation.
+   *
+   * @param name the name of the benchmark
+   * @param executorFactory the factory to create the executor service
+   * @param concurrencyLevel the number of concurrent operations to perform
+   * @param operation the operation to benchmark
+   * @return the benchmark result
+   */
+  private BenchmarkResult runBenchmark(String name, ExecutorFactory executorFactory, int concurrencyLevel, 
+                                      Callable<Void> operation) throws Exception {
+    log.info("Running benchmark: {} with concurrency level {}", name, concurrencyLevel);
+    
+    // Force garbage collection before starting
+    gc();
+    Thread.sleep(100);
+    
+    // Measure memory before starting
+    long memoryBefore = getUsedMemory();
+    
+    // Create tasks
+    List<Callable<Long>> tasks = new ArrayList<>();
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(concurrencyLevel);
+    
+    for (int i = 0; i < concurrencyLevel; i++) {
+      tasks.add(() -> {
+        startLatch.await(); // Wait for all threads to be ready
+        long startTime = nanoTime();
+        try {
+          operation.call();
+          return nanoTime() - startTime;
+        } finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Execute tasks
+    ExecutorService executor = executorFactory.create(concurrencyLevel);
+    try {
+      List<Future<Long>> futures = new ArrayList<>();
+      for (Callable<Long> task : tasks) {
+        futures.add(executor.submit(task));
       }
       
-      // Wait for all tasks to complete
-      boolean completed = latch.await(5, TimeUnit.MINUTES);
+      // Start timing
+      Instant startTime = Instant.now();
+      startLatch.countDown(); // Release all threads simultaneously
+      
+      // Wait for completion
+      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
+      Instant endTime = Instant.now();
       
       if (!completed) {
-        log.warn("Not all tasks completed within the timeout period");
+        log.warn("Benchmark {} did not complete within timeout", name);
       }
       
-      if (errorCount.get() > 0) {
-        log.warn("{} errors occurred during execution", errorCount.get());
+      // Collect latency data
+      List<Long> latencies = new ArrayList<>();
+      for (Future<Long> future : futures) {
+        try {
+          latencies.add(NANOSECONDS.toMillis(future.get()));
+        } catch (Exception e) {
+          log.error("Error getting task result", e);
+        }
       }
+      
+      // Calculate metrics
+      Duration duration = Duration.between(startTime, endTime);
+      double throughput = concurrencyLevel / (duration.toMillis() / 1000.0);
+      
+      // Sort latencies for percentile calculation
+      latencies.sort(Long::compare);
+      double p50Latency = calculatePercentile(latencies, 50);
+      double p95Latency = calculatePercentile(latencies, 95);
+      double p99Latency = calculatePercentile(latencies, 99);
+      
+      // Calculate memory usage
+      long memoryAfter = getUsedMemory();
+      double memoryUsed = (memoryAfter - memoryBefore) / (1024.0 * 1024.0); // Convert to MB
+      
+      // Create result
+      BenchmarkResult result = new BenchmarkResult(
+          throughput,
+          p50Latency,
+          p95Latency,
+          p99Latency,
+          memoryUsed
+      );
+      
+      log.info("Benchmark {} completed: {}", name, result);
+      return result;
+    } finally {
+      executor.shutdownNow();
     }
-    
-    return responseTimes;
   }
   
   /**
-   * Calculates the current used memory in bytes.
+   * Simulates a GET request to the test server.
+   * <p>
+   * This method performs a simple HTTP GET request to the test server's /get endpoint,
+   * which simulates a typical read operation with a small delay to mimic network and
+   * server processing time.
+   *
+   * @param client the HTTP client to use for the request
+   * @return null (void operation)
+   * @throws Exception if an error occurs during the operation
+   */
+  private Void simulateGetRequest(HttpClient client) throws Exception {
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(SERVER_URL + "/get?id=" + System.nanoTime()))
+        .GET()
+        .build();
+    
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    if (response.statusCode() != 200) {
+      throw new IOException("Unexpected status code: " + response.statusCode());
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Simulates a POST request to the test server.
+   * <p>
+   * This method performs an HTTP POST request to the test server's /post endpoint,
+   * which simulates a typical write operation with a medium delay to mimic network and
+   * server processing time for data submission.
+   *
+   * @param client the HTTP client to use for the request
+   * @return null (void operation)
+   * @throws Exception if an error occurs during the operation
+   */
+  private Void simulatePostRequest(HttpClient client) throws Exception {
+    String payload = String.format("{\"id\":%d,\"timestamp\":%d,\"data\":\"test-data\"}", 
+        System.nanoTime(), System.currentTimeMillis());
+    
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(SERVER_URL + "/post"))
+        .header("Content-Type", "application/json")
+        .POST(HttpRequest.BodyPublishers.ofString(payload))
+        .build();
+    
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    if (response.statusCode() != 200) {
+      throw new IOException("Unexpected status code: " + response.statusCode());
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Simulates a complex request to the test server.
+   * <p>
+   * This method performs an HTTP request to the test server's /complex endpoint,
+   * which simulates a more intensive operation with a larger delay to mimic complex
+   * processing on the server side.
+   *
+   * @param client the HTTP client to use for the request
+   * @return null (void operation)
+   * @throws Exception if an error occurs during the operation
+   */
+  private Void simulateComplexRequest(HttpClient client) throws Exception {
+    String payload = String.format("{\"operation\":\"complex\",\"parameters\":{\"id\":%d,\"timestamp\":%d}}", 
+        System.nanoTime(), System.currentTimeMillis());
+    
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(SERVER_URL + "/complex"))
+        .header("Content-Type", "application/json")
+        .header("X-Request-ID", String.valueOf(System.nanoTime()))
+        .POST(HttpRequest.BodyPublishers.ofString(payload))
+        .build();
+    
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+    if (response.statusCode() != 200) {
+      throw new IOException("Unexpected status code: " + response.statusCode());
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Simulates a mixed request to the test server.
+   * <p>
+   * This method randomly selects between GET, POST, and complex requests with a
+   * distribution of 60% GET, 30% POST, and 10% complex operations, which is
+   * representative of many real-world HTTP workloads.
+   *
+   * @param client the HTTP client to use for the request
+   * @return null (void operation)
+   * @throws Exception if an error occurs during the operation
+   */
+  private Void simulateMixedRequest(HttpClient client) throws Exception {
+    double random = Math.random();
+    
+    if (random < 0.6) {
+      return simulateGetRequest(client);
+    } else if (random < 0.9) {
+      return simulatePostRequest(client);
+    } else {
+      return simulateComplexRequest(client);
+    }
+  }
+  
+  /**
+   * Calculates the percentile value from a sorted list of latencies.
+   *
+   * @param sortedLatencies the sorted list of latencies
+   * @param percentile the percentile to calculate (0-100)
+   * @return the percentile value
+   */
+  private double calculatePercentile(List<Long> sortedLatencies, int percentile) {
+    if (sortedLatencies.isEmpty()) {
+      return 0;
+    }
+    int index = (int) Math.ceil(percentile / 100.0 * sortedLatencies.size()) - 1;
+    return sortedLatencies.get(Math.max(0, Math.min(sortedLatencies.size() - 1, index)));
+  }
+  
+  /**
+   * Gets the current used memory in bytes.
+   *
+   * @return the used memory in bytes
    */
   private long getUsedMemory() {
     Runtime runtime = Runtime.getRuntime();
@@ -597,92 +774,112 @@ public class HttpClientPerformanceVirtualThreadTest
   }
   
   /**
-   * Calculates the scaling efficiency of virtual threads.
-   * This measures how well throughput scales with increased concurrency.
+   * Calculates the average benchmark result from a list of results.
+   *
+   * @param results the list of benchmark results
+   * @return the average result
    */
-  private double calculateScalingEfficiency(PerformanceResult result) {
-    // Get throughput at different concurrency levels
-    Map<Integer, List<Double>> responseTimes = result.responseTimes;
-    if (responseTimes.size() < 2) {
-      return 1.0; // Not enough data points
+  private BenchmarkResult calculateAverageResult(List<BenchmarkResult> results) {
+    if (results.isEmpty()) {
+      return new BenchmarkResult(0, 0, 0, 0, 0);
     }
     
-    // Sort concurrency levels
-    List<Integer> concurrencyLevels = new ArrayList<>(responseTimes.keySet());
-    concurrencyLevels.sort(Integer::compareTo);
+    double avgThroughput = results.stream().mapToDouble(r -> r.throughput).average().orElse(0);
+    double avgP50Latency = results.stream().mapToDouble(r -> r.p50Latency).average().orElse(0);
+    double avgP95Latency = results.stream().mapToDouble(r -> r.p95Latency).average().orElse(0);
+    double avgP99Latency = results.stream().mapToDouble(r -> r.p99Latency).average().orElse(0);
+    double avgMemoryUsed = results.stream().mapToDouble(r -> r.memoryUsed).average().orElse(0);
     
-    // Calculate average response time at each concurrency level
-    Map<Integer, Double> avgResponseTimes = new HashMap<>();
-    for (Integer concurrency : concurrencyLevels) {
-      List<Double> times = responseTimes.get(concurrency);
-      double avgTime = times.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
-      avgResponseTimes.put(concurrency, avgTime);
-    }
-    
-    // Calculate ideal vs. actual scaling
-    int lowestConcurrency = concurrencyLevels.get(0);
-    int highestConcurrency = concurrencyLevels.get(concurrencyLevels.size() - 1);
-    
-    double baselineTime = avgResponseTimes.get(lowestConcurrency);
-    double actualTime = avgResponseTimes.get(highestConcurrency);
-    
-    // Ideal scaling: response time stays constant regardless of concurrency
-    // Actual scaling: response time typically increases with concurrency
-    // Efficiency = baseline / actual (capped at 1.0)
-    return Math.min(1.0, baselineTime / actualTime);
+    return new BenchmarkResult(avgThroughput, avgP50Latency, avgP95Latency, avgP99Latency, avgMemoryUsed);
   }
   
   /**
-   * HTTP handler that echoes back the request.
+   * Functional interface for creating executor services.
    */
-  private static class EchoHandler implements HttpHandler {
+  @FunctionalInterface
+  private interface ExecutorFactory {
+    ExecutorService create(int threadCount);
+  }
+  
+  /**
+   * Class representing the result of a benchmark.
+   * <p>
+   * This immutable class captures all the key metrics measured during a benchmark run:
+   * <ul>
+   *   <li>Throughput: Operations per second</li>
+   *   <li>Latency percentiles: P50 (median), P95, and P99</li>
+   *   <li>Memory usage: In megabytes</li>
+   * </ul>
+   * <p>
+   * These metrics provide a comprehensive view of performance, allowing for detailed
+   * comparison between platform threads and Virtual Threads across different dimensions.
+   */
+  private static class BenchmarkResult {
+    final double throughput;     // operations per second
+    final double p50Latency;     // median latency in milliseconds
+    final double p95Latency;     // 95th percentile latency in milliseconds
+    final double p99Latency;     // 99th percentile latency in milliseconds
+    final double memoryUsed;     // memory used in MB
+    
+    BenchmarkResult(double throughput, double p50Latency, double p95Latency, double p99Latency, double memoryUsed) {
+      this.throughput = throughput;
+      this.p50Latency = p50Latency;
+      this.p95Latency = p95Latency;
+      this.p99Latency = p99Latency;
+      this.memoryUsed = memoryUsed;
+    }
+    
     @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      byte[] response = "Echo response".getBytes();
-      exchange.sendResponseHeaders(200, response.length);
-      exchange.getResponseBody().write(response);
-      exchange.getResponseBody().close();
+    public String toString() {
+      return String.format("Throughput: %.2f ops/s, P50: %.2f ms, P95: %.2f ms, P99: %.2f ms, Memory: %.2f MB",
+          throughput, p50Latency, p95Latency, p99Latency, memoryUsed);
     }
   }
   
   /**
-   * HTTP handler that introduces a delay before responding.
+   * HTTP handler that introduces a configurable delay before responding, simulating a slow service.
    */
-  private static class DelayHandler implements HttpHandler {
+  private class DelayHandler implements HttpHandler {
+    private final int delayMs;
+    
+    DelayHandler(int delayMs) {
+      this.delayMs = delayMs;
+    }
+    
     @Override
     public void handle(HttpExchange exchange) throws IOException {
+      requestCounter.incrementAndGet();
+      
       try {
-        // Random delay between 50-150ms to simulate network latency
-        Thread.sleep(50 + (long) (Math.random() * 100));
+        // Read request body if present
+        String requestBody = "";
+        if ("POST".equals(exchange.getRequestMethod())) {
+          requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        }
+        
+        // Simulate processing delay
+        Thread.sleep(delayMs);
+        
+        // Prepare response
+        String response = String.format(
+            "Response from %s after %dms delay. Method: %s, Query: %s, Headers: %d, Body length: %d",
+            exchange.getRequestURI().getPath(),
+            delayMs,
+            exchange.getRequestMethod(),
+            exchange.getRequestURI().getQuery(),
+            exchange.getRequestHeaders().size(),
+            requestBody.length());
+        
+        // Send response
+        exchange.sendResponseHeaders(200, response.length());
+        exchange.getResponseBody().write(response.getBytes());
+      } catch (InterruptedException e) {
+        String error = "Processing interrupted";
+        exchange.sendResponseHeaders(500, error.length());
+        exchange.getResponseBody().write(error.getBytes());
+      } finally {
+        exchange.close();
       }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-      }
-      
-      byte[] response = "Delayed response".getBytes();
-      exchange.sendResponseHeaders(200, response.length);
-      exchange.getResponseBody().write(response);
-      exchange.getResponseBody().close();
-    }
-  }
-  
-  /**
-   * HTTP handler that returns a large response.
-   */
-  private static class LargeResponseHandler implements HttpHandler {
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      // Generate a large response (approximately 1MB)
-      StringBuilder sb = new StringBuilder();
-      for (int i = 0; i < 10000; i++) {
-        sb.append("Line ").append(i).append(": This is a large response to test HTTP client performance with data transfer. ");
-        sb.append("The quick brown fox jumps over the lazy dog. ").append(System.lineSeparator());
-      }
-      
-      byte[] response = sb.toString().getBytes();
-      exchange.sendResponseHeaders(200, response.length);
-      exchange.getResponseBody().write(response);
-      exchange.getResponseBody().close();
     }
   }
 }

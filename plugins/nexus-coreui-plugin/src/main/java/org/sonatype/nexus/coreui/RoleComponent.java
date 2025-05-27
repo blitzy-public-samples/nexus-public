@@ -40,6 +40,9 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import javax.validation.constraints.NotEmpty;
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -47,10 +50,6 @@ import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
 /**
  * Role {@link DirectComponent}.
- * 
- * Updated for Java 21 compatibility with Virtual Threads for improved concurrency.
- * Virtual Threads are lightweight threads managed by the JVM that significantly improve
- * throughput for I/O-bound operations like database access without blocking platform threads.
  */
 @Named
 @Singleton
@@ -61,6 +60,9 @@ public class RoleComponent
   private final SecuritySystem securitySystem;
 
   private final List<AuthorizationManager> authorizationManagers;
+  
+  // Create a virtual thread executor for I/O-bound operations
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RoleComponent(final SecuritySystem securitySystem, final List<AuthorizationManager> authorizationManagers) {
@@ -78,15 +80,17 @@ public class RoleComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:roles:read")
   public List<RoleXO> read() throws NoSuchAuthorizationManagerException {
-    // Using Virtual Threads for I/O-bound security system operations
-    // This approach allows thousands of concurrent operations with minimal resource usage
-    // Note: Be aware of potential pinning if SecuritySystem uses synchronized blocks internally
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
-        securitySystem.listRoles(DEFAULT_SOURCE)
-            .stream()
-            .map(this::convert)
-            .collect(Collectors.toList())
-    ).join();
+    try {
+      Future<List<RoleXO>> future = virtualThreadExecutor.submit(() -> 
+          securitySystem.listRoles(DEFAULT_SOURCE)
+              .stream()
+              .map(this::convert)
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error retrieving roles", e);
+    }
   }
 
   /**
@@ -99,15 +103,17 @@ public class RoleComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:roles:read")
   public List<ReferenceXO> readReferences() throws NoSuchAuthorizationManagerException {
-    // Using Virtual Threads for I/O-bound security system operations
-    // Virtual threads automatically yield when performing blocking operations,
-    // allowing the carrier thread to execute other virtual threads
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
-        securitySystem.listRoles(DEFAULT_SOURCE)
-            .stream()
-            .map(input -> new ReferenceXO(input.getRoleId(), input.getName()))
-            .collect(Collectors.toList())
-    ).join();
+    try {
+      Future<List<ReferenceXO>> future = virtualThreadExecutor.submit(() -> 
+          securitySystem.listRoles(DEFAULT_SOURCE)
+              .stream()
+              .map(input -> new ReferenceXO(input.getRoleId(), input.getName()))
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error retrieving role references", e);
+    }
   }
 
   /**
@@ -119,14 +125,17 @@ public class RoleComponent
   @Timed
   @ExceptionMetered
   public List<ReferenceXO> readSources() {
-    // Using Virtual Threads for I/O-bound security system operations
-    // No thread pooling needed as virtual threads are lightweight and managed by the JVM
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
-        authorizationManagers.stream()
-            .filter(manager -> !DEFAULT_SOURCE.equals(manager.getSource()))
-            .map(manager -> new ReferenceXO(manager.getSource(), manager.getSource()))
-            .collect(Collectors.toList())
-    ).join();
+    try {
+      Future<List<ReferenceXO>> future = virtualThreadExecutor.submit(() -> 
+          authorizationManagers.stream()
+              .filter(manager -> !DEFAULT_SOURCE.equals(manager.getSource()))
+              .map(manager -> new ReferenceXO(manager.getSource(), manager.getSource()))
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error retrieving role sources", e);
+    }
   }
 
   /**
@@ -141,15 +150,17 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:read")
   @Validate
   public List<RoleXO> readFromSource(@NotEmpty final String source) throws NoSuchAuthorizationManagerException {
-    // Using Virtual Threads for I/O-bound security system operations
-    // This approach provides better scalability than traditional thread pools
-    // as each operation gets its own dedicated virtual thread
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
-        securitySystem.listRoles(source)
-            .stream()
-            .map(this::convert)
-            .collect(Collectors.toList())
-    ).join();
+    try {
+      Future<List<RoleXO>> future = virtualThreadExecutor.submit(() -> 
+          securitySystem.listRoles(source)
+              .stream()
+              .map(this::convert)
+              .collect(Collectors.toList()));
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error retrieving roles from source: " + source, e);
+    }
   }
 
   /**
@@ -165,26 +176,28 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:create")
   @Validate(groups = {Create.class, Default.class})
   public RoleXO create(@NotNull @Valid final RoleXO roleXO) throws NoSuchAuthorizationManagerException {
-    // Using Virtual Threads for I/O-bound security system operations
-    // Virtual threads are particularly beneficial for operations that may block on database access
-    // or other I/O operations, as they don't consume platform thread resources while blocked
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      // HACK: Temporary validation for external role IDs to support editable text entry in combo box (LDAP only)
-      if ("LDAP".equals(roleXO.getSource())) {
-        securitySystem.getAuthorizationManager(roleXO.getSource()).getRole(roleXO.getId());
-      }
-      
-      Role role = new Role(
-          roleXO.getId(),
-          roleXO.getName(),
-          roleXO.getDescription(),
-          roleXO.getSource(),
-          false,
-          roleXO.getRoles(),
-          roleXO.getPrivileges());
-          
-      return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE).addRole(role));
-    }).join();
+    try {
+      Future<RoleXO> future = virtualThreadExecutor.submit(() -> {
+        // HACK: Temporary validation for external role IDs to support editable text entry in combo box (LDAP only)
+        if ("LDAP".equals(roleXO.getSource())) {
+          securitySystem.getAuthorizationManager(roleXO.getSource()).getRole(roleXO.getId());
+        }
+        return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE)
+            .addRole(
+                new Role(
+                    roleXO.getId(),
+                    roleXO.getName(),
+                    roleXO.getDescription(),
+                    roleXO.getSource(),
+                    false,
+                    roleXO.getRoles(),
+                    roleXO.getPrivileges())));
+      });
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error creating role", e);
+    }
   }
 
   /**
@@ -200,22 +213,25 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:update")
   @Validate(groups = {Update.class, Default.class})
   public RoleXO update(@NotNull @Valid final RoleXO roleXO) throws NoSuchAuthorizationManagerException {
-    // Using Virtual Threads for I/O-bound security system operations
-    // Virtual threads improve throughput by allowing many concurrent operations
-    // without the overhead of platform threads
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      Role roleToUpdate = new Role();
-      roleToUpdate.setRoleId(roleXO.getId());
-      roleToUpdate.setName(roleXO.getName());
-      roleToUpdate.setDescription(roleXO.getDescription());
-      roleToUpdate.setSource(roleXO.getSource());
-      roleToUpdate.setReadOnly(false);
-      roleToUpdate.setRoles(roleXO.getRoles());
-      roleToUpdate.setPrivileges(roleXO.getPrivileges());
-      roleToUpdate.setVersion(Integer.parseInt(roleXO.getVersion()));
-      
-      return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE).updateRole(roleToUpdate));
-    }).join();
+    try {
+      Future<RoleXO> future = virtualThreadExecutor.submit(() -> {
+        Role roleToUpdate = new Role();
+        roleToUpdate.setRoleId(roleXO.getId());
+        roleToUpdate.setName(roleXO.getName());
+        roleToUpdate.setDescription(roleXO.getDescription());
+        roleToUpdate.setSource(roleXO.getSource());
+        roleToUpdate.setReadOnly(false);
+        roleToUpdate.setRoles(roleXO.getRoles());
+        roleToUpdate.setPrivileges(roleXO.getPrivileges());
+        roleToUpdate.setVersion(Integer.parseInt(roleXO.getVersion()));
+        return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE)
+            .updateRole(roleToUpdate));
+      });
+      return future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error updating role", e);
+    }
   }
 
   /**
@@ -230,13 +246,16 @@ public class RoleComponent
   @RequiresPermissions("nexus:roles:delete")
   @Validate
   public void remove(@NotEmpty final String id) throws NoSuchAuthorizationManagerException {
-    // Using Virtual Threads for I/O-bound security system operations
-    // This approach eliminates the need for traditional thread pool sizing and management,
-    // as virtual threads are managed efficiently by the JVM
-    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      securitySystem.getAuthorizationManager(DEFAULT_SOURCE).deleteRole(id);
-      return null;
-    }).join();
+    try {
+      Future<?> future = virtualThreadExecutor.submit(() -> {
+        securitySystem.getAuthorizationManager(DEFAULT_SOURCE).deleteRole(id);
+        return null;
+      });
+      future.get();
+    } catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Error removing role: " + id, e);
+    }
   }
 
   /**

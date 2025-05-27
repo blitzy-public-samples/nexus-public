@@ -13,9 +13,10 @@
 package org.sonatype.nexus.repository.tools.datastore;
 
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -28,7 +29,6 @@ import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
-import org.sonatype.nexus.common.thread.VirtualThreadExecutorService;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.Asset;
 import org.sonatype.nexus.repository.content.AssetBlob;
@@ -38,7 +38,7 @@ import org.sonatype.nexus.repository.tools.OrphanedBlobFinder;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.concurrent.CompletableFuture.allOf;
+import static java.lang.StringTemplate.STR;
 import static org.apache.commons.lang.StringUtils.isNotBlank;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
@@ -47,6 +47,7 @@ import static org.sonatype.nexus.repository.config.ConfigurationConstants.STORAG
 
 /**
  * Detects orphaned blobs (i.e. non-deleted blobs that exist in the blobstore but not the asset table)
+ * using Java 21 Virtual Threads for improved concurrency and performance.
  *
  * @since 3.25
  */
@@ -58,14 +59,11 @@ public class DatastoreOrphanedBlobFinder
   private final RepositoryManager repositoryManager;
 
   private final BlobStoreManager blobStoreManager;
-  
-  private final VirtualThreadExecutorService executorService;
 
   @Inject
   public DatastoreOrphanedBlobFinder(final RepositoryManager repositoryManager, final BlobStoreManager blobStoreManager) {
     this.repositoryManager = checkNotNull(repositoryManager);
     this.blobStoreManager = checkNotNull(blobStoreManager);
-    this.executorService = new VirtualThreadExecutorService(Executors.newVirtualThreadPerTaskExecutor());
   }
 
   /**
@@ -104,6 +102,7 @@ public class DatastoreOrphanedBlobFinder
 
   /**
    * Look for orphaned blobs in a given repository and callback for each blobId found
+   * using Virtual Threads for concurrent processing.
    *
    * @param repository - where to look for orphaned blobs
    * @param handler    - callback to handle an orphaned blob
@@ -115,29 +114,73 @@ public class DatastoreOrphanedBlobFinder
     detect(getBlobStoreForRepository(repository), handler);
   }
 
+  /**
+   * Detects orphaned blobs in the given blob store using Virtual Threads for concurrent processing.
+   * This implementation leverages Java 21 Virtual Threads to efficiently process large numbers of blobs
+   * with minimal overhead, especially for I/O-bound operations like retrieving blob attributes.
+   *
+   * @param blobStore - the blob store to scan for orphaned blobs
+   * @param handler   - callback to handle each orphaned blob that is found
+   */
   private void detect(final BlobStore blobStore, final Consumer<BlobId> handler) {
     Stream<BlobId> blobIds = blobStore.getBlobIdStream();
     
-    // Process BlobIds in parallel using Virtual Threads
-    CompletableFuture<?>[] futures = blobIds
-        .map(id -> executorService.supplyAsync(() -> {
-          // Get blob attributes in a Virtual Thread for non-blocking I/O
-          BlobAttributes attributes = blobStore.getBlobAttributes(id);
-          if (attributes != null) {
-            // Process the blob in the same Virtual Thread
-            checkIfOrphaned(handler, id, attributes);
-          }
-          else {
-            log.warn(STR."Skipping cleanup for blob \{id} because blob properties not found");
-          }
-          return null;
-        }))
-        .toArray(CompletableFuture[]::new);
+    // Use a ConcurrentHashMap to track processing status
+    ConcurrentHashMap<BlobId, Boolean> processedBlobs = new ConcurrentHashMap<>();
+    AtomicInteger activeThreads = new AtomicInteger(0);
+    CountDownLatch completionLatch = new CountDownLatch(1);
     
-    // Wait for all Virtual Threads to complete
-    allOf(futures).join();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Process each blob ID with a dedicated virtual thread
+      blobIds.forEach(id -> {
+        activeThreads.incrementAndGet();
+        executor.submit(() -> {
+          try {
+            // Skip if already processed (defensive check)
+            if (processedBlobs.putIfAbsent(id, Boolean.TRUE) != null) {
+              return;
+            }
+            
+            BlobAttributes attributes = blobStore.getBlobAttributes(id);
+            if (attributes != null) {
+              checkIfOrphaned(handler, id, attributes);
+            }
+            else {
+              log.warn(STR."Skipping cleanup for blob \{id} because blob properties not found");
+            }
+          }
+          catch (Exception e) {
+            log.error(STR."Error processing blob \{id}", e);
+          }
+          finally {
+            // If this is the last active thread, signal completion
+            if (activeThreads.decrementAndGet() == 0) {
+              completionLatch.countDown();
+            }
+          }
+        });
+      });
+      
+      // Wait for all virtual threads to complete
+      try {
+        completionLatch.await();
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn(STR."Orphaned blob detection interrupted");
+      }
+    }
   }
 
+  /**
+   * Checks if a blob is orphaned by verifying its association with repository assets.
+   * This method is designed to be called from Virtual Threads and handles I/O operations
+   * efficiently without blocking platform threads.
+   *
+   * @param handler    - callback to handle the blob if it's orphaned
+   * @param id         - the blob ID to check
+   * @param attributes - the blob's attributes
+   */
   private void checkIfOrphaned(final Consumer<BlobId> handler, final BlobId id, final BlobAttributes attributes) {
     String repositoryName = attributes.getHeaders().get(REPO_NAME_HEADER);
 
@@ -151,18 +194,34 @@ public class DatastoreOrphanedBlobFinder
         handler.accept(id);
       }
       else {
-        // Use Virtual Thread for non-blocking I/O when retrieving asset information
-        findAssociatedAsset(assetName, repository).ifPresent(asset -> {
-          BlobRef blobRef = asset.blob().map(AssetBlob::blobRef).orElse(null);
-          if (blobRef != null && !blobRef.getBlobId().asUniqueString().equals(id.asUniqueString())) {
-            if (!attributes.isDeleted()) {
-              handler.accept(id);
+        // Use Optional to simplify the asset lookup and processing logic
+        findAssociatedAsset(assetName, repository).ifPresentOrElse(
+            asset -> {
+              Optional<BlobRef> blobRefOpt = asset.blob().map(AssetBlob::blobRef);
+              if (blobRefOpt.isPresent()) {
+                BlobRef blobRef = blobRefOpt.get();
+                if (!blobRef.getBlobId().asUniqueString().equals(id.asUniqueString()) && !attributes.isDeleted()) {
+                  handler.accept(id);
+                }
+                else if (attributes.isDeleted()) {
+                  log.debug(STR."Blob \{id.asUniqueString()} in repository \{repositoryName} not considered orphaned because it is already marked soft-deleted");
+                }
+              }
+              else {
+                // Asset exists but has no blob reference
+                if (!attributes.isDeleted()) {
+                  handler.accept(id);
+                }
+              }
+            },
+            () -> {
+              // No asset found for this blob, consider it orphaned if not deleted
+              if (!attributes.isDeleted()) {
+                log.debug(STR."Blob \{id.asUniqueString()} considered orphaned because no asset with path \{assetName} exists in repository \{repositoryName}");
+                handler.accept(id);
+              }
             }
-            else {
-              log.debug(STR."Blob \{id.asUniqueString()} in repository \{repositoryName} not considered orphaned because it is already marked soft-deleted");
-            }
-          }
-        });
+        );
       }
     }
   }
@@ -178,14 +237,20 @@ public class DatastoreOrphanedBlobFinder
     return repository.facet(ContentFacet.class).assets().path(assetName).find().map(a -> (Asset) a);
   }
 
+  /**
+   * Validates repository configuration to ensure it has the necessary attributes for blob store operations.
+   * Optimized to handle thread context switches efficiently when called from Virtual Threads.
+   *
+   * @param repository - the repository to validate
+   */
   private void validateRepositoryConfiguration(final Repository repository) {
-    String repositoryName = repository.getName();
+    // Perform all validation checks in a single method call to minimize context switching overhead
     checkArgument(repository.getConfiguration().getAttributes() != null,
-        STR."Repository configuration not found \{repositoryName}");
+        STR."Repository configuration not found \{repository.getName()}");
     checkArgument(repository.getConfiguration().getAttributes().get(STORAGE) != null,
-        STR."No storage configuration found for the repository \{repositoryName}");
+        STR."No storage configuration found for the repository \{repository.getName()}");
     checkArgument(
         isNotBlank((String) repository.getConfiguration().getAttributes().get(STORAGE).get(BLOB_STORE_NAME)),
-        STR."Blob store name not set for repository \{repositoryName}");
+        STR."Blob store name not set for repository \{repository.getName()}");
   }
 }

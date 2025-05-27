@@ -12,38 +12,180 @@
  */
 package com.sonatype.nexus.ssl.plugin.internal.ui;
 
+import groovy.transform.ToString;
+
 /**
  * Certificate exchange object.
- * <p>
- * Implemented as a Java Record for immutability and automatic generation of
- * toString(), equals(), and hashCode() methods.
  *
  * @since 3.0
  */
-public record CertificateXO(
-    String id,
-    String fingerprint,
-    String pem,
-    String serialNumber,
-    String subjectCommonName,
-    String subjectOrganization,
-    String subjectOrganizationalUnit,
-    String issuerCommonName,
-    String issuerOrganization,
-    String issuerOrganizationalUnit,
-    long issuedOn,
-    long expiresOn,
-    boolean inTrustStore
-) {
+@ToString(includePackage = false, includeNames = true)
+public class CertificateXO
+{
   /**
-   * Creates a minimal certificate exchange object with only id, fingerprint, and PEM data.
-   * All other fields will be initialized with default values.
-   *
-   * @param id the certificate identifier
-   * @param fingerprint the certificate fingerprint
-   * @param pem the certificate in PEM format
+   * Serial version UID for ensuring serialization compatibility with Java 21.
+   */
+  private static final long serialVersionUID = 1L;
+
+  private final String id;
+
+  private final String fingerprint;
+
+  private final String pem;
+
+  private String serialNumber;
+
+  private String subjectCommonName;
+
+  private String subjectOrganization;
+
+  private String subjectOrganizationalUnit;
+
+  private String issuerCommonName;
+
+  private String issuerOrganization;
+
+  private String issuerOrganizationalUnit;
+
+  private long issuedOn;
+
+  private long expiresOn;
+
+  private boolean inTrustStore;
+
+  /**
+   * Full constructor with all fields.
+   */
+  public CertificateXO(
+      final String id,
+      final String fingerprint,
+      final String pem,
+      final String serialNumber,
+      final String subjectCommonName,
+      final String subjectOrganization,
+      final String subjectOrganizationalUnit,
+      final String issuerCommonName,
+      final String issuerOrganization,
+      final String issuerOrganizationalUnit,
+      final long issuedOn,
+      final long expiresOn,
+      final boolean inTrustStore)
+  {
+    this.id = id;
+    this.fingerprint = fingerprint;
+    this.pem = pem;
+    this.serialNumber = serialNumber;
+    this.subjectCommonName = subjectCommonName;
+    this.subjectOrganization = subjectOrganization;
+    this.subjectOrganizationalUnit = subjectOrganizationalUnit;
+    this.issuerCommonName = issuerCommonName;
+    this.issuerOrganization = issuerOrganization;
+    this.issuerOrganizationalUnit = issuerOrganizationalUnit;
+    this.issuedOn = issuedOn;
+    this.expiresOn = expiresOn;
+    this.inTrustStore = inTrustStore;
+  }
+
+  /**
+   * Minimal constructor with essential fields.
    */
   public CertificateXO(final String id, final String fingerprint, final String pem) {
-    this(id, fingerprint, pem, null, null, null, null, null, null, null, 0L, 0L, false);
+    this.id = id;
+    this.fingerprint = fingerprint;
+    this.pem = pem;
+  }
+
+  // Getters and setters for proper serialization/deserialization with ExtDirect framework
+
+  public String getId() {
+    return id;
+  }
+
+  public String getFingerprint() {
+    return fingerprint;
+  }
+
+  public String getPem() {
+    return pem;
+  }
+
+  public String getSerialNumber() {
+    return serialNumber;
+  }
+
+  public void setSerialNumber(String serialNumber) {
+    this.serialNumber = serialNumber;
+  }
+
+  public String getSubjectCommonName() {
+    return subjectCommonName;
+  }
+
+  public void setSubjectCommonName(String subjectCommonName) {
+    this.subjectCommonName = subjectCommonName;
+  }
+
+  public String getSubjectOrganization() {
+    return subjectOrganization;
+  }
+
+  public void setSubjectOrganization(String subjectOrganization) {
+    this.subjectOrganization = subjectOrganization;
+  }
+
+  public String getSubjectOrganizationalUnit() {
+    return subjectOrganizationalUnit;
+  }
+
+  public void setSubjectOrganizationalUnit(String subjectOrganizationalUnit) {
+    this.subjectOrganizationalUnit = subjectOrganizationalUnit;
+  }
+
+  public String getIssuerCommonName() {
+    return issuerCommonName;
+  }
+
+  public void setIssuerCommonName(String issuerCommonName) {
+    this.issuerCommonName = issuerCommonName;
+  }
+
+  public String getIssuerOrganization() {
+    return issuerOrganization;
+  }
+
+  public void setIssuerOrganization(String issuerOrganization) {
+    this.issuerOrganization = issuerOrganization;
+  }
+
+  public String getIssuerOrganizationalUnit() {
+    return issuerOrganizationalUnit;
+  }
+
+  public void setIssuerOrganizationalUnit(String issuerOrganizationalUnit) {
+    this.issuerOrganizationalUnit = issuerOrganizationalUnit;
+  }
+
+  public long getIssuedOn() {
+    return issuedOn;
+  }
+
+  public void setIssuedOn(long issuedOn) {
+    this.issuedOn = issuedOn;
+  }
+
+  public long getExpiresOn() {
+    return expiresOn;
+  }
+
+  public void setExpiresOn(long expiresOn) {
+    this.expiresOn = expiresOn;
+  }
+
+  public boolean isInTrustStore() {
+    return inTrustStore;
+  }
+
+  public void setInTrustStore(boolean inTrustStore) {
+    this.inTrustStore = inTrustStore;
   }
 }

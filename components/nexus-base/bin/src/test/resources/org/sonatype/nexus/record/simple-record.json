@@ -1,0 +1,13 @@
+{
+  "id": "record-123",
+  "name": "Test Record",
+  "active": true,
+  "count": 42,
+  "score": 98.6,
+  "tags": ["test", "java21", "record-pattern"],
+  "timestamp": 1684147200000,
+  "enabled": true,
+  "priority": 1,
+  "ratio": 0.75,
+  "description": "A simple record for testing Java 21 Record Pattern matching"
+}

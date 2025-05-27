@@ -28,7 +28,7 @@
   <packaging>bundle</packaging>
 
   <properties>
-    <!-- Specify Java 21 for this module -->
+    <!-- Explicitly set Java 21 for this module -->
     <maven.compiler.release>21</maven.compiler.release>
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
@@ -94,38 +94,38 @@
 
   <build>
     <plugins>
-      <!-- Configure maven-compiler-plugin for Java 21 -->
+      <!-- Configure Maven compiler plugin for Java 21 -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
           <release>21</release>
+          <source>21</source>
+          <target>21</target>
         </configuration>
       </plugin>
       
-      <!-- Configure maven-bundle-plugin for Java 21 compatibility -->
+      <!-- Configure Karaf Maven plugin with Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.karaf.tooling</groupId>
+        <artifactId>karaf-maven-plugin</artifactId>
+        <configuration>
+          <!-- Ensure OSGi bundle manifest is compatible with Java 21 -->
+          <instructions>
+            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
+          </instructions>
+        </configuration>
+      </plugin>
+      
+      <!-- Configure Maven Bundle Plugin for OSGi compatibility with Java 21 -->
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-bundle-plugin</artifactId>
         <configuration>
           <instructions>
-            <!-- Specify OSGi execution environment for Java 21 -->
             <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-            <!-- Ensure compatibility with Java 21 features -->
-            <_consumer-policy>$(version;==)</_consumer-policy>
-            <!-- Include all content in the output directory -->
-            <Include-Resource>
-              /=${project.build.outputDirectory},{maven-resources}
-            </Include-Resource>
-            <!-- Clear default to avoid spurious !* warnings -->
-            <Private-Package/>
           </instructions>
         </configuration>
-      </plugin>
-      
-      <plugin>
-        <groupId>org.apache.karaf.tooling</groupId>
-        <artifactId>karaf-maven-plugin</artifactId>
       </plugin>
     </plugins>
   </build>

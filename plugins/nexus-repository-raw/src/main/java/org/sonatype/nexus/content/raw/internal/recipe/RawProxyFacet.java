@@ -14,36 +14,20 @@ package org.sonatype.nexus.content.raw.internal.recipe;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.net.URI;
 import java.net.URLEncoder;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-
+import java.util.concurrent.CompletableFuture;
 import javax.inject.Named;
 
 import org.sonatype.nexus.common.template.EscapeHelper;
 import org.sonatype.nexus.content.raw.RawContentFacet;
-import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.facet.ContentProxyFacetSupport;
-import org.sonatype.nexus.repository.httpclient.HttpClientFacet;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
-import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.matchers.token.TokenMatcher;
-import org.sonatype.nexus.repository.view.matchers.token.TokenMatcher.State;
-
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.StatusLine;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.utils.HttpClientUtils;
 
 import com.google.common.collect.ImmutableSet;
-
-import static com.google.common.base.Preconditions.checkState;
 
 /**
  * Raw proxy facet.
@@ -56,38 +40,51 @@ public class RawProxyFacet
 {
   private static final ImmutableSet<String> CHARS_TO_ENCODE = ImmutableSet.of("^", "#", "?", "\u202F", "[", "]");
   
-  // Virtual thread executor for I/O-bound operations
+  /**
+   * Virtual thread executor for handling I/O operations.
+   * Using virtual threads improves concurrency for I/O-bound operations without the overhead of platform threads.
+   */
   private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Override
   protected Content getCachedContent(final Context context) throws IOException {
-    // Use virtual threads for I/O-bound operations
+    // Using CompletableFuture with virtual threads for non-blocking I/O operations
     try {
-      Future<Content> contentFuture = virtualThreadExecutor.submit(() -> content().get(assetPath(context)).orElse(null));
-      return contentFuture.get();
-    } 
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IOException(STR."Interrupted while getting cached content: \{e.getMessage()}", e);
+      return CompletableFuture.supplyAsync(() -> {
+        try {
+          return content().get(assetPath(context)).orElse(null);
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutor).join();
     }
-    catch (Exception e) {
-      throw new IOException(STR."Error getting cached content: \{e.getMessage()}", e);
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw e;
     }
   }
 
   @Override
   protected Content store(final Context context, final Content payload) throws IOException {
-    // Use virtual threads for I/O-bound operations
+    // Using CompletableFuture with virtual threads for non-blocking I/O operations
     try {
-      Future<Content> contentFuture = virtualThreadExecutor.submit(() -> content().put(assetPath(context), payload));
-      return contentFuture.get();
-    } 
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IOException(STR."Interrupted while storing content: \{e.getMessage()}", e);
+      return CompletableFuture.supplyAsync(() -> {
+        try {
+          return content().put(assetPath(context), payload);
+        }
+        catch (IOException e) {
+          throw new RuntimeException(e);
+        }
+      }, virtualThreadExecutor).join();
     }
-    catch (Exception e) {
-      throw new IOException(STR."Error storing content: \{e.getMessage()}", e);
+    catch (RuntimeException e) {
+      if (e.getCause() instanceof IOException) {
+        throw (IOException) e.getCause();
+      }
+      throw e;
     }
   }
 
@@ -104,42 +101,6 @@ public class RawProxyFacet
     }
     return encodedUrl;
   }
-  
-  @Override
-  protected Payload getPayload(final Repository proxy, final URI uri) throws IOException {
-    // Override to use virtual threads for remote HTTP operations
-    try {
-      return virtualThreadExecutor.submit(() -> fetchPayloadWithVirtualThread(proxy, uri)).get();
-    }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IOException(STR."Interrupted while fetching payload from \{uri}: \{e.getMessage()}", e);
-    }
-    catch (Exception e) {
-      throw new IOException(STR."Error fetching payload from \{uri}: \{e.getMessage()}", e);
-    }
-  }
-  
-  private Payload fetchPayloadWithVirtualThread(final Repository proxy, final URI uri) throws IOException {
-    final HttpClient client = proxy.facet(HttpClientFacet.class).getHttpClient();
-
-    HttpGet request = new HttpGet(uri);
-    log.debug(STR."Fetching: \{request}");
-
-    HttpResponse response = client.execute(request);
-    StatusLine status = response.getStatusLine();
-    log.debug(STR."Response: \{response}, status: \{status}");
-
-    if (status.getStatusCode() == HttpStatus.SC_OK) {
-      HttpEntity entity = response.getEntity();
-      checkState(entity != null, "No http entity received from remote registry");
-
-      return new org.sonatype.nexus.repository.view.payloads.HttpEntityPayload(response, entity);
-    }
-    log.warn(STR."Status code \{status.getStatusCode()} contacting \{uri}");
-    HttpClientUtils.closeQuietly(response);
-    return null;
-  }
 
   private RawContentFacet content() {
     return getRepository().facet(RawContentFacet.class);
@@ -149,15 +110,17 @@ public class RawProxyFacet
    * Determines what 'asset' this request relates to.
    */
   private String assetPath(final Context context) {
-    // Using pattern matching with instanceof for TokenMatcher.State
-    var tokenMatcherState = context.getAttributes().require(TokenMatcher.State.class);
-    if (tokenMatcherState instanceof State state) {
-      return state.getTokens().get(RawRecipeSupport.PATH_NAME);
-    }
+    final TokenMatcher.State tokenMatcherState = context.getAttributes().require(TokenMatcher.State.class);
     return tokenMatcherState.getTokens().get(RawRecipeSupport.PATH_NAME);
   }
 
   private String removeSlashPrefix(final String url) {
     return url != null && url.startsWith("/") ? url.substring(1) : url;
+  }
+  
+  @Override
+  protected void doStop() throws Exception {
+    virtualThreadExecutor.close();
+    super.doStop();
   }
 }

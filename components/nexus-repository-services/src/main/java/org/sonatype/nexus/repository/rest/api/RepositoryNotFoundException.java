@@ -12,6 +12,8 @@
  */
 package org.sonatype.nexus.repository.rest.api;
 
+import org.sonatype.nexus.common.text.StringTemplateSupport;
+
 /**
  * Exception thrown when a repository cannot be found.
  *
@@ -35,6 +37,21 @@ public class RepositoryNotFoundException
    * @param repositoryName the name of the repository that was not found
    */
   public RepositoryNotFoundException(final String repositoryName) {
-    super(STR."Repository '\{repositoryName}' not found");
+    super(formatMessage(repositoryName));
+  }
+
+  /**
+   * Formats the exception message using Java 21 String Templates.
+   *
+   * @param repositoryName the name of the repository that was not found
+   * @return the formatted error message
+   */
+  private static String formatMessage(final String repositoryName) {
+    if (repositoryName == null || repositoryName.isEmpty()) {
+      return DEFAULT_MESSAGE;
+    }
+    
+    // Use StringTemplateSupport for consistent message formatting across the application
+    return StringTemplateSupport.formatErrorMessage("Repository '{0}' not found", repositoryName);
   }
 }

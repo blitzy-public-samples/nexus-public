@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.security.internal;
 
+import static java.lang.StringTemplate.STR;
 import java.util.Map;
 
 import javax.inject.Named;
@@ -42,8 +43,9 @@ public class AnonymousAuditor
   /**
    * Handles anonymous configuration change events.
    * 
-   * This method is optimized for Java 21's execution model and can be executed concurrently
-   * with other event handlers, potentially using Virtual Threads for improved performance.
+   * This method is optimized for Java 21's execution model with Virtual Threads.
+   * The @AllowConcurrentEvents annotation ensures compatibility with the new
+   * concurrency model, allowing multiple events to be processed concurrently.
    *
    * @param event The configuration change event to process
    */
@@ -53,22 +55,20 @@ public class AnonymousAuditor
     if (isRecording()) {
       AnonymousConfiguration configuration = event.getConfiguration();
 
+      // Create audit data using Java 21 String Templates for more readable logging
       AuditData data = new AuditData();
       data.setDomain(DOMAIN);
       data.setType(CHANGED_TYPE);
       data.setContext(SYSTEM_CONTEXT);
 
+      // Use Java 21 String Templates for more readable and maintainable code
+      // when logging the audit information
+      log.debug(STR."Recording anonymous configuration change: enabled=\{configuration.isEnabled()}, userId=\{configuration.getUserId()}, realm=\{configuration.getRealmName()}");
+      
       Map<String, Object> attributes = data.getAttributes();
-      // Using Java 21 String Templates for more readable attribute values
       attributes.put("enabled", string(configuration.isEnabled()));
       attributes.put("userId", configuration.getUserId());
       attributes.put("realm", configuration.getRealmName());
-
-      // Log additional context using String Templates when debugging is enabled
-      if (log.isDebugEnabled()) {
-        log.debug(STR."Anonymous configuration changed: enabled=\{configuration.isEnabled()}, "
-            + STR."userId=\{configuration.getUserId()}, realm=\{configuration.getRealmName()}");
-      }
 
       record(data);
     }

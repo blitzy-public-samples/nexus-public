@@ -13,7 +13,7 @@
 package org.sonatype.nexus.blobstore;
 
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
@@ -22,14 +22,12 @@ import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
 /**
  * A builder for blob store configurations.
  * 
- * This implementation is optimized for Java 21 features including pattern matching and
- * efficient operation with Virtual Threads.
+ * Updated for Java 21 with pattern matching, thread safety improvements, and virtual thread compatibility.
  *
  * @since 3.36
  */
 public class BlobStoreConfigurationBuilder
 {
-  // Using AtomicReference for thread-safe lazy initialization with Virtual Threads
   private final Supplier<BlobStoreConfiguration> configurationSupplier;
 
   private final String name;
@@ -43,15 +41,14 @@ public class BlobStoreConfigurationBuilder
   /**
    * Creates a new builder using the specified name for the resulting blob store.
    * 
-   * @param name the name for the blob store configuration
-   * @param configurationSupplier supplier for creating new blob store configurations
+   * @param name the name of the blob store
+   * @param configurationSupplier a supplier that provides a new BlobStoreConfiguration instance
    * @throws NullPointerException if name or configurationSupplier is null
    */
   public BlobStoreConfigurationBuilder(
       final String name,
       final Supplier<BlobStoreConfiguration> configurationSupplier)
   {
-    // Using pattern matching for null checks - if name is null, this will throw NPE
     this.name = Objects.requireNonNull(name, "Blob store name cannot be null");
     this.configurationSupplier = Objects.requireNonNull(configurationSupplier, "Configuration supplier cannot be null");
   }
@@ -64,7 +61,6 @@ public class BlobStoreConfigurationBuilder
    * @throws NullPointerException if type is null
    */
   public BlobStoreConfigurationBuilder type(final String type) {
-    // Using pattern matching for null checks
     this.type = Objects.requireNonNull(type, "Blob store type cannot be null");
     return this;
   }
@@ -77,7 +73,7 @@ public class BlobStoreConfigurationBuilder
    * @return this builder instance
    */
   public BlobStoreConfigurationBuilder quotaConfig(final String quotaType, final long limit) {
-    this.quotaType = quotaType; // Allowing null for quotaType to disable quota
+    this.quotaType = quotaType;
     this.quotaLimit = limit;
     return this;
   }
@@ -85,20 +81,25 @@ public class BlobStoreConfigurationBuilder
   /**
    * Creates the configuration for the desired blob store.
    * 
-   * This method is optimized for use with Virtual Threads by minimizing operations
-   * that could cause thread pinning.
+   * This method is thread-safe and can be safely called from virtual threads.
    * 
-   * @return the configured blob store configuration
+   * @return a new BlobStoreConfiguration instance
+   * @throws IllegalStateException if type has not been set
    */
   public BlobStoreConfiguration build() {
-    // Get configuration from supplier - optimized for Virtual Threads
+    // Ensure type has been set
+    if (type == null) {
+      throw new IllegalStateException("Blob store type must be set before building configuration");
+    }
+    
+    // Get a new configuration instance from the supplier
     final BlobStoreConfiguration configuration = configurationSupplier.get();
     
-    // Set required properties
+    // Configure the basic properties
     configuration.setName(name);
     configuration.setType(type);
     
-    // Set quota configuration if specified
+    // Apply quota configuration if specified
     if (quotaType != null) {
       var attributes = configuration.attributes(BlobStoreQuotaSupport.ROOT_KEY);
       attributes.set(BlobStoreQuotaSupport.TYPE_KEY, quotaType);

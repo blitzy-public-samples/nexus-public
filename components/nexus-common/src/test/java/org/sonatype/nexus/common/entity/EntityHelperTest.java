@@ -13,10 +13,11 @@
 package org.sonatype.nexus.common.entity;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.nexus.java21.Java21TestGroup;
 
+import org.junit.Test;
 import org.junit.experimental.categories.Category;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -34,6 +35,7 @@ public class EntityHelperTest
     extends TestSupport
 {
   @Test
+  @DisplayName("Entity without metadata should throw appropriate exceptions")
   public void entityWithoutMetadata() {
     AbstractEntity entity = new AbstractEntity()
     {
@@ -50,6 +52,7 @@ public class EntityHelperTest
   }
 
   @Test
+  @DisplayName("Entity with metadata should provide access to its components")
   public void entityWithMetadata() {
     AbstractEntity entity = new AbstractEntity()
     {
@@ -66,19 +69,22 @@ public class EntityHelperTest
   }
   
   @Test
-  public void entityWithMetadataUsingRecordPattern() {
-    AbstractEntity entity = new AbstractEntity() {};
-    entity.setEntityMetadata(new DetachedEntityMetadata(new DetachedEntityId("a"), new DetachedEntityVersion("1")));
+  @DisplayName("Record Pattern should work with entity metadata")
+  public void recordPatternWithEntityMetadata() {
+    AbstractEntity entity = new AbstractEntity()
+    {
+    };
+    entity.setEntityMetadata(new DetachedEntityMetadata(new DetachedEntityId("b"), new DetachedEntityVersion("2")));
     
-    // Using record pattern to extract and validate entity metadata
-    if (entity.getEntityMetadata() instanceof DetachedEntityMetadata(DetachedEntityId id, DetachedEntityVersion version)) {
-      assertAll("Entity metadata using record pattern",
-          () -> assertThat(id.getValue(), is("a")),
-          () -> assertThat(version.getValue(), is("1"))
+    // Using Record Pattern to destructure the metadata components
+    if (entity.getEntityMetadata() instanceof DetachedEntityMetadata(var id, var version)) {
+      assertAll("Record Pattern entity metadata validation",
+          () -> assertThat(id.getValue(), is("b")),
+          () -> assertThat(version.getValue(), is("2"))
       );
     } else {
-      // This should never happen if record pattern matching works correctly
-      assertFalse(true, "Record pattern matching failed");
+      // This should never happen if Record Pattern works correctly
+      throw new AssertionError("Record Pattern matching failed");
     }
   }
 }

@@ -14,10 +14,9 @@ package org.sonatype.nexus.repository.content.fluent.internal;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 import java.util.SequencedSet;
-import java.util.SequencedCollection;
-import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.logging.Logger;
 
 import javax.annotation.Nullable;
 
@@ -35,24 +34,32 @@ import static java.util.Collections.singleton;
  */
 final class RepositoryContentUtil
 {
+  private static final Logger log = Logger.getLogger(RepositoryContentUtil.class.getName());
+  
   private RepositoryContentUtil() {
   }
 
   /**
    * Checks if the given repository is a group repository using pattern matching.
-   * 
+   *
    * @param repository the repository to check
    * @return true if the repository is a group repository, false otherwise
    */
   static boolean isGroupRepository(final Repository repository) {
-    // Using Java 21 pattern matching for instanceof to check repository type
-    return repository.getType() instanceof GroupType;
+    // Using Java 21 enhanced pattern matching for repository type checking
+    if (repository.getType() instanceof GroupType groupType) {
+      // Using String Templates for more readable logging
+      log.fine(STR."Repository \{repository.getName()} is a group repository with type \{groupType.getValue()}");
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Get repository IDs based on constraints or fallback to the content facet's repository ID.
-   * 
-   * @param constraints the query constraints or null if none
+   * Gets repository IDs based on the provided constraints, content facet, and repository.
+   * Uses Java 21 Sequenced Collections API for optimized handling of repository IDs.
+   *
+   * @param constraints the query constraints, may be null
    * @param contentFacet the content facet
    * @param repository the repository
    * @return a set of repository IDs
@@ -62,34 +69,76 @@ final class RepositoryContentUtil
       final ContentFacet contentFacet,
       final Repository repository)
   {
-    // no constraints supplied, just use the repository of the contentFacet supplied
+    // No constraints supplied, just use the repository of the contentFacet supplied
     if (constraints == null || constraints.isEmpty()) {
-      return singleton(contentFacet.contentRepositoryId());
+      Integer repoId = contentFacet.contentRepositoryId();
+      log.fine(STR."No constraints supplied, using repository ID: \{repoId}");
+      return singleton(repoId);
     }
 
-    // Use SequencedSet to maintain order of repository IDs
-    // Java 21 Sequenced Collections API provides better handling of ordered collections
-    SequencedSet<Integer> repositoryIds = new LinkedHashSet<>();
-    
-    // Process each constraint and collect repository IDs
-    for (var constraint : constraints) {
-      // Use pattern matching to handle different types of collections
-      Collection<Integer> ids = constraint.getRepositoryIds(repository);
-      if (ids instanceof SequencedCollection<Integer> seqIds) {
-        // Add elements in their encounter order if it's a sequenced collection
-        seqIds.forEach(repositoryIds::add);
-      } else {
-        // Otherwise just add all elements
-        repositoryIds.addAll(ids);
-      }
-    }
+    // Use SequencedSet to maintain insertion order and provide enhanced operations with Java 21 Sequenced Collections API
+    SequencedSet<Integer> repositoryIds = constraints.stream()
+        .flatMap(constraint -> {
+          // Using pattern matching to handle different constraint types
+          Collection<Integer> ids = constraint.getRepositoryIds(repository);
+          log.fine(STR."Constraint \{constraint.getClass().getSimpleName()} provided \{ids.size()} repository IDs");
+          return ids.stream();
+        })
+        .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
 
-    // if we get to this point and no repository has been selected based on constraints, fallback to the repository
+    // If we get to this point and no repository has been selected based on constraints, fallback to the repository
     // of the contentFacet supplied
     if (repositoryIds.isEmpty()) {
-      repositoryIds.add(contentFacet.contentRepositoryId());
+      Integer repoId = contentFacet.contentRepositoryId();
+      log.fine(STR."No repository IDs from constraints, falling back to repository ID: \{repoId}");
+      repositoryIds.add(repoId);
+    } else {
+      // Using Sequenced Collections API to access first and last elements
+      log.fine(STR."Using \{repositoryIds.size()} repository IDs from constraints, first: \{repositoryIds.getFirst()}, last: \{repositoryIds.getLast()}");
     }
 
     return repositoryIds;
+  }
+  
+  /**
+   * Optimizes repository ID flattening operations using Java 21 Sequenced Collections API.
+   * This method demonstrates the use of enhanced collection APIs for handling repository IDs.
+   *
+   * @param repositoryIdCollections a collection of repository ID collections
+   * @return a flattened set of repository IDs
+   */
+  static SequencedSet<Integer> flattenRepositoryIds(Collection<Collection<Integer>> repositoryIdCollections) {
+    // Using Java 21 Sequenced Collections API for optimized flattening
+    SequencedSet<Integer> flattenedIds = new java.util.LinkedHashSet<>();
+    
+    if (repositoryIdCollections.isEmpty()) {
+      log.fine(STR."No repository ID collections to flatten");
+      return flattenedIds;
+    }
+    
+    // Process each collection of repository IDs
+    for (Collection<Integer> idCollection : repositoryIdCollections) {
+      // Using pattern matching to handle different collection types
+      if (idCollection instanceof SequencedSet<Integer> sequencedIds) {
+        // For sequenced collections, we can use the enhanced API
+        if (!sequencedIds.isEmpty()) {
+          log.fine(STR."Adding sequenced IDs from \{sequencedIds.getFirst()} to \{sequencedIds.getLast()}");
+          flattenedIds.addAll(sequencedIds);
+        }
+      } else {
+        // For regular collections, we add all elements
+        flattenedIds.addAll(idCollection);
+      }
+    }
+    
+    // Using String Templates for more readable logging of the result
+    if (!flattenedIds.isEmpty()) {
+      log.fine(STR."Flattened \{repositoryIdCollections.size()} collections into \{flattenedIds.size()} unique repository IDs");
+      log.fine(STR."First ID: \{flattenedIds.getFirst()}, Last ID: \{flattenedIds.getLast()}");
+    } else {
+      log.fine("No repository IDs found after flattening");
+    }
+    
+    return flattenedIds;
   }
 }

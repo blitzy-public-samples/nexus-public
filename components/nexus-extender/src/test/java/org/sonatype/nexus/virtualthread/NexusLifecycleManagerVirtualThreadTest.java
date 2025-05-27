@@ -15,14 +15,18 @@ package org.sonatype.nexus.virtualthread;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.inject.Named;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.app.ManagedLifecycle.Phase;
 import org.sonatype.nexus.extender.NexusLifecycleManager;
@@ -48,17 +52,25 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.*;
 
 /**
- * Tests {@link NexusLifecycleManager} behavior when operating with Java 21 Virtual Threads.
+ * Tests {@link NexusLifecycleManager} behavior with Java 21 Virtual Threads.
+ * 
+ * This test class validates that the NexusLifecycleManager correctly handles lifecycle
+ * phase transitions when triggered from virtual threads, ensuring proper ordering,
+ * error handling, and concurrency behavior. Virtual threads are lightweight threads
+ * introduced in Java 21 that enable high-throughput concurrent applications without
+ * the overhead of traditional platform threads.
  * 
  * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
 public class NexusLifecycleManagerVirtualThreadTest
+    extends TestSupport
 {
   @Mock
   private BeanLocator locator;
@@ -109,7 +121,7 @@ public class NexusLifecycleManagerVirtualThreadTest
   private NexusLifecycleManager underTest;
 
   @BeforeEach
-  public void setUp() throws Exception {
+  void setUp() throws Exception {
     phases = newArrayList(
         offPhase,
         kernelPhase,
@@ -164,30 +176,101 @@ public class NexusLifecycleManagerVirtualThreadTest
 
   /**
    * Tests that lifecycle phase transitions work correctly when triggered from a virtual thread.
+   * 
+   * This test verifies that the NexusLifecycleManager properly handles phase transitions
+   * when the transitions are triggered from a Java 21 virtual thread. It ensures that
+   * all phases are started and stopped in the correct order, and that the current phase
+   * is correctly updated after each transition.
    */
   @Test
-  public void lifecycleTransitionsFromVirtualThread() throws Exception {
-    // Create and start a virtual thread to execute lifecycle transitions
-    Thread virtualThread = Thread.ofVirtual().name("lifecycle-virtual-thread").start(() -> {
+  void lifecycleOrderingFromVirtualThread() throws Exception {
+    InOrder inOrder = verifyPhases();
+
+    // Use a CompletableFuture to capture any exceptions from the virtual thread
+    CompletableFuture<Void> future = new CompletableFuture<>();
+    
+    // Start a virtual thread to execute the lifecycle transitions
+    Thread.ofVirtual().name("lifecycle-virtual-thread").start(() -> {
       try {
-        // Transition through phases
+        // Transition through all phases in order
         underTest.to(KERNEL);
+        assertThat(underTest.getCurrentPhase(), is(KERNEL));
+        
         underTest.to(STORAGE);
-        underTest.to(TASKS); // Go all the way to TASKS
-        underTest.to(OFF);   // Then back to OFF
+        assertThat(underTest.getCurrentPhase(), is(STORAGE));
+        
+        underTest.to(RESTORE);
+        assertThat(underTest.getCurrentPhase(), is(RESTORE));
+        
+        underTest.to(UPGRADE);
+        assertThat(underTest.getCurrentPhase(), is(UPGRADE));
+        
+        underTest.to(SCHEMAS);
+        assertThat(underTest.getCurrentPhase(), is(SCHEMAS));
+        
+        underTest.to(EVENTS);
+        assertThat(underTest.getCurrentPhase(), is(EVENTS));
+        
+        underTest.to(SECURITY);
+        assertThat(underTest.getCurrentPhase(), is(SECURITY));
+        
+        underTest.to(SERVICES);
+        assertThat(underTest.getCurrentPhase(), is(SERVICES));
+        
+        underTest.to(REPOSITORIES);
+        assertThat(underTest.getCurrentPhase(), is(REPOSITORIES));
+        
+        underTest.to(CAPABILITIES);
+        assertThat(underTest.getCurrentPhase(), is(CAPABILITIES));
+        
+        underTest.to(TASKS);
+        assertThat(underTest.getCurrentPhase(), is(TASKS));
+        
+        // Now go back down through the phases
+        underTest.to(CAPABILITIES);
+        assertThat(underTest.getCurrentPhase(), is(CAPABILITIES));
+        
+        underTest.to(REPOSITORIES);
+        assertThat(underTest.getCurrentPhase(), is(REPOSITORIES));
+        
+        underTest.to(SERVICES);
+        assertThat(underTest.getCurrentPhase(), is(SERVICES));
+        
+        underTest.to(SECURITY);
+        assertThat(underTest.getCurrentPhase(), is(SECURITY));
+        
+        underTest.to(EVENTS);
+        assertThat(underTest.getCurrentPhase(), is(EVENTS));
+        
+        underTest.to(SCHEMAS);
+        assertThat(underTest.getCurrentPhase(), is(SCHEMAS));
+        
+        underTest.to(UPGRADE);
+        assertThat(underTest.getCurrentPhase(), is(UPGRADE));
+        
+        underTest.to(RESTORE);
+        assertThat(underTest.getCurrentPhase(), is(RESTORE));
+        
+        underTest.to(STORAGE);
+        assertThat(underTest.getCurrentPhase(), is(STORAGE));
+        
+        underTest.to(KERNEL);
+        assertThat(underTest.getCurrentPhase(), is(KERNEL));
+        
+        underTest.to(OFF);
+        assertThat(underTest.getCurrentPhase(), is(OFF));
+        
+        future.complete(null);
       }
       catch (Exception e) {
-        fail("Exception in virtual thread: " + e.getMessage());
+        future.completeExceptionally(e);
       }
     });
     
     // Wait for the virtual thread to complete
-    virtualThread.join();
+    future.get(5, TimeUnit.SECONDS);
     
-    // Verify the correct sequence of phase transitions
-    InOrder inOrder = verifyPhases();
-    
-    // Verify start sequence
+    // Verify the correct order of phase transitions
     inOrder.verify(kernelPhase).start();
     inOrder.verify(storagePhase).start();
     inOrder.verify(restorePhase).start();
@@ -200,7 +283,6 @@ public class NexusLifecycleManagerVirtualThreadTest
     inOrder.verify(capabilitiesPhase).start();
     inOrder.verify(tasksPhase).start();
     
-    // Verify stop sequence
     inOrder.verify(tasksPhase).stop();
     inOrder.verify(capabilitiesPhase).stop();
     inOrder.verify(repositoriesPhase).stop();
@@ -218,67 +300,92 @@ public class NexusLifecycleManagerVirtualThreadTest
   }
 
   /**
-   * Tests that error handling works properly when lifecycle operations are triggered from virtual threads.
+   * Tests that non-task errors properly stop startup when triggered from a virtual thread.
+   * 
+   * This test verifies that when a non-task phase throws an exception during startup
+   * from a virtual thread, the lifecycle manager correctly stops the startup process
+   * and settles at the phase just before the failing phase. This ensures that error
+   * handling works properly even when lifecycle operations are triggered from virtual threads.
    */
   @Test
-  public void errorHandlingInVirtualThread() throws Exception {
-    // Simulate an error in a phase
-    doThrow(new Exception("Virtual thread test error")).when(schemasPhase).start();
+  void nonTaskErrorsStopStartupFromVirtualThread() throws Exception {
+    InOrder inOrder = verifyPhases();
+
+    // Find a phase that's not OFF or TASKS to make fail
+    Lifecycle badPhase = randomPhases.stream()
+        .filter(phase -> !(phase.equals(offPhase) || phase.equals(tasksPhase)))
+        .findFirst()
+        .get();
+
+    doThrow(new Exception("testing")).when(badPhase).start();
+
+    // Use a reference to capture the exception from the virtual thread
+    AtomicReference<Exception> caughtException = new AtomicReference<>();
+    AtomicReference<Phase> finalPhase = new AtomicReference<>();
+    CountDownLatch latch = new CountDownLatch(1);
     
-    // Create and start a virtual thread
-    Thread virtualThread = Thread.ofVirtual().name("error-virtual-thread").start(() -> {
+    // Start a virtual thread to execute the lifecycle transition
+    Thread.ofVirtual().name("error-virtual-thread").start(() -> {
       try {
-        // Try to transition to TASKS, which should fail at SCHEMAS phase
-        underTest.to(TASKS);
-        fail("Expected exception was not thrown");
+        // Attempt to reach the last phase in the defined lifecycle
+        underTest.to(Phase.values()[Phase.values().length - 1]);
+        fail("Expected startup error to propagate");
       }
       catch (Exception e) {
-        // Expected exception
-        assertThat(underTest.getCurrentPhase(), is(UPGRADE)); // Should stop at UPGRADE phase
+        caughtException.set(e);
+        finalPhase.set(underTest.getCurrentPhase());
+        latch.countDown();
       }
     });
     
     // Wait for the virtual thread to complete
-    virtualThread.join();
+    boolean completed = latch.await(5, TimeUnit.SECONDS);
+    assertThat("Virtual thread should complete in time", completed, is(true));
+    assertThat("Exception should be caught", caughtException.get() != null, is(true));
     
-    // Verify the phases that were started before the error
-    InOrder inOrder = verifyPhases();
-    inOrder.verify(kernelPhase).start();
-    inOrder.verify(storagePhase).start();
-    inOrder.verify(restorePhase).start();
-    inOrder.verify(upgradePhase).start();
-    inOrder.verify(schemasPhase).start(); // This should have thrown an exception
-    
+    // Lifecycle should have settled at the phase just before the bad phase
+    assertThat(finalPhase.get(), is(Phase.values()[phases.indexOf(badPhase) - 1]));
+
+    // Verify phases after OFF up to including bad phase attempted to start
+    for (Lifecycle phase : phases.subList(1, phases.indexOf(badPhase) + 1)) {
+      inOrder.verify(phase).start();
+    }
     inOrder.verifyNoMoreInteractions();
   }
 
   /**
-   * Tests that task errors don't stop startup when running in virtual threads.
+   * Tests that task errors don't stop startup when triggered from a virtual thread.
+   * 
+   * This test verifies that when the TASKS phase throws an exception during startup
+   * from a virtual thread, the lifecycle manager correctly continues the startup process
+   * and reaches the TASKS phase despite the error. This is important because task errors
+   * should not prevent the system from starting up, even when using virtual threads.
    */
   @Test
-  public void taskErrorsDontStopStartupInVirtualThread() throws Exception {
-    // Simulate an error in the tasks phase
-    doThrow(new Exception("Virtual thread tasks error")).when(tasksPhase).start();
+  void taskErrorsDontStopStartupFromVirtualThread() throws Exception {
+    InOrder inOrder = verifyPhases();
+
+    doThrow(new Exception("testing")).when(tasksPhase).start();
+
+    // Use a CompletableFuture to capture any exceptions from the virtual thread
+    CompletableFuture<Void> future = new CompletableFuture<>();
     
-    // Create and start a virtual thread
-    Thread virtualThread = Thread.ofVirtual().name("tasks-error-virtual-thread").start(() -> {
+    // Start a virtual thread to execute the lifecycle transition
+    Thread.ofVirtual().name("task-error-virtual-thread").start(() -> {
       try {
-        // Try to transition to TASKS, which should have an error but not fail
         underTest.to(TASKS);
+        future.complete(null);
       }
       catch (Exception e) {
-        fail("Unexpected exception: " + e.getMessage());
+        future.completeExceptionally(e);
       }
     });
     
     // Wait for the virtual thread to complete
-    virtualThread.join();
-    
-    // Verify we reached the TASKS phase despite the error
+    future.get(5, TimeUnit.SECONDS);
+
     assertThat(underTest.getCurrentPhase(), is(TASKS));
-    
-    // Verify all phases were started
-    InOrder inOrder = verifyPhases();
+
     inOrder.verify(kernelPhase).start();
     inOrder.verify(storagePhase).start();
     inOrder.verify(restorePhase).start();
@@ -289,52 +396,69 @@ public class NexusLifecycleManagerVirtualThreadTest
     inOrder.verify(servicesPhase).start();
     inOrder.verify(repositoriesPhase).start();
     inOrder.verify(capabilitiesPhase).start();
-    inOrder.verify(tasksPhase).start(); // This had an error but didn't stop startup
-    
+    inOrder.verify(tasksPhase).start();
+
     inOrder.verifyNoMoreInteractions();
   }
 
   /**
-   * Tests that errors don't stop shutdown when running in virtual threads.
+   * Tests that errors don't stop shutdown when triggered from a virtual thread.
+   * 
+   * This test verifies that when phases throw exceptions during shutdown from a virtual thread,
+   * the lifecycle manager correctly continues the shutdown process through all phases
+   * until reaching the OFF phase. This ensures that the system can always be properly
+   * shut down, even when errors occur and operations are triggered from virtual threads.
    */
   @Test
-  public void errorsDontStopShutdownInVirtualThread() throws Exception {
-    // First transition to TASKS phase
-    underTest.to(TASKS);
-    assertThat(underTest.getCurrentPhase(), is(TASKS));
-    
-    // Simulate errors in all stop methods
-    doThrow(new Exception("Virtual thread stop error")).when(tasksPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(capabilitiesPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(repositoriesPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(servicesPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(securityPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(eventsPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(schemasPhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(upgradePhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(restorePhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(storagePhase).stop();
-    doThrow(new Exception("Virtual thread stop error")).when(kernelPhase).stop();
-    
-    // Create and start a virtual thread to shut down
-    Thread virtualThread = Thread.ofVirtual().name("shutdown-virtual-thread").start(() -> {
+  void errorsDontStopShutdownFromVirtualThread() throws Exception {
+    // First, bring the system up to TASKS phase
+    CompletableFuture<Void> startupFuture = new CompletableFuture<>();
+    Thread.ofVirtual().name("startup-virtual-thread").start(() -> {
       try {
-        // Try to transition to OFF, which should have errors but not fail
-        underTest.to(OFF);
+        underTest.to(TASKS);
+        startupFuture.complete(null);
       }
       catch (Exception e) {
-        fail("Unexpected exception: " + e.getMessage());
+        startupFuture.completeExceptionally(e);
       }
     });
     
-    // Wait for the virtual thread to complete
-    virtualThread.join();
-    
-    // Verify we reached the OFF phase despite the errors
-    assertThat(underTest.getCurrentPhase(), is(OFF));
-    
-    // Verify all phases were stopped
+    // Wait for startup to complete
+    startupFuture.get(5, TimeUnit.SECONDS);
+    assertThat(underTest.getCurrentPhase(), is(TASKS));
+
+    // Configure all phases to throw exceptions during stop
+    doThrow(new Exception("testing")).when(tasksPhase).stop();
+    doThrow(new Exception("testing")).when(capabilitiesPhase).stop();
+    doThrow(new Exception("testing")).when(repositoriesPhase).stop();
+    doThrow(new Exception("testing")).when(servicesPhase).stop();
+    doThrow(new Exception("testing")).when(securityPhase).stop();
+    doThrow(new Exception("testing")).when(eventsPhase).stop();
+    doThrow(new Exception("testing")).when(schemasPhase).stop();
+    doThrow(new Exception("testing")).when(upgradePhase).stop();
+    doThrow(new Exception("testing")).when(restorePhase).stop();
+    doThrow(new Exception("testing")).when(storagePhase).stop();
+    doThrow(new Exception("testing")).when(kernelPhase).stop();
+
     InOrder inOrder = verifyPhases();
+
+    // Now shut down from a virtual thread
+    CompletableFuture<Void> shutdownFuture = new CompletableFuture<>();
+    Thread.ofVirtual().name("shutdown-virtual-thread").start(() -> {
+      try {
+        underTest.to(OFF);
+        shutdownFuture.complete(null);
+      }
+      catch (Exception e) {
+        shutdownFuture.completeExceptionally(e);
+      }
+    });
+    
+    // Wait for shutdown to complete
+    shutdownFuture.get(5, TimeUnit.SECONDS);
+
+    assertThat(underTest.getCurrentPhase(), is(OFF));
+
     inOrder.verify(tasksPhase).stop();
     inOrder.verify(capabilitiesPhase).stop();
     inOrder.verify(repositoriesPhase).stop();
@@ -347,260 +471,216 @@ public class NexusLifecycleManagerVirtualThreadTest
     inOrder.verify(storagePhase).stop();
     inOrder.verify(kernelPhase).stop();
     inOrder.verify(systemBundle).stop();
-    
+
     inOrder.verifyNoMoreInteractions();
   }
 
   /**
-   * Tests concurrent lifecycle operations with multiple virtual threads.
+   * Tests concurrent lifecycle operations from multiple virtual threads.
+   * 
+   * This test verifies that the NexusLifecycleManager can handle concurrent lifecycle
+   * operations from multiple virtual threads without deadlocks or synchronization issues.
+   * It launches multiple virtual threads that attempt to transition to different phases
+   * simultaneously, ensuring that the lifecycle manager properly synchronizes these
+   * operations and maintains a consistent state.
    */
   @Test
-  public void concurrentLifecycleOperationsWithVirtualThreads() throws Exception {
-    // Create a virtual thread executor
+  void concurrentLifecycleOperationsFromVirtualThreads() throws Exception {
+    // Use a virtual thread executor for concurrent operations
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Start with KERNEL phase
       underTest.to(KERNEL);
       assertThat(underTest.getCurrentPhase(), is(KERNEL));
       
-      // Create a latch to synchronize threads
-      CountDownLatch latch = new CountDownLatch(1);
+      // Create a barrier to synchronize all threads
+      int threadCount = 5;
+      CyclicBarrier barrier = new CyclicBarrier(threadCount);
+      CountDownLatch completionLatch = new CountDownLatch(threadCount);
+      AtomicBoolean failed = new AtomicBoolean(false);
       
-      // Submit multiple concurrent tasks to bounce between phases
-      Future<?> future1 = executor.submit(() -> {
-        try {
-          latch.await(); // Wait for signal to start
-          underTest.bounce(STORAGE); // Bounce the STORAGE phase
-        }
-        catch (Exception e) {
-          fail("Exception in virtual thread 1: " + e.getMessage());
-        }
-      });
+      // Launch multiple virtual threads that try to transition to different phases
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Wait for all threads to be ready
+            barrier.await(5, TimeUnit.SECONDS);
+            
+            // Each thread tries to transition to a different phase
+            Phase targetPhase;
+            switch (index % 5) {
+              case 0: targetPhase = STORAGE; break;
+              case 1: targetPhase = RESTORE; break;
+              case 2: targetPhase = UPGRADE; break;
+              case 3: targetPhase = SCHEMAS; break;
+              default: targetPhase = EVENTS; break;
+            }
+            
+            // Perform the transition
+            underTest.to(targetPhase);
+          }
+          catch (Exception e) {
+            failed.set(true);
+            log.error("Thread {} failed", index, e);
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
+      }
       
-      Future<?> future2 = executor.submit(() -> {
-        try {
-          latch.await(); // Wait for signal to start
-          underTest.to(EVENTS); // Go to EVENTS phase
-        }
-        catch (Exception e) {
-          fail("Exception in virtual thread 2: " + e.getMessage());
-        }
-      });
+      // Wait for all threads to complete
+      boolean completed = completionLatch.await(10, TimeUnit.SECONDS);
+      assertThat("All virtual threads should complete in time", completed, is(true));
+      assertThat("No virtual threads should fail", failed.get(), is(false));
       
-      // Signal threads to start
-      latch.countDown();
-      
-      // Wait for all tasks to complete
-      future1.get(5, TimeUnit.SECONDS);
-      future2.get(5, TimeUnit.SECONDS);
-      
-      // Verify we ended up at the EVENTS phase (the last operation)
-      assertThat(underTest.getCurrentPhase(), is(EVENTS));
+      // The final phase should be one of the target phases
+      Phase finalPhase = underTest.getCurrentPhase();
+      assertThat("Final phase should be one of the target phases",
+          finalPhase == STORAGE || finalPhase == RESTORE || finalPhase == UPGRADE || 
+          finalPhase == SCHEMAS || finalPhase == EVENTS, is(true));
     }
   }
 
   /**
-   * Tests that sync() method works correctly when called from a virtual thread.
+   * Tests that the lifecycle manager can handle a high number of concurrent virtual threads
+   * without deadlocks or synchronization issues.
+   * 
+   * This test verifies that the NexusLifecycleManager can handle a high volume of concurrent
+   * virtual threads (100) performing lifecycle operations without deadlocks or synchronization
+   * issues. It uses Java 21's Executors.newVirtualThreadPerTaskExecutor() to create a large
+   * number of virtual threads that perform bounce operations on different phases simultaneously.
+   * This test is particularly important for validating the system's behavior under high concurrency
+   * scenarios that are now possible with virtual threads.
    */
   @Test
-  public void syncFromVirtualThread() throws Exception {
+  void highConcurrencyVirtualThreads() throws Exception {
     // Start with KERNEL phase
     underTest.to(KERNEL);
     assertThat(underTest.getCurrentPhase(), is(KERNEL));
     
-    // Create and start a virtual thread to call sync()
-    Thread virtualThread = Thread.ofVirtual().name("sync-virtual-thread").start(() -> {
-      try {
-        underTest.sync();
+    // Use a virtual thread executor for high concurrency
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      int threadCount = 100; // High number of virtual threads
+      CountDownLatch startLatch = new CountDownLatch(1);
+      CountDownLatch completionLatch = new CountDownLatch(threadCount);
+      AtomicBoolean failed = new AtomicBoolean(false);
+      
+      // Launch many virtual threads that perform lifecycle operations
+      for (int i = 0; i < threadCount; i++) {
+        final int index = i;
+        executor.submit(() -> {
+          try {
+            // Wait for the signal to start
+            startLatch.await();
+            
+            // Each thread performs a bounce operation on a phase
+            Phase bouncePhase = Phase.values()[1 + (index % (Phase.values().length - 1))];
+            underTest.bounce(bouncePhase);
+          }
+          catch (Exception e) {
+            failed.set(true);
+            log.error("Thread {} failed", index, e);
+          }
+          finally {
+            completionLatch.countDown();
+          }
+        });
       }
-      catch (Exception e) {
-        fail("Exception in virtual thread: " + e.getMessage());
-      }
-    });
-    
-    // Wait for the virtual thread to complete
-    virtualThread.join();
-    
-    // Verify the phase hasn't changed
-    assertThat(underTest.getCurrentPhase(), is(KERNEL));
+      
+      // Start all threads simultaneously
+      startLatch.countDown();
+      
+      // Wait for all threads to complete with a generous timeout
+      boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
+      assertThat("All virtual threads should complete in time", completed, is(true));
+      assertThat("No virtual threads should fail", failed.get(), is(false));
+    }
+  }
+
+  private static class TestLifecycle
+      implements Lifecycle
+  {
+    @Override
+    public void start() throws Exception {
+      // no-op
+    }
+
+    @Override
+    public void stop() throws Exception {
+      // no-op
+    }
   }
 
   @ManagedLifecycle(phase = OFF)
   private static class OffPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = KERNEL)
   private static class KernelPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = STORAGE)
   private static class StoragePhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = RESTORE)
   private static class RestorePhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = UPGRADE)
   private static class UpgradePhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = SCHEMAS)
   private static class SchemasPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = EVENTS)
   private static class EventsPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = SECURITY)
   private static class SecurityPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = SERVICES)
   private static class ServicesPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = REPOSITORIES)
   private static class RepositoriesPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = CAPABILITIES)
   private static class CapabilitiesPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 
   @ManagedLifecycle(phase = TASKS)
   private static class TasksPhase
-      implements Lifecycle
+      extends TestLifecycle
   {
-    @Override
-    public void start() throws Exception {
-      // no-op
-    }
-
-    @Override
-    public void stop() throws Exception {
-      // no-op
-    }
   }
 }

@@ -12,10 +12,11 @@
  */
 package org.sonatype.nexus.repository.rest.api;
 
-import static java.lang.StringTemplate.STR;
+import org.sonatype.nexus.common.text.StringTemplateSupport;
 
 /**
- * Exception thrown when operations are attempted on incompatible repositories.
+ * Exception thrown when a repository is incompatible with a requested operation.
+ * Uses Java 21 String Templates for improved message clarity and formatting.
  *
  * @since 3.20
  */
@@ -31,26 +32,26 @@ public class IncompatibleRepositoryException extends Exception
   }
 
   /**
-   * Constructs a new exception with a formatted detail message using Java 21 String Templates.
+   * Constructs a new exception with a formatted message using String Templates.
    *
-   * @param repositoryName the name of the repository
-   * @param formatName the format name
+   * @param repositoryName the name of the incompatible repository
+   * @param reason the reason for incompatibility
    * @return a new exception with a formatted message
    */
-  public static IncompatibleRepositoryException withRepositoryAndFormat(String repositoryName, String formatName) {
+  public static IncompatibleRepositoryException create(String repositoryName, String reason) {
     return new IncompatibleRepositoryException(
-        STR."Repository '\{repositoryName}' is not compatible with format '\{formatName}'.");
+        StringTemplateSupport.formatRepositoryIncompatibility(repositoryName, reason));
   }
 
   /**
-   * Constructs a new exception with a formatted detail message using Java 21 String Templates.
+   * Constructs a new exception with a formatted message using String Templates.
    *
-   * @param repositoryName the name of the repository
-   * @param expectedType the expected repository type
+   * @param messageTemplate the message template
+   * @param args the arguments to be interpolated into the template
    * @return a new exception with a formatted message
    */
-  public static IncompatibleRepositoryException withRepositoryAndType(String repositoryName, String expectedType) {
+  public static IncompatibleRepositoryException withTemplate(String messageTemplate, Object... args) {
     return new IncompatibleRepositoryException(
-        STR."Repository '\{repositoryName}' is not of expected type '\{expectedType}'.");
+        StringTemplateSupport.formatErrorMessage(messageTemplate, args));
   }
 }

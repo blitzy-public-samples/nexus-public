@@ -13,10 +13,15 @@
 package org.sonatype.nexus.script.plugin.internal;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Stream;
-import java.util.stream.Collectors;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.supportzip.datastore.JsonExporter;
@@ -24,23 +29,18 @@ import org.sonatype.nexus.supportzip.datastore.JsonExporter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.Matchers.anyOf;
-import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
  * Tests validity of Serialization/Deserialization {@link Script} by {@link ScriptExport}
- *
- * @since 3.next
- * @see ScriptExport
- * 
- * Updated for Java 21 compatibility using JUnit Jupiter 5.10.1.
- * Uses modern Stream API and collectors instead of deprecated Arrays.asList().
- * Implements JUnit 5 lifecycle annotations for test setup and teardown.
  */
+@ExtendWith(MockitoExtension.class)
 public class ScriptExportTest
 {
   private final JsonExporter jsonExporter = new JsonExporter();
@@ -48,23 +48,20 @@ public class ScriptExportTest
   private File jsonFile;
 
   @BeforeEach
-  public void setup() throws IOException {
+  public void setUp() throws IOException {
     jsonFile = File.createTempFile("SamlUser", ".json");
   }
 
   @AfterEach
   public void tearDown() {
-    if (jsonFile != null && jsonFile.exists()) {
-      jsonFile.delete();
-    }
+    jsonFile.delete();
   }
 
   @Test
-  public void testExportImportToJson() throws Exception {
-    List<Script> scripts = Stream.of(
+  public void shouldExportImportToJson() throws Exception {
+    List<Script> scripts = Arrays.asList(
         createScript("script_1"),
-        createScript("script_2"))
-        .collect(Collectors.toList());
+        createScript("script_2"));
 
     ScriptStore store = mock(ScriptStore.class);
     when(store.list()).thenReturn(scripts);
@@ -73,12 +70,67 @@ public class ScriptExportTest
     exporter.export(jsonFile);
     List<ScriptData> importedData = jsonExporter.importFromJson(jsonFile, ScriptData.class);
 
-    assertThat(importedData.size(), is(2));
-    importedData.forEach(data -> assertThat(data.getName(), anyOf(
-        is(scripts.get(0).getName()),
-        is(scripts.get(1).getName()))));
-    importedData.forEach(data -> assertThat(data.getType(), is("script")));
-    importedData.forEach(data -> assertThat(data.getContent(), is("log.info('world')")));
+    assertEquals(2, importedData.size());
+    importedData.forEach(data -> {
+      assertTrue(scripts.get(0).getName().equals(data.getName()) || 
+                scripts.get(1).getName().equals(data.getName()));
+    });
+    importedData.forEach(data -> assertEquals("script", data.getType()));
+    importedData.forEach(data -> assertEquals("log.info('world')", data.getContent()));
+  }
+  
+  @Test
+  public void shouldHandleIOOperationsWithVirtualThreads() throws Exception {
+    // Number of virtual threads to create
+    int threadCount = 10;
+    CountDownLatch latch = new CountDownLatch(threadCount);
+    List<Path> tempFiles = new ArrayList<>();
+    List<Exception> exceptions = new ArrayList<>();
+    
+    // Create and start virtual threads for I/O operations
+    for (int i = 0; i < threadCount; i++) {
+      final int threadId = i;
+      Thread.startVirtualThread(() -> {
+        try {
+          // Create a temporary file for this thread
+          Path tempFile = Files.createTempFile("vthread-test-" + threadId, ".txt");
+          tempFiles.add(tempFile);
+          
+          // Write some data to the file
+          try (FileWriter writer = new FileWriter(tempFile.toFile())) {
+            writer.write("Virtual thread " + threadId + " writing to file\n");
+            writer.write("This demonstrates I/O operations with virtual threads\n");
+            // Simulate some processing time
+            Thread.sleep(50);
+          }
+          
+          // Read the data back to verify
+          String content = Files.readString(tempFile);
+          assertTrue(content.contains("Virtual thread " + threadId));
+          assertTrue(content.contains("demonstrates I/O operations"));
+          
+        } catch (Exception e) {
+          synchronized (exceptions) {
+            exceptions.add(e);
+          }
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Wait for all threads to complete (with timeout)
+    boolean completed = latch.await(5, TimeUnit.SECONDS);
+    
+    // Cleanup temp files
+    for (Path file : tempFiles) {
+      Files.deleteIfExists(file);
+    }
+    
+    // Verify all threads completed successfully
+    assertTrue(completed, "Not all virtual threads completed in time");
+    assertTrue(exceptions.isEmpty(), "Exceptions occurred during virtual thread execution: " + exceptions);
+    assertEquals(threadCount, tempFiles.size(), "Not all threads created temp files");
   }
 
   private Script createScript(final String name) {
@@ -90,3 +142,4 @@ public class ScriptExportTest
     return script;
   }
 }
+

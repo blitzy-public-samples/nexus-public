@@ -12,126 +12,266 @@
  */
 package org.sonatype.nexus.stringtemplates;
 
+import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.log.LoggerLevel;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mock;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Marker;
+import org.slf4j.MarkerFactory;
 
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 
 /**
- * Tests for Java 21 String Templates integration with Nexus logging framework.
- *
+ * Tests for Java 21 String Templates integration with the Nexus logging framework.
+ * 
  * @since 3.60
  */
 public class LoggingStringTemplateTest
     extends TestSupport
 {
-  @Mock
-  private Logger logger;
-
+  private static final Logger log = LoggerFactory.getLogger(LoggingStringTemplateTest.class);
+  
+  private static final Marker TEST_MARKER = MarkerFactory.getMarker("STRING_TEMPLATE_TEST");
+  
+  private TestLogAppender testLogAppender;
+  
   @Before
-  public void setup() {
-    // Configure logger mock to enable all log levels for testing
-    when(logger.isTraceEnabled()).thenReturn(true);
-    when(logger.isDebugEnabled()).thenReturn(true);
-    when(logger.isInfoEnabled()).thenReturn(true);
-    when(logger.isWarnEnabled()).thenReturn(true);
-    when(logger.isErrorEnabled()).thenReturn(true);
+  public void setUp() {
+    testLogAppender = new TestLogAppender();
+    testLogAppender.start();
+    
+    // Add the test appender to the logger
+    ch.qos.logback.classic.Logger rootLogger = 
+        (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+    rootLogger.addAppender(testLogAppender);
   }
-
+  
+  /**
+   * Tests basic String Template usage with different log levels.
+   */
   @Test
   public void testBasicStringTemplateLogging() {
-    String repositoryName = "maven-central";
-    int itemCount = 42;
-
-    // Test with different log levels
-    logger.trace(STR."Repository \{repositoryName} contains \{itemCount} items");
-    logger.debug(STR."Repository \{repositoryName} contains \{itemCount} items");
-    logger.info(STR."Repository \{repositoryName} contains \{itemCount} items");
-    logger.warn(STR."Repository \{repositoryName} contains \{itemCount} items");
-    logger.error(STR."Repository \{repositoryName} contains \{itemCount} items");
-
-    // Verify the logger received the correctly formatted messages
-    verify(logger).trace("Repository maven-central contains 42 items");
-    verify(logger).debug("Repository maven-central contains 42 items");
-    verify(logger).info("Repository maven-central contains 42 items");
-    verify(logger).warn("Repository maven-central contains 42 items");
-    verify(logger).error("Repository maven-central contains 42 items");
-  }
-
-  @Test
-  public void testComplexStringTemplateLogging() {
-    // Test with complex data types
-    Map<String, Object> metadata = Map.of(
-        "name", "example-repo",
-        "type", "maven2",
-        "online", true,
-        "blobstore", "default"
-    );
-
-    LoggerLevel level = LoggerLevel.INFO;
-    Exception exception = new RuntimeException("Test exception");
-
-    // Complex template with multiple expressions and different data types
-    logger.info(STR."Repository metadata: \{metadata}, current level: \{level}, status: \{metadata.get("online") ? "ONLINE" : "OFFLINE"}");
+    String componentName = "StringTemplateTest";
+    int value = 42;
     
-    // Verify complex template was correctly processed
-    verify(logger).info("Repository metadata: {name=example-repo, type=maven2, online=true, blobstore=default}, " +
-        "current level: INFO, status: ONLINE");
-
-    // Test with exception
-    logger.error(STR."Failed to process repository \{metadata.get("name")}", exception);
-    verify(logger).error("Failed to process repository example-repo", exception);
+    // Test DEBUG level
+    log.debug(STR."Component \{componentName} initialized with value \{value}");
+    assertThat(testLogAppender.getLastMessage(), 
+        containsString("Component StringTemplateTest initialized with value 42"));
+    
+    // Test INFO level
+    log.info(STR."Component \{componentName} is running with value \{value}");
+    assertThat(testLogAppender.getLastMessage(), 
+        containsString("Component StringTemplateTest is running with value 42"));
+    
+    // Test WARN level
+    log.warn(STR."Component \{componentName} has unusual value: \{value}");
+    assertThat(testLogAppender.getLastMessage(), 
+        containsString("Component StringTemplateTest has unusual value: 42"));
+    
+    // Test ERROR level
+    log.error(STR."Component \{componentName} failed with error code \{value}");
+    assertThat(testLogAppender.getLastMessage(), 
+        containsString("Component StringTemplateTest failed with error code 42"));
   }
-
-  @Test
-  public void testConditionalLogging() {
-    String repositoryName = "maven-central";
-    int itemCount = 42;
-
-    // Test conditional logging with String Templates
-    if (logger.isDebugEnabled()) {
-      logger.debug(STR."Detailed repository info - name: \{repositoryName}, items: \{itemCount}, " +
-          "calculated value: \{calculateValue(itemCount)}");
-    }
-
-    // Verify the conditional log was processed correctly
-    verify(logger).debug("Detailed repository info - name: maven-central, items: 42, calculated value: 84");
-  }
-
-  @Test
-  public void testMultilineStringTemplateLogging() {
-    // Test with text block template
-    String user = "admin";
-    String action = "CREATE";
-    String target = "maven-releases";
-
-    logger.info(STR."""
-        Audit log entry:
-        User: \{user}
-        Action: \{action}
-        Target: \{target}
-        Timestamp: \{java.time.Instant.now()}
-        """);
-
-    // We can't verify the exact string due to the timestamp, so we verify that info() was called once
-    verify(logger).info(org.mockito.ArgumentMatchers.contains("Audit log entry:"));
-    verify(logger).info(org.mockito.ArgumentMatchers.contains("User: admin"));
-    verify(logger).info(org.mockito.ArgumentMatchers.contains("Action: CREATE"));
-    verify(logger).info(org.mockito.ArgumentMatchers.contains("Target: maven-releases"));
-  }
-
+  
   /**
-   * Helper method to demonstrate method calls in templates
+   * Tests String Template with different data types.
    */
-  private int calculateValue(int input) {
-    return input * 2;
+  @Test
+  public void testStringTemplateWithDifferentTypes() {
+    String text = "test";
+    int number = 100;
+    double decimal = 3.14159;
+    boolean flag = true;
+    LocalDateTime now = LocalDateTime.now();
+    Object nullValue = null;
+    
+    log.info(STR."Values - text: \{text}, number: \{number}, decimal: \{decimal}, flag: \{flag}, "
+        + STR."date: \{now}, null: \{nullValue}");
+    
+    String logMessage = testLogAppender.getLastMessage();
+    assertThat(logMessage, containsString("text: test"));
+    assertThat(logMessage, containsString("number: 100"));
+    assertThat(logMessage, containsString("decimal: 3.14159"));
+    assertThat(logMessage, containsString("flag: true"));
+    assertThat(logMessage, containsString("date: " + now));
+    assertThat(logMessage, containsString("null: null"));
+  }
+  
+  /**
+   * Tests String Template with complex expressions.
+   */
+  @Test
+  public void testStringTemplateWithComplexExpressions() {
+    int x = 10;
+    int y = 20;
+    
+    // Test with arithmetic expressions
+    log.info(STR."Calculation: \{x} + \{y} = \{x + y}");
+    assertThat(testLogAppender.getLastMessage(), containsString("Calculation: 10 + 20 = 30"));
+    
+    // Test with conditional expressions
+    log.info(STR."Status: \{x > y ? "x is greater" : "y is greater or equal"}");
+    assertThat(testLogAppender.getLastMessage(), containsString("Status: y is greater or equal"));
+    
+    // Test with method calls
+    log.info(STR."Uppercase: \{"hello".toUpperCase()}");
+    assertThat(testLogAppender.getLastMessage(), containsString("Uppercase: HELLO"));
+    
+    // Test with multi-line expressions
+    log.info(STR."Current time: \{
+        // Get current time with zone
+        ZonedDateTime.now()
+            .toString()
+    }");
+    assertThat(testLogAppender.getLastMessage(), containsString("Current time: "));
+  }
+  
+  /**
+   * Tests String Template with markers.
+   */
+  @Test
+  public void testStringTemplateWithMarkers() {
+    String operation = "backup";
+    
+    log.info(TEST_MARKER, STR."Starting operation: \{operation}");
+    assertThat(testLogAppender.getLastMessage(), containsString("Starting operation: backup"));
+    assertThat(testLogAppender.getLastMarker(), is(TEST_MARKER));
+  }
+  
+  /**
+   * Tests String Template with exception logging.
+   */
+  @Test
+  public void testStringTemplateWithExceptions() {
+    String operation = "critical-task";
+    Exception exception = new RuntimeException("Test exception");
+    
+    log.error(STR."Failed to execute \{operation}", exception);
+    
+    String logMessage = testLogAppender.getLastMessage();
+    assertThat(logMessage, containsString("Failed to execute critical-task"));
+    assertThat(testLogAppender.getLastThrowable(), is(exception));
+  }
+  
+  /**
+   * Tests String Template with conditional logging.
+   */
+  @Test
+  public void testConditionalLoggingWithStringTemplate() {
+    String sensitiveData = "password123";
+    boolean isDebugEnabled = log.isDebugEnabled();
+    
+    // Traditional approach with isDebugEnabled check
+    if (log.isDebugEnabled()) {
+      log.debug(STR."Processing sensitive data: \{sensitiveData}");
+    }
+    
+    // Using conditional expression within template
+    log.debug(STR."Debug is \{isDebugEnabled ? "enabled" : "disabled"}");
+    assertThat(testLogAppender.getLastMessage(), 
+        containsString(isDebugEnabled ? "Debug is enabled" : "Debug is disabled"));
+  }
+  
+  /**
+   * Tests String Template with map data.
+   */
+  @Test
+  public void testStringTemplateWithMapData() {
+    Map<String, Object> configData = new HashMap<>();
+    configData.put("host", "localhost");
+    configData.put("port", 8080);
+    configData.put("maxConnections", 100);
+    
+    log.info(STR."Configuration: host=\{configData.get("host")}, "
+        + STR."port=\{configData.get("port")}, "
+        + STR."maxConnections=\{configData.get("maxConnections")}");
+    
+    String logMessage = testLogAppender.getLastMessage();
+    assertThat(logMessage, containsString("Configuration: host=localhost, port=8080, maxConnections=100"));
+  }
+  
+  /**
+   * Tests performance comparison between String Templates and traditional string formatting.
+   */
+  @Test
+  public void testPerformanceComparison() {
+    String name = "Nexus Repository";
+    String version = "3.60.0";
+    int connections = 250;
+    
+    // Measure traditional string concatenation
+    long startConcat = System.nanoTime();
+    for (int i = 0; i < 1000; i++) {
+      String message = "Application " + name + " version " + version + " has " + connections + " active connections";
+      assertThat(message, notNullValue());
+    }
+    long endConcat = System.nanoTime();
+    
+    // Measure String.format
+    long startFormat = System.nanoTime();
+    for (int i = 0; i < 1000; i++) {
+      String message = String.format("Application %s version %s has %d active connections", 
+          name, version, connections);
+      assertThat(message, notNullValue());
+    }
+    long endFormat = System.nanoTime();
+    
+    // Measure String Template
+    long startTemplate = System.nanoTime();
+    for (int i = 0; i < 1000; i++) {
+      String message = STR."Application \{name} version \{version} has \{connections} active connections";
+      assertThat(message, notNullValue());
+    }
+    long endTemplate = System.nanoTime();
+    
+    // Log the results
+    log.info(STR."Performance comparison (ns) - Concatenation: \{endConcat - startConcat}, "
+        + STR."String.format: \{endFormat - startFormat}, "
+        + STR."String Template: \{endTemplate - startTemplate}");
+  }
+  
+  /**
+   * A test appender that captures log events for verification.
+   */
+  private static class TestLogAppender extends ch.qos.logback.core.AppenderBase<ch.qos.logback.classic.spi.ILoggingEvent> {
+    private String lastMessage;
+    private Throwable lastThrowable;
+    private Marker lastMarker;
+    
+    @Override
+    protected void append(ch.qos.logback.classic.spi.ILoggingEvent event) {
+      lastMessage = event.getFormattedMessage();
+      lastMarker = event.getMarker();
+      
+      if (event.getThrowableProxy() != null) {
+        lastThrowable = ((ch.qos.logback.classic.spi.ThrowableProxy) event.getThrowableProxy()).getThrowable();
+      } else {
+        lastThrowable = null;
+      }
+    }
+    
+    public String getLastMessage() {
+      return lastMessage;
+    }
+    
+    public Throwable getLastThrowable() {
+      return lastThrowable;
+    }
+    
+    public Marker getLastMarker() {
+      return lastMarker;
+    }
   }
 }

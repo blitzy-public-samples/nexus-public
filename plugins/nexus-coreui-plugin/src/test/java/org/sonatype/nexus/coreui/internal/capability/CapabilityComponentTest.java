@@ -29,7 +29,6 @@ import org.sonatype.nexus.rapture.PasswordPlaceholder;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableMap;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -50,8 +49,6 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests {@link CapabilityComponent}.
- * 
- * Updated for Java 21 compatibility using JUnit Jupiter (JUnit 5) and Mockito 4.11.0.
  */
 @ExtendWith(MockitoExtension.class)
 public class CapabilityComponentTest
@@ -87,7 +84,7 @@ public class CapabilityComponentTest
   private CapabilityComponent underTest;
 
   @BeforeEach
-  void setup() {
+  public void setup() {
     underTest = new CapabilityComponent(capabilityDescriptorRegistry, capabilityRegistry);
     when(capabilityContext.properties()).thenReturn(
         ImmutableMap.of("username", "username", "password", "its a secret to everybody"));
@@ -103,8 +100,7 @@ public class CapabilityComponentTest
   }
 
   @Test
-  @DisplayName("Password properties should not be returned in cleartext")
-  void testReadPasswordNotCleartext() {
+  public void readShouldNotReturnCleartextPasswords() {
     List<CapabilityXO> capabilities = underTest.read();
     assertThat(capabilities, hasSize(1));
     assertThat(capabilities.get(0).getProperties().get("username"), is("username"));
@@ -113,8 +109,7 @@ public class CapabilityComponentTest
   }
 
   @Test
-  @DisplayName("Password should be empty when authentication type is PKI")
-  void testReadPasswordEmptyForPKI() {
+  public void readShouldReturnEmptyPasswordForPKI() {
     when(capabilityContext.properties()).thenReturn(
         ImmutableMap.of("username", "username", "password", "its a secret to everybody", "authenticationType", "PKI"));
     List<CapabilityXO> capabilities = underTest.read();
@@ -124,8 +119,7 @@ public class CapabilityComponentTest
   }
 
   @Test
-  @DisplayName("Password placeholder should retain the current password value when updating")
-  void testUpdatePlaceholderRetainsCurrentPassword() {
+  public void updateShouldRetainCurrentPasswordWhenPlaceholderProvided() {
     CapabilityXO capabilityXO = new CapabilityXO();
     capabilityXO.setId("mycap");
     capabilityXO.setProperties(ImmutableMap.of("username", "username", "password", PasswordPlaceholder.get()));

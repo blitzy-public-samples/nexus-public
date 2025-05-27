@@ -57,15 +57,24 @@ public class FreezeAction
     this.freezeService = checkNotNull(freezeService);
   }
 
+  /**
+   * Executes the freeze action based on the specified mode.
+   * Uses Java 21 pattern matching for switch to enhance readability.
+   *
+   * @return null as no specific return value is needed
+   * @throws Exception if an error occurs during execution
+   */
   @Override
   public Object execute() throws Exception {
+    // Using Java 21 pattern matching for switch with enhanced readability
     switch (mode) {
-      case enable -> {
-        log.info(STR."Freezing Nexus Repository Manager via console request");
-        freezeService.requestFreeze("console request");
+      case Mode enable -> {
+        String reason = "console request";
+        log.info(STR."Freezing Nexus Repository Manager: \{reason}");
+        freezeService.requestFreeze(reason);
       }
-      case release -> {
-        log.info(STR."Releasing freeze on Nexus Repository Manager via console request");
+      case Mode release -> {
+        log.info(STR."Releasing freeze on Nexus Repository Manager");
         freezeService.cancelFreeze();
       }
     }

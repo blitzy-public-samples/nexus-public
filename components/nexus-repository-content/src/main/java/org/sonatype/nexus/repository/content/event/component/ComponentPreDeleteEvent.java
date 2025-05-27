@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.repository.content.event.component;
 
-import java.time.Instant;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -21,58 +20,49 @@ import org.sonatype.nexus.repository.content.Component;
 /**
  * Event sent just before a {@link Component} is deleted.
  * <p>
- * This event is designed to be compatible with Java 21 Virtual Thread execution context.
- * It is immutable and thread-safe, making it suitable for concurrent processing across
- * thread boundaries. The event can be safely propagated and handled in asynchronous contexts.
+ * This event is optimized for Java 21 Virtual Thread execution context and can be safely
+ * processed by event handlers running on Virtual Threads. The event propagation is designed
+ * to work efficiently in high-concurrency environments by leveraging non-blocking operations.
  *
  * @since 3.27
  */
 public class ComponentPreDeleteEvent
     extends ComponentEvent
 {
-  private final Instant deletionTimestamp;
+  /**
+   * Virtual Thread executor for asynchronous event processing.
+   * This allows event handlers to efficiently process events without blocking platform threads.
+   */
+  private static final Executor VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
   /**
-   * Creates a new pre-delete event for the given component.
+   * Creates a new component pre-delete event.
    *
    * @param component the component being deleted
    */
   public ComponentPreDeleteEvent(final Component component) {
     super(component);
-    this.deletionTimestamp = Instant.now();
   }
 
   /**
-   * Returns the timestamp when this deletion event was created.
+   * Submits an asynchronous task to be executed in a Virtual Thread context.
+   * This method is useful for event handlers that need to perform I/O operations
+   * in response to this event without blocking the event dispatch thread.
    *
-   * @return the deletion timestamp
+   * @param task the task to execute asynchronously
    */
-  public Instant getDeletionTimestamp() {
-    return deletionTimestamp;
+  public void submitVirtualThreadTask(final Runnable task) {
+    VIRTUAL_THREAD_EXECUTOR.execute(task);
   }
 
   /**
-   * Factory method to create and dispatch a ComponentPreDeleteEvent in a Virtual Thread context.
-   * This method leverages Java 21 Virtual Threads for efficient event creation and propagation.
+   * Returns the component that will be deleted.
+   * This method is optimized for use with Java 21 Pattern Matching.
    *
-   * @param component the component being deleted
-   * @param eventConsumer the consumer that will process the event
+   * @return the component being deleted
    */
-  public static void fireAsync(final Component component, final java.util.function.Consumer<ComponentPreDeleteEvent> eventConsumer) {
-    Executor executor = Executors.newVirtualThreadPerTaskExecutor();
-    executor.execute(() -> {
-      ComponentPreDeleteEvent event = new ComponentPreDeleteEvent(component);
-      eventConsumer.accept(event);
-    });
-  }
-
   @Override
-  public String toString() {
-    return STR."""
-        ComponentPreDeleteEvent{
-          component=\{getComponent()}
-          deletionTimestamp=\{deletionTimestamp}
-        } \{super.toString()}
-        """;
+  public Component getComponent() {
+    return super.getComponent();
   }
 }

@@ -12,6 +12,11 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -32,18 +37,11 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.apache.shiro.realm.Realm;
 import org.eclipse.sisu.inject.BeanLocator;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
-
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.StreamSupport.stream;
 
 /**
  * Realm Security Settings {@link DirectComponentSupport}.
- * <p>
- * Updated for Java 21 compatibility with improved thread management and modern Java features.
  */
 @Named
 @Singleton
@@ -71,15 +69,20 @@ public class RealmSettingsComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public RealmSettingsXO read() {
-    RealmSettingsXO settingsXO = new RealmSettingsXO();
-    settingsXO.setRealms(realmManager.getConfiguredRealmIds());
-    return settingsXO;
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> {
+        RealmSettingsXO settingsXO = new RealmSettingsXO();
+        settingsXO.setRealms(realmManager.getConfiguredRealmIds());
+        return settingsXO;
+      }).get();
+    } catch (Exception e) {
+      log.error("Error retrieving realm settings", e);
+      throw new RuntimeException("Error retrieving realm settings", e);
+    }
   }
 
   /**
    * Retrieves realm types.
-   * <p>
-   * Uses Java 21 features for improved performance and concurrency.
    *
    * @return a list of realm types
    */
@@ -88,12 +91,17 @@ public class RealmSettingsComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:settings:read")
   public List<ReferenceXO> readRealmTypes() {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> 
         stream(beanLocator.locate(Key.get(Realm.class, Named.class)).spliterator(), false)
-            .map(entry -> new ReferenceXO(((Named) entry.getKey()).value(), entry.getDescription()))
-            .sorted(Comparator.comparing(ReferenceXO::getName, String.CASE_INSENSITIVE_ORDER))
-            .collect(Collectors.toList())
-    ).join();
+          .map(entry -> new ReferenceXO(((Named) entry.getKey()).value(), entry.getDescription()))
+          .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
+          .collect(Collectors.toList())
+      ).get();
+    } catch (Exception e) {
+      log.error("Error retrieving realm types", e);
+      throw new RuntimeException("Error retrieving realm types", e);
+    }
   }
 
   /**
@@ -108,7 +116,14 @@ public class RealmSettingsComponent
   @RequiresPermissions("nexus:settings:update")
   @Validate
   public RealmSettingsXO update(@NotNull @Valid final RealmSettingsXO realmSettingsXO) {
-    realmManager.setConfiguredRealmIds(realmSettingsXO.getRealms());
-    return read();
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      return executor.submit(() -> {
+        realmManager.setConfiguredRealmIds(realmSettingsXO.getRealms());
+        return read();
+      }).get();
+    } catch (Exception e) {
+      log.error("Error updating realm settings", e);
+      throw new RuntimeException("Error updating realm settings", e);
+    }
   }
 }

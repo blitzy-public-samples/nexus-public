@@ -15,13 +15,17 @@ package org.sonatype.nexus.extender.modules.virtualthread;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.extender.modules.FeatureFlaggedIndex;
 
@@ -33,36 +37,45 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.osgi.framework.Bundle;
 
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doReturn;
 
 /**
  * Tests the {@link FeatureFlaggedIndex} component's compatibility with Java 21 Virtual Threads.
- * Verifies that feature flag evaluation operates correctly in a concurrent virtual thread environment.
- *
+ * 
  * @since 3.60
  */
 @ExtendWith(MockitoExtension.class)
 public class FeatureFlaggedIndexVirtualThreadTest
+    extends TestSupport
 {
   private static final String FLAG_1 = "FeatureFlaggedIndexVirtualThreadTest_1";
 
   private static final String FLAG_2 = "FeatureFlaggedIndexVirtualThreadTest_2";
-
+  
   private static final int VIRTUAL_THREAD_COUNT = 1000;
-
+  
   private static final int PLATFORM_THREAD_COUNT = 100;
-
+  
   @Mock
   Bundle mockBundle;
 
   @FeatureFlag(name = FLAG_1)
   @FeatureFlag(name = FLAG_2)
-  @SuppressWarnings("InnerClassMayBeStatic")
-  private final class TestClass
-  {
+  private static final class TestClass {
+  }
+  
+  @FeatureFlag(name = FLAG_1, inverse = true)
+  private static final class TestInvertedClass {
+  }
+  
+  @FeatureFlag(name = FLAG_1, inverse = true, enabledByDefault = true)
+  private static final class TestInvertedEnabledByDefaultClass {
   }
 
   @BeforeEach
@@ -81,295 +94,365 @@ public class FeatureFlaggedIndexVirtualThreadTest
   }
 
   /**
-   * Tests that feature flag evaluation works correctly when accessed concurrently from multiple virtual threads.
-   * This verifies thread safety of the feature flag checking mechanism.
+   * Tests that feature flag checking works correctly with a single virtual thread.
    */
   @Test
-  public void testConcurrentFeatureFlagCheckingWithVirtualThreads() throws Exception {
-    // Set up feature flags
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    System.setProperty(FLAG_2, Boolean.toString(true));
-
-    // Create a latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicBoolean anyFailures = new AtomicBoolean(false);
-
-    // Create virtual threads to check feature flags concurrently
+  public void testBasicFeatureFlagCheckingWithVirtualThread() throws Exception {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            boolean result = !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
-            if (!result) {
-              anyFailures.set(true);
-            }
-          }
-          catch (Exception e) {
-            anyFailures.set(true);
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-
-      // Wait for all threads to complete
-      boolean allCompleted = completionLatch.await(10, TimeUnit.SECONDS);
-      assertThat("All virtual threads completed in time", allCompleted, is(true));
-      assertThat("All feature flag checks were successful", anyFailures.get(), is(false));
+      Future<Boolean> result = executor.submit(() -> {
+        return !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+      });
+      
+      // Default behavior - no flags enabled means feature is disabled
+      assertFalse(result.get(5, TimeUnit.SECONDS));
+      
+      // Enable all flags
+      System.setProperty(FLAG_1, Boolean.toString(true));
+      System.setProperty(FLAG_2, Boolean.toString(true));
+      
+      result = executor.submit(() -> {
+        return !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+      });
+      
+      // With all flags enabled, feature should be enabled
+      assertTrue(result.get(5, TimeUnit.SECONDS));
     }
   }
 
   /**
-   * Tests that feature flag evaluation works correctly when flags are changed during concurrent access.
-   * This verifies thread safety during dynamic configuration changes.
+   * Tests concurrent feature flag checking with many virtual threads to validate thread safety.
    */
   @Test
-  public void testFeatureFlagChangeDuringConcurrentAccess() throws Exception {
-    // Initially set one flag to true
-    System.setProperty(FLAG_1, Boolean.toString(true));
-
-    // Create a latch to synchronize thread start
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch halfwayLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT / 2);
-    CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
+  public void testConcurrentFeatureFlagChecking() throws Exception {
     AtomicInteger successCount = new AtomicInteger(0);
-
-    // Create virtual threads to check feature flags concurrently
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      // Start with no flags enabled
       for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
-        executor.submit(() -> {
+        futures.add(executor.submit(() -> {
           try {
             startLatch.await(); // Wait for all threads to be ready
-            
-            // First half of threads will check before the flag change
-            boolean result = FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
-            halfwayLatch.countDown();
-            
-            // After half the threads have checked, we'll change the second flag
-            if (halfwayLatch.getCount() == 0) {
-              System.setProperty(FLAG_2, Boolean.toString(true));
-            }
-            
-            // All threads check again after potential flag change
-            boolean secondResult = FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
-            
-            // The first result should always be true (disabled) since only FLAG_1 is set
-            // The second result might be false (not disabled) if FLAG_2 was set in time
-            if (result && (secondResult || halfwayLatch.getCount() > 0)) {
+            boolean isDisabled = FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+            if (isDisabled) { // Expected to be disabled initially
               successCount.incrementAndGet();
             }
           }
           catch (Exception e) {
-            // Count failures
+            log.error("Error in virtual thread", e);
           }
-          finally {
-            completionLatch.countDown();
-          }
-        });
+        }));
       }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-
-      // Wait for all threads to complete
-      boolean allCompleted = completionLatch.await(10, TimeUnit.SECONDS);
-      assertThat("All virtual threads completed in time", allCompleted, is(true));
       
-      // We expect at least some threads to have succeeded
-      assertThat("Some feature flag checks were successful", successCount.get() > 0, is(true));
+      // Release all threads at once
+      startLatch.countDown();
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
+      }
+      
+      // All threads should have seen the feature as disabled
+      assertThat(successCount.get(), is(VIRTUAL_THREAD_COUNT));
     }
   }
 
   /**
-   * Compares the performance of feature flag checking between platform threads and virtual threads.
-   * This helps validate that virtual threads provide comparable or better performance.
+   * Tests that feature flag checking remains thread-safe when flags are changed during concurrent access.
    */
   @Test
-  public void testPerformanceComparisonBetweenPlatformAndVirtualThreads() throws Exception {
-    // Set up feature flags
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    System.setProperty(FLAG_2, Boolean.toString(true));
-
-    // Measure platform thread performance
-    long platformThreadTime = measureThreadPerformance(false, PLATFORM_THREAD_COUNT);
+  public void testConcurrentFeatureFlagChanges() throws Exception {
+    AtomicBoolean keepRunning = new AtomicBoolean(true);
+    ConcurrentHashMap<Boolean, AtomicInteger> results = new ConcurrentHashMap<>();
+    results.put(Boolean.TRUE, new AtomicInteger(0));
+    results.put(Boolean.FALSE, new AtomicInteger(0));
     
-    // Measure virtual thread performance
-    long virtualThreadTime = measureThreadPerformance(true, VIRTUAL_THREAD_COUNT);
-    
-    // Log the results for analysis
-    System.out.println("Platform threads (" + PLATFORM_THREAD_COUNT + "): " + platformThreadTime + "ms");
-    System.out.println("Virtual threads (" + VIRTUAL_THREAD_COUNT + "): " + virtualThreadTime + "ms");
-    
-    // We're not making assertions about which is faster, just ensuring both complete successfully
-    // The actual performance comparison can be analyzed from the logs
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Start threads that continuously check feature flags
+      List<Future<?>> futures = new ArrayList<>();
+      for (int i = 0; i < 100; i++) {
+        futures.add(executor.submit(() -> {
+          while (keepRunning.get()) {
+            boolean isEnabled = !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+            results.get(isEnabled).incrementAndGet();
+            Thread.yield(); // Allow other threads to run
+          }
+        }));
+      }
+      
+      // Start a thread that toggles feature flags
+      Future<?> togglerFuture = executor.submit(() -> {
+        try {
+          for (int i = 0; i < 10; i++) {
+            // Enable all flags
+            System.setProperty(FLAG_1, Boolean.toString(true));
+            System.setProperty(FLAG_2, Boolean.toString(true));
+            Thread.sleep(50);
+            
+            // Disable all flags
+            System.clearProperty(FLAG_1);
+            System.clearProperty(FLAG_2);
+            Thread.sleep(50);
+          }
+        }
+        catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        finally {
+          keepRunning.set(false);
+        }
+      });
+      
+      // Wait for toggler to finish
+      togglerFuture.get(10, TimeUnit.SECONDS);
+      
+      // Wait for all checker threads to finish
+      for (Future<?> future : futures) {
+        future.get(5, TimeUnit.SECONDS);
+      }
+      
+      // We should have seen both enabled and disabled states
+      assertTrue(results.get(Boolean.TRUE).get() > 0, "Should have seen enabled state");
+      assertTrue(results.get(Boolean.FALSE).get() > 0, "Should have seen disabled state");
+      
+      log.info("Feature flag check results - Enabled: {}, Disabled: {}", 
+          results.get(Boolean.TRUE).get(), results.get(Boolean.FALSE).get());
+    }
   }
 
   /**
-   * Tests for thread pinning detection during feature flag checking operations.
-   * This helps identify if any operations in the feature flag checking process cause thread pinning.
+   * Tests performance comparison between platform threads and virtual threads.
+   */
+  @Test
+  public void testPerformanceComparison() throws Exception {
+    // Enable all flags for this test
+    System.setProperty(FLAG_1, Boolean.toString(true));
+    System.setProperty(FLAG_2, Boolean.toString(true));
+    
+    // Test with platform threads
+    long platformThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newFixedThreadPool(PLATFORM_THREAD_COUNT)) {
+        runConcurrentFeatureFlagChecks(executor, PLATFORM_THREAD_COUNT);
+      }
+    });
+    
+    // Test with virtual threads
+    long virtualThreadTime = measureExecutionTime(() -> {
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        runConcurrentFeatureFlagChecks(executor, VIRTUAL_THREAD_COUNT);
+      }
+    });
+    
+    log.info("Performance comparison - Platform threads ({} threads): {} ms, Virtual threads ({} threads): {} ms", 
+        PLATFORM_THREAD_COUNT, platformThreadTime, VIRTUAL_THREAD_COUNT, virtualThreadTime);
+    
+    // We're not making assertions about performance, just logging the results
+    // Virtual threads should handle more concurrent operations with similar or better performance
+  }
+
+  /**
+   * Tests for thread pinning during feature flag checking operations.
    */
   @Test
   public void testThreadPinningDetection() throws Exception {
-    // Enable thread pinning detection via system property
-    // Note: In a real environment, this would be set via -Djdk.tracePinnedThreads=full JVM argument
-    String originalPinningProperty = System.getProperty("jdk.tracePinnedThreads");
-    try {
-      System.setProperty("jdk.tracePinnedThreads", "full");
-      
-      // Set up feature flags
-      System.setProperty(FLAG_1, Boolean.toString(true));
-      System.setProperty(FLAG_2, Boolean.toString(true));
-
-      // Create a list to track any exceptions
-      List<Exception> exceptions = new ArrayList<>();
-      
-      // Run feature flag checks in virtual threads with a small delay to detect pinning
-      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        for (int i = 0; i < 10; i++) {
-          executor.submit(() -> {
-            try {
-              // Check feature flag
-              boolean result = FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
-              
-              // Add a small delay to increase chance of detecting pinning if it occurs
-              Thread.sleep(50);
-              
-              // Check feature flag again
-              boolean secondResult = FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
-              
-              assertThat(result, is(secondResult));
-            }
-            catch (Exception e) {
-              synchronized (exceptions) {
-                exceptions.add(e);
-              }
-            }
-          });
-        }
-      }
-      
-      // Verify no exceptions occurred
-      assertThat("No exceptions during thread pinning detection", exceptions.isEmpty(), is(true));
-      
-      // Note: Actual pinning would be detected via JVM logs when running with -Djdk.tracePinnedThreads=full
-    }
-    finally {
-      // Restore original property
-      if (originalPinningProperty != null) {
-        System.setProperty("jdk.tracePinnedThreads", originalPinningProperty);
-      }
-      else {
-        System.clearProperty("jdk.tracePinnedThreads");
-      }
-    }
-  }
-
-  /**
-   * Helper method to measure the performance of feature flag checking using either platform or virtual threads.
-   *
-   * @param useVirtualThreads true to use virtual threads, false to use platform threads
-   * @param threadCount the number of threads to create
-   * @return the time in milliseconds taken to complete all thread operations
-   */
-  private long measureThreadPerformance(boolean useVirtualThreads, int threadCount) throws Exception {
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    AtomicBoolean pinningDetected = new AtomicBoolean(false);
+    CountDownLatch allThreadsStarted = new CountDownLatch(VIRTUAL_THREAD_COUNT);
+    CountDownLatch allThreadsCompleted = new CountDownLatch(VIRTUAL_THREAD_COUNT);
     
-    ExecutorService executor = useVirtualThreads ? 
-        Executors.newVirtualThreadPerTaskExecutor() : 
-        Executors.newFixedThreadPool(Math.min(threadCount, 100)); // Limit platform threads to avoid resource exhaustion
+    // Create a thread factory that detects carrier thread blocking
+    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("pinning-test-", 0).factory();
     
-    try {
-      // Create threads
-      for (int i = 0; i < threadCount; i++) {
-        executor.submit(() -> {
-          try {
-            startLatch.await(); // Wait for all threads to be ready
-            
-            // Perform feature flag check multiple times to measure performance
-            for (int j = 0; j < 10; j++) {
-              FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
-            }
-          }
-          catch (Exception e) {
-            // Log exception
-          }
-          finally {
-            completionLatch.countDown();
-          }
-        });
-      }
-      
-      // Start timing
-      long startTime = System.currentTimeMillis();
-      
-      // Start all threads simultaneously
-      startLatch.countDown();
-      
-      // Wait for all threads to complete
-      completionLatch.await(30, TimeUnit.SECONDS);
-      
-      // Calculate elapsed time
-      return System.currentTimeMillis() - startTime;
-    }
-    finally {
-      executor.shutdown();
-      executor.awaitTermination(5, TimeUnit.SECONDS);
-    }
-  }
-
-  /**
-   * Tests that feature flag evaluation works correctly with a high number of concurrent virtual threads.
-   * This verifies scalability of the feature flag checking mechanism.
-   */
-  @Test
-  public void testHighConcurrencyFeatureFlagChecking() throws Exception {
-    // Set up feature flags
-    System.setProperty(FLAG_1, Boolean.toString(true));
-    System.setProperty(FLAG_2, Boolean.toString(true));
-
-    // Create a latch to synchronize thread start and completion
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(VIRTUAL_THREAD_COUNT);
-    AtomicInteger successCount = new AtomicInteger(0);
-
-    // Create a large number of virtual threads to check feature flags concurrently
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
+      // Start many virtual threads that check feature flags
       for (int i = 0; i < VIRTUAL_THREAD_COUNT; i++) {
         executor.submit(() -> {
           try {
-            startLatch.await(); // Wait for all threads to be ready
+            allThreadsStarted.countDown();
+            
+            // Record thread before operation
+            Thread threadBefore = Thread.currentThread();
+            long startTime = System.nanoTime();
             
             // Perform feature flag check
-            boolean result = !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+            FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
             
-            if (result) {
-              successCount.incrementAndGet();
+            // Check if operation took suspiciously long (potential pinning)
+            long duration = System.nanoTime() - startTime;
+            if (duration > TimeUnit.MILLISECONDS.toNanos(100)) {
+              log.warn("Potential thread pinning detected: operation took {} ms", 
+                  TimeUnit.NANOSECONDS.toMillis(duration));
+              pinningDetected.set(true);
+            }
+            
+            // Record thread after operation
+            Thread threadAfter = Thread.currentThread();
+            
+            // If thread identity changed, that would be unusual and indicate potential issues
+            if (threadBefore != threadAfter) {
+              log.warn("Thread identity changed during operation");
+              pinningDetected.set(true);
             }
           }
-          catch (Exception e) {
-            // Count failures
-          }
           finally {
-            completionLatch.countDown();
+            allThreadsCompleted.countDown();
           }
         });
       }
-
-      // Start all threads simultaneously
-      startLatch.countDown();
-
-      // Wait for all threads to complete with a timeout
-      boolean allCompleted = completionLatch.await(20, TimeUnit.SECONDS);
       
-      assertThat("All virtual threads completed in time", allCompleted, is(true));
-      assertThat("All feature flag checks were successful", successCount.get(), is(VIRTUAL_THREAD_COUNT));
+      // Wait for all threads to start and complete
+      assertTrue(allThreadsStarted.await(5, TimeUnit.SECONDS), "Not all threads started");
+      assertTrue(allThreadsCompleted.await(5, TimeUnit.SECONDS), "Not all threads completed");
+      
+      // We don't expect thread pinning with proper virtual thread implementation
+      assertFalse(pinningDetected.get(), "Thread pinning detected during feature flag operations");
     }
+  }
+  
+  /**
+   * Tests that inverted feature flags work correctly with virtual threads.
+   */
+  @Test
+  public void testInvertedFlagWithVirtualThreads() throws Exception {
+    doReturn(TestInvertedClass.class).when(mockBundle).loadClass(nullable(String.class));
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Test with flag not set
+      Future<Boolean> result = executor.submit(() -> 
+          !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""));
+      assertFalse(result.get(5, TimeUnit.SECONDS), "Feature should be disabled when flag not set");
+      
+      // Test with flag set to false
+      System.setProperty(FLAG_1, Boolean.toString(false));
+      result = executor.submit(() -> 
+          !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""));
+      assertTrue(result.get(5, TimeUnit.SECONDS), "Feature should be enabled when flag is false");
+      
+      // Test with flag set to true
+      System.setProperty(FLAG_1, Boolean.toString(true));
+      result = executor.submit(() -> 
+          !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""));
+      assertFalse(result.get(5, TimeUnit.SECONDS), "Feature should be disabled when flag is true");
+    }
+  }
+  
+  /**
+   * Tests that inverted feature flags with enabledByDefault work correctly with virtual threads.
+   */
+  @Test
+  public void testInvertedFlagEnabledByDefaultWithVirtualThreads() throws Exception {
+    doReturn(TestInvertedEnabledByDefaultClass.class).when(mockBundle).loadClass(nullable(String.class));
+    
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      // Test with flag not set
+      Future<Boolean> result = executor.submit(() -> 
+          !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""));
+      assertTrue(result.get(5, TimeUnit.SECONDS), "Feature should be enabled when flag not set");
+      
+      // Test with flag set to false
+      System.setProperty(FLAG_1, Boolean.toString(false));
+      result = executor.submit(() -> 
+          !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""));
+      assertTrue(result.get(5, TimeUnit.SECONDS), "Feature should be enabled when flag is false");
+      
+      // Test with flag set to true
+      System.setProperty(FLAG_1, Boolean.toString(true));
+      result = executor.submit(() -> 
+          !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, ""));
+      assertFalse(result.get(5, TimeUnit.SECONDS), "Feature should be disabled when flag is true");
+    }
+  }
+  
+  /**
+   * Tests that feature flag checking works correctly when virtual threads are under high contention.
+   */
+  @Test
+  public void testFeatureFlagCheckingUnderContention() throws Exception {
+    AtomicInteger successCount = new AtomicInteger(0);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    
+    // Create a large number of virtual threads to create contention
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      List<Future<?>> futures = new ArrayList<>();
+      
+      // Enable all flags
+      System.setProperty(FLAG_1, Boolean.toString(true));
+      System.setProperty(FLAG_2, Boolean.toString(true));
+      
+      // Submit many tasks that will all start at the same time
+      for (int i = 0; i < VIRTUAL_THREAD_COUNT * 2; i++) {
+        futures.add(executor.submit(() -> {
+          try {
+            startLatch.await(); // Wait for all threads to be ready
+            
+            // Perform feature flag check multiple times to increase contention
+            for (int j = 0; j < 10; j++) {
+              boolean isEnabled = !FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+              if (isEnabled) { // Expected to be enabled
+                successCount.incrementAndGet();
+              }
+            }
+          }
+          catch (Exception e) {
+            log.error("Error in virtual thread under contention", e);
+          }
+        }));
+      }
+      
+      // Release all threads at once to create maximum contention
+      startLatch.countDown();
+      
+      // Wait for all tasks to complete
+      for (Future<?> future : futures) {
+        future.get(10, TimeUnit.SECONDS);
+      }
+      
+      // All feature flag checks should have succeeded
+      assertThat(successCount.get(), is(VIRTUAL_THREAD_COUNT * 2 * 10));
+    }
+  }
+  
+  /**
+   * Helper method to run concurrent feature flag checks using the provided executor.
+   */
+  private void runConcurrentFeatureFlagChecks(ExecutorService executor, int threadCount) throws Exception {
+    CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch completionLatch = new CountDownLatch(threadCount);
+    
+    // Submit tasks
+    for (int i = 0; i < threadCount; i++) {
+      executor.submit(() -> {
+        try {
+          startLatch.await(); // Wait for all threads to be ready
+          
+          // Perform feature flag check multiple times
+          for (int j = 0; j < 100; j++) {
+            FeatureFlaggedIndex.isFeatureFlagDisabled(mockBundle, "");
+          }
+        }
+        catch (Exception e) {
+          log.error("Error in concurrent feature flag check", e);
+        }
+        finally {
+          completionLatch.countDown();
+        }
+      });
+    }
+    
+    // Start all threads at once
+    startLatch.countDown();
+    
+    // Wait for all threads to complete
+    await().atMost(Duration.ofSeconds(10)).until(() -> completionLatch.getCount() == 0);
+  }
+  
+  /**
+   * Helper method to measure execution time of a runnable in milliseconds.
+   */
+  private long measureExecutionTime(Runnable task) {
+    long startTime = System.currentTimeMillis();
+    task.run();
+    return System.currentTimeMillis() - startTime;
   }
 }

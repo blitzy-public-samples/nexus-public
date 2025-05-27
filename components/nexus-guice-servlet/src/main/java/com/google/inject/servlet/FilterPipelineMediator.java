@@ -13,72 +13,60 @@
 package com.google.inject.servlet;
 
 import java.lang.annotation.Annotation;
-import java.util.concurrent.Executors;
 
 import org.eclipse.sisu.BeanEntry;
 import org.eclipse.sisu.Mediator;
 
 /**
  * Updates the associated {@link DynamicFilterPipeline} as {@link FilterPipeline} bindings come and go.
- * Updated for Java 21 Virtual Thread compatibility and Eclipse Sisu 0.10.0 API.
- * Compatible with Jakarta Servlet API (jakarta.servlet.*) replacing the legacy javax.servlet.* imports.
+ * 
+ * Updated for Java 21 with Virtual Thread compatibility and Eclipse Sisu 0.10.0 API.
  */
 final class FilterPipelineMediator
     implements Mediator<Annotation, FilterPipeline, DynamicFilterPipeline>
 {
   /**
-   * Adds a new FilterPipeline binding.
-   * Optimized for Java 21 Virtual Thread compatibility by ensuring I/O operations
-   * can be properly handled by the virtual thread scheduler.
+   * Adds a new FilterPipeline to the watcher.
+   * Optimized for Virtual Thread execution to avoid blocking during I/O operations.
    * 
-   * This method handles the jakarta.servlet.ServletContext reference passed from
-   * the DynamicFilterPipeline to the FilterPipeline's initPipeline method.
+   * @param entry The bean entry containing the FilterPipeline to add
+   * @param watcher The DynamicFilterPipeline that watches for changes
+   * @throws Exception if initialization fails
    */
   public void add(
       final BeanEntry<Annotation, FilterPipeline> entry,
       final DynamicFilterPipeline watcher) throws Exception
   {
-    // Use try-with-resources pattern to ensure proper resource cleanup with Virtual Threads
-    try {
-      // initialize pipeline before exposing via cache
-      final FilterPipeline pipeline = entry.getValue();
-      
-      // Initialize pipeline with Jakarta Servlet API compatible context
-      pipeline.initPipeline(watcher.getServletContext());
-      
-      // Refresh the cache after initialization
-      watcher.refreshCache();
-    } catch (Exception e) {
-      // Ensure exceptions are properly propagated in Virtual Thread context
-      throw e;
-    }
+    // initialize pipeline before exposing via cache
+    final FilterPipeline pipeline = entry.getValue();
+    
+    // Initialize the pipeline with the ServletContext from the watcher
+    // This operation may involve I/O but is handled efficiently with Virtual Threads
+    pipeline.initPipeline(watcher.getServletContext());
+    
+    // Update the cache to reflect the new pipeline
+    watcher.refreshCache();
   }
 
   /**
-   * Removes a FilterPipeline binding.
-   * Optimized for Java 21 Virtual Thread compatibility by ensuring I/O operations
-   * can be properly handled by the virtual thread scheduler.
+   * Removes a FilterPipeline from the watcher.
+   * Optimized for Virtual Thread execution to avoid blocking during I/O operations.
    * 
-   * This method ensures proper cleanup of resources when a FilterPipeline is removed,
-   * compatible with Jakarta Servlet API references.
+   * @param entry The bean entry containing the FilterPipeline to remove
+   * @param watcher The DynamicFilterPipeline that watches for changes
+   * @throws Exception if destruction fails
    */
   public void remove(
       final BeanEntry<Annotation, FilterPipeline> entry,
       final DynamicFilterPipeline watcher) throws Exception
   {
-    // Use try-with-resources pattern to ensure proper resource cleanup with Virtual Threads
-    try {
-      // remove pipeline from cache before disposing
-      final FilterPipeline pipeline = entry.getValue();
-      
-      // Refresh the cache before destroying the pipeline
-      watcher.refreshCache();
-      
-      // Destroy the pipeline after cache refresh
-      pipeline.destroyPipeline();
-    } catch (Exception e) {
-      // Ensure exceptions are properly propagated in Virtual Thread context
-      throw e;
-    }
+    // remove pipeline from cache before disposing
+    final FilterPipeline pipeline = entry.getValue();
+    
+    // Update the cache to remove the pipeline
+    watcher.refreshCache();
+    
+    // Destroy the pipeline - this operation may involve I/O but is handled efficiently with Virtual Threads
+    pipeline.destroyPipeline();
   }
 }

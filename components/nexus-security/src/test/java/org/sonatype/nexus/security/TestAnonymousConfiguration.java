@@ -15,7 +15,7 @@ package org.sonatype.nexus.security;
 import org.sonatype.nexus.security.anonymous.AnonymousConfiguration;
 
 /**
- * Test implementation of {@link AnonymousConfiguration} for use in unit tests.
+ * Test implementation of {@link AnonymousConfiguration}.
  * 
  * @since 3.0
  */
@@ -58,12 +58,12 @@ public class TestAnonymousConfiguration
     this.userId = userId;
   }
 
-  /**
-   * For testing purposes, this implementation simply returns itself instead of creating a true copy.
-   * This is sufficient for most test cases but should not be used in production code.
-   */
   @Override
   public AnonymousConfiguration copy() {
-    return this;
+    TestAnonymousConfiguration copy = new TestAnonymousConfiguration();
+    copy.setEnabled(this.enabled);
+    copy.setRealmName(this.realmName);
+    copy.setUserId(this.userId);
+    return copy;
   }
 }

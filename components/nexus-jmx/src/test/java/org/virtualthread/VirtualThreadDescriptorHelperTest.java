@@ -15,47 +15,51 @@ package org.virtualthread;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-
 import javax.management.Descriptor;
 
-import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.jmx.reflect.DescriptorHelper;
 import org.sonatype.nexus.jmx.reflect.TestAuthor;
 import org.sonatype.nexus.jmx.reflect.TestComments;
 import org.sonatype.nexus.jmx.reflect.TestInvalidAnnotationValue;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.hamcrest.CustomTypeSafeMatcher;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.hasItem;
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for {@link DescriptorHelper} when executed from Java 21 Virtual Threads.
- * 
- * Validates that JMX descriptor operations function correctly in virtual thread context.
+ * Tests that verify the {@link DescriptorHelper} class functions correctly when executed from Java 21 Virtual Threads.
+ * <p>
+ * These tests validate that annotation scanning, descriptor building, and error handling work properly
+ * within virtual thread context, ensuring JMX reflection capabilities remain functional with the new
+ * lightweight threading model.
+ *
+ * @since 3.60
  */
 public class VirtualThreadDescriptorHelperTest
-    extends TestSupport
+    extends VirtualThreadTestSupport
 {
-  private static final int TIMEOUT_SECONDS = 5;
+  @BeforeEach
+  void assumeVirtualThreads() {
+    // Skip tests if virtual threads are not supported
+    assumeVirtualThreadSupported();
+  }
 
-  @TestAuthor("virtualthread")
+  @TestAuthor("virtual-thread-tester")
   public class TestBean
   {
-    @TestComments("virtual thread test")
+    @TestComments("virtual thread test comment")
     public void foo() {
       // empty
     }
@@ -68,194 +72,175 @@ public class VirtualThreadDescriptorHelperTest
 
   /**
    * Tests that annotation discovery works correctly when executed from a virtual thread.
+   * <p>
+   * This test verifies that the DescriptorHelper can properly scan and find annotations
+   * when the operation is performed within a virtual thread context.
    */
   @Test
-  public void findsAnnotationsInVirtualThread() throws Exception {
+  void findsAnnotationsInVirtualThread() throws InterruptedException {
     TestBean bean = new TestBean();
-    CompletableFuture<List<Annotation>> future = new CompletableFuture<>();
+    AtomicReference<List<Annotation>> result = new AtomicReference<>();
     
-    Thread.ofVirtual().name("annotation-discovery-thread").start(() -> {
-      try {
-        List<Annotation> annotations = DescriptorHelper.findAllAnnotations(bean.getClass().getAnnotations());
-        future.complete(annotations);
-      } 
-      catch (Exception e) {
-        future.completeExceptionally(e);
-      }
-    });
-    
-    List<Annotation> annotations = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // custom annotation should be found
-    assertThat(annotations, hasItem(new AnnotationMatcher(TestAuthor.class.getName())));
+    Thread.ofVirtual().start(() -> {
+      result.set(DescriptorHelper.findAllAnnotations(bean.getClass().getAnnotations()));
+    }).join();
+
+    // Verify that the custom annotation was found
+    assertThat(result.get(), hasItem(new AnnotationMatcher(TestAuthor.class.getName())));
   }
 
   /**
    * Tests that descriptor building from a type works correctly when executed from a virtual thread.
+   * <p>
+   * This test verifies that the DescriptorHelper can properly build descriptors from class types
+   * when the operation is performed within a virtual thread context.
    */
   @Test
-  public void buildDescriptorFromTypeInVirtualThread() throws Exception {
+  void buildDescriptorFromTypeInVirtualThread() throws InterruptedException {
     TestBean bean = new TestBean();
-    CompletableFuture<Descriptor> future = new CompletableFuture<>();
+    AtomicReference<Descriptor> result = new AtomicReference<>();
     
-    Thread.ofVirtual().name("descriptor-type-thread").start(() -> {
-      try {
-        Descriptor descriptor = DescriptorHelper.build(bean.getClass());
-        future.complete(descriptor);
-      } 
-      catch (Exception e) {
-        future.completeExceptionally(e);
-      }
-    });
-    
-    Descriptor descriptor = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // descriptor should have author
-    assertThat(descriptor.getFields().length, equalTo(1));
-    assertThat(descriptor.getFieldValue("author"), equalTo("virtualthread"));
+    Thread.ofVirtual().start(() -> {
+      result.set(DescriptorHelper.build(bean.getClass()));
+    }).join();
+
+    // Verify that the descriptor has the expected author field
+    assertThat(result.get().getFields().length, equalTo(1));
+    assertThat(result.get().getFieldValue("author"), equalTo("virtual-thread-tester"));
   }
 
   /**
    * Tests that descriptor building from a method works correctly when executed from a virtual thread.
+   * <p>
+   * This test verifies that the DescriptorHelper can properly build descriptors from method objects
+   * when the operation is performed within a virtual thread context.
    */
   @Test
-  public void buildDescriptorFromMethodInVirtualThread() throws Exception {
-    CompletableFuture<Descriptor> future = new CompletableFuture<>();
+  void buildDescriptorFromMethodInVirtualThread() throws InterruptedException, NoSuchMethodException {
+    Method method = TestBean.class.getMethod("foo");
+    AtomicReference<Descriptor> result = new AtomicReference<>();
     
-    Thread.ofVirtual().name("descriptor-method-thread").start(() -> {
-      try {
-        Method method = TestBean.class.getMethod("foo");
-        Descriptor descriptor = DescriptorHelper.build(method);
-        future.complete(descriptor);
-      } 
-      catch (Exception e) {
-        future.completeExceptionally(e);
-      }
-    });
-    
-    Descriptor descriptor = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // descriptor should have comments
-    assertThat(descriptor.getFields().length, equalTo(1));
-    assertThat(descriptor.getFieldValue("comments"), equalTo("virtual thread test"));
+    Thread.ofVirtual().start(() -> {
+      result.set(DescriptorHelper.build(method));
+    }).join();
+
+    // Verify that the descriptor has the expected comments field
+    assertThat(result.get().getFields().length, equalTo(1));
+    assertThat(result.get().getFieldValue("comments"), equalTo("virtual thread test comment"));
   }
 
   /**
-   * Tests that descriptor building fails correctly with invalid annotations when executed from a virtual thread.
+   * Tests that descriptor building fails correctly for invalid annotations when executed from a virtual thread.
+   * <p>
+   * This test verifies that the DescriptorHelper properly throws InvalidDescriptorKeyException
+   * when encountering invalid descriptor keys within a virtual thread context.
    */
   @Test
-  public void buildDescriptorFailsDueToInvalidInVirtualThread() throws Exception {
-    CompletableFuture<Object> future = new CompletableFuture<>();
+  void buildDescriptorFailsDueToInvalidInVirtualThread() throws NoSuchMethodException, InterruptedException {
+    Method method = TestBean.class.getMethod("invalid1");
+    AtomicReference<Exception> caughtException = new AtomicReference<>();
     
-    Thread.ofVirtual().name("descriptor-invalid-thread").start(() -> {
+    Thread.ofVirtual().start(() -> {
       try {
-        Method method = TestBean.class.getMethod("invalid1");
-        Descriptor descriptor = DescriptorHelper.build(method);
-        future.complete(descriptor);
-      } 
-      catch (Exception e) {
-        future.completeExceptionally(e);
+        DescriptorHelper.build(method);
       }
-    });
-    
-    try {
-      future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      fail("Expected exception was not thrown");
-    } 
-    catch (ExecutionException e) {
-      assertThat(e.getCause(), is(instanceOf(DescriptorHelper.InvalidDescriptorKeyException.class)));
-    }
+      catch (Exception e) {
+        caughtException.set(e);
+      }
+    }).join();
+
+    // Verify that the expected exception was thrown
+    assertTrue(caughtException.get() instanceof DescriptorHelper.InvalidDescriptorKeyException,
+        "Expected InvalidDescriptorKeyException but got: " + 
+        (caughtException.get() != null ? caughtException.get().getClass().getName() : "null"));
   }
 
   /**
-   * Tests concurrent annotation discovery from multiple virtual threads.
+   * Tests that multiple concurrent virtual threads can safely use DescriptorHelper.
+   * <p>
+   * This test verifies that the DescriptorHelper can handle concurrent access from multiple
+   * virtual threads without interference or corruption of results.
    */
   @Test
-  public void concurrentAnnotationDiscoveryInVirtualThreads() throws Exception {
+  void concurrentVirtualThreadAccess() throws InterruptedException {
     TestBean bean = new TestBean();
-    final int threadCount = 10;
+    int threadCount = 10;
     CountDownLatch startLatch = new CountDownLatch(1);
     CountDownLatch completionLatch = new CountDownLatch(threadCount);
-    AtomicReference<Throwable> failure = new AtomicReference<>();
+    AtomicReference<Exception> threadException = new AtomicReference<>();
     
-    // Start multiple virtual threads that will all try to discover annotations concurrently
+    // Start multiple virtual threads that will all try to use DescriptorHelper concurrently
     for (int i = 0; i < threadCount; i++) {
-      final int threadId = i;
-      Thread.ofVirtual().name("concurrent-annotation-thread-" + threadId).start(() -> {
+      Thread.ofVirtual().start(() -> {
         try {
           // Wait for all threads to be ready
           startLatch.await();
           
-          // Perform annotation discovery
-          List<Annotation> annotations = DescriptorHelper.findAllAnnotations(bean.getClass().getAnnotations());
-          
-          // Verify results
-          assertThat(annotations, hasItem(new AnnotationMatcher(TestAuthor.class.getName())));
-        } 
-        catch (Throwable t) {
-          failure.compareAndSet(null, t);
-        } 
+          // Perform various DescriptorHelper operations
+          DescriptorHelper.findAllAnnotations(bean.getClass().getAnnotations());
+          DescriptorHelper.build(bean.getClass());
+          DescriptorHelper.build(TestBean.class.getMethod("foo"));
+        }
+        catch (Exception e) {
+          threadException.set(e);
+        }
         finally {
           completionLatch.countDown();
         }
       });
     }
     
-    // Start all threads simultaneously
+    // Release all threads to start concurrently
     startLatch.countDown();
     
     // Wait for all threads to complete
-    assertTrue("Threads did not complete in time", completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    boolean completed = completionLatch.await(5, TimeUnit.SECONDS);
     
-    // Check if any thread failed
-    if (failure.get() != null) {
-      fail("Thread failed with exception: " + failure.get());
-    }
+    // Verify that all threads completed successfully
+    assertTrue(completed, "Not all virtual threads completed in time");
+    assertThat("No exceptions should have been thrown", threadException.get(), equalTo(null));
   }
 
   /**
-   * Tests descriptor building with potential thread pinning scenarios.
-   * This test verifies that reflection operations don't cause thread pinning issues.
+   * Tests that DescriptorHelper operations do not cause thread pinning when executed in virtual threads.
+   * <p>
+   * Thread pinning occurs when a virtual thread is forced to run on its carrier thread for an extended period,
+   * preventing the carrier thread from executing other virtual threads. This can happen with synchronized blocks
+   * or when calling certain blocking operations.
+   * <p>
+   * This test verifies that DescriptorHelper operations don't cause thread pinning, which would reduce
+   * the scalability benefits of virtual threads.
    */
   @Test
-  public void descriptorBuildingWithThreadPinningScenario() throws Exception {
+  void noThreadPinningDuringReflectionOperations() throws InterruptedException {
     TestBean bean = new TestBean();
-    final int iterations = 100;
-    CountDownLatch completionLatch = new CountDownLatch(iterations);
-    AtomicReference<Throwable> failure = new AtomicReference<>();
     
-    // Start multiple virtual threads that will perform descriptor building in rapid succession
-    for (int i = 0; i < iterations; i++) {
-      final int iterationId = i;
-      Thread.ofVirtual().name("pinning-test-thread-" + iterationId).start(() -> {
-        try {
-          // Perform descriptor building
-          Descriptor descriptor = DescriptorHelper.build(bean.getClass());
-          
-          // Verify results
-          assertThat(descriptor, notNullValue());
-          assertThat(descriptor.getFieldValue("author"), equalTo("virtualthread"));
-        } 
-        catch (Throwable t) {
-          failure.compareAndSet(null, t);
-        } 
-        finally {
-          completionLatch.countDown();
-        }
-      });
-    }
+    // Check if finding annotations causes thread pinning
+    boolean pinningDetected = detectThreadPinning(() -> {
+      DescriptorHelper.findAllAnnotations(bean.getClass().getAnnotations());
+    });
+    assertFalse(pinningDetected, "Thread pinning detected during annotation scanning");
     
-    // Wait for all threads to complete
-    assertTrue("Threads did not complete in time", completionLatch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    // Check if building descriptors from types causes thread pinning
+    pinningDetected = detectThreadPinning(() -> {
+      DescriptorHelper.build(bean.getClass());
+    });
+    assertFalse(pinningDetected, "Thread pinning detected during descriptor building from type");
     
-    // Check if any thread failed
-    if (failure.get() != null) {
-      fail("Thread failed with exception: " + failure.get());
-    }
+    // Check if building descriptors from methods causes thread pinning
+    pinningDetected = detectThreadPinning(() -> {
+      try {
+        DescriptorHelper.build(TestBean.class.getMethod("foo"));
+      }
+      catch (NoSuchMethodException e) {
+        throw new RuntimeException(e);
+      }
+    });
+    assertFalse(pinningDetected, "Thread pinning detected during descriptor building from method");
   }
 
   /**
-   * Custom matcher for annotations by name.
+   * Custom matcher for annotations that matches by annotation type name.
    */
   private static class AnnotationMatcher
       extends CustomTypeSafeMatcher<Annotation>

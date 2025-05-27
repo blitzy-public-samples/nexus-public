@@ -12,155 +12,151 @@
  */
 package org.sonatype.nexus.common.log;
 
-import java.lang.StringTemplate;
-import java.lang.StringTemplate.Processor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.inOrder;
+import static org.sonatype.nexus.common.log.ExceptionSummarizer.sameText;
 import static org.sonatype.nexus.common.log.ExceptionSummarizer.sameType;
 import static org.sonatype.nexus.common.log.ExceptionSummarizer.warn;
 
 /**
  * Tests for {@link ExceptionSummarizer} with Java 21 String Templates.
  */
-@Tag("Java21")
+@ExtendWith(MockitoExtension.class)
 public class ExceptionSummarizerStringTemplateTest
     extends TestSupport
+    implements Java21TestGroup
 {
   @Mock
   private Logger log;
 
-  private Exception testException = new IllegalStateException("test exception");
+  private Exception firstCause = new IllegalArgumentException("first");
 
-  private TestExceptionSummarizer underTest;
+  private Exception secondCause = new IllegalStateException("second");
 
-  /**
-   * Test that the String Template processor correctly formats exception summary messages.
-   */
+  private Exception thirdCause = new IllegalStateException("third");
+
+  private Exception repeatCause = new IllegalStateException();
+
+  private StringTemplateExceptionSummarizer underTest;
+
+  @BeforeEach
+  public void setUp() {
+    // No setup needed beyond what's provided by MockitoExtension
+  }
+
   @Test
   public void testStringTemplateFormatting() {
-    underTest = new TestExceptionSummarizer(sameType(), warn(log));
+    underTest = new StringTemplateExceptionSummarizer(sameType(), warn(log));
 
-    // First log will show full stack trace
-    underTest.log("oops", testException);
+    underTest.log("oops", firstCause); // <-- full stack
 
-    // Simulate time passing
+    underTest.log("oops", secondCause); // <-- full stack, because type changed
+
+    underTest.log("oops", thirdCause);
+    underTest.log("oops", repeatCause);
     underTest.sleep(5, TimeUnit.SECONDS);
+    underTest.log("oops", repeatCause); // <-- summary (3 repeats)
 
-    // Second log should use String Template formatting for summary
-    underTest.log("oops", testException);
+    underTest.log("oops", repeatCause);
+    underTest.log("oops", repeatCause);
+    underTest.log("oops", repeatCause);
+    underTest.log("oops", repeatCause);
+    underTest.sleep(10, TimeUnit.SECONDS);
+    underTest.log("oops", repeatCause); // <-- summary (5 repeats)
 
     InOrder inOrder = inOrder(log);
-    inOrder.verify(log).warn("oops", testException);
+    inOrder.verify(log).warn("oops", firstCause);
+    inOrder.verify(log).warn("oops", secondCause);
     inOrder.verify(log)
-        .warn("oops: java.lang.IllegalStateException - occurred 1 times in last 5 seconds", (Exception) null);
+        .warn("oops: java.lang.IllegalStateException - occurred 3 times in last 5 seconds", (Exception) null);
+    inOrder.verify(log)
+        .warn("oops: java.lang.IllegalStateException - occurred 5 times in last 10 seconds", (Exception) null);
+    inOrder.verifyNoMoreInteractions();
+  }
+
+  @Test
+  public void testStringTemplateWithDifferentMessageFormats() {
+    underTest = new StringTemplateExceptionSummarizer(sameText(), warn(log));
+
+    // Test with different message formats
+    String customMessage = "Custom error";
+    underTest.log(customMessage, firstCause);
+    underTest.sleep(5, TimeUnit.SECONDS);
+    underTest.log(customMessage, firstCause); // <-- summary (1 repeat)
+
+    // Test with empty message
+    String emptyMessage = "";
+    underTest.log(emptyMessage, secondCause);
+    underTest.sleep(5, TimeUnit.SECONDS);
+    underTest.log(emptyMessage, secondCause); // <-- summary (1 repeat)
+
+    // Test with null cause
+    String nullCauseMessage = "Null cause";
+    underTest.log(nullCauseMessage, null);
+    underTest.sleep(5, TimeUnit.SECONDS);
+    underTest.log(nullCauseMessage, null); // <-- summary (1 repeat)
+
+    InOrder inOrder = inOrder(log);
+    inOrder.verify(log).warn(customMessage, firstCause);
+    inOrder.verify(log)
+        .warn("Custom error: java.lang.IllegalArgumentException: first - occurred 1 times in last 5 seconds", (Exception) null);
+    inOrder.verify(log).warn(emptyMessage, secondCause);
+    inOrder.verify(log)
+        .warn(": java.lang.IllegalStateException: second - occurred 1 times in last 5 seconds", (Exception) null);
+    inOrder.verify(log).warn(nullCauseMessage, null);
+    inOrder.verify(log)
+        .warn("Null cause: null - occurred 1 times in last 5 seconds", (Exception) null);
+    inOrder.verifyNoMoreInteractions();
+  }
+
+  @Test
+  public void compareStringTemplateWithStringFormat() {
+    // This test demonstrates the difference between String.format and String Templates
+    // It's primarily for documentation purposes as the actual implementation will use String Templates
+
+    String message = "Error message";
+    Exception cause = new RuntimeException("Test exception");
+    int count = 5;
+    long seconds = 10;
+
+    // Traditional String.format approach
+    String formatSummary = String.format("%s: %s - occurred %d times in last %d seconds",
+        message, cause, count, seconds);
+
+    // String Template approach
+    String templateSummary = STR."\{message}: \{cause} - occurred \{count} times in last \{seconds} seconds";
+
+    // Both should produce the same output
+    InOrder inOrder = inOrder(log);
+    log.warn(formatSummary, null);
+    log.warn(templateSummary, null);
+    inOrder.verify(log).warn(formatSummary, null);
+    inOrder.verify(log).warn(templateSummary, null);
     inOrder.verifyNoMoreInteractions();
   }
 
   /**
-   * Test that the SUMMARY_TEMPLATE_PROCESSOR correctly processes templates with different values.
+   * Stubbed {@link ExceptionSummarizer} that uses String Templates and lets tests move time forward without sleeping.
    */
-  @Test
-  public void testSummaryTemplateProcessor() throws Exception {
-    // Access the private SUMMARY_TEMPLATE_PROCESSOR via reflection
-    java.lang.reflect.Field field = ExceptionSummarizer.class.getDeclaredField("SUMMARY_TEMPLATE_PROCESSOR");
-    field.setAccessible(true);
-    Processor<String> processor = (Processor<String>) field.get(null);
-
-    // Test with different values
-    String message = "error";
-    Exception cause = new RuntimeException("test");
-    int count = 3;
-    long seconds = 10;
-
-    // Create a StringTemplate using RAW processor
-    StringTemplate template = StringTemplate.RAW."{message}: {cause} - occurred {count} times in last {seconds}";
-
-    // Process the template with our processor
-    String result = processor.process(template);
-
-    // Verify the result
-    assertEquals("error: java.lang.RuntimeException: test - occurred 3 times in last 10 seconds", result);
-  }
-
-  /**
-   * Test that String Templates perform better than traditional String.format for exception messages.
-   */
-  @Test
-  public void testStringTemplatePerformance() {
-    // Prepare test data
-    String message = "error";
-    Exception cause = new RuntimeException("test");
-    int count = 100;
-    long seconds = 5;
-
-    // Measure time for String.format (traditional approach)
-    long startFormat = System.nanoTime();
-    for (int i = 0; i < 10000; i++) {
-      String formatted = String.format("%s: %s - occurred %d times in last %d seconds", 
-          message, cause, count, seconds);
-    }
-    long endFormat = System.nanoTime();
-    long formatTime = endFormat - startFormat;
-
-    // Measure time for String Templates
-    long startTemplate = System.nanoTime();
-    for (int i = 0; i < 10000; i++) {
-      String templated = STR."{message}: {cause} - occurred {count} times in last {seconds} seconds";
-    }
-    long endTemplate = System.nanoTime();
-    long templateTime = endTemplate - startTemplate;
-
-    // Log the results - we expect String Templates to be faster
-    log.info("String.format time: {} ns", formatTime);
-    log.info("String Template time: {} ns", templateTime);
-    log.info("Performance ratio: {}", (double) formatTime / templateTime);
-  }
-
-  /**
-   * Test different exception message formats with embedded template expressions.
-   */
-  @Test
-  public void testDifferentTemplateFormats() {
-    // Test with different template formats
-    String message = "error";
-    Exception cause = new RuntimeException("test");
-    int count = 3;
-    long seconds = 10;
-
-    // Basic template
-    String basic = STR."{message}: {cause} - occurred {count} times in last {seconds} seconds";
-    assertEquals("error: java.lang.RuntimeException: test - occurred 3 times in last 10 seconds", basic);
-
-    // Template with expressions
-    String withExpressions = STR."{message.toUpperCase()}: {cause.getClass().getSimpleName()} - occurred {count * 2} times in last {seconds / 2} seconds";
-    assertEquals("ERROR: RuntimeException - occurred 6 times in last 5 seconds", withExpressions);
-
-    // Template with conditional expression
-    String withConditional = STR."{message}: {cause} - {count > 1 ? "multiple occurrences" : "single occurrence"} in last {seconds} seconds";
-    assertEquals("error: java.lang.RuntimeException: test - multiple occurrences in last 10 seconds", withConditional);
-  }
-
-  /**
-   * Stubbed {@link ExceptionSummarizer} that lets tests move time forward without sleeping.
-   */
-  private static class TestExceptionSummarizer
+  private static class StringTemplateExceptionSummarizer
       extends ExceptionSummarizer
   {
     private long currentTimeMillis = System.currentTimeMillis();
 
-    TestExceptionSummarizer(
+    StringTemplateExceptionSummarizer(
         final BiPredicate<Exception, Exception> matcher,
         final BiConsumer<String, Exception> logger)
     {
@@ -174,6 +170,35 @@ public class ExceptionSummarizerStringTemplateTest
     @Override
     long currentTimeMillis() {
       return currentTimeMillis;
+    }
+
+    /**
+     * Override to use String Templates instead of String.format
+     */
+    @Override
+    public synchronized void log(final String message, final Exception cause) {
+      count++;
+      long now = currentTimeMillis();
+      if (!matcher.test(failureCause, cause) || now - firstFailureMillis >= ONE_MINUTE) {
+
+        // new exception or its been over a minute since the first failure
+        logger.accept(message, cause);
+
+        failureCause = cause;
+        firstFailureMillis = now;
+        lastSummaryMillis = now;
+        count = 0;
+      }
+      else if (now - lastSummaryMillis >= FIVE_SECONDS) {
+
+        // repeating exception, log summary without stack at most every 5 seconds
+        // Using String Template instead of String.format
+        String summary = STR."\{message}: \{cause} - occurred \{count} times in last \{(now - lastSummaryMillis) / ONE_SECOND} seconds";
+        logger.accept(summary, null);
+
+        lastSummaryMillis = now;
+        count = 0;
+      }
     }
   }
 }

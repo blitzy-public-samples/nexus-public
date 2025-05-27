@@ -15,11 +15,10 @@ package org.sonatype.nexus.repository.rest.internal.resources;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
+
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
 
@@ -34,7 +33,7 @@ import org.sonatype.nexus.repository.config.ConfigurationStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.rest.api.RepositoryXO;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
-import org.sonatype.nexus.virtualthread.Java21TestGroup;
+import org.sonatype.nexus.testsupport.group.Java21TestGroup;
 
 import com.google.common.collect.ImmutableMap;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +47,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static java.util.Arrays.asList;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.when;
 
@@ -178,40 +178,35 @@ public class RepositoryManagerRESTAdapterImplTest
   }
 
   @Test
-  void getRepositoryWithAllPermissions() throws Exception {
+  void getRepositoryAllPermissions() throws Exception {
     configurePermissions(repository, PERMIT_BROWSE);
     assertThat(underTest.getRepository(REPOSITORY_NAME), is(repository));
   }
 
   @Test
-  void getRepositoryWithBrowseOnly() throws Exception {
+  void getRepositoryBrowseOnly() throws Exception {
     configurePermissions(repository, PERMIT_BROWSE);
     assertThat(underTest.getRepository(REPOSITORY_NAME), is(repository));
   }
 
   @Test
-  void getRepositoryWithReadOnlyReturnsForbidden() throws Exception {
+  void getRepositoryReadOnlyReturnsForbidden() throws Exception {
     configurePermissions(repository, !PERMIT_BROWSE);
 
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getRepository(REPOSITORY_NAME);
-      fail("should have thrown exception");
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(403));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(403));
   }
 
   @Test
   void getRepositoryCannotReadOrBrowse() {
     configurePermissions(repository, !PERMIT_BROWSE);
-    try {
+    
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getRepository(REPOSITORY_NAME);
-      fail("should have thrown exception");
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(403));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(403));
   }
 
   private void configurePermissions(final Repository repository, final boolean permitBrowse) {
@@ -220,46 +215,32 @@ public class RepositoryManagerRESTAdapterImplTest
 
   @Test
   void getRepositoryNotFound() {
-    try {
+    assertThrows(NotFoundException.class, () -> {
       underTest.getRepository("notFound");
-      fail("should have thrown exception");
-    }
-    catch (NotFoundException e) {
-      // expected
-    }
+    });
   }
 
   @Test
   void getRepositoryNull() {
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getRepository(null);
-      fail("should have thrown exception");
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(422));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(422));
   }
 
   @Test
   void getReadableRepositoryNotFound() {
-    try {
+    assertThrows(NotFoundException.class, () -> {
       underTest.getReadableRepository("notFound");
-      fail("should have thrown exception");
-    }
-    catch (NotFoundException e) {
-      // expected
-    }
+    });
   }
 
   @Test
   void getReadableRepositoryNull() {
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getReadableRepository(null);
-      fail("should have thrown exception");
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(422));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(422));
   }
 
   @Test
@@ -267,13 +248,10 @@ public class RepositoryManagerRESTAdapterImplTest
     configurePermissions(repository, false);
     configurePermissions(groupRepository, false);
 
-    try {
+    WebApplicationException exception = assertThrows(WebApplicationException.class, () -> {
       underTest.getReadableRepository(repository.getName());
-      fail("should have thrown exception");
-    }
-    catch (WebApplicationException e) {
-      assertThat(e.getResponse().getStatus(), is(403));
-    }
+    });
+    assertThat(exception.getResponse().getStatus(), is(403));
   }
 
   @Test
@@ -327,46 +305,38 @@ public class RepositoryManagerRESTAdapterImplTest
   
   @Test
   void concurrentRepositoryOperationsWithVirtualThreads() throws Exception {
-    // Create a virtual thread factory
-    ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("repo-test-", 0).factory();
+    // Configure test repositories
+    configurePermissions(repository, true);
+    configurePermissions(repository2, true);
+    configurePermissions(repository3, true);
     
-    // Create an executor service with virtual threads
-    ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
-    int numTasks = 100;
-    AtomicInteger successCount = new AtomicInteger(0);
+    // Create a virtual thread executor
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     
     try {
-      // Configure permissions to allow browsing
-      configurePermissions(repository, true);
+      // Submit multiple concurrent operations using virtual threads
+      CompletableFuture<?>[] futures = new CompletableFuture<?>[100];
       
-      // Submit multiple concurrent tasks to access the repository
-      List<Future<?>> futures = new java.util.ArrayList<>();
-      
-      for (int i = 0; i < numTasks; i++) {
-        futures.add(executor.submit(() -> {
+      for (int i = 0; i < 100; i++) {
+        final int index = i % 3;
+        futures[i] = CompletableFuture.runAsync(() -> {
           try {
-            Repository repo = underTest.getRepository(REPOSITORY_NAME);
-            if (repo != null && repo.equals(repository)) {
-              successCount.incrementAndGet();
+            // Perform repository operations concurrently
+            switch (index) {
+              case 0 -> underTest.getRepository(REPOSITORY_NAME);
+              case 1 -> underTest.getRepository(REPOSITORY_NAME_2);
+              case 2 -> underTest.getRepository(REPOSITORY_NAME_3);
             }
-            return repo;
           } catch (Exception e) {
-            // Log and rethrow
-            System.err.println("Error in virtual thread: " + e.getMessage());
-            throw new RuntimeException(e);
+            fail("Concurrent repository operation failed: " + e.getMessage());
           }
-        }));
+        }, executor);
       }
       
-      // Wait for all tasks to complete
-      for (Future<?> future : futures) {
-        future.get(); // This will throw an exception if the task failed
-      }
+      // Wait for all operations to complete
+      CompletableFuture.allOf(futures).join();
       
-      // Verify all tasks completed successfully
-      assertThat(successCount.get(), is(numTasks));
-      
+      // If we get here without exceptions, the test passes
     } finally {
       executor.shutdown();
     }

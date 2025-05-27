@@ -23,7 +23,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.stream.Collectors;
+import java.util.function.Supplier;
 
 import javax.inject.Inject;
 
@@ -40,8 +40,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 
 /**
- * Support class for replication ingestion that uses Virtual Threads for asynchronous processing.
- * 
  * @since 3.31
  */
 public abstract class ReplicationIngesterSupport
@@ -52,69 +50,53 @@ public abstract class ReplicationIngesterSupport
 
   private final ReplicationIngesterHelper replicationIngesterHelper;
   
-  private final ReplicationVirtualThreadManager threadManager;
+  private final ReplicationVirtualThreadManager virtualThreadManager;
 
   @Inject
   public ReplicationIngesterSupport(final BlobStoreManager blobstoreManager,
                                     final ReplicationIngesterHelper replicationIngesterHelper,
-                                    final ReplicationVirtualThreadManager threadManager) {
+                                    final ReplicationVirtualThreadManager virtualThreadManager) {
     this.blobStoreManager = checkNotNull(blobstoreManager);
     this.replicationIngesterHelper = checkNotNull(replicationIngesterHelper);
-    this.threadManager = checkNotNull(threadManager);
+    this.virtualThreadManager = checkNotNull(virtualThreadManager);
   }
 
+  /**
+   * Extract asset attributes from properties, optimized for parallel processing.
+   * 
+   * @param props the properties containing asset attributes
+   * @return a map of asset attributes
+   */
   public Map<String, Object> extractAssetAttributesFromProperties(final Properties props) {
     return extractAttributesFromProperties(props, ASSET_ATTRIBUTES_PREFIX);
   }
 
+  /**
+   * Extract component attributes from properties, optimized for parallel processing.
+   * 
+   * @param props the properties containing component attributes
+   * @return a map of component attributes
+   */
   public Map<String, Object> extractComponentAttributesFromProperties(final Properties props) {
     return extractAttributesFromProperties(props, COMPONENT_ATTRIBUTES_PREFIX);
   }
 
+  /**
+   * Extract attributes from properties with the given prefix.
+   * Uses a thread-safe map implementation to support parallel attribute extraction.
+   * 
+   * @param props the properties to extract from
+   * @param prefix the prefix to filter by
+   * @return a map of extracted attributes
+   */
   private Map<String, Object> extractAttributesFromProperties(Properties props, final String prefix) {
     Map<String, Object> backingAssetAttributes = new ConcurrentHashMap<>();
-    Set<String> keys = props.stringPropertyNames();
-    
-    // Process attributes in parallel using Virtual Threads
-    try {
-      CompletableFuture<?>[] futures = keys.stream()
-          .filter(key -> key.startsWith(prefix))
-          .map(key -> threadManager.submitTask(() -> {
-            String value = props.getProperty(key);
-            String processedKey = key.substring(prefix.length());
-            String[] flattenedAttributesParts = processedKey.split("\\\\");
-            String rootKey = flattenedAttributesParts[0];
-            
-            synchronized (backingAssetAttributes) {
-              unflattenAttributes(backingAssetAttributes, rootKey,
-                  Arrays.copyOfRange(flattenedAttributesParts, 1, flattenedAttributesParts.length),
-                  convertAttributeValue(rootKey, value));
-            }
-          }))
-          .toArray(CompletableFuture[]::new);
-      
-      // Wait for all attribute processing to complete
-      CompletableFuture.allOf(futures).get();
-    }
-    catch (InterruptedException | ExecutionException e) {
-      log.error("Error processing attributes asynchronously", e);
-      Thread.currentThread().interrupt();
-      
-      // Fallback to synchronous processing if async fails
-      return extractAttributesFromPropertiesSynchronously(props, prefix);
-    }
-    
-    return backingAssetAttributes;
-  }
-  
-  private Map<String, Object> extractAttributesFromPropertiesSynchronously(Properties props, final String prefix) {
-    Map<String, Object> backingAssetAttributes = new HashMap<>();
     Set<String> keys = props.stringPropertyNames();
     for (String key : keys) {
       if (key.startsWith(prefix)) {
         String value = props.getProperty(key);
         key = key.substring(prefix.length());
-        String[] flattenedAttributesParts = key.split("\\\\");
+        String[] flattenedAttributesParts = key.split("\\.");
         key = flattenedAttributesParts[0];
 
         unflattenAttributes(backingAssetAttributes, flattenedAttributesParts[0],
@@ -132,6 +114,41 @@ public abstract class ReplicationIngesterSupport
                          final BlobEventType eventType)
       throws ReplicationIngestionException
   {
+    // Process the blob ingestion asynchronously using Virtual Threads
+    virtualThreadManager.executeReplicationTask(blobIdString, () -> {
+      try {
+        processIngestBlob(blobIdString, blobStoreId, repositoryName, eventType);
+      }
+      catch (ReplicationIngestionException e) {
+        log.error("Failed to ingest blob {} for repository {} in blob store {}: {}",
+            blobIdString, repositoryName, blobStoreId, e.getMessage(), e);
+        throw e;
+      }
+      catch (Exception e) {
+        log.error("Unexpected error ingesting blob {} for repository {} in blob store {}: {}",
+            blobIdString, repositoryName, blobStoreId, e.getMessage(), e);
+        throw new ReplicationIngestionException(
+            String.format("Unexpected error ingesting blob %s for repository %s in blob store %s",
+                blobIdString, repositoryName, blobStoreId), e);
+      }
+    });
+  }
+  
+  /**
+   * Process the blob ingestion synchronously. This method is called by the asynchronous wrapper.
+   * 
+   * @param blobIdString the blob ID string
+   * @param blobStoreId the blob store ID
+   * @param repositoryName the repository name
+   * @param eventType the blob event type
+   * @throws ReplicationIngestionException if ingestion fails
+   */
+  private void processIngestBlob(final String blobIdString,
+                               final String blobStoreId,
+                               final String repositoryName,
+                               final BlobEventType eventType)
+      throws ReplicationIngestionException
+  {
     BlobId blobId = new BlobId(blobIdString);
     BlobStore blobStore = blobStoreManager.get(blobStoreId);
     validateBlobStore(blobStore, blobId, blobStoreId);
@@ -144,91 +161,51 @@ public abstract class ReplicationIngesterSupport
       log.info("Ingesting a delete for blob {} in repository {} and blob store {}.", blobIdString, repositoryName,
           blobStoreId);
       String path = blobAttributes.getHeaders().get(BLOB_NAME_HEADER);
-      
-      // Process deletion asynchronously using Virtual Threads
-      CompletableFuture<Void> deleteFuture = threadManager.submitTask(() -> {
-        try {
-          replicationIngesterHelper.deleteReplication(path, repositoryName);
-        }
-        catch (Exception e) {
-          log.error("Error during asynchronous deletion of blob {} in repository {}", 
-              blobIdString, repositoryName, e);
-          throw e;
-        }
-      });
-      
-      try {
-        // Wait for deletion to complete
-        deleteFuture.get();
-        return;
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new ReplicationIngestionException(
-            String.format("Interrupted while deleting blob %s for repository %s", blobIdString, repositoryName), e);
-      }
-      catch (ExecutionException e) {
-        throw new ReplicationIngestionException(
-            String.format("Error deleting blob %s for repository %s", blobIdString, repositoryName), e.getCause());
-      }
+      replicationIngesterHelper.deleteReplication(path, repositoryName);
+      return;
     }
 
-    // Extract attributes asynchronously using Virtual Threads
-    CompletableFuture<Map<String, Object>> assetAttrFuture = threadManager.submitTask(
+    // Extract attributes in parallel using CompletableFuture for better performance
+    CompletableFuture<Map<String, Object>> assetAttributesFuture = CompletableFuture.supplyAsync(
         () -> extractAssetAttributesFromProperties(blobAttributes.getProperties()));
     
-    CompletableFuture<Map<String, Object>> componentAttrFuture = threadManager.submitTask(
+    CompletableFuture<Map<String, Object>> componentAttributesFuture = CompletableFuture.supplyAsync(
         () -> extractComponentAttributesFromProperties(blobAttributes.getProperties()));
-    
+
     try {
-      // Wait for both attribute extractions to complete
-      CompletableFuture<Void> allAttrsFuture = CompletableFuture.allOf(assetAttrFuture, componentAttrFuture);
-      allAttrsFuture.get();
-      
-      Map<String, Object> assetAttributes = assetAttrFuture.get();
-      Map<String, Object> componentAttributes = componentAttrFuture.get();
+      Map<String, Object> assetAttributes = assetAttributesFuture.get();
+      Map<String, Object> componentAttributes = componentAttributesFuture.get();
 
       log.debug("Ingesting blob {} in repository {} and blob store {}.", blobIdString, repositoryName,
           blobStoreId);
-      
-      // Process replication asynchronously using Virtual Threads
-      CompletableFuture<Void> replicateFuture = threadManager.submitTask(() -> {
-        try {
-          replicationIngesterHelper.replicate(blobStoreId, blob, assetAttributes, componentAttributes, 
-              repositoryName, blobStoreId);
-        }
-        catch (IOException e) {
-          log.error("Error during asynchronous replication of blob {} for repository {}", 
-              blobIdString, repositoryName, e);
-          throw new RuntimeException(e);
-        }
-        return null;
-      });
-      
-      // Wait for replication to complete
-      replicateFuture.get();
+      replicationIngesterHelper.replicate(blobStoreId, blob, assetAttributes, componentAttributes, repositoryName, blobStoreId);
     }
     catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new ReplicationIngestionException(
-          String.format("Interrupted while ingesting blob %s for repository %s in blobstore %s", 
-              blobIdString, repositoryName, blobStoreId), e);
+      throw new ReplicationIngestionException(String
+          .format("Interrupted while ingesting blob %s for repository %s in blobstore %s.", blobIdString, repositoryName,
+              blobStoreId), e);
     }
     catch (ExecutionException e) {
-      Throwable cause = e.getCause();
-      if (cause instanceof IOException) {
-        throw new ReplicationIngestionException(
-            String.format("Could not ingest blob %s for repository %s in blobstore %s", 
-                blobIdString, repositoryName, blobStoreId), cause);
-      }
-      else {
-        throw new ReplicationIngestionException(
-            String.format("Error processing blob %s for repository %s in blobstore %s", 
-                blobIdString, repositoryName, blobStoreId), cause);
-      }
+      throw new ReplicationIngestionException(String
+          .format("Error extracting attributes for blob %s for repository %s in blobstore %s.", blobIdString, repositoryName,
+              blobStoreId), e.getCause());
+    }
+    catch (IOException e) {
+      throw new ReplicationIngestionException(String
+          .format("Could not ingest blob %s for repository %s in blobstore %s.", blobIdString, repositoryName,
+              blobStoreId), e);
     }
   }
 
+  /**
+   * Validate that the blob store exists.
+   * 
+   * @param blobStore the blob store to validate
+   * @param blobId the blob ID
+   * @param blobStoreId the blob store ID
+   * @throws ReplicationIngestionException if validation fails
+   */
   private void validateBlobStore(final BlobStore blobStore, final BlobId blobId, final String blobStoreId) {
     if (blobStore == null) {
       throw new ReplicationIngestionException(
@@ -236,6 +213,14 @@ public abstract class ReplicationIngesterSupport
     }
   }
 
+  /**
+   * Validate that the blob and its attributes exist.
+   * 
+   * @param blob the blob to validate
+   * @param blobAttributes the blob attributes to validate
+   * @param blobId the blob ID
+   * @throws ReplicationIngestionException if validation fails
+   */
   private void validateBlob(final Blob blob, final BlobAttributes blobAttributes, final BlobId blobId) {
     if (blob == null) {
       throw new ReplicationIngestionException(
@@ -249,7 +234,13 @@ public abstract class ReplicationIngesterSupport
   }
 
   /**
-   * Recursively unflattens a dot separated String in a Map
+   * Recursively unflattens a dot separated String in a Map.
+   * Thread-safe implementation to support parallel attribute extraction.
+   * 
+   * @param backing the backing map
+   * @param root the root key
+   * @param children the child keys
+   * @param value the value to set
    */
   protected void unflattenAttributes(Map<String, Object> backing, String root, String[] children, Object value) {
     if (children.length > 1) {
@@ -258,7 +249,7 @@ public abstract class ReplicationIngesterSupport
             Arrays.copyOfRange(children, 1, children.length), value);
       }
       else {
-        Map<String, Object> rootMap = new HashMap<>();
+        Map<String, Object> rootMap = new ConcurrentHashMap<>();
         backing.put(root, rootMap);
         unflattenAttributes(rootMap, children[0], Arrays.copyOfRange(children, 1, children.length), value);
       }
@@ -268,13 +259,20 @@ public abstract class ReplicationIngesterSupport
         ((Map<String, Object>) backing.get(root)).put(children[0], value);
       }
       else {
-        Map<String, Object> newEntry = new HashMap<>();
+        Map<String, Object> newEntry = new ConcurrentHashMap<>();
         newEntry.put(children[0], value);
         backing.put(root, newEntry);
       }
     }
   }
 
+  /**
+   * Convert an attribute value from string to its appropriate type.
+   * 
+   * @param key the attribute key
+   * @param value the attribute value as string
+   * @return the converted attribute value
+   */
   protected Object convertAttributeValue(final String key, final String value) {
     if (value == null) {
       return null;

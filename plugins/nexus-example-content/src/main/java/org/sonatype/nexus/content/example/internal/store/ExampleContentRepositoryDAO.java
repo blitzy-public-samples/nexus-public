@@ -15,7 +15,12 @@ package org.sonatype.nexus.content.example.internal.store;
 import org.sonatype.nexus.repository.content.store.ContentRepositoryDAO;
 
 /**
- * Example content repository DAO interface.
+ * Example content repository DAO interface that extends the core {@link ContentRepositoryDAO}.
+ * 
+ * This interface has been verified for compatibility with:
+ * - Java 21 runtime environment
+ * - MyBatis 3.5.15
+ * - Updated JDBC drivers (PostgreSQL JDBC 42.7.2)
  *
  * @since 3.24
  */

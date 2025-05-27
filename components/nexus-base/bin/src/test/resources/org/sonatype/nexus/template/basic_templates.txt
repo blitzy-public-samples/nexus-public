@@ -1,0 +1,145 @@
+# Java 21 String Templates - Basic Examples
+
+## Simple Variable Interpolation
+
+// Basic variable interpolation
+String name = "Nexus";
+String version = "3.60.0";
+STR."Hello, \{name}! You are running version \{version}."
+
+// Expected: "Hello, Nexus! You are running version 3.60.0."
+
+// Variable interpolation with object properties
+Record User(String name, String role) {}
+User user = new User("admin", "administrator");
+STR."Current user: \{user.name()} with role \{user.role()}"
+
+// Expected: "Current user: admin with role administrator"
+
+// Multiple variables in a single template
+String host = "localhost";
+int port = 8081;
+STR."Server running at http://\{host}:\{port}/"
+
+// Expected: "Server running at http://localhost:8081/"
+
+## Numeric and Expression Interpolation
+
+// Numeric values and expressions
+int a = 5;
+int b = 7;
+STR."The sum of \{a} and \{b} is \{a + b}."
+
+// Expected: "The sum of 5 and 7 is 12."
+
+// Method calls in expressions
+String repoName = "maven-central";
+STR."Repository name in uppercase: \{repoName.toUpperCase()}"
+
+// Expected: "Repository name in uppercase: MAVEN-CENTRAL"
+
+// Formatting numeric values
+double pi = 3.14159265359;
+STR."Pi rounded to 2 decimal places: \{String.format("%.2f", pi)}"
+
+// Expected: "Pi rounded to 2 decimal places: 3.14"
+
+## Comparison with Traditional Concatenation
+
+// Traditional string concatenation
+String repo = "maven-central";
+int artifacts = 1250000;
+"Repository " + repo + " contains approximately " + artifacts + " artifacts."
+
+// Same with String Templates
+STR."Repository \{repo} contains approximately \{artifacts} artifacts."
+
+// Expected: "Repository maven-central contains approximately 1250000 artifacts."
+
+// Complex concatenation with conditionals
+boolean isAdmin = true;
+String username = "admin";
+"User " + username + " has " + (isAdmin ? "administrator" : "regular") + " privileges."
+
+// Same with String Templates
+STR."User \{username} has \{isAdmin ? "administrator" : "regular"} privileges."
+
+// Expected: "User admin has administrator privileges."
+
+## Logging Message Patterns
+
+// Simple log message
+String component = "BlobStore";
+String operation = "initialize";
+STR."\{component} - Starting \{operation} operation"
+
+// Expected: "BlobStore - Starting initialize operation"
+
+// Structured logging with JSON-like format
+long startTime = 1671098130000L;
+STR."{\"component\":\"\{component}\",\"operation\":\"\{operation}\",\"startTime\":\{startTime}}"
+
+// Expected: "{"component":"BlobStore","operation":"initialize","startTime":1671098130000}"
+
+// Log message with timestamp
+String timestamp = "2023-12-15T10:15:30Z";
+String level = "INFO";
+STR."\{timestamp} [\{level}] \{component} - \{operation} completed successfully"
+
+// Expected: "2023-12-15T10:15:30Z [INFO] BlobStore - initialize completed successfully"
+
+// Error logging with exception details
+String exceptionType = "IOException";
+String message = "Failed to read configuration file";
+STR."Exception occurred: \{exceptionType} - \{message}"
+
+// Expected: "Exception occurred: IOException - Failed to read configuration file"
+
+## Configuration Messages
+
+// System configuration status
+String configPath = "/etc/nexus/nexus.properties";
+boolean configLoaded = true;
+STR."Configuration from \{configPath} \{configLoaded ? "loaded successfully" : "failed to load"}"
+
+// Expected: "Configuration from /etc/nexus/nexus.properties loaded successfully"
+
+// Repository configuration
+String repoType = "proxy";
+String remoteUrl = "https://repo1.maven.org/maven2/";
+STR."Created new \{repoType} repository pointing to \{remoteUrl}"
+
+// Expected: "Created new proxy repository pointing to https://repo1.maven.org/maven2/"
+
+## Multi-line Templates
+
+// Multi-line template with indentation
+String id = "central";
+String type = "proxy";
+String format = "maven2";
+STR."""
+  Repository Details:
+    ID: \{id}
+    Type: \{type}
+    Format: \{format}
+    URL: \{type.equals("proxy") ? remoteUrl : "N/A"}
+"""
+
+// Expected multi-line output with proper indentation and conditional URL
+
+## Virtual Thread Context Information
+
+// Thread information template
+boolean isVirtual = true;
+String threadName = "HTTP-Handler-0";
+long threadId = 42;
+STR."Thread[\{threadId}, \{threadName}, \{isVirtual ? "virtual" : "platform"}]"
+
+// Expected: "Thread[42, HTTP-Handler-0, virtual]"
+
+// Performance logging with virtual threads
+int activeThreads = 250;
+int completedTasks = 1500;
+STR."Performance: \{activeThreads} active virtual threads, \{completedTasks} completed tasks"
+
+// Expected: "Performance: 250 active virtual threads, 1500 completed tasks"

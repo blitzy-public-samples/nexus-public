@@ -13,15 +13,13 @@
 package org.sonatype.nexus.cleanup.storage.config;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.cleanup.storage.config.RegexCriteriaValidator;
 import org.sonatype.nexus.cleanup.storage.config.RegexCriteriaValidator.InvalidExpressionException;
 
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class RegexCriteriaValidatorTest
@@ -31,33 +29,25 @@ public class RegexCriteriaValidatorTest
   private static final String INVALID_EXPRESSION = "hello(world";
 
   @Test
-  @DisplayName("Should throw exception for invalid regex")
-  void shouldThrowExceptionForInvalidRegex() {
+  public void invalidExpressionShouldThrowException() {
     assertThrows(InvalidExpressionException.class, () -> {
       RegexCriteriaValidator.validate(INVALID_EXPRESSION);
     });
   }
 
   @Test
-  @DisplayName("Should return same expression when valid")
-  void shouldReturnSameExpressionWhenValid() {
+  public void validExpressionShouldReturnSameExpression() {
     assertThat(RegexCriteriaValidator.validate(EXPRESSION), is(EXPRESSION));
   }
   
   @Test
-  @DisplayName("Should include detailed error message for invalid regex")
-  void shouldIncludeDetailedErrorMessageForInvalidRegex() {
-    String expectedErrorPattern = "Invalid regular expression pattern:";
+  public void invalidExpressionShouldContainDetailedErrorMessage() {
+    // Using Java 21 String Templates to format the expected error message pattern
+    String expectedErrorPattern = STR."Invalid regular expression pattern: \"(\" expected";
     
-    InvalidExpressionException exception = assertThrows(InvalidExpressionException.class, () -> {
-      RegexCriteriaValidator.validate(INVALID_EXPRESSION);
-    });
+    InvalidExpressionException exception = assertThrows(InvalidExpressionException.class, 
+        () -> RegexCriteriaValidator.validate(INVALID_EXPRESSION));
     
-    // Using Java 21 String Templates to validate error message
-    String errorMessage = STR."Error message: \{exception.getMessage()}";
-    
-    // Verify the error message contains the expected pattern
-    assert exception.getMessage().contains(expectedErrorPattern) : 
-           STR."Expected error message to contain '\{expectedErrorPattern}' but was '\{exception.getMessage()}'";
+    assertThat(exception.getMessage(), containsString(expectedErrorPattern));
   }
 }

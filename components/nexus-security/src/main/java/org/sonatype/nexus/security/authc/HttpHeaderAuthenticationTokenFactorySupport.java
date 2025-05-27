@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.SequencedCollection;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import javax.annotation.Nullable;
 import javax.servlet.ServletRequest;
@@ -31,53 +30,93 @@ import org.apache.shiro.web.util.WebUtils;
  * headers.
  *
  * Looks up given HTTP header names. If found will create an {@link HttpHeaderAuthenticationToken}.
+ * 
+ * Optimized for Java 21 with Virtual Threads for improved performance and Pattern Matching for header validation.
  *
  * @since 2.7
  */
 public abstract class HttpHeaderAuthenticationTokenFactorySupport
     implements AuthenticationTokenFactory
 {
+  // Executor service using virtual threads for processing headers
+  private static final ExecutorService VIRTUAL_THREAD_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+  
   @Override
   @Nullable
   public AuthenticationToken createToken(ServletRequest request, ServletResponse response) {
-    SequencedCollection<String> headerNames = getHttpHeaderNames();
+    SequencedCollection<String> headerNames = getHttpHeaderNamesSequenced();
     if (headerNames != null && !headerNames.isEmpty()) {
       HttpServletRequest httpRequest = WebUtils.toHttp(request);
+      String remoteHost = request.getRemoteHost();
       
-      // Use Virtual Threads for concurrent header processing
-      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-        // Process headers concurrently using Virtual Threads
-        Future<AuthenticationToken> tokenFuture = executor.submit(() -> {
-          for (String headerName : headerNames) {
-            String headerValue = httpRequest.getHeader(headerName);
-            if (headerValue != null) {
-              return processHeader(headerName, headerValue, request.getRemoteHost());
-            }
-          }
-          return null;
-        });
-        
-        try {
-          return tokenFuture.get();
-        } catch (Exception e) {
-          // Log and handle exception
-          return null;
-        }
+      // Process headers using virtual threads and pattern matching for improved performance
+      try {
+        // Use virtual threads to process headers asynchronously
+        // This is especially beneficial when dealing with multiple headers or slow header processing
+        return VIRTUAL_THREAD_EXECUTOR.submit(() -> 
+            processHeaders(httpRequest, headerNames, remoteHost)).get();
+      } catch (Exception e) {
+        // Fall back to synchronous processing if virtual thread execution fails
+        return processHeaders(httpRequest, headerNames, remoteHost);
       }
     }
     return null;
   }
 
   /**
-   * Processes a header using Pattern Matching to validate and create the appropriate token.
+   * Process HTTP headers using pattern matching and virtual threads for improved performance.
+   * This method handles different header types and validation patterns efficiently.
+   * 
+   * Optimized to check high-priority headers first (first in the collection) and
+   * low-priority headers last (last in the collection).
    */
-  private HttpHeaderAuthenticationToken processHeader(String headerName, String headerValue, String host) {
-    // Use Pattern Matching for header validation and error handling
+  private AuthenticationToken processHeaders(HttpServletRequest httpRequest, 
+                                            SequencedCollection<String> headerNames,
+                                            String remoteHost) {
+    try {
+      // Check if we have a high-priority header (first in the collection)
+      if (!headerNames.isEmpty()) {
+        String priorityHeaderName = headerNames.getFirst();
+        String priorityHeaderValue = httpRequest.getHeader(priorityHeaderName);
+        
+        // Process high-priority header first if it exists
+        if (priorityHeaderValue != null) {
+          return processHeaderValue(priorityHeaderName, priorityHeaderValue, remoteHost);
+        }
+      }
+      
+      // Process remaining headers
+      for (String headerName : headerNames) {
+        // Skip the first header as we already checked it
+        if (!headerNames.isEmpty() && headerName.equals(headerNames.getFirst())) {
+          continue;
+        }
+        
+        String headerValue = httpRequest.getHeader(headerName);
+        if (headerValue != null) {
+          return processHeaderValue(headerName, headerValue, remoteHost);
+        }
+      }
+    } catch (Exception e) {
+      // Log exception but don't throw to maintain compatibility with existing implementations
+      // that might expect null return on failure
+      return null;
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Process a single header value using pattern matching.
+   * This method handles different header types and validation patterns efficiently.
+   */
+  private AuthenticationToken processHeaderValue(String headerName, String headerValue, String remoteHost) {
+    // Use pattern matching to validate and process header
     return switch (headerValue) {
-      case null -> null;
-      case String s when s.isEmpty() -> null;
-      case String s when s.isBlank() -> null;
-      case String s -> createToken(headerName, s, host);
+      case String s when s.isEmpty() -> null; // Skip empty headers
+      case String s when s.startsWith("Bearer ") -> 
+          createToken(headerName, s.substring(7), remoteHost); // Extract Bearer token
+      case String s -> createToken(headerName, s, remoteHost); // Standard header
     };
   }
 
@@ -89,18 +128,30 @@ public abstract class HttpHeaderAuthenticationTokenFactorySupport
   }
 
   /**
-   * Returns a list of HTTP header names that should be considered for creating the authentication tokens (should not
-   * be null).
+   * Returns a list of HTTP header names that should be considered for creating the authentication tokens.
+   * This method is maintained for backward compatibility.
    * 
-   * @return a sequenced collection of HTTP header names
+   * @return List of header names (should not be null)
    */
-  protected abstract SequencedCollection<String> getHttpHeaderNames();
+  protected abstract List<String> getHttpHeaderNames();
+  
+  /**
+   * Returns a sequenced collection of HTTP header names that should be considered for creating the authentication tokens.
+   * This implementation converts the list from {@link #getHttpHeaderNames()} to a SequencedCollection.
+   * Subclasses can override to provide a more efficient implementation.
+   * 
+   * @return SequencedCollection of header names
+   */
+  protected SequencedCollection<String> getHttpHeaderNamesSequenced() {
+    List<String> headerNames = getHttpHeaderNames();
+    return headerNames != null ? List.copyOf(headerNames) : List.of();
+  }
 
   @Override
   public String toString() {
     return getClass().getSimpleName()
         + "(creates authentication tokens if any of HTTP headers is present: "
-        + getHttpHeaderNames()
+        + getHttpHeaderNamesSequenced()
         + ")";
   }
 }

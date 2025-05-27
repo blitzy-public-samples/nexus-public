@@ -31,6 +31,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
+/**
+ * Tests for {@link LegacyUrlEnabledHelper}.
+ * 
+ * This test is compatible with JUnit Vintage 5.10.1 and Mockito 5.8.0 on Java 21.
+ * It doesn't use any synchronized blocks or thread-local variables that would cause
+ * thread pinning issues with virtual threads.
+ */
 public class LegacyUrlEnabledHelperTest
     extends TestSupport
 {

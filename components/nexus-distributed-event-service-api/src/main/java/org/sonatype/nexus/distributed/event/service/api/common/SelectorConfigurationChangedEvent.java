@@ -15,7 +15,6 @@ package org.sonatype.nexus.distributed.event.service.api.common;
 import org.sonatype.nexus.distributed.event.service.api.EventType;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonCreator.Mode;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
@@ -28,18 +27,27 @@ public class SelectorConfigurationChangedEvent
 {
   public static final String NAME = "SelectorConfigurationChangedEvent";
 
-  @JsonCreator(mode = Mode.PROPERTIES)
+  /**
+   * Creates a new selector configuration changed event.
+   *
+   * @param eventType the type of event (created, updated, deleted, etc.)
+   */
+  @JsonCreator
   public SelectorConfigurationChangedEvent(@JsonProperty("eventType") final EventType eventType) {
     super(eventType);
   }
   
   /**
    * Returns a string representation of this event using Java 21 String Templates.
+   * <p>
+   * This implementation uses the new String Template feature introduced in Java 21
+   * for improved readability and performance compared to traditional string concatenation
+   * or String.format().
    *
    * @return a string representation of this event
    */
   @Override
   public String toString() {
-    return STR."SelectorConfigurationChangedEvent{eventType=\{getEventType()}}";
+    return STR."\{NAME} [eventType=\{getEventType()}]";
   }
 }

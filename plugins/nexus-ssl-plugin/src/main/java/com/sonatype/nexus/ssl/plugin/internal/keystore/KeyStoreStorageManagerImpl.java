@@ -15,12 +15,17 @@ package com.sonatype.nexus.ssl.plugin.internal.keystore;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
-import jakarta.annotation.Nullable;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.annotation.Nullable;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.nexus.common.entity.EntityVersion;
 import org.sonatype.nexus.common.event.EventManager;
@@ -30,20 +35,12 @@ import org.sonatype.nexus.ssl.spi.KeyStoreStorage;
 import org.sonatype.nexus.ssl.spi.KeyStoreStorageManager;
 import org.sonatype.nexus.transaction.Transactional;
 
-import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static java.lang.StringTemplate.STR;
 
 /**
  * MyBatis {@link KeyStoreStorageManager} implementation.
- * 
- * Updated for Java 21 with the following enhancements:
- * <ul>
- *   <li>Virtual threads for I/O operations to improve scalability</li>
- *   <li>String templates for more readable error messages</li>
- *   <li>Records for simplified event handling</li>
- *   <li>Jakarta EE 9+ compatible annotations</li>
- * </ul>
  *
  * @since 3.21
  */
@@ -53,6 +50,8 @@ public class KeyStoreStorageManagerImpl
     extends ConfigStoreSupport<KeyStoreDAO>
     implements KeyStoreStorageManager
 {
+  private static final Logger log = LoggerFactory.getLogger(KeyStoreStorageManagerImpl.class);
+  
   private final EventManager eventManager;
 
   @Inject
@@ -61,128 +60,130 @@ public class KeyStoreStorageManagerImpl
     this.eventManager = checkNotNull(eventManager);
   }
 
-  /**
-   * Creates a new KeyStoreStorage instance for the given key store name.
-   * 
-   * @param keyStoreName the name of the key store
-   * @return a new KeyStoreStorage instance
-   */
   @Override
   public KeyStoreStorage createStorage(final String keyStoreName) {
     return new KeyStoreStorageImpl(this, keyStoreName);
   }
 
   /**
-   * Checks if a key store with the given name exists.
-   * 
-   * @param keyStoreName the name of the key store to check
-   * @return true if the key store exists, false otherwise
+   * Checks if a keystore with the given name exists.
+   * Uses a virtual thread for database operation to improve I/O performance.
    */
-  @Transactional
   @Nullable
   public boolean exists(final String keyStoreName) {
+    try {
+      return runOnVirtualThread(() -> {
+        log.debug(STR."Checking existence of keystore: \{keyStoreName}");
+        return existsTransactional(keyStoreName);
+      });
+    }
+    catch (Exception e) {
+      log.error(STR."Error checking existence of keystore \{keyStoreName}: \{e.getMessage()}", e);
+      return false;
+    }
+  }
+  
+  @Transactional
+  protected boolean existsTransactional(final String keyStoreName) {
     return dao().load(keyStoreName).isPresent();
   }
 
   /**
-   * Loads the key store data using a virtual thread for improved I/O performance.
-   * 
-   * Virtual threads in Java 21 are lightweight and managed by the JVM, making them ideal
-   * for I/O-bound operations like database access and file operations.
+   * Loads a keystore with the given name.
+   * Uses a virtual thread for database operation to improve I/O performance.
    */
   public ByteArrayInputStream load(final String keyStoreName) {
     try {
-      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-        Optional<KeyStoreData> data = doLoad(keyStoreName);
-        checkState(data.isPresent(), STR."key store \{keyStoreName} does not exist");
-        postEvent(keyStoreName);
-        return new ByteArrayInputStream(data.get().getBytes());
-      }).get();
+      log.debug(STR."Loading keystore: \{keyStoreName}");
+      Optional<KeyStoreData> data = runOnVirtualThread(() -> doLoadTransactional(keyStoreName));
+      checkState(data.isPresent(), STR."Key store \{keyStoreName} does not exist");
+      postEvent(keyStoreName);
+      return new ByteArrayInputStream(data.get().getBytes());
     }
     catch (Exception e) {
-      throw new RuntimeException(STR."Failed to load key store \{keyStoreName}", e);
+      log.error(STR."Error loading keystore \{keyStoreName}: \{e.getMessage()}", e);
+      throw e;
     }
   }
 
-  /**
-   * Loads key store data from the database.
-   * 
-   * @param keyStoreName the name of the key store to load
-   * @return an Optional containing the key store data if found
-   */
   @Transactional
-  protected Optional<KeyStoreData> doLoad(final String keyStoreName) {
+  protected Optional<KeyStoreData> doLoadTransactional(final String keyStoreName) {
     return dao().load(keyStoreName);
   }
 
   /**
-   * Saves the key store data using a virtual thread for improved I/O performance.
-   * 
-   * Using virtual threads allows the application to handle many concurrent operations
-   * without the overhead of traditional platform threads, resulting in better scalability
-   * for I/O-bound operations like database writes.
+   * Saves a keystore with the given name.
+   * Uses a virtual thread for database operation to improve I/O performance.
    */
   public void save(final String keyStoreName, final ByteArrayOutputStream out) {
     try {
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-        KeyStoreData data = new KeyStoreData();
-        data.setName(keyStoreName);
-        data.setBytes(out.toByteArray());
-        doSave(data);
-        postEvent(keyStoreName);
-        return null;
-      }).get();
+      log.debug(STR."Saving keystore: \{keyStoreName}");
+      KeyStoreData data = new KeyStoreData();
+      data.setName(keyStoreName);
+      data.setBytes(out.toByteArray());
+      runOnVirtualThread(() -> {
+        doSaveTransactional(data);
+        return null; // Callable requires a return value
+      });
+      postEvent(keyStoreName);
     }
     catch (Exception e) {
-      throw new RuntimeException(STR."Failed to save key store \{keyStoreName}", e);
+      log.error(STR."Error saving keystore \{keyStoreName}: \{e.getMessage()}", e);
+      throw new RuntimeException(STR."Failed to save keystore \{keyStoreName}", e);
     }
   }
 
-  /**
-   * Saves key store data to the database.
-   * 
-   * @param data the key store data to save
-   */
   @Transactional
-  protected void doSave(final KeyStoreData data) {
+  protected void doSaveTransactional(final KeyStoreData data) {
     dao().save(data);
   }
 
   /**
-   * Record for KeyStoreDataEvent to simplify event creation.
-   * 
-   * Java 21 records provide a concise way to create immutable data carriers,
-   * reducing boilerplate code compared to the previous anonymous inner class approach.
-   */
-  private record KeyStoreDataEventRecord(String keyStoreName) implements KeyStoreDataEvent {
-    @Override
-    public boolean isLocal() {
-      return true;
-    }
-
-    @Override
-    public EntityVersion getVersion() {
-      return null;
-    }
-
-    @Override
-    public String getRemoteNodeId() {
-      return null;
-    }
-
-    @Override
-    public String getKeyStoreName() {
-      return keyStoreName;
-    }
-  }
-
-  /**
-   * Posts a KeyStoreDataEvent to trigger invalidation of TrustStoreImpl context.
-   * 
-   * @param keyStoreName the name of the key store that was modified
+   * Posts an event to notify listeners about keystore changes.
+   * This helps invalidate caches and update security contexts.
    */
   private void postEvent(final String keyStoreName) {
-    // trigger invalidation of TrustStoreImpl context using Java 21 record
-    eventManager.post(new KeyStoreDataEventRecord(keyStoreName));
+    log.debug(STR."Posting keystore event for: \{keyStoreName}");
+    // trigger invalidation of TrustStoreImpl context
+    eventManager.post(new KeyStoreDataEvent()
+    {
+      @Override
+      public boolean isLocal() {
+        return true;
+      }
+
+      @Override
+      public EntityVersion getVersion() {
+        return null;
+      }
+
+      @Override
+      public String getRemoteNodeId() {
+        return null;
+      }
+
+      @Override
+      public String getKeyStoreName() {
+        return keyStoreName;
+      }
+    });
+  }
+  /**
+   * Executes a database operation on a virtual thread for improved I/O performance.
+   * This method leverages Java 21's Virtual Threads to handle database operations more efficiently.
+   *
+   * @param <T> The return type of the operation
+   * @param operation The database operation to execute
+   * @return The result of the operation
+   * @throws Exception If an error occurs during execution
+   */
+  private <T> T runOnVirtualThread(Callable<T> operation) throws Exception {
+    try {
+      return Executors.newVirtualThreadPerTaskExecutor().submit(operation).get();
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Virtual thread operation was interrupted", e);
+    }
   }
 }

@@ -1,182 +1,258 @@
--- PostgreSQL test data for Virtual Thread testing
--- This script populates test tables with data for validating database operations with Virtual Threads
+-- PostgreSQL Test Data for Virtual Thread Testing
+-- This script populates test tables with data designed to validate database operations with Virtual Threads
+-- Compatible with PostgreSQL JDBC driver 42.6.0+ which has improved Virtual Thread support
+-- For use with Java 21 Virtual Thread testing to validate non-blocking I/O operations
 
--- Clear existing test data if present
-TRUNCATE TABLE IF EXISTS vt_test_entity CASCADE;
-TRUNCATE TABLE IF EXISTS vt_test_relation CASCADE;
-TRUNCATE TABLE IF EXISTS vt_test_blob CASCADE;
-TRUNCATE TABLE IF EXISTS vt_test_transaction CASCADE;
-TRUNCATE TABLE IF EXISTS vt_test_performance CASCADE;
+-- Clear existing test data if any
+TRUNCATE TABLE vt_test_entity CASCADE;
+TRUNCATE TABLE vt_test_relationship CASCADE;
+TRUNCATE TABLE vt_test_blob CASCADE;
+TRUNCATE TABLE vt_test_transaction CASCADE;
+TRUNCATE TABLE vt_test_batch CASCADE;
+TRUNCATE TABLE vt_test_connection_pool CASCADE;
+TRUNCATE TABLE vt_test_thread_pinning CASCADE;
 
--- Basic entity table for read operation testing
-CREATE TABLE IF NOT EXISTS vt_test_entity (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    status VARCHAR(20) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    version INTEGER DEFAULT 0,
-    attributes JSONB
-);
+-- ============================================================================
+-- Basic entity data for read operations with Virtual Threads
+-- These records are used to test basic CRUD operations with Virtual Threads
+-- ============================================================================
 
--- Relation table for testing join operations
-CREATE TABLE IF NOT EXISTS vt_test_relation (
-    id SERIAL PRIMARY KEY,
-    entity_id INTEGER NOT NULL REFERENCES vt_test_entity(id),
-    relation_type VARCHAR(50) NOT NULL,
-    target_id INTEGER NOT NULL,
-    properties JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
+INSERT INTO vt_test_entity (id, name, description, created, last_updated, active) VALUES
+(1, 'Entity-1', 'Test entity for basic read operations with Virtual Threads', NOW(), NOW(), true),
+(2, 'Entity-2', 'Test entity with medium-length description to test string handling with Virtual Threads', NOW(), NOW(), true),
+(3, 'Entity-3', 'Test entity with a longer description to ensure that Virtual Threads properly handle larger text fields without pinning. This description is intentionally verbose to test buffer handling.', NOW(), NOW(), true),
+(4, 'Entity-4', 'Inactive test entity', NOW(), NOW(), false),
+(5, 'Entity-5', 'Another active test entity', NOW(), NOW(), true),
+(6, 'Entity-6', 'Test entity for update operations', NOW(), NOW(), true),
+(7, 'Entity-7', 'Test entity for delete operations', NOW(), NOW(), true),
+(8, 'Entity-8', 'Test entity for transaction testing', NOW(), NOW(), true),
+(9, 'Entity-9', 'Test entity for batch operations', NOW(), NOW(), true),
+(10, 'Entity-10', 'Test entity for complex queries', NOW(), NOW(), true);
 
--- Blob table for testing large data operations
-CREATE TABLE IF NOT EXISTS vt_test_blob (
-    id SERIAL PRIMARY KEY,
-    entity_id INTEGER NOT NULL REFERENCES vt_test_entity(id),
-    content_type VARCHAR(100) NOT NULL,
-    size_bytes BIGINT NOT NULL,
-    sha1 VARCHAR(40),
-    data BYTEA,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
+-- Add more entities for volume testing (useful for benchmarking Virtual Thread performance)
+INSERT INTO vt_test_entity (id, name, description, created, last_updated, active)
+SELECT i, 
+       'Volume-Entity-' || i, 
+       'Volume test entity ' || i || ' for benchmarking Virtual Thread performance with larger datasets', 
+       NOW(), 
+       NOW(), 
+       (i % 2 = 0) -- alternating active status
+FROM generate_series(11, 1000) AS i;
 
--- Transaction table for testing isolation levels
-CREATE TABLE IF NOT EXISTS vt_test_transaction (
-    id SERIAL PRIMARY KEY,
-    entity_id INTEGER NOT NULL REFERENCES vt_test_entity(id),
-    operation_type VARCHAR(20) NOT NULL,
-    value_before INTEGER,
-    value_after INTEGER,
-    transaction_id VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
+-- ============================================================================
+-- Relationship data for testing join operations with Virtual Threads
+-- These records establish relationships between entities to test join performance
+-- ============================================================================
 
--- Performance table for benchmarking
-CREATE TABLE IF NOT EXISTS vt_test_performance (
-    id SERIAL PRIMARY KEY,
-    test_case VARCHAR(100) NOT NULL,
-    thread_type VARCHAR(20) NOT NULL,  -- 'PLATFORM' or 'VIRTUAL'
-    operation_count INTEGER NOT NULL,
-    concurrency_level INTEGER NOT NULL,
-    total_duration_ms BIGINT,
-    avg_response_time_ms DOUBLE PRECISION,
-    p95_response_time_ms DOUBLE PRECISION,
-    p99_response_time_ms DOUBLE PRECISION,
-    error_count INTEGER DEFAULT 0,
-    test_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    metadata JSONB
-);
+INSERT INTO vt_test_relationship (id, parent_id, child_id, relationship_type, created) VALUES
+(1, 1, 2, 'PARENT_CHILD', NOW()),
+(2, 1, 3, 'PARENT_CHILD', NOW()),
+(3, 2, 4, 'PARENT_CHILD', NOW()),
+(4, 2, 5, 'PARENT_CHILD', NOW()),
+(5, 3, 6, 'PARENT_CHILD', NOW()),
+(6, 3, 7, 'PARENT_CHILD', NOW()),
+(7, 8, 9, 'REFERENCE', NOW()),
+(8, 8, 10, 'REFERENCE', NOW()),
+(9, 9, 10, 'DEPENDENCY', NOW()),
+(10, 1, 10, 'COMPLEX', NOW());
 
--- Insert test entities
-INSERT INTO vt_test_entity (name, description, status, attributes) VALUES
-('entity-1', 'Test entity for basic read operations', 'ACTIVE', '{"key1": "value1", "key2": 123}'::jsonb),
-('entity-2', 'Test entity for update operations', 'ACTIVE', '{"key1": "value2", "key2": 456}'::jsonb),
-('entity-3', 'Test entity for delete operations', 'INACTIVE', '{"key1": "value3", "key2": 789}'::jsonb),
-('entity-4', 'Test entity for transaction operations', 'ACTIVE', '{"key1": "value4", "key2": 101112}'::jsonb),
-('entity-5', 'Test entity for concurrent read operations', 'ACTIVE', '{"key1": "value5", "key2": 131415}'::jsonb),
-('entity-6', 'Test entity for concurrent write operations', 'ACTIVE', '{"key1": "value6", "key2": 161718}'::jsonb),
-('entity-7', 'Test entity for blob operations', 'ACTIVE', '{"key1": "value7", "key2": 192021}'::jsonb),
-('entity-8', 'Test entity for complex query operations', 'ACTIVE', '{"key1": "value8", "key2": 222324}'::jsonb),
-('entity-9', 'Test entity for transaction isolation', 'ACTIVE', '{"key1": "value9", "key2": 252627}'::jsonb),
-('entity-10', 'Test entity for deadlock scenarios', 'ACTIVE', '{"key1": "value10", "key2": 282930}'::jsonb);
+-- Add more relationships for complex join testing
+INSERT INTO vt_test_relationship (id, parent_id, child_id, relationship_type, created)
+SELECT 10 + i, 
+       (i % 990) + 11, -- parent from volume entities
+       ((i + 100) % 990) + 11, -- child from volume entities (different from parent)
+       CASE (i % 3) 
+           WHEN 0 THEN 'PARENT_CHILD' 
+           WHEN 1 THEN 'REFERENCE' 
+           ELSE 'DEPENDENCY' 
+       END, -- mix of relationship types
+       NOW()
+FROM generate_series(1, 2000) AS i;
 
--- Insert test relations
-INSERT INTO vt_test_relation (entity_id, relation_type, target_id, properties) VALUES
-(1, 'PARENT', 2, '{"relation_attr": "parent-child"}'::jsonb),
-(1, 'PARENT', 3, '{"relation_attr": "parent-child"}'::jsonb),
-(2, 'REFERENCE', 4, '{"relation_attr": "reference"}'::jsonb),
-(3, 'REFERENCE', 5, '{"relation_attr": "reference"}'::jsonb),
-(4, 'PARENT', 6, '{"relation_attr": "parent-child"}'::jsonb),
-(5, 'PARENT', 7, '{"relation_attr": "parent-child"}'::jsonb),
-(6, 'REFERENCE', 8, '{"relation_attr": "reference"}'::jsonb),
-(7, 'REFERENCE', 9, '{"relation_attr": "reference"}'::jsonb),
-(8, 'PARENT', 10, '{"relation_attr": "parent-child"}'::jsonb),
-(9, 'REFERENCE', 1, '{"relation_attr": "circular-reference"}'::jsonb);
+-- ============================================================================
+-- Blob data for testing I/O operations with Virtual Threads
+-- These records simulate binary content to test I/O performance with Virtual Threads
+-- ============================================================================
 
--- Insert test blobs (with minimal binary data for testing)
-INSERT INTO vt_test_blob (entity_id, content_type, size_bytes, sha1, data) VALUES
-(7, 'application/octet-stream', 10, 'da39a3ee5e6b4b0d3255bfef95601890afd80709', '\x0102030405060708090A'),
-(7, 'text/plain', 13, '2fd4e1c67a2d28fced849ee1bb76e7391b93eb12', '\x48656C6C6F2C20576F726C6421'),  -- 'Hello, World!'
-(8, 'application/json', 15, '7b52009b64fd0a2a49e6d8a939753077792b0554', '\x7B226B6579223A2276616C7565227D'),  -- '{"key":"value"}'
-(9, 'image/png', 8, 'f7ff9e8b7bb2e09b70935a5d785e0cc5d9d0abf0', '\x89504E470D0A1A0A');
+INSERT INTO vt_test_blob (id, entity_id, content_type, size_bytes, blob_data, created) VALUES
+(1, 1, 'application/json', 256, repeat('a', 256), NOW()),
+(2, 2, 'application/xml', 512, repeat('b', 512), NOW()),
+(3, 3, 'text/plain', 1024, repeat('c', 1024), NOW()),
+(4, 4, 'application/octet-stream', 2048, repeat('d', 2048), NOW()),
+(5, 5, 'image/png', 4096, repeat('e', 4096), NOW());
 
--- Insert test transaction records
-INSERT INTO vt_test_transaction (entity_id, operation_type, value_before, value_after, transaction_id) VALUES
-(4, 'UPDATE', 100, 200, 'tx-001'),
-(4, 'UPDATE', 200, 300, 'tx-002'),
-(9, 'UPDATE', 500, 600, 'tx-003'),
-(9, 'UPDATE', 600, 700, 'tx-004'),
-(10, 'UPDATE', 800, 900, 'tx-005'),
-(10, 'UPDATE', 900, 1000, 'tx-006');
+-- Add larger blobs to test Virtual Thread I/O performance with bigger payloads
+INSERT INTO vt_test_blob (id, entity_id, content_type, size_bytes, blob_data, created) VALUES
+(6, 6, 'application/pdf', 8192, repeat('f', 8192), NOW()),
+(7, 7, 'application/zip', 16384, repeat('g', 16384), NOW()),
+(8, 8, 'video/mp4', 32768, repeat('h', 32768), NOW()),
+(9, 9, 'application/java-archive', 65536, repeat('i', 65536), NOW()),
+(10, 10, 'application/x-executable', 131072, repeat('j', 131072), NOW());
 
--- Insert baseline performance metrics
-INSERT INTO vt_test_performance (test_case, thread_type, operation_count, concurrency_level, total_duration_ms, avg_response_time_ms, p95_response_time_ms, p99_response_time_ms, error_count, metadata) VALUES
-('read-single-entity', 'PLATFORM', 1000, 10, 5000, 5.0, 10.0, 15.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('read-single-entity', 'VIRTUAL', 1000, 10, 4800, 4.8, 9.5, 14.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('read-with-joins', 'PLATFORM', 1000, 10, 8000, 8.0, 15.0, 25.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('read-with-joins', 'VIRTUAL', 1000, 10, 7500, 7.5, 14.0, 22.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('write-single-entity', 'PLATFORM', 1000, 10, 12000, 12.0, 20.0, 30.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('write-single-entity', 'VIRTUAL', 1000, 10, 11000, 11.0, 18.0, 27.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('transaction-commit', 'PLATFORM', 1000, 10, 15000, 15.0, 25.0, 40.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('transaction-commit', 'VIRTUAL', 1000, 10, 14000, 14.0, 23.0, 35.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('blob-read', 'PLATFORM', 100, 5, 20000, 200.0, 350.0, 500.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb),
-('blob-read', 'VIRTUAL', 100, 5, 18000, 180.0, 320.0, 450.0, 0, '{"cpu_cores": 4, "memory_gb": 16}'::jsonb);
+-- ============================================================================
+-- Transaction test data for testing isolation levels with Virtual Threads
+-- These records are used to test transaction behavior with Virtual Threads
+-- ============================================================================
 
--- Create high-concurrency test data (100 entities for scalability testing)
-DO $$
-BEGIN
-    FOR i IN 1..100 LOOP
-        INSERT INTO vt_test_entity (name, description, status, attributes) VALUES
-        ('concurrent-entity-' || i, 'Entity for high concurrency testing', 'ACTIVE', 
-         jsonb_build_object('index', i, 'group', (i % 10), 'value', (i * 10)));
-    END LOOP;
-END $$;
+INSERT INTO vt_test_transaction (id, entity_id, operation_type, isolation_level, status, started, completed) VALUES
+(1, 1, 'READ', 'READ_COMMITTED', 'COMPLETED', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '59 minutes'),
+(2, 2, 'WRITE', 'READ_COMMITTED', 'COMPLETED', NOW() - INTERVAL '50 minutes', NOW() - INTERVAL '49 minutes'),
+(3, 3, 'READ', 'REPEATABLE_READ', 'COMPLETED', NOW() - INTERVAL '40 minutes', NOW() - INTERVAL '39 minutes'),
+(4, 4, 'WRITE', 'REPEATABLE_READ', 'COMPLETED', NOW() - INTERVAL '30 minutes', NOW() - INTERVAL '29 minutes'),
+(5, 5, 'READ', 'SERIALIZABLE', 'COMPLETED', NOW() - INTERVAL '20 minutes', NOW() - INTERVAL '19 minutes'),
+(6, 6, 'WRITE', 'SERIALIZABLE', 'COMPLETED', NOW() - INTERVAL '10 minutes', NOW() - INTERVAL '9 minutes'),
+(7, 7, 'READ', 'READ_UNCOMMITTED', 'FAILED', NOW() - INTERVAL '5 minutes', NOW() - INTERVAL '4 minutes'),
+(8, 8, 'WRITE', 'READ_UNCOMMITTED', 'FAILED', NOW() - INTERVAL '3 minutes', NOW() - INTERVAL '2 minutes'),
+(9, 9, 'READ', 'READ_COMMITTED', 'IN_PROGRESS', NOW() - INTERVAL '1 minute', NULL),
+(10, 10, 'WRITE', 'SERIALIZABLE', 'IN_PROGRESS', NOW(), NULL);
 
--- Create transaction isolation test data
-DO $$
-BEGIN
-    FOR i IN 1..5 LOOP
-        -- Create parent entity
-        INSERT INTO vt_test_entity (name, description, status, attributes) VALUES
-        ('isolation-parent-' || i, 'Parent entity for isolation testing', 'ACTIVE',
-         jsonb_build_object('type', 'parent', 'index', i, 'counter', 0));
-        
-        -- Get the ID of the inserted parent
-        DECLARE parent_id INTEGER;
-        BEGIN
-            SELECT currval('vt_test_entity_id_seq') INTO parent_id;
-            
-            -- Create child entities
-            FOR j IN 1..3 LOOP
-                INSERT INTO vt_test_entity (name, description, status, attributes) VALUES
-                ('isolation-child-' || i || '-' || j, 'Child entity for isolation testing', 'ACTIVE',
-                 jsonb_build_object('type', 'child', 'parent_index', i, 'child_index', j, 'counter', 0));
-                
-                -- Get the ID of the inserted child
-                DECLARE child_id INTEGER;
-                BEGIN
-                    SELECT currval('vt_test_entity_id_seq') INTO child_id;
-                    
-                    -- Create relation between parent and child
-                    INSERT INTO vt_test_relation (entity_id, relation_type, target_id, properties) VALUES
-                    (parent_id, 'PARENT', child_id, jsonb_build_object('isolation_group', i));
-                END;
-            END LOOP;
-        END;
-    END LOOP;
-END $$;
+-- ============================================================================
+-- Batch operation test data for testing batch processing with Virtual Threads
+-- These records are used to test batch processing performance with Virtual Threads
+-- ============================================================================
 
--- Create indexes to support efficient querying
-CREATE INDEX IF NOT EXISTS idx_vt_test_entity_name ON vt_test_entity(name);
-CREATE INDEX IF NOT EXISTS idx_vt_test_entity_status ON vt_test_entity(status);
-CREATE INDEX IF NOT EXISTS idx_vt_test_relation_entity_id ON vt_test_relation(entity_id);
-CREATE INDEX IF NOT EXISTS idx_vt_test_relation_target_id ON vt_test_relation(target_id);
-CREATE INDEX IF NOT EXISTS idx_vt_test_blob_entity_id ON vt_test_blob(entity_id);
-CREATE INDEX IF NOT EXISTS idx_vt_test_transaction_entity_id ON vt_test_transaction(entity_id);
-CREATE INDEX IF NOT EXISTS idx_vt_test_performance_test_case ON vt_test_performance(test_case, thread_type);
+INSERT INTO vt_test_batch (id, batch_id, sequence_num, payload, status, created) VALUES
+(1, 'batch-1', 1, '{"operation": "create", "entityId": 1}', 'PENDING', NOW()),
+(2, 'batch-1', 2, '{"operation": "create", "entityId": 2}', 'PENDING', NOW()),
+(3, 'batch-1', 3, '{"operation": "create", "entityId": 3}', 'PENDING', NOW()),
+(4, 'batch-1', 4, '{"operation": "create", "entityId": 4}', 'PENDING', NOW()),
+(5, 'batch-1', 5, '{"operation": "create", "entityId": 5}', 'PENDING', NOW());
 
--- Add GIN index for JSONB attributes to support efficient JSON querying
-CREATE INDEX IF NOT EXISTS idx_vt_test_entity_attributes ON vt_test_entity USING GIN (attributes);
-CREATE INDEX IF NOT EXISTS idx_vt_test_relation_properties ON vt_test_relation USING GIN (properties);
-CREATE INDEX IF NOT EXISTS idx_vt_test_performance_metadata ON vt_test_performance USING GIN (metadata);
+-- Add more batch records for volume testing
+INSERT INTO vt_test_batch (id, batch_id, sequence_num, payload, status, created)
+SELECT 5 + i, 
+       'batch-' || (i / 100 + 2), -- group into batches of 100
+       (i % 100) + 1, -- sequence within batch
+       '{"operation": "' || 
+           CASE (i % 4) 
+               WHEN 0 THEN 'create' 
+               WHEN 1 THEN 'read' 
+               WHEN 2 THEN 'update' 
+               ELSE 'delete' 
+           END || 
+       '", "entityId": ' || ((i % 990) + 11) || '}', -- reference volume entities
+       CASE (i % 5) 
+           WHEN 0 THEN 'PENDING' 
+           WHEN 1 THEN 'IN_PROGRESS' 
+           WHEN 2 THEN 'COMPLETED' 
+           WHEN 3 THEN 'FAILED' 
+           ELSE 'RETRYING' 
+       END, -- mix of statuses
+       NOW() - (INTERVAL '1 second' * (i % 3600)) -- spread over last hour
+FROM generate_series(1, 10000) AS i;
+
+-- ============================================================================
+-- Add test data for specific Virtual Thread testing scenarios
+-- ============================================================================
+
+-- Test data for thread pinning detection
+-- These records have large payloads that might cause thread pinning if not handled properly
+-- Used to validate that PostgreSQL JDBC driver 42.6.0+ properly avoids thread pinning
+INSERT INTO vt_test_blob (id, entity_id, content_type, size_bytes, blob_data, created) VALUES
+(11, 1, 'application/octet-stream', 1048576, repeat('x', 1048576), NOW()), -- 1MB
+(12, 2, 'application/octet-stream', 2097152, repeat('y', 2097152), NOW()), -- 2MB
+(13, 3, 'application/octet-stream', 4194304, repeat('z', 4194304), NOW()); -- 4MB
+
+-- Test data for thread pinning scenarios with synchronized blocks
+-- These records are used to test operations that might cause thread pinning in older JDBC drivers
+INSERT INTO vt_test_thread_pinning (id, operation_name, payload_size, expected_pinning, description) VALUES
+(1, 'SYNCHRONIZED_READ', 1024, false, 'Read operation that used to cause pinning in older JDBC drivers'),
+(2, 'SYNCHRONIZED_WRITE', 2048, false, 'Write operation that used to cause pinning in older JDBC drivers'),
+(3, 'NATIVE_METHOD_CALL', 512, true, 'Operation involving native method calls that still causes pinning'),
+(4, 'LOCK_CONTENTION', 256, false, 'Operation with lock contention that should not cause pinning with ReentrantLock'),
+(5, 'LARGE_RESULT_SET', 1048576, false, 'Large result set processing that should not cause pinning with proper JDBC driver');
+
+-- Test data for transaction timeout testing
+-- These records simulate long-running transactions to test timeout handling with Virtual Threads
+INSERT INTO vt_test_transaction (id, entity_id, operation_type, isolation_level, status, started, completed) VALUES
+(11, 1, 'LONG_READ', 'READ_COMMITTED', 'TIMEOUT', NOW() - INTERVAL '2 hours', NOW() - INTERVAL '1 hour'),
+(12, 2, 'LONG_WRITE', 'SERIALIZABLE', 'TIMEOUT', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '2 hours');
+
+-- Test data for concurrent operation testing
+-- These records are used to test concurrent operations with Virtual Threads
+INSERT INTO vt_test_entity (id, name, description, created, last_updated, active) VALUES
+(1001, 'Concurrent-1', 'Test entity for concurrent read operations', NOW(), NOW(), true),
+(1002, 'Concurrent-2', 'Test entity for concurrent write operations', NOW(), NOW(), true),
+(1003, 'Concurrent-3', 'Test entity for concurrent read/write operations', NOW(), NOW(), true);
+
+-- Add relationships for concurrent operation testing
+INSERT INTO vt_test_relationship (id, parent_id, child_id, relationship_type, created) VALUES
+(2001, 1001, 1002, 'CONCURRENT_TEST', NOW()),
+(2002, 1002, 1003, 'CONCURRENT_TEST', NOW()),
+(2003, 1003, 1001, 'CONCURRENT_TEST', NOW());
+
+-- Test data for connection pooling validation with Virtual Threads
+-- These records help test connection reuse patterns when using Virtual Threads
+INSERT INTO vt_test_connection_pool (id, pool_name, min_size, max_size, idle_timeout_ms, connection_timeout_ms, validation_query) VALUES
+(1, 'hikari-pool', 10, 100, 30000, 5000, 'SELECT 1'),
+(2, 'tomcat-pool', 5, 50, 60000, 10000, 'SELECT 1'),
+(3, 'virtual-thread-optimized-pool', 20, 200, 15000, 3000, 'SELECT 1');
+
+-- Add connection usage patterns for testing ThreadLocal behavior with Virtual Threads
+INSERT INTO vt_test_connection_pool (id, pool_name, min_size, max_size, idle_timeout_ms, connection_timeout_ms, validation_query) VALUES
+(4, 'threadlocal-test-pool', 5, 50, 10000, 2000, 'SELECT 1'),
+(5, 'connection-reuse-test-pool', 10, 100, 20000, 4000, 'SELECT 1');
+
+-- ============================================================================
+-- Additional test data for Virtual Thread performance comparison
+-- These records are used to benchmark Virtual Threads vs Platform Threads
+-- ============================================================================
+
+-- Create test data for thread model comparison benchmarks
+INSERT INTO vt_test_entity (id, name, description, created, last_updated, active)
+SELECT 2000 + i, 
+       'Benchmark-' || i, 
+       'Entity for thread model performance comparison benchmarking', 
+       NOW(), 
+       NOW(), 
+       true
+FROM generate_series(1, 1000) AS i;
+
+-- Create complex relationship structure for join performance testing
+INSERT INTO vt_test_relationship (id, parent_id, child_id, relationship_type, created)
+SELECT 3000 + i, 
+       2000 + (i % 1000) + 1, 
+       2000 + ((i + 1) % 1000) + 1, 
+       'BENCHMARK', 
+       NOW()
+FROM generate_series(1, 5000) AS i;
+
+-- Create test data for I/O-bound operation benchmarking
+INSERT INTO vt_test_blob (id, entity_id, content_type, size_bytes, blob_data, created)
+SELECT 100 + i, 
+       2000 + (i % 1000) + 1, 
+       'application/octet-stream', 
+       1024 * (i % 10 + 1), -- Varying sizes from 1KB to 10KB
+       repeat('b', 1024 * (i % 10 + 1)), 
+       NOW()
+FROM generate_series(1, 200) AS i;
+
+-- Create test data for transaction isolation testing with Virtual Threads
+INSERT INTO vt_test_transaction (id, entity_id, operation_type, isolation_level, status, started, completed)
+SELECT 100 + i, 
+       2000 + (i % 1000) + 1, 
+       CASE (i % 4) 
+           WHEN 0 THEN 'READ' 
+           WHEN 1 THEN 'WRITE' 
+           WHEN 2 THEN 'UPDATE' 
+           ELSE 'DELETE' 
+       END, 
+       CASE (i % 3) 
+           WHEN 0 THEN 'READ_COMMITTED' 
+           WHEN 1 THEN 'REPEATABLE_READ' 
+           ELSE 'SERIALIZABLE' 
+       END, 
+       'COMPLETED', 
+       NOW() - INTERVAL '1 hour', 
+       NOW() - INTERVAL '59 minutes'
+FROM generate_series(1, 100) AS i;
+
+-- ============================================================================
+-- Commit the transaction to ensure all test data is saved
+-- ============================================================================
+
+COMMIT;
+
+-- Note: This test data is designed for use with Java 21 Virtual Thread testing
+-- It validates PostgreSQL JDBC driver 42.6.0+ compatibility with Virtual Threads
+-- Use with -Djdk.tracePinnedThreads=full to detect any thread pinning issues

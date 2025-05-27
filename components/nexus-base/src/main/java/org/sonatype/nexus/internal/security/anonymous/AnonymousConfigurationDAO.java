@@ -18,8 +18,7 @@ import org.sonatype.nexus.datastore.api.SingletonDataAccess;
  * {@link AnonymousConfigurationData} access.
  * <p>
  * This interface is compatible with Java 21 Virtual Threads for database operations.
- * All methods can be safely executed in a Virtual Thread context without blocking
- * the carrier thread during I/O operations.
+ * All implementations should ensure non-blocking I/O operations to prevent Virtual Thread pinning.
  *
  * @since 3.21
  */

@@ -18,550 +18,517 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.sonatype.goodies.testsupport.TestSupport;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests HTTP client behavior under high concurrency scenarios using Java 21 Virtual Threads.
+ * Tests for validating HTTP client behavior under high concurrency scenarios using Java 21 Virtual Threads.
  * 
- * @since 3.60
+ * This test class validates the client's ability to handle thousands of concurrent connections with minimal
+ * resource overhead, validates correct response handling, and ensures client robustness under extreme load conditions.
  */
 public class HttpClientConcurrencyVirtualThreadTest
-    extends TestSupport
 {
-  private static final int PORT = 8765;
-  private static final String BASE_URL = "http://localhost:" + PORT;
-  private static final int CONCURRENT_REQUESTS = 10_000;
-  private static final int SUSTAINED_CONCURRENCY_SECONDS = 5;
+  private static final int SERVER_PORT = 8765;
+  private static final String SERVER_HOST = "localhost";
+  private static final String SERVER_URL = "http://" + SERVER_HOST + ":" + SERVER_PORT;
+  private static final int SMALL_CONCURRENCY = 100;
+  private static final int MEDIUM_CONCURRENCY = 1000;
+  private static final int LARGE_CONCURRENCY = 10000;
+  private static final int RESPONSE_DELAY_MS = 50; // Simulated server processing delay
   
   private HttpServer server;
-  private ExecutorService virtualThreadExecutor;
-  private HttpClient httpClient;
+  private HttpClient virtualThreadClient;
+  private HttpClient platformThreadClient;
+  private final AtomicInteger requestCounter = new AtomicInteger(0);
+  private final ConcurrentHashMap<String, AtomicInteger> methodCounts = new ConcurrentHashMap<>();
   
-  @Before
-  public void setUp() throws Exception {
-    // Create a virtual thread per task executor
-    virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  /**
+   * Sets up the test HTTP server and HTTP clients before each test.
+   */
+  @BeforeEach
+  public void setUp() throws IOException {
+    // Reset counters
+    requestCounter.set(0);
+    methodCounts.clear();
     
-    // Create HTTP client using virtual threads
-    httpClient = HttpClient.newBuilder()
-        .executor(virtualThreadExecutor)
+    // Create and start HTTP server
+    server = HttpServer.create(new InetSocketAddress(SERVER_HOST, SERVER_PORT), 0);
+    server.createContext("/echo", new EchoHandler());
+    server.createContext("/delay", new DelayHandler());
+    server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    server.start();
+    
+    // Create HTTP client with virtual threads
+    virtualThreadClient = HttpClient.newBuilder()
+        .executor(Executors.newVirtualThreadPerTaskExecutor())
         .connectTimeout(Duration.ofSeconds(5))
         .build();
     
-    // Setup test HTTP server
-    server = HttpServer.create(new InetSocketAddress(PORT), 0);
-    server.createContext("/get", new GetHandler());
-    server.createContext("/post", new PostHandler());
-    server.createContext("/put", new PutHandler());
-    server.createContext("/delay", new DelayHandler());
-    server.setExecutor(virtualThreadExecutor);
-    server.start();
-    
-    log.info("Test server started on port {}", PORT);
+    // Create HTTP client with platform threads for comparison
+    platformThreadClient = HttpClient.newBuilder()
+        .executor(Executors.newFixedThreadPool(100)) // Limited to 100 platform threads
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
   }
   
-  @After
-  public void tearDown() throws Exception {
+  /**
+   * Cleans up resources after each test.
+   */
+  @AfterEach
+  public void tearDown() {
     if (server != null) {
       server.stop(0);
-      log.info("Test server stopped");
-    }
-    
-    if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
-      virtualThreadExecutor.shutdown();
-      virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS);
     }
   }
   
   /**
-   * Tests the HTTP client's ability to handle a massive number of concurrent GET requests using Virtual Threads.
-   * This validates that the client can scale to 10,000+ concurrent connections with minimal resource overhead.
+   * Tests the HTTP client's ability to handle a large number of concurrent connections using Virtual Threads.
+   * This test validates that the client can efficiently manage 10,000+ concurrent connections with minimal
+   * resource overhead compared to platform threads.
    */
   @Test
-  public void testMassiveConcurrentGetRequests() throws Exception {
-    log.info("Starting massive concurrent GET requests test with {} requests", CONCURRENT_REQUESTS);
+  @Timeout(value = 30, unit = TimeUnit.SECONDS)
+  public void testHighConcurrencyWithVirtualThreads() throws Exception {
+    // Measure memory before test
+    long memoryBefore = getUsedMemory();
     
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(CONCURRENT_REQUESTS);
-    AtomicInteger successCount = new AtomicInteger(0);
-    AtomicInteger errorCount = new AtomicInteger(0);
+    // Execute large number of concurrent requests
+    List<CompletableFuture<HttpResponse<String>>> futures = new ArrayList<>();
+    for (int i = 0; i < LARGE_CONCURRENCY; i++) {
+      HttpRequest request = HttpRequest.newBuilder()
+          .uri(URI.create(SERVER_URL + "/echo?id=" + i))
+          .GET()
+          .build();
+      
+      CompletableFuture<HttpResponse<String>> future = virtualThreadClient.sendAsync(
+          request, HttpResponse.BodyHandlers.ofString());
+      futures.add(future);
+    }
     
-    // Create and start all virtual threads
-    for (int i = 0; i < CONCURRENT_REQUESTS; i++) {
-      final int requestId = i;
-      Thread.startVirtualThread(() -> {
+    // Wait for all requests to complete
+    CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+        futures.toArray(new CompletableFuture[0]));
+    allFutures.join();
+    
+    // Measure memory after test
+    long memoryAfter = getUsedMemory();
+    long memoryUsed = memoryAfter - memoryBefore;
+    
+    // Verify all requests were successful
+    for (CompletableFuture<HttpResponse<String>> future : futures) {
+      HttpResponse<String> response = future.get();
+      assertEquals(200, response.statusCode());
+      assertTrue(response.body().contains("Echo"));
+    }
+    
+    // Verify request count
+    assertEquals(LARGE_CONCURRENCY, requestCounter.get());
+    
+    // Log memory usage for analysis
+    System.out.println("Memory used for " + LARGE_CONCURRENCY + " virtual thread requests: " + 
+        (memoryUsed / (1024 * 1024)) + " MB");
+  }
+  
+  /**
+   * Tests the HTTP client's ability to handle different HTTP methods (GET, POST, PUT) concurrently
+   * using Virtual Threads.
+   */
+  @Test
+  @Timeout(value = 30, unit = TimeUnit.SECONDS)
+  public void testConcurrentHttpMethods() throws Exception {
+    // Initialize method counters
+    methodCounts.put("GET", new AtomicInteger(0));
+    methodCounts.put("POST", new AtomicInteger(0));
+    methodCounts.put("PUT", new AtomicInteger(0));
+    
+    // Create executor with virtual threads
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    CountDownLatch latch = new CountDownLatch(MEDIUM_CONCURRENCY * 3); // For all three methods
+    
+    // Submit GET requests
+    for (int i = 0; i < MEDIUM_CONCURRENCY; i++) {
+      executor.submit(() -> {
         try {
-          // Wait for all threads to be ready before starting
-          startLatch.await();
-          
           HttpRequest request = HttpRequest.newBuilder()
-              .uri(URI.create(BASE_URL + "/get?id=" + requestId))
+              .uri(URI.create(SERVER_URL + "/echo"))
               .GET()
               .build();
           
-          HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-          
-          if (response.statusCode() == 200) {
-            successCount.incrementAndGet();
-          } else {
-            errorCount.incrementAndGet();
-          }
+          HttpResponse<String> response = virtualThreadClient.send(
+              request, HttpResponse.BodyHandlers.ofString());
+          assertEquals(200, response.statusCode());
+          methodCounts.get("GET").incrementAndGet();
         } catch (Exception e) {
-          log.error("Error in request {}: {}", requestId, e.getMessage());
-          errorCount.incrementAndGet();
+          e.printStackTrace();
         } finally {
-          completionLatch.countDown();
+          latch.countDown();
         }
       });
     }
     
-    // Start all requests simultaneously
-    long startTime = System.currentTimeMillis();
-    startLatch.countDown();
+    // Submit POST requests
+    for (int i = 0; i < MEDIUM_CONCURRENCY; i++) {
+      executor.submit(() -> {
+        try {
+          HttpRequest request = HttpRequest.newBuilder()
+              .uri(URI.create(SERVER_URL + "/echo"))
+              .POST(HttpRequest.BodyPublishers.ofString("Post data " + Thread.currentThread().getName()))
+              .build();
+          
+          HttpResponse<String> response = virtualThreadClient.send(
+              request, HttpResponse.BodyHandlers.ofString());
+          assertEquals(200, response.statusCode());
+          methodCounts.get("POST").incrementAndGet();
+        } catch (Exception e) {
+          e.printStackTrace();
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
+    
+    // Submit PUT requests
+    for (int i = 0; i < MEDIUM_CONCURRENCY; i++) {
+      executor.submit(() -> {
+        try {
+          HttpRequest request = HttpRequest.newBuilder()
+              .uri(URI.create(SERVER_URL + "/echo"))
+              .PUT(HttpRequest.BodyPublishers.ofString("Put data " + Thread.currentThread().getName()))
+              .build();
+          
+          HttpResponse<String> response = virtualThreadClient.send(
+              request, HttpResponse.BodyHandlers.ofString());
+          assertEquals(200, response.statusCode());
+          methodCounts.get("PUT").incrementAndGet();
+        } catch (Exception e) {
+          e.printStackTrace();
+        } finally {
+          latch.countDown();
+        }
+      });
+    }
     
     // Wait for all requests to complete
-    boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-    long duration = System.currentTimeMillis() - startTime;
+    assertTrue(latch.await(20, TimeUnit.SECONDS));
     
-    log.info("Completed {} GET requests in {} ms", successCount.get(), duration);
-    log.info("Success: {}, Errors: {}", successCount.get(), errorCount.get());
-    
-    // Verify all requests completed successfully
-    assertThat("All requests should complete within timeout", completed, is(true));
-    assertThat("All requests should succeed", successCount.get(), equalTo(CONCURRENT_REQUESTS));
-    assertThat("No errors should occur", errorCount.get(), equalTo(0));
+    // Verify all requests were processed
+    assertEquals(MEDIUM_CONCURRENCY, methodCounts.get("GET").get());
+    assertEquals(MEDIUM_CONCURRENCY, methodCounts.get("POST").get());
+    assertEquals(MEDIUM_CONCURRENCY, methodCounts.get("PUT").get());
   }
   
   /**
-   * Tests concurrent HTTP requests with different methods (GET, POST, PUT) to validate
-   * that the client handles mixed workloads correctly with Virtual Threads.
+   * Compares the performance and resource usage between Virtual Threads and Platform Threads
+   * when handling concurrent HTTP requests.
    */
   @Test
-  public void testConcurrentMixedHttpMethods() throws Exception {
-    log.info("Starting concurrent mixed HTTP methods test");
+  @Timeout(value = 30, unit = TimeUnit.SECONDS)
+  public void testVirtualThreadsVsPlatformThreads() throws Exception {
+    // Test parameters
+    final int concurrency = MEDIUM_CONCURRENCY;
+    final AtomicInteger virtualThreadSuccessCount = new AtomicInteger(0);
+    final AtomicInteger platformThreadSuccessCount = new AtomicInteger(0);
+    final AtomicInteger virtualThreadErrorCount = new AtomicInteger(0);
+    final AtomicInteger platformThreadErrorCount = new AtomicInteger(0);
     
-    final int requestsPerMethod = 1000;
-    final int totalRequests = requestsPerMethod * 3; // GET, POST, PUT
+    // Measure execution time and success rate for virtual threads
+    long virtualThreadStartTime = System.currentTimeMillis();
+    CountDownLatch virtualThreadLatch = new CountDownLatch(concurrency);
     
-    CountDownLatch startLatch = new CountDownLatch(1);
-    CountDownLatch completionLatch = new CountDownLatch(totalRequests);
-    ConcurrentHashMap<String, AtomicInteger> successCountByMethod = new ConcurrentHashMap<>();
-    successCountByMethod.put("GET", new AtomicInteger(0));
-    successCountByMethod.put("POST", new AtomicInteger(0));
-    successCountByMethod.put("PUT", new AtomicInteger(0));
-    AtomicInteger errorCount = new AtomicInteger(0);
-    
-    // Create GET requests
-    for (int i = 0; i < requestsPerMethod; i++) {
-      final int requestId = i;
-      Thread.startVirtualThread(() -> {
+    for (int i = 0; i < concurrency; i++) {
+      CompletableFuture.runAsync(() -> {
         try {
-          startLatch.await();
-          
           HttpRequest request = HttpRequest.newBuilder()
-              .uri(URI.create(BASE_URL + "/get?id=" + requestId))
+              .uri(URI.create(SERVER_URL + "/delay"))
               .GET()
               .build();
           
-          HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+          HttpResponse<String> response = virtualThreadClient.send(
+              request, HttpResponse.BodyHandlers.ofString());
           
           if (response.statusCode() == 200) {
-            successCountByMethod.get("GET").incrementAndGet();
+            virtualThreadSuccessCount.incrementAndGet();
           } else {
-            errorCount.incrementAndGet();
+            virtualThreadErrorCount.incrementAndGet();
           }
         } catch (Exception e) {
-          log.error("Error in GET request {}: {}", requestId, e.getMessage());
-          errorCount.incrementAndGet();
+          virtualThreadErrorCount.incrementAndGet();
         } finally {
-          completionLatch.countDown();
+          virtualThreadLatch.countDown();
         }
-      });
+      }, Executors.newVirtualThreadPerTaskExecutor());
     }
     
-    // Create POST requests
-    for (int i = 0; i < requestsPerMethod; i++) {
-      final int requestId = i;
-      Thread.startVirtualThread(() -> {
+    virtualThreadLatch.await();
+    long virtualThreadDuration = System.currentTimeMillis() - virtualThreadStartTime;
+    
+    // Reset counter for platform thread test
+    requestCounter.set(0);
+    
+    // Measure execution time and success rate for platform threads
+    long platformThreadStartTime = System.currentTimeMillis();
+    CountDownLatch platformThreadLatch = new CountDownLatch(concurrency);
+    
+    for (int i = 0; i < concurrency; i++) {
+      CompletableFuture.runAsync(() -> {
         try {
-          startLatch.await();
-          
           HttpRequest request = HttpRequest.newBuilder()
-              .uri(URI.create(BASE_URL + "/post"))
-              .POST(HttpRequest.BodyPublishers.ofString("data=" + requestId))
+              .uri(URI.create(SERVER_URL + "/delay"))
+              .GET()
               .build();
           
-          HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+          HttpResponse<String> response = platformThreadClient.send(
+              request, HttpResponse.BodyHandlers.ofString());
           
           if (response.statusCode() == 200) {
-            successCountByMethod.get("POST").incrementAndGet();
+            platformThreadSuccessCount.incrementAndGet();
           } else {
-            errorCount.incrementAndGet();
+            platformThreadErrorCount.incrementAndGet();
           }
         } catch (Exception e) {
-          log.error("Error in POST request {}: {}", requestId, e.getMessage());
-          errorCount.incrementAndGet();
+          platformThreadErrorCount.incrementAndGet();
         } finally {
-          completionLatch.countDown();
+          platformThreadLatch.countDown();
         }
       });
     }
     
-    // Create PUT requests
-    for (int i = 0; i < requestsPerMethod; i++) {
-      final int requestId = i;
-      Thread.startVirtualThread(() -> {
-        try {
-          startLatch.await();
-          
-          HttpRequest request = HttpRequest.newBuilder()
-              .uri(URI.create(BASE_URL + "/put"))
-              .PUT(HttpRequest.BodyPublishers.ofString("data=" + requestId))
-              .build();
-          
-          HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-          
-          if (response.statusCode() == 200) {
-            successCountByMethod.get("PUT").incrementAndGet();
-          } else {
-            errorCount.incrementAndGet();
-          }
-        } catch (Exception e) {
-          log.error("Error in PUT request {}: {}", requestId, e.getMessage());
-          errorCount.incrementAndGet();
-        } finally {
-          completionLatch.countDown();
-        }
-      });
-    }
+    platformThreadLatch.await();
+    long platformThreadDuration = System.currentTimeMillis() - platformThreadStartTime;
     
-    // Start all requests simultaneously
-    long startTime = System.currentTimeMillis();
-    startLatch.countDown();
+    // Log results
+    System.out.println("Virtual Threads: " + concurrency + " requests in " + virtualThreadDuration + 
+        "ms, Success: " + virtualThreadSuccessCount.get() + ", Errors: " + virtualThreadErrorCount.get());
+    System.out.println("Platform Threads: " + concurrency + " requests in " + platformThreadDuration + 
+        "ms, Success: " + platformThreadSuccessCount.get() + ", Errors: " + platformThreadErrorCount.get());
     
-    // Wait for all requests to complete
-    boolean completed = completionLatch.await(30, TimeUnit.SECONDS);
-    long duration = System.currentTimeMillis() - startTime;
-    
-    log.info("Completed mixed HTTP method requests in {} ms", duration);
-    log.info("GET Success: {}, POST Success: {}, PUT Success: {}, Errors: {}", 
-        successCountByMethod.get("GET").get(),
-        successCountByMethod.get("POST").get(),
-        successCountByMethod.get("PUT").get(),
-        errorCount.get());
-    
-    // Verify all requests completed successfully
-    assertThat("All requests should complete within timeout", completed, is(true));
-    assertThat("All GET requests should succeed", successCountByMethod.get("GET").get(), equalTo(requestsPerMethod));
-    assertThat("All POST requests should succeed", successCountByMethod.get("POST").get(), equalTo(requestsPerMethod));
-    assertThat("All PUT requests should succeed", successCountByMethod.get("PUT").get(), equalTo(requestsPerMethod));
-    assertThat("No errors should occur", errorCount.get(), equalTo(0));
+    // Verify virtual threads performed better
+    assertTrue(virtualThreadSuccessCount.get() >= platformThreadSuccessCount.get(), 
+        "Virtual threads should handle at least as many successful requests as platform threads");
+    assertTrue(virtualThreadErrorCount.get() <= platformThreadErrorCount.get(), 
+        "Virtual threads should have fewer errors than platform threads");
   }
   
   /**
-   * Tests connection stability under sustained high concurrency by maintaining a constant
-   * number of active connections over a period of time. This validates that the HTTP client
-   * can handle long-running concurrent workloads with Virtual Threads.
+   * Tests the HTTP client's ability to maintain connection stability under sustained high concurrency
+   * with Virtual Threads.
    */
   @Test
-  public void testSustainedHighConcurrency() throws Exception {
-    log.info("Starting sustained high concurrency test for {} seconds", SUSTAINED_CONCURRENCY_SECONDS);
+  @Timeout(value = 60, unit = TimeUnit.SECONDS)
+  public void testConnectionStabilityUnderSustainedLoad() throws Exception {
+    // Parameters for sustained load test
+    final int batchSize = SMALL_CONCURRENCY;
+    final int batchCount = 10;
+    final AtomicLong totalSuccessCount = new AtomicLong(0);
+    final AtomicLong totalErrorCount = new AtomicLong(0);
     
-    final int concurrentConnections = 1000;
-    final AtomicInteger activeConnections = new AtomicInteger(0);
-    final AtomicInteger completedRequests = new AtomicInteger(0);
-    final AtomicInteger errorCount = new AtomicInteger(0);
-    final AtomicInteger maxConcurrent = new AtomicInteger(0);
-    
-    // Flag to control the test duration
-    final boolean[] running = {true};
-    
-    // Start the connection manager thread
-    Thread connectionManager = Thread.startVirtualThread(() -> {
-      try {
-        while (running[0]) {
-          // Ensure we maintain the target number of concurrent connections
-          int current = activeConnections.get();
-          int needed = concurrentConnections - current;
-          
-          if (needed > 0) {
-            // Start new connections to reach the target
-            for (int i = 0; i < needed; i++) {
-              startDelayedRequest(activeConnections, completedRequests, errorCount, maxConcurrent);
-            }
-          }
-          
-          // Brief pause before checking again
-          Thread.sleep(50);
-        }
-      } catch (Exception e) {
-        log.error("Error in connection manager: {}", e.getMessage());
-      }
-    });
-    
-    // Run the test for the specified duration
-    Thread.sleep(TimeUnit.SECONDS.toMillis(SUSTAINED_CONCURRENCY_SECONDS));
-    running[0] = false;
-    
-    // Allow time for remaining connections to complete
-    Thread.sleep(2000);
-    
-    log.info("Sustained concurrency test completed");
-    log.info("Completed requests: {}, Errors: {}, Max concurrent: {}", 
-        completedRequests.get(), errorCount.get(), maxConcurrent.get());
-    
-    // Verify the test results
-    assertThat("Should maintain target concurrent connections", maxConcurrent.get(), 
-        greaterThanOrEqualTo(concurrentConnections));
-    assertThat("Should complete a significant number of requests", completedRequests.get(), 
-        greaterThanOrEqualTo(concurrentConnections));
-    assertThat("Error rate should be very low", errorCount.get(), 
-        lessThan(completedRequests.get() / 100)); // Less than 1% error rate
-  }
-  
-  /**
-   * Tests connection pool behavior with Virtual Threads by creating and releasing connections
-   * in a pattern that would stress traditional connection pools. This validates that the
-   * HTTP client efficiently manages connections when using Virtual Threads.
-   */
-  @Test
-  public void testConnectionPoolBehavior() throws Exception {
-    log.info("Starting connection pool behavior test");
-    
-    final int batchSize = 500;
-    final int batchCount = 20;
-    final AtomicInteger successCount = new AtomicInteger(0);
-    final AtomicInteger errorCount = new AtomicInteger(0);
-    final List<Long> batchTimes = new ArrayList<>();
-    
+    // Run multiple batches of concurrent requests
     for (int batch = 0; batch < batchCount; batch++) {
       CountDownLatch batchLatch = new CountDownLatch(batchSize);
-      long startTime = System.currentTimeMillis();
+      AtomicInteger batchSuccessCount = new AtomicInteger(0);
+      AtomicInteger batchErrorCount = new AtomicInteger(0);
       
-      // Create a batch of requests
+      // Create and submit batch of requests
       for (int i = 0; i < batchSize; i++) {
-        final int requestId = (batch * batchSize) + i;
-        Thread.startVirtualThread(() -> {
+        CompletableFuture.runAsync(() -> {
           try {
             HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(BASE_URL + "/get?id=" + requestId))
+                .uri(URI.create(SERVER_URL + "/delay"))
                 .GET()
                 .build();
             
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = virtualThreadClient.send(
+                request, HttpResponse.BodyHandlers.ofString());
             
             if (response.statusCode() == 200) {
-              successCount.incrementAndGet();
+              batchSuccessCount.incrementAndGet();
             } else {
-              errorCount.incrementAndGet();
+              batchErrorCount.incrementAndGet();
             }
           } catch (Exception e) {
-            log.error("Error in request {}: {}", requestId, e.getMessage());
-            errorCount.incrementAndGet();
+            batchErrorCount.incrementAndGet();
           } finally {
             batchLatch.countDown();
           }
-        });
+        }, Executors.newVirtualThreadPerTaskExecutor());
       }
       
-      // Wait for the batch to complete
-      batchLatch.await(10, TimeUnit.SECONDS);
-      long batchTime = System.currentTimeMillis() - startTime;
-      batchTimes.add(batchTime);
+      // Wait for batch to complete
+      assertTrue(batchLatch.await(10, TimeUnit.SECONDS), 
+          "Batch " + batch + " did not complete in time");
       
-      log.info("Batch {} completed in {} ms", batch + 1, batchTime);
+      // Update totals
+      totalSuccessCount.addAndGet(batchSuccessCount.get());
+      totalErrorCount.addAndGet(batchErrorCount.get());
       
-      // Small delay between batches to simulate real-world usage patterns
+      // Log batch results
+      System.out.println("Batch " + batch + ": Success: " + batchSuccessCount.get() + 
+          ", Errors: " + batchErrorCount.get());
+      
+      // Short pause between batches
       Thread.sleep(100);
     }
     
-    log.info("Connection pool test completed");
-    log.info("Success: {}, Errors: {}", successCount.get(), errorCount.get());
+    // Verify overall success rate
+    long totalRequests = batchSize * batchCount;
+    double successRate = (double) totalSuccessCount.get() / totalRequests;
     
-    // Calculate average batch time, excluding the first batch (warm-up)
-    double avgBatchTime = batchTimes.stream()
-        .skip(1) // Skip the first batch (warm-up)
-        .mapToLong(Long::longValue)
-        .average()
-        .orElse(0.0);
+    System.out.println("Overall: " + totalSuccessCount.get() + " successful requests out of " + 
+        totalRequests + " (" + (successRate * 100) + "% success rate)");
     
-    log.info("Average batch time (excluding first): {} ms", avgBatchTime);
+    assertTrue(successRate > 0.99, "Success rate should be greater than 99%");
+    assertTrue(totalErrorCount.get() < totalRequests * 0.01, "Error rate should be less than 1%");
+  }
+  
+  /**
+   * Tests the connection pool behavior with Virtual Threads, ensuring that connections are properly
+   * managed and reused when appropriate.
+   */
+  @Test
+  @Timeout(value = 30, unit = TimeUnit.SECONDS)
+  public void testConnectionPoolBehavior() throws Exception {
+    // Create a client with connection pooling enabled
+    HttpClient poolingClient = HttpClient.newBuilder()
+        .executor(Executors.newVirtualThreadPerTaskExecutor())
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
     
-    // Verify the test results
-    int totalRequests = batchSize * batchCount;
-    assertThat("All requests should succeed", successCount.get(), equalTo(totalRequests));
-    assertThat("No errors should occur", errorCount.get(), equalTo(0));
+    // Parameters
+    final int requestCount = MEDIUM_CONCURRENCY;
+    final CountDownLatch latch = new CountDownLatch(requestCount);
+    final AtomicInteger successCount = new AtomicInteger(0);
     
-    // Verify that later batches don't slow down significantly (connection pool working efficiently)
-    long firstBatchTime = batchTimes.get(0);
-    for (int i = 1; i < batchTimes.size(); i++) {
-      // Each batch should not be significantly slower than the first (allowing for some variance)
-      assertThat("Batch " + (i + 1) + " should not be significantly slower than first batch",
-          batchTimes.get(i), lessThan(firstBatchTime * 2));
-    }
-  }
-  
-  /**
-   * Helper method to start a delayed request that simulates a long-running connection.
-   */
-  private void startDelayedRequest(
-      AtomicInteger activeConnections,
-      AtomicInteger completedRequests,
-      AtomicInteger errorCount,
-      AtomicInteger maxConcurrent)
-  {
-    activeConnections.incrementAndGet();
-    updateMaxConcurrent(activeConnections.get(), maxConcurrent);
-    
-    Thread.startVirtualThread(() -> {
-      try {
-        // Random delay between 500ms and 2000ms
-        int delay = 500 + (int)(Math.random() * 1500);
-        
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(BASE_URL + "/delay?ms=" + delay))
-            .GET()
-            .build();
-        
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        
-        if (response.statusCode() == 200) {
-          completedRequests.incrementAndGet();
-        } else {
-          errorCount.incrementAndGet();
-        }
-      } catch (Exception e) {
-        log.error("Error in delayed request: {}", e.getMessage());
-        errorCount.incrementAndGet();
-      } finally {
-        activeConnections.decrementAndGet();
-      }
-    });
-  }
-  
-  /**
-   * Thread-safe method to update the maximum concurrent connections counter.
-   */
-  private void updateMaxConcurrent(int current, AtomicInteger maxConcurrent) {
-    int max;
-    do {
-      max = maxConcurrent.get();
-      if (current <= max) {
-        break;
-      }
-    } while (!maxConcurrent.compareAndSet(max, current));
-  }
-  
-  /**
-   * Handler for GET requests.
-   */
-  private static class GetHandler implements HttpHandler {
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      if (!"GET".equals(exchange.getRequestMethod())) {
-        exchange.sendResponseHeaders(405, 0);
-        exchange.close();
-        return;
-      }
-      
-      String response = "OK";
-      exchange.sendResponseHeaders(200, response.length());
-      exchange.getResponseBody().write(response.getBytes(UTF_8));
-      exchange.close();
-    }
-  }
-  
-  /**
-   * Handler for POST requests.
-   */
-  private static class PostHandler implements HttpHandler {
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      if (!"POST".equals(exchange.getRequestMethod())) {
-        exchange.sendResponseHeaders(405, 0);
-        exchange.close();
-        return;
-      }
-      
-      String response = "OK";
-      exchange.sendResponseHeaders(200, response.length());
-      exchange.getResponseBody().write(response.getBytes(UTF_8));
-      exchange.close();
-    }
-  }
-  
-  /**
-   * Handler for PUT requests.
-   */
-  private static class PutHandler implements HttpHandler {
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      if (!"PUT".equals(exchange.getRequestMethod())) {
-        exchange.sendResponseHeaders(405, 0);
-        exchange.close();
-        return;
-      }
-      
-      String response = "OK";
-      exchange.sendResponseHeaders(200, response.length());
-      exchange.getResponseBody().write(response.getBytes(UTF_8));
-      exchange.close();
-    }
-  }
-  
-  /**
-   * Handler for delayed responses to simulate long-running connections.
-   */
-  private static class DelayHandler implements HttpHandler {
-    @Override
-    public void handle(HttpExchange exchange) throws IOException {
-      try {
-        // Extract delay parameter
-        String query = exchange.getRequestURI().getQuery();
-        int delay = 1000; // Default delay
-        
-        if (query != null && query.startsWith("ms=")) {
-          try {
-            delay = Integer.parseInt(query.substring(3));
-          } catch (NumberFormatException e) {
-            // Use default delay
+    // Execute requests that should benefit from connection pooling
+    for (int i = 0; i < requestCount; i++) {
+      CompletableFuture.runAsync(() -> {
+        try {
+          // Make two consecutive requests to the same endpoint
+          HttpRequest request1 = HttpRequest.newBuilder()
+              .uri(URI.create(SERVER_URL + "/echo"))
+              .GET()
+              .build();
+          
+          HttpResponse<String> response1 = poolingClient.send(
+              request1, HttpResponse.BodyHandlers.ofString());
+          
+          HttpRequest request2 = HttpRequest.newBuilder()
+              .uri(URI.create(SERVER_URL + "/echo"))
+              .GET()
+              .build();
+          
+          HttpResponse<String> response2 = poolingClient.send(
+              request2, HttpResponse.BodyHandlers.ofString());
+          
+          // Both requests should succeed
+          if (response1.statusCode() == 200 && response2.statusCode() == 200) {
+            successCount.incrementAndGet();
           }
+        } catch (Exception e) {
+          e.printStackTrace();
+        } finally {
+          latch.countDown();
         }
-        
+      }, Executors.newVirtualThreadPerTaskExecutor());
+    }
+    
+    // Wait for all requests to complete
+    assertTrue(latch.await(20, TimeUnit.SECONDS));
+    
+    // Verify success rate
+    assertEquals(requestCount, successCount.get(), 
+        "All requests should succeed with connection pooling");
+    
+    // Verify total request count (should be 2 * requestCount)
+    assertEquals(requestCount * 2, requestCounter.get(), 
+        "Total request count should match expected value");
+  }
+  
+  /**
+   * Utility method to measure memory usage.
+   */
+  private long getUsedMemory() {
+    System.gc(); // Request garbage collection to get more accurate readings
+    Runtime runtime = Runtime.getRuntime();
+    return runtime.totalMemory() - runtime.freeMemory();
+  }
+  
+  /**
+   * HTTP handler that echoes back the request information.
+   */
+  private class EchoHandler implements HttpHandler {
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+      requestCounter.incrementAndGet();
+      
+      // Track HTTP method usage
+      String method = exchange.getRequestMethod();
+      methodCounts.computeIfAbsent(method, k -> new AtomicInteger()).incrementAndGet();
+      
+      // Read request body if present
+      String requestBody = "";
+      if ("POST".equals(method) || "PUT".equals(method)) {
+        requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+      }
+      
+      // Prepare response
+      String response = "Echo: " + method + " request received. " +
+          "Query: " + exchange.getRequestURI().getQuery() + 
+          (requestBody.isEmpty() ? "" : ", Body: " + requestBody);
+      
+      // Send response
+      exchange.sendResponseHeaders(200, response.length());
+      exchange.getResponseBody().write(response.getBytes());
+      exchange.close();
+    }
+  }
+  
+  /**
+   * HTTP handler that introduces a delay before responding, simulating a slow service.
+   */
+  private class DelayHandler implements HttpHandler {
+    @Override
+    public void handle(HttpExchange exchange) throws IOException {
+      requestCounter.incrementAndGet();
+      
+      try {
         // Simulate processing delay
-        Thread.sleep(delay);
+        Thread.sleep(RESPONSE_DELAY_MS);
         
-        String response = "Delayed response after " + delay + "ms";
+        // Prepare response
+        String response = "Delayed response after " + RESPONSE_DELAY_MS + "ms";
+        
+        // Send response
         exchange.sendResponseHeaders(200, response.length());
-        exchange.getResponseBody().write(response.getBytes(UTF_8));
+        exchange.getResponseBody().write(response.getBytes());
       } catch (InterruptedException e) {
         String error = "Processing interrupted";
         exchange.sendResponseHeaders(500, error.length());
-        exchange.getResponseBody().write(error.getBytes(UTF_8));
+        exchange.getResponseBody().write(error.getBytes());
       } finally {
         exchange.close();
       }

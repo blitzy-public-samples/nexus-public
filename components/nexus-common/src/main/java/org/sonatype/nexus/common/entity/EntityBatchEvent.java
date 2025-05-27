@@ -60,8 +60,6 @@ public class EntityBatchEvent
 
   @Override
   public String toString() {
-    return STR."\{getClass().getSimpleName()}{"
-        + "events=\{events}"
-        + "}";
+	  return getClass().getSimpleName() + "{events=" + events + "}";
   }
 }

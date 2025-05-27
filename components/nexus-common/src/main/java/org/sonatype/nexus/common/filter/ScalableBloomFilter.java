@@ -142,14 +142,14 @@ public class ScalableBloomFilter<T>
 
   private BloomFilter<T> getFilter() {
     // Use Pattern Matching for switch to express filter creation logic more clearly
-    return switch (filters.size()) {
+    return switch (Integer.valueOf(filters.size())) {
       case 0 -> {
         // Create first filter if none exists
         var filter = createFilter();
         filters.add(filter);
         yield filter;
       }
-      case var size when size == filterCapacity -> {
+      case Integer size when size == filterCapacity -> {
         // Create new filter when capacity is reached
         // expectedFpp() is an O(n) call so we create a new filter on count instead
         var filter = createFilter();

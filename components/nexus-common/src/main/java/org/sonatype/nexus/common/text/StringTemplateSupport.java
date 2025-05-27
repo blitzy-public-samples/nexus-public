@@ -79,10 +79,11 @@ public final class StringTemplateSupport
     String result = template;
     for (int i = 0; i < args.length; i++) {
       Object arg = args[i];
-      String placeholder = "\{" + i + "\}";
+      String placeholder = "{" + i + "}";
       
       // Use String Templates for each replacement
-      result = STR."\{result.replace(placeholder, arg == null ? "null" : arg.toString())}";
+      //result = STR."\{result.replace(placeholder, arg == null ? null : arg.toString())}";
+      result = result.replace(placeholder, arg == null ? null : arg.toString());
     }
     
     return result;

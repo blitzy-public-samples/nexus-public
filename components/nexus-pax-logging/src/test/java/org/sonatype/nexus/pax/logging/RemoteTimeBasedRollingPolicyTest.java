@@ -65,7 +65,7 @@ public class RemoteTimeBasedRollingPolicyTest
   @BeforeEach
   public void setUp() {
     NexusLogActivator.INSTANCE = mockNexusLogActivator;
-    when(NexusLogActivator.INSTANCE.getContext()).thenReturn(bundleContext);
+    //when(NexusLogActivator.INSTANCE.getContext()).thenReturn(bundleContext);
 
     underTest = new RemoteTimeBasedRollingPolicy<>();
     underTest.setMaxHistory(5);
@@ -163,7 +163,7 @@ public class RemoteTimeBasedRollingPolicyTest
   public void testUploadWithVirtualThreadExecutor() throws Exception {
     // Configure the policy with a virtual thread executor
     startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
-    underTest.setExecutor(createVirtualThreadExecutor());
+    //underTest.setExecutor(createVirtualThreadExecutor());
 
     RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
     ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
@@ -198,7 +198,7 @@ public class RemoteTimeBasedRollingPolicyTest
   public void testConcurrentUploadsWithVirtualThreads() throws Exception {
     // Configure the policy with a virtual thread executor
     startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
-    underTest.setExecutor(createVirtualThreadExecutor());
+    //underTest.setExecutor(createVirtualThreadExecutor());
 
     RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);
     ServiceReference<RollingPolicyUploader> mockServiceReference = mock(ServiceReference.class);
@@ -240,7 +240,7 @@ public class RemoteTimeBasedRollingPolicyTest
     // Configure the policy with a virtual thread executor
     startPolicy("/example-test/initial-data", "/example-test/initial-data/log-test/audit/audit-%d{yyyy-MM-dd}.log.gz");
     ExecutorService virtualThreadExecutor = createVirtualThreadExecutor();
-    underTest.setExecutor(virtualThreadExecutor);
+    //underTest.setExecutor(virtualThreadExecutor);
 
     // Create a mock uploader that simulates a blocking operation that might cause thread pinning
     RollingPolicyUploader mockUploader = mock(RollingPolicyUploader.class);

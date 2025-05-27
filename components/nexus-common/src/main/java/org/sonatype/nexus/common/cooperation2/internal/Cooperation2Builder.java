@@ -66,13 +66,13 @@ public abstract class Cooperation2Builder<RET>
     return this;
   }
   
-  @Override
+  //@Override
   public Cooperation2Builder<RET> useVirtualThread(final boolean useVirtualThread) {
     this.useVirtualThreads = useVirtualThread;
     return this;
   }
   
-  @Override
+  //@Override
   public Cooperation2Builder<RET> propagateContext(final boolean propagateContext) {
     this.propagateContext = propagateContext;
     return this;

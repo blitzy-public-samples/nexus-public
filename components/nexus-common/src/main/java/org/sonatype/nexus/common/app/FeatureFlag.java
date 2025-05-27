@@ -52,7 +52,7 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
  */
 @Retention(RUNTIME)
 @Target({PACKAGE, TYPE})
-@Repeatable(FeatureFlagGroup.class)
+//@Repeatable(FeatureFlagGroup.class)
 public @interface FeatureFlag
 {
   /**

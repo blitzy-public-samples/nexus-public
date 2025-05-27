@@ -44,8 +44,8 @@ public record FreezeRequest(
   /**
    * The optional system token for this freeze.
    */
-  public Optional<String> token() {
-    return ofNullable(token);
+  public String token() {
+    return ofNullable(token).orElse(null);
   }
 
   /**
@@ -60,14 +60,14 @@ public record FreezeRequest(
   /**
    * The user that requested the freeze; empty if it was an internal request.
    */
-  public Optional<String> frozenBy() {
-    return ofNullable(frozenBy);
+  public String frozenBy() {
+    return ofNullable(frozenBy).orElse(null);
   }
 
   /**
    * The client IP that requested the freeze; empty if it was an internal request.
    */
-  public Optional<String> frozenByIp() {
-    return ofNullable(frozenByIp);
+  public String frozenByIp() {
+    return ofNullable(frozenByIp).orElse(null);
   }
 }

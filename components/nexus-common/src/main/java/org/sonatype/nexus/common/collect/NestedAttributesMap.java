@@ -105,7 +105,7 @@ public class NestedAttributesMap
    */
   @Override
   protected String missingKeyMessage(final String key) {
-    return STR."Missing: {\{getQualifiedKey()\}} \{key}";
+    return STR."Missing: {\{getQualifiedKey()}} \{key}";
   }
 
   /**
@@ -149,3 +149,4 @@ public class NestedAttributesMap
         + STR."key='\{key}', "
         + STR."backing=\{backing}}"; 
   }
+}

@@ -45,7 +45,10 @@ public class ReadOnlyState
     return "Requested by " + state.stream()
         .filter(r -> !r.token().isPresent())
         .findAny()
-        .map(u -> STR."an administrator at \{u.frozenAt().toString(\"yyyy-MM-dd HH:mm:ss ZZ\")}")
+        .map(u -> { 
+        	String formattedDateTime = u.frozenAt().toString("yyyy-MM-dd HH:mm:ss ZZ");
+        	return STR."an administrator at \{formattedDateTime}";
+        })
         .orElse(STR."\{state.size()} running system task(s)");
   }
 

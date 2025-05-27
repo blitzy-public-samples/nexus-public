@@ -52,6 +52,6 @@ public class TemplateParameters
 
   @Override
   public String toString() {
-    return STR."\{getClass().getSimpleName()}\{params=\{params}\}";
+    return STR."\{getClass().getSimpleName()} params=\{params}}";
   }
 }

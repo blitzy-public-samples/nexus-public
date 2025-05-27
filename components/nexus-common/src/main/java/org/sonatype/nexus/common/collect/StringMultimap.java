@@ -220,9 +220,11 @@ public class StringMultimap
    *
    * @return a reversed view of this multimap's entries
    */
+  //TODOs: No reverse method on Entry
+  /*
   public Iterable<Entry<String, String>> reversed() {
     return backing.entries().reversed();
-  }
+  }*/
 
   @Override
   public String toString() {

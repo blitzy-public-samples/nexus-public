@@ -136,7 +136,7 @@ public class DetachingList<V>
    * @return a reversed view of this collection
    */
   @Override
-  public SequencedCollection<V> reversed() {
+  public List<V> reversed() {
     // Delegate to trigger detachment if needed, then create a new DetachingList with the reversed view
     return new DetachingList<>(delegate().reversed(), allowDetach, detach);
   }

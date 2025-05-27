@@ -45,6 +45,7 @@ public class LoggerLevelChangedEvent
 
   @Override
   public String toString() {
-    return STR."\{getClass().getSimpleName()}\{logger='\{logger}', level=\{level}}";
+	  var className = getClass().getSimpleName();
+	  return STR."\{className} {logger='\{logger}', level=\{level}}";
   }
 }

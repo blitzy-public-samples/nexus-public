@@ -26,7 +26,6 @@ import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import com.google.common.collect.ForwardingCollection;
-import org.junit.Category;
 import org.junit.Test;
 import org.junit.jupiter.api.DisplayName;
 // Using JUnit Jupiter annotations alongside JUnit 4
@@ -47,7 +46,7 @@ import static org.sonatype.nexus.common.entity.Continuations.iterableOf;
 import static org.sonatype.nexus.common.entity.Continuations.iteratorOf;
 import static org.sonatype.nexus.common.entity.Continuations.streamOf;
 
-@Category(Java21TestGroup.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class ContinuationsTest
     extends TestSupport
 {

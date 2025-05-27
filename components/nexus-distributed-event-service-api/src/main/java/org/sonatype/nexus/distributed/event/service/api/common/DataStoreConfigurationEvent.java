@@ -79,9 +79,7 @@ public class DataStoreConfigurationEvent
    * @param processor The processor to handle the event data
    */
   public void processWithRecordPattern(final EventProcessor processor) {
-    if (this instanceof DataStoreConfigurationEvent(var name, var eventType, var eventSource, var attrs)) {
-      processor.process(name, eventType, eventSource, attrs);
-    }
+	  processor.process(this.NAME, this.type, this.source, this.attributes);
   }
   
   /**
@@ -91,9 +89,7 @@ public class DataStoreConfigurationEvent
    */
   public void processAttributes(final AttributeHandler attributeHandler) {
     for (var entry : attributes.entrySet()) {
-      if (entry instanceof Map.Entry(var key, var value)) {
-        attributeHandler.handle(key, value);
-      }
+    	attributeHandler.handle(entry.getKey(), entry.getValue());
     }
   }
   

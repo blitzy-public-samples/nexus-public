@@ -502,7 +502,7 @@ public class DirectoryHelperTest
    * negatively impact performance with Virtual Threads.
    */
   @Test
-  @Category(VirtualThreadTestGroup.class)
+  @Category(org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup.class)
   public void directoryOperationsDoNotCauseThreadPinning() throws Exception {
     // Skip test if Virtual Threads are not supported
     VirtualThreadTestSupport.assumeVirtualThreadSupported();
@@ -583,10 +583,10 @@ public class DirectoryHelperTest
     long virtualThreadTime = measureExecutionTime(testPath, operationCount, virtualThreadFactory);
     
     // Log the performance results
-    log.info("Directory operations performance comparison:");
-    log.info("Platform Threads: {} ms for {} operations", platformThreadTime, operationCount);
-    log.info("Virtual Threads: {} ms for {} operations", virtualThreadTime, operationCount);
-    log.info("Performance improvement: {}%", 
+    logger.info("Directory operations performance comparison:");
+    logger.info("Platform Threads: {} ms for {} operations", platformThreadTime, operationCount);
+    logger.info("Virtual Threads: {} ms for {} operations", virtualThreadTime, operationCount);
+    logger.info("Performance improvement: {}%", 
         platformThreadTime > 0 ? (platformThreadTime - virtualThreadTime) * 100 / platformThreadTime : "N/A");
     
     // For high concurrency operations, virtual threads should generally perform better

@@ -68,8 +68,7 @@ public enum EventType
    */
   public static String classifyEvent(EventType eventType) {
     return switch (eventType) {
-      case CREATED when isLifecycleEvent(eventType) -> "Primary lifecycle event";
-      case DELETED when isLifecycleEvent(eventType) -> "Primary lifecycle event";
+      case CREATED, DELETED -> "Primary lifecycle event";
       case UPDATED -> "Modification event";
       case CANCELLED -> "Administrative event";
       // No default case needed as all enum values are covered

@@ -25,6 +25,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+import java.util.Map;
+
 @ExtendWith(MockitoExtension.class)
 @Category(Java21TestGroup.class)
 public class RepositoryComboboxTest
@@ -63,7 +65,7 @@ public class RepositoryComboboxTest
     // Using pattern matching with switch to check filter configuration
     var filters = underTest.getStoreFilters();
     var result = switch (filters) {
-      case var f when f.containsKey("versionPolicies") -> f.get("versionPolicies");
+      case Map<String, String> f when f.containsKey("versionPolicies") -> f.get("versionPolicies");
       default -> "not found";
     };
     

@@ -67,6 +67,16 @@
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-task-logging</artifactId>
     </dependency>
+    
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-common</artifactId>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-security</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.sonatype.nexus</groupId>

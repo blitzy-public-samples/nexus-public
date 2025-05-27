@@ -85,10 +85,7 @@ public abstract class EntityEvent
   public <T extends Entity> Class<T> getEntityType() {
     // Using pattern matching for safer metadata handling
     var entityTypeOpt = metadata.<T>getEntityType();
-    return switch (entityTypeOpt) {
-      case var opt when opt.isPresent() -> opt.get();
-      default -> null;
-    };
+    return entityTypeOpt.orElse(null);
   }
 
   /**
@@ -125,6 +122,7 @@ public abstract class EntityEvent
   @Override
   public String toString() {
     // Using String Templates for modern string formatting
-    return STR."{getClass().getSimpleName()}{metadata={metadata}, remoteNodeId={remoteNodeId}}";
+	return getClass().getSimpleName() + "{metadata="  + metadata + ", remoteNodeId=" + remoteNodeId + "}";
+    //return STR."{getClass().getSimpleName()}{metadata={metadata}, remoteNodeId={remoteNodeId}}";
   }
 }

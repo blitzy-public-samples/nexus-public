@@ -129,7 +129,6 @@ public class DetachingSet<V>
    * @throws NoSuchElementException if this set is empty
    * @since 3.60
    */
-  @Override
   public V first() {
     if (isEmpty()) {
       throw new NoSuchElementException();
@@ -145,7 +144,6 @@ public class DetachingSet<V>
    * @throws NoSuchElementException if this set is empty
    * @since 3.60
    */
-  @Override
   public V last() {
     if (isEmpty()) {
       throw new NoSuchElementException();
@@ -185,12 +183,10 @@ public class DetachingSet<V>
       return original.delegate();
     }
 
-    @Override
     public V first() {
       return original.last();
     }
 
-    @Override
     public V last() {
       return original.first();
     }

@@ -13,7 +13,6 @@
 package org.sonatype.nexus.common.io;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -50,7 +49,7 @@ import static org.junit.Assert.assertTrue;
  *
  * @since 3.60
  */
-@Category(VirtualThreadTestGroup.class)
+@Category(org.sonatype.nexus.common.thread.VirtualThreadTestGroup.class)
 public class ZipSupportTest
     extends TestSupport
 {
@@ -92,9 +91,10 @@ public class ZipSupportTest
   /**
    * Test ZIP file creation using Virtual Threads.
    * This test validates that the ZIP operations work correctly with Virtual Threads.
+ * @throws InterruptedException 
    */
   @Test
-  public void zipFilesWithVirtualThreads() throws IOException {
+  public void zipFilesWithVirtualThreads() throws IOException, InterruptedException {
     List<String> filesToZip = Arrays.asList("file1.tx", "file2.txt", "file4.txt");
 
     String zipFileName = root.toPath() + "/test-virtual.zip";
@@ -105,7 +105,7 @@ public class ZipSupportTest
         zipSupport.zipFiles(root.toPath(), filesToZip, zipFileName, true);
       }
       catch (IOException e) {
-        log.error("Error during ZIP operation", e);
+        logger.error("Error during ZIP operation", e);
       }
     }).join();
 
@@ -148,7 +148,7 @@ public class ZipSupportTest
             }
           }
           catch (Exception e) {
-            log.error("Error in concurrent ZIP task {}", taskId, e);
+        	  logger.error("Error in concurrent ZIP task {}", taskId, e);
           }
           finally {
             latch.countDown();
@@ -203,7 +203,7 @@ public class ZipSupportTest
             if (info.getThreadName().contains("VirtualThread") && 
                 info.getStackTrace().length > 0 &&
                 containsZipOperations(info.getStackTrace())) {
-              log.info("Potential thread pinning detected: {}", info.getThreadName());
+            	logger.info("Potential thread pinning detected: {}", info.getThreadName());
               pinningDetected.set(true);
               break;
             }
@@ -223,7 +223,7 @@ public class ZipSupportTest
         zipSupport.zipFiles(root.toPath(), filesToZip, zipFileName, true);
       }
       catch (IOException e) {
-        log.error("Error during ZIP operation", e);
+    	  logger.error("Error during ZIP operation", e);
       }
     });
 
@@ -240,7 +240,7 @@ public class ZipSupportTest
     // Log if pinning was detected, but don't fail the test
     // This is informational and helps identify potential optimizations
     if (pinningDetected.get()) {
-      log.warn("Thread pinning detected during ZIP operations. Consider optimizing the code.");
+    	logger.warn("Thread pinning detected during ZIP operations. Consider optimizing the code.");
     }
   }
 
@@ -274,7 +274,7 @@ public class ZipSupportTest
             zipSupport.zipFiles(root.toPath(), filesToZip, zipFileName, false);
           }
           catch (Exception e) {
-            log.error("Error in platform thread ZIP task", e);
+        	  logger.error("Error in platform thread ZIP task", e);
           }
           finally {
             platformLatch.countDown();
@@ -301,7 +301,7 @@ public class ZipSupportTest
             zipSupport.zipFiles(root.toPath(), filesToZip, zipFileName, true);
           }
           catch (Exception e) {
-            log.error("Error in virtual thread ZIP task", e);
+        	  logger.error("Error in virtual thread ZIP task", e);
           }
           finally {
             virtualLatch.countDown();
@@ -315,16 +315,16 @@ public class ZipSupportTest
     long virtualThreadTime = System.nanoTime() - virtualThreadStart;
     
     // Log performance results
-    log.info("Platform thread execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(platformThreadTime));
-    log.info("Virtual thread execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(virtualThreadTime));
+    logger.info("Platform thread execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(platformThreadTime));
+    logger.info("Virtual thread execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(virtualThreadTime));
     
     // Verify that virtual threads perform at least as well as platform threads
     // Note: This is a soft assertion as performance can vary based on the environment
     if (virtualThreadTime > platformThreadTime) {
-      log.warn("Virtual threads were slower than platform threads. This might be due to test environment conditions.");
+    	logger.warn("Virtual threads were slower than platform threads. This might be due to test environment conditions.");
     }
     else {
-      log.info("Virtual threads performed better than platform threads as expected.");
+    	logger.info("Virtual threads performed better than platform threads as expected.");
     }
   }
   

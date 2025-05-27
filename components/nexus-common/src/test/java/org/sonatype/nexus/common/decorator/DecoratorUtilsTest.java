@@ -13,7 +13,7 @@
 package org.sonatype.nexus.common.decorator;
 
 // JUnit 4 imports for backward compatibility
-import org.junit.Test;
+//import org.junit.Test;
 
 // JUnit Jupiter imports
 import org.junit.jupiter.api.DisplayName;

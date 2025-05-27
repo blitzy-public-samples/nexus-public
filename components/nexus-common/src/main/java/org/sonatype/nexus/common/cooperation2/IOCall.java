@@ -19,20 +19,6 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Annotation to mark operations that are I/O-bound and suitable for execution on Virtual Threads.
- * 
- * @since 3.41
- */
-@Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
-public @interface IOBound {
-  /**
-   * Optional description of the I/O operation being performed.
-   */
-  String value() default "";
-}
-
-/**
  * A function encapsulating the work to be done by a Cooperation.
  * <p>
  * This interface is designed for I/O-bound operations that may block while waiting for external resources.

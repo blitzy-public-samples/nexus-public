@@ -314,3 +314,5 @@ public class HashAlgorithm
   public static Optional<HashAlgorithm> getHashAlgorithm(final String algorithm) {
     return ofNullable(ALL_HASH_ALGORITHMS.get(algorithm));
   }
+  
+}

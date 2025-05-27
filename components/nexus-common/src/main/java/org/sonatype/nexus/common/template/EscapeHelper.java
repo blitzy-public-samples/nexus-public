@@ -15,7 +15,6 @@ package org.sonatype.nexus.common.template;
 import java.util.stream.Stream;
 
 import org.sonatype.nexus.common.encoding.EncodingUtil;
-
 import org.apache.commons.lang.StringEscapeUtils;
 
 import static java.lang.StringTemplate.STR;

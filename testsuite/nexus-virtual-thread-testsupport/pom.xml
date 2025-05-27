@@ -134,11 +134,11 @@
     
     <!-- Java 21 specific testing utilities -->
     <dependency>
-      <groupId>org.sonatype.goodies.testsupport</groupId>
-      <artifactId>goodies-testsupport-group</artifactId>
+      <groupId>org.sonatype.goodies</groupId>
+      <artifactId>goodies-testsupport</artifactId>
     </dependency>
   </dependencies>
-
+  
   <build>
     <plugins>
       <plugin>

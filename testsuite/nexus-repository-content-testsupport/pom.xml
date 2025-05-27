@@ -88,6 +88,7 @@
     <dependency>
       <groupId>org.sonatype.nexus.testsuite</groupId>
       <artifactId>nexus-virtual-thread-testsupport</artifactId>
+      <version>${project.version}</version>
     </dependency>
 
     <dependency>

@@ -12,12 +12,6 @@
  */
 package org.sonatype.nexus.crypto.secrets.internal;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.audit.AuditData;
-import org.sonatype.nexus.audit.AuditRecorder;
-import org.sonatype.nexus.common.event.EventHelper;
-import org.sonatype.nexus.crypto.secrets.ActiveKeyChangeEvent;
-
 import com.google.common.collect.ImmutableMap;
 import org.junit.Before;
 import org.junit.Test;
@@ -25,6 +19,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.Spy;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.audit.AuditData;
+import org.sonatype.nexus.audit.AuditRecorder;
+import org.sonatype.nexus.common.event.EventHelper;
+import org.sonatype.nexus.crypto.secrets.ActiveKeyChangeEvent;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;

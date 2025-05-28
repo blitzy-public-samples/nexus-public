@@ -13,9 +13,9 @@
 package org.sonatype.nexus.crypto.secrets;
 
 import java.util.Base64;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.crypto.internal.PbeCipherFactory;

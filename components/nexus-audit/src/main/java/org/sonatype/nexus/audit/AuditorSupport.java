@@ -10,15 +10,14 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-
 package org.sonatype.nexus.audit;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Provider;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventHelper;
@@ -97,7 +96,7 @@ public abstract class AuditorSupport
   protected String type(final Class type) {
     String name = typeLookup.get(type);
     if (name == null) {
-      return STR."\{type.getSimpleName().toLowerCase()}";
+      return type.getSimpleName().toLowerCase();
     }
     return name;
   }
@@ -126,7 +125,7 @@ public abstract class AuditorSupport
     if (value == null) {
       return null;
     }
-    return STR."\{value}";
+    return value.toString();
   }
 
   /**
@@ -136,6 +135,6 @@ public abstract class AuditorSupport
     if (value == null) {
       return null;
     }
-    return STR."\{LIST_JOINER.join(value)}";
+    return LIST_JOINER.join(value);
   }
 }

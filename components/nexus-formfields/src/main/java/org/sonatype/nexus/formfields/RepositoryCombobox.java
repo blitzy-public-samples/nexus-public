@@ -188,11 +188,14 @@ public class RepositoryCombobox
    */
   @Override
   public String getStoreApi() {
-    return switch (true) {
-      case includeEntriesForAllFormats -> "coreui_Repository.readReferencesAddingEntriesForAllFormats";
-      case generateAllRepositoriesEntry -> "coreui_Repository.readReferencesAddingEntryForAll";
-      default -> "coreui_Repository.readReferences";
-    };
+    String method = "readReferences";
+    if (includeEntriesForAllFormats) {
+      method = "readReferencesAddingEntriesForAllFormats";
+    }
+    else if (generateAllRepositoriesEntry) {
+      method = "readReferencesAddingEntryForAll";
+    }
+    return "coreui_Repository." + method;
   }
 
   /**

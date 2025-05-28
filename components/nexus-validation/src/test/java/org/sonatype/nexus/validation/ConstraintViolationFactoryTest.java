@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.validation;
 
-import javax.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolation;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 

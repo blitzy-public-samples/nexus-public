@@ -64,16 +64,7 @@ public class RegexpMimeRulesSource
     for (Map.Entry<Pattern, MimeRule> entry : rules.entrySet()) {
       boolean matches = entry.getKey().matcher(name).matches();
       if (matches) {
-        PatternMatchResult result = new PatternMatchResult(true, entry.getValue());
-        return switch (result) {
-          case PatternMatchResult(true, MimeRule rule) -> {
-            // Using String Templates for any debug logging if needed in the future
-            // Logger.debug(STR."Found matching rule for name: \{name} with pattern: \{entry.getKey()}");
-            yield rule;
-          }
-          // This case should never happen due to the if condition above, but included for completeness
-          case PatternMatchResult(false, var _) -> null;
-        };
+    	  return entry.getValue();
       }
     }
     // No matching pattern found

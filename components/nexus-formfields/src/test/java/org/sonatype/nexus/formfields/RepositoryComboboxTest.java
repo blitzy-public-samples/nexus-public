@@ -13,8 +13,7 @@
 package org.sonatype.nexus.formfields;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.test.Java21TestGroup;
-
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -96,10 +95,7 @@ public class RepositoryComboboxTest
 
     // Using pattern matching to check absence of versionPolicies
     var filters = underTest.getStoreFilters();
-    var hasVersionPolicies = switch (filters) {
-      case var f when f.containsKey("versionPolicies") -> true;
-      default -> false;
-    };
+    var hasVersionPolicies = filters.containsKey("versionPolicies");
     
     assertThat(hasVersionPolicies, is(false));
   }

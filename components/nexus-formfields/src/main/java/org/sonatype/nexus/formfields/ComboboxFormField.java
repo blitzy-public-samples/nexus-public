@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.formfields;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -27,7 +28,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @since 2.7
  */
-public class ComboboxFormField<V>
+public class ComboboxFormField<V extends Serializable>
     extends Combobox<V>
 {
   /**

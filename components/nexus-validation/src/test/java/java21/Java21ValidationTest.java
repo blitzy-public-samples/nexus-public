@@ -24,15 +24,15 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javax.validation.ConstraintViolation;
-import javax.validation.Valid;
-import javax.validation.Validation;
-import javax.validation.ValidatorFactory;
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
-import javax.validation.constraints.Size;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Valid;
+import jakarta.validation.Validation;
+import jakarta.validation.ValidatorFactory;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -453,9 +453,9 @@ public class Java21ValidationTest
       assertThat("Should have detected violations", totalViolations.get(), greaterThan(0));
       
       // Log performance metrics
-      log.info("Validated {} complex objects with {} total violations in {} ms", 
+      logger.info("Validated {} complex objects with {} total violations in {} ms", 
           objectCount, totalViolations.get(), duration);
-      log.info("Average validation time: {} ms per object", (double) duration / objectCount);
+      logger.info("Average validation time: {} ms per object", (double) duration / objectCount);
     }
   }
 }

@@ -13,8 +13,7 @@
 package org.sonatype.nexus.commands;
 
 import org.apache.karaf.shell.api.action.Action;
-import org.apache.karaf.shell.api.action.Command;
-import org.apache.karaf.shell.api.console.Command as ConsoleCommand;
+import org.apache.karaf.shell.api.console.Command;
 import org.apache.karaf.shell.api.console.Session;
 import org.apache.karaf.shell.impl.action.command.ActionCommand;
 import org.slf4j.Logger;

@@ -10,37 +10,16 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.validation.constraint;
-
-import java.net.URI;
-import java.net.URISyntaxException;
-
-import jakarta.validation.ConstraintValidatorContext;
-
-import org.sonatype.nexus.validation.ConstraintValidatorSupport;
-
-import static org.apache.commons.lang3.StringUtils.isBlank;
+package org.sonatype.nexus.content.testsuite.groups;
 
 /**
- * Validates a URI.
+ * Marker interface for tests that validate Java 21 specific features.
+ * 
+ * <p>Tests marked with this category will be included in the java21-tests Maven profile.</p>
  *
- * @since 3.21
+ * @since 3.60
  */
-public class UriStringValidator
-    extends ConstraintValidatorSupport<UriString, String>
+public interface Java21TestGroup
 {
-  @Override
-  public boolean isValid(final String uri, final ConstraintValidatorContext constraintValidatorContext) {
-    if (isBlank(uri)) {
-      return true;
-    }
-
-    try {
-      new URI(uri);
-      return true;
-    }
-    catch (URISyntaxException ignore) { // NOSONAR
-      return false;
-    }
-  }
+  // empty
 }

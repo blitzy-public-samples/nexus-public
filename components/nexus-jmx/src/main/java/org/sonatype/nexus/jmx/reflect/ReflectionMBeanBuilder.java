@@ -66,6 +66,7 @@ public class ReflectionMBeanBuilder
     Map<String,ReflectionMBeanAttribute.Builder> attributeBuilders = Maps.newHashMap();
 
     // discover attributes and operations
+    record DescriptorPair(ManagedAttribute attribute, ManagedOperation operation) {}
     for (Method method : type.getMethods()) {
       // skip non-manageable methods
       if (method.isBridge() || method.isSynthetic()) {
@@ -77,22 +78,20 @@ public class ReflectionMBeanBuilder
       ManagedAttribute attributeDescriptor = method.getAnnotation(ManagedAttribute.class);
       ManagedOperation operationDescriptor = method.getAnnotation(ManagedOperation.class);
 
+      DescriptorPair pair = new DescriptorPair(attributeDescriptor, operationDescriptor);
+
       // skip if no configuration
       if (attributeDescriptor == null && operationDescriptor == null) {
         continue;
       }
 
       // Use pattern matching to handle different annotation combinations
-      switch (attributeDescriptor, operationDescriptor) {
-        case (null, null) -> {
+      switch (pair) {
+        case DescriptorPair(var attr, var op) when attr == null && op == null -> {
           // Already handled by the if statement above, but included for completeness
           continue;
         }
-        case (ManagedAttribute attr, ManagedOperation op) -> {
-          log.warn(STR."Confusing managed annotations on method: \{method}");
-          continue;
-        }
-        case (ManagedAttribute attr, null) -> {
+        case DescriptorPair(var attr, null) -> {
           log.trace(STR."Processing attribute descriptor: \{attr}");
 
           // add attribute
@@ -133,7 +132,7 @@ public class ReflectionMBeanBuilder
             builder.setter(method);
           }
         }
-        case (null, ManagedOperation op) -> {
+        case DescriptorPair(null, var op) -> {
           log.trace(STR."Processing operation descriptor: \{op}");
 
           // add operation
@@ -151,6 +150,10 @@ public class ReflectionMBeanBuilder
               .method(method)
               .build());
         }
+        case DescriptorPair(var attr, var op) -> {
+            log.warn(STR."Confusing managed annotations on method: \{method}");
+            continue;
+          }
       }
     }
 

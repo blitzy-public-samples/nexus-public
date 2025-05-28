@@ -14,8 +14,8 @@ package org.sonatype.nexus.validation.internal;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
-import javax.validation.ConstraintValidator;
-import javax.validation.ConstraintValidatorFactory;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorFactory;
 
 import org.sonatype.goodies.common.ComponentSupport;
 

@@ -44,8 +44,8 @@
     </dependency>
 
     <dependency>
-      <groupId>org.glassfish</groupId>
-      <artifactId>jakarta.el</artifactId>
+      	<groupId>jakarta.el</groupId>
+    	<artifactId>jakarta.el-api</artifactId>
     </dependency>
 
     <dependency>
@@ -58,7 +58,13 @@
       <artifactId>jackson-annotations</artifactId>
       <optional>true</optional>
     </dependency>
-
+	
+	<dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-test-common</artifactId>
+      <scope>test</scope>
+    </dependency>
+    
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-testsupport</artifactId>

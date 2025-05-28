@@ -12,15 +12,16 @@
  */
 package org.sonatype.nexus.formfields;
 
-import org.java21.Java21TestGroup;
+
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.hamcrest.Matchers.equalTo;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 /**
  * {@link AbstractFormField} tests.

@@ -156,28 +156,8 @@ public abstract class AbstractFormField<T extends Object>
   }
 
   public AbstractFormField<T> withAttribute(String key, Object value) {
-    if (attributes == null || attributes.isEmpty()) {
-      attributes = Map.of(key, value);
-    } else {
-      // Create a mutable copy if we need to add more attributes
-      if (attributes.size() == 1 && attributes instanceof Map.Entry) {
-        var entry = (Map.Entry<String, Object>) attributes;
-        attributes = Map.of(entry.getKey(), entry.getValue(), key, value);
-      } else if (attributes.size() == 2 && !(attributes instanceof Collections.UnmodifiableMap)) {
-        // For 3 entries, use Map.of
-        var entries = attributes.entrySet().toArray(new Map.Entry[0]);
-        attributes = Map.of(
-            entries[0].getKey(), entries[0].getValue(),
-            entries[1].getKey(), entries[1].getValue(),
-            key, value);
-      } else {
-        // For more entries or if we already have an unmodifiable map, create a mutable copy
-        var newAttributes = new java.util.HashMap<>(attributes);
-        newAttributes.put(key, value);
-        attributes = Collections.unmodifiableMap(newAttributes);
-      }
-    }
-    return this;
+	  getAttributes().put(key, value);
+	  return this;
   }
   
   /**

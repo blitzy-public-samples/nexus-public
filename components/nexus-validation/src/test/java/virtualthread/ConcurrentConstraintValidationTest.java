@@ -28,12 +28,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import javax.validation.Constraint;
-import javax.validation.ConstraintValidator;
-import javax.validation.ConstraintValidatorContext;
-import javax.validation.ConstraintViolation;
-import javax.validation.Payload;
-import javax.validation.Validator;
+import jakarta.validation.Constraint;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Payload;
+import jakarta.validation.Validator;
 
 import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;
@@ -310,9 +310,8 @@ public class ConcurrentConstraintValidationTest
     try {
       // Set up a listener to detect pinning events
       detector.addPinningListener(event -> {
-        log.warn("Thread pinning detected during validation: {} ms at {}", 
-            event.getDurationMillis(), event.getTimestamp());
-        log.warn("Stack trace: {}", event.getStackTrace());
+        logger.warn("Thread pinning detected during validation: {} ms at {}", event.getDurationMillis(), event.getTimestamp());
+        logger.warn("Stack trace: {}", event.getStackTrace());
         pinningDetected.set(true);
       });
       
@@ -335,7 +334,7 @@ public class ConcurrentConstraintValidationTest
               completionLatch.countDown();
             }
             catch (Exception e) {
-              log.error("Error during validation", e);
+              logger.error("Error during validation", e);
             }
           });
         }

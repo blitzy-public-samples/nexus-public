@@ -1,5 +1,5 @@
 /*
- * Sonatype Nexus (TM) Open Source Version
+AbstractCacheBuilder * Sonatype Nexus (TM) Open Source Version
  * Copyright (c) 2008-present Sonatype, Inc.
  * All rights reserved. Includes the third-party code listed at http://links.sonatype.com/products/nexus/oss/attributions.
  *
@@ -11,6 +11,16 @@
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
 package org.sonatype.nexus.common.io;
+
+import static javax.xml.stream.XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES;
+import static javax.xml.stream.XMLInputFactory.SUPPORT_DTD;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -42,33 +52,22 @@ import javax.xml.transform.TransformerException;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
-
 import org.apache.commons.io.IOUtils;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.Tag;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import org.xml.sax.helpers.DefaultHandler;
 
-import static javax.xml.stream.XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES;
-import static javax.xml.stream.XMLInputFactory.SUPPORT_DTD;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.fail;
-
-@Category(VirtualThreadTestGroup.class)
+@Tag("VirtualThreadTestGroup")
 public class SafeXmlTest
 {
   @ClassRule
@@ -217,7 +216,7 @@ public class SafeXmlTest
    * to ensure that the XML parsing operations don't block the threads.
    */
   @Test
-  @Category(VirtualThreadTestGroup.class)
+ @Tag("VirtualThreadTestGroup")
   public void xmlParsingWithVirtualThreads() throws Exception {
     // Skip test if Virtual Threads are not supported
     VirtualThreadTestSupport.assumeVirtualThreadSupported();
@@ -265,7 +264,7 @@ public class SafeXmlTest
    * synchronized blocks or native methods that don't support Virtual Threads.
    */
   @Test
-  @Category(VirtualThreadTestGroup.class)
+ @Tag("VirtualThreadTestGroup")
   public void detectXmlParsingThreadPinning() throws Exception {
     // Skip test if Virtual Threads are not supported
     VirtualThreadTestSupport.assumeVirtualThreadSupported();

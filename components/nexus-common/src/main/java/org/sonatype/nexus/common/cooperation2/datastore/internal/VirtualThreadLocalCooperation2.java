@@ -14,6 +14,7 @@ package org.sonatype.nexus.common.cooperation2.datastore.internal;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.sonatype.nexus.common.cooperation2.Config;
 import org.sonatype.nexus.common.cooperation2.Cooperation2;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
+import org.sonatype.nexus.common.cooperation2.CooperationKey;
 import org.sonatype.nexus.common.cooperation2.IOCall;
 import org.sonatype.nexus.common.cooperation2.IOCheck;
 import org.sonatype.nexus.common.cooperation2.ScopedCooperation2Support;
@@ -103,13 +105,13 @@ public class VirtualThreadLocalCooperation2
     }
 
     @Override
-    public Builder<R> useVirtualThread(final boolean useVirtualThread) {
+    public VirtualThreadCooperation2Builder<R> useVirtualThread(final boolean useVirtualThread) {
       this.useVirtualThread = useVirtualThread;
       return this;
     }
 
     @Override
-    public Builder<R> propagateContext(final boolean propagateContext) {
+    public VirtualThreadCooperation2Builder<R> propagateContext(final boolean propagateContext) {
       this.propagateContext = propagateContext;
       return this;
     }
@@ -211,17 +213,17 @@ public class VirtualThreadLocalCooperation2
         // Wait for the Virtual Thread to complete and return the result
         try {
           // Join with a timeout based on the configuration to prevent indefinite waiting
-          long timeoutMillis = mutableConfig.virtualThreadTimeoutSeconds() > 0 ?
-              mutableConfig.virtualThreadTimeoutSeconds() * 1000L :
-              mutableConfig.majorTimeoutSeconds() * 1000L;
+          long timeoutMillis = mutableConfig.virtualThreadTimeout().toSeconds() > 0 ?
+              mutableConfig.virtualThreadTimeout().toSeconds() * 1000L :
+              mutableConfig.majorTimeout().toSeconds() * 1000L;
           
-          if (!virtualThread.join(timeoutMillis)) {
+          if (!virtualThread.join(Duration.ofSeconds(timeoutMillis))) {
             log.warn("Virtual Thread execution timed out after {} ms for key: {}", timeoutMillis, scopedKey);
             // Don't interrupt the thread, as it may still complete its work
             // Just proceed with getting the result (which may wait if not yet available)
           }
           
-          return myFuture.getResult();
+          return myFuture.get();
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
           throw new UncheckedIOException(new IOException("Interrupted while waiting for Virtual Thread"));
@@ -286,4 +288,10 @@ public class VirtualThreadLocalCooperation2
   public <RET> Builder<RET> on(final IOCall<RET> workFunction) {
     return new VirtualThreadCooperation2Builder<>(workFunction);
   }
+
+@Override
+public <RET> Builder<RET> onIOOperation(IOCall<RET> workFunction) {
+	// TODO Auto-generated method stub
+	return null;
+}
 }

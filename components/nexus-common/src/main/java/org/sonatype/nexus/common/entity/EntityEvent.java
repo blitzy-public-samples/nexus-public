@@ -101,8 +101,7 @@ public abstract class EntityEvent
         }
       }
     }
-    // Using pattern matching for stronger type safety instead of direct casting
-    return entity instanceof T t ? t : null;
+    return  (T) entity;
   }
 
   @Override

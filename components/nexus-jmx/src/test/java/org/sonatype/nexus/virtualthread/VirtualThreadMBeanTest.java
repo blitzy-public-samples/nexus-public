@@ -28,7 +28,7 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -134,7 +134,7 @@ public class VirtualThreadMBeanTest
           assertTrue(retrievedValue.startsWith("value-"), "Value should start with 'value-'");
         }
         catch (Exception e) {
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
           throw new RuntimeException(e);
         }
         finally {
@@ -200,7 +200,7 @@ public class VirtualThreadMBeanTest
           }
         }
         catch (Exception e) {
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
           throw new RuntimeException(e);
         }
       }));
@@ -255,7 +255,7 @@ public class VirtualThreadMBeanTest
           assertTrue(retrievedValue.startsWith("direct-"), "Value should start with 'direct-'");
         }
         catch (Exception e) {
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
           throw new RuntimeException(e);
         }
         finally {

@@ -45,7 +45,7 @@ public class JsonMapperProvider
         
         // Enable Java 21 record support
         .configure(MapperFeature.ALLOW_FINAL_FIELDS_AS_MUTATORS, true)
-        .configure(MapperFeature.INFER_RECORD_CONSTRUCTOR, true)
+       // .configure(MapperFeature.INFER_RECORD_CONSTRUCTOR, true)
         .configure(MapperFeature.INFER_CREATOR_FROM_CONSTRUCTOR_PROPERTIES, true)
         
         // Optimize serialization/deserialization for Java 21

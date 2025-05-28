@@ -18,7 +18,7 @@ import java.util.List;
 import javax.management.Descriptor;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import org.hamcrest.CustomTypeSafeMatcher;
 import org.junit.jupiter.api.Test;

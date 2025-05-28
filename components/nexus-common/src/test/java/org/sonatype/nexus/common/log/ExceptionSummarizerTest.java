@@ -23,7 +23,6 @@ import org.sonatype.nexus.virtualthread.Java21TestGroup;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 // JUnit 4 compatibility imports
-import org.junit.Test;
 import org.junit.experimental.categories.Category;
 // Mockito imports
 import org.mockito.InOrder;

@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.common.upgrade;
 
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.db.DatabaseCheck;

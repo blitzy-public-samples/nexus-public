@@ -12,14 +12,14 @@
  */
 package org.sonatype.nexus.common.app;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Optional.ofNullable;
+
 import java.util.Optional;
 
 import javax.annotation.Nullable;
 
 import org.joda.time.DateTime;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-import static java.util.Optional.ofNullable;
 
 /**
  * Request to freeze the application.
@@ -27,7 +27,7 @@ import static java.util.Optional.ofNullable;
  * @since 3.21
  */
 public record FreezeRequest(
-    @Nullable String token,
+    @Nullable Optional<String> token,
     String reason,
     DateTime frozenAt,
     @Nullable String frozenBy,
@@ -44,8 +44,8 @@ public record FreezeRequest(
   /**
    * The optional system token for this freeze.
    */
-  public String token() {
-    return ofNullable(token).orElse(null);
+  public Optional<String> token() {
+    return token;
   }
 
   /**

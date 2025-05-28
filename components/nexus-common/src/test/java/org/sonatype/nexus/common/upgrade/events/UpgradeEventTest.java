@@ -21,7 +21,6 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.google.common.collect.ImmutableList;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;

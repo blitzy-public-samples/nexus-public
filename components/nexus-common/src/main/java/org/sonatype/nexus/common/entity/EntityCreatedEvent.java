@@ -44,10 +44,7 @@ public class EntityCreatedEvent
   public <T extends Entity> T getEntity() {
     // Use pattern matching to safely get and cast the entity
     Object entity = super.getEntity();
-    if (entity instanceof T t) {
-      return t;
-    }
-    return null;
+    return  (T) entity;
   }
   
   /**
@@ -61,12 +58,13 @@ public class EntityCreatedEvent
   public <T extends Entity> Class<T> getEntityType() {
     // Use pattern matching to safely get and cast the entity type
     Class<?> type = super.getEntityType();
-    if (type instanceof Class<? extends Entity> entityType) {
-      // Safe to cast because we've verified it's a Class<? extends Entity>
-      @SuppressWarnings("unchecked")
-      Class<T> result = (Class<T>) entityType;
-      return result;
-    }
-    return null;
+	/*
+	 * if (type instanceof Class<? extends Entity> entityType) { // Safe to cast
+	 * because we've verified it's a Class<? extends Entity>
+	 * 
+	 * @SuppressWarnings("unchecked") Class<T> result = (Class<T>) entityType;
+	 * return result; }
+	 */
+    return (Class<T>) type ;
   }
 }

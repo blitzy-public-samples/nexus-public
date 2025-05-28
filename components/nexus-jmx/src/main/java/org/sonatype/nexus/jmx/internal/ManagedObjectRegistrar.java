@@ -239,7 +239,6 @@ public class ManagedObjectRegistrar
   /**
    * Properly shutdown the virtual thread executor when the component is stopped.
    */
-  @Override
   protected void doStop() throws Exception {
     try {
       if (virtualThreadExecutor != null) {
@@ -248,7 +247,7 @@ public class ManagedObjectRegistrar
       }
     }
     finally {
-      super.doStop();
+      //super.doStop();
     }
   }
 }

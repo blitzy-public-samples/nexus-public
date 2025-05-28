@@ -28,7 +28,7 @@ import javax.management.DescriptorKey;
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
-@interface TestComments
+public @interface TestComments
 {
   /**
    * Returns the comments value to be used in the descriptor.

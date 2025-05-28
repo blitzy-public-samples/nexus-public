@@ -116,7 +116,7 @@ public class ExceptionSummarizerStringTemplateTest
     inOrder.verify(log).warn(emptyMessage, secondCause);
     inOrder.verify(log)
         .warn(": java.lang.IllegalStateException: second - occurred 1 times in last 5 seconds", (Exception) null);
-    inOrder.verify(log).warn(nullCauseMessage, null);
+    inOrder.verify(log).warn(nullCauseMessage);
     inOrder.verify(log)
         .warn("Null cause: null - occurred 1 times in last 5 seconds", (Exception) null);
     inOrder.verifyNoMoreInteractions();
@@ -141,10 +141,10 @@ public class ExceptionSummarizerStringTemplateTest
 
     // Both should produce the same output
     InOrder inOrder = inOrder(log);
-    log.warn(formatSummary, null);
-    log.warn(templateSummary, null);
-    inOrder.verify(log).warn(formatSummary, null);
-    inOrder.verify(log).warn(templateSummary, null);
+    log.warn(formatSummary);
+    log.warn(templateSummary);
+    inOrder.verify(log).warn(formatSummary);
+    inOrder.verify(log).warn(templateSummary);
     inOrder.verifyNoMoreInteractions();
   }
 

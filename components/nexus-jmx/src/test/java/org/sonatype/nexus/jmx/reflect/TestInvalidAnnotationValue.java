@@ -34,7 +34,7 @@ import javax.management.DescriptorKey;
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
-@interface TestInvalidAnnotationValue
+public @interface TestInvalidAnnotationValue
 {
   // DescriptorKey value is not allowed to be an annotation
   // This intentionally invalid usage tests Java 21's annotation validation behavior

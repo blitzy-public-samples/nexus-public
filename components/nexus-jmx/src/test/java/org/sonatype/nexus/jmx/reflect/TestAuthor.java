@@ -29,7 +29,7 @@ import javax.management.DescriptorKey;
  */
 @Target({ElementType.TYPE, ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
-@interface TestAuthor
+public @interface TestAuthor
 {
   /**
    * Returns the author name.

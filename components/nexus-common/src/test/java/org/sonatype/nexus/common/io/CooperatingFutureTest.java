@@ -21,8 +21,7 @@ import java.util.concurrent.locks.LockSupport;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.io.CooperationFactorySupport.Config;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
-
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -100,7 +99,7 @@ public class CooperatingFutureTest
             
             downloadTimeMillis[index] = System.currentTimeMillis(); // record download time
           } catch (Exception e) {
-            log.error("Error in virtual thread execution", e);
+            logger.error("Error in virtual thread execution", e);
           }
         });
       }

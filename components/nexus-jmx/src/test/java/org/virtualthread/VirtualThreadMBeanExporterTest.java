@@ -123,7 +123,7 @@ public class VirtualThreadMBeanExporterTest
       catch (Exception e) {
         throw new RuntimeException("Failed to access MBean attributes from virtual thread", e);
       }
-    }, Thread.ofVirtual().factory().newThread(Runnable::run));
+    }, Thread.ofVirtual().factory()::newThread);
     
     // Wait for the virtual thread to complete
     future.join();
@@ -153,7 +153,7 @@ public class VirtualThreadMBeanExporterTest
       catch (Exception e) {
         throw new RuntimeException("Failed to invoke MBean operation from virtual thread", e);
       }
-    }, Thread.ofVirtual().factory().newThread(Runnable::run));
+    }, Thread.ofVirtual().factory()::newThread);
     
     // Wait for the virtual thread to complete
     future.join();
@@ -194,7 +194,7 @@ public class VirtualThreadMBeanExporterTest
       catch (Exception e) {
         exceptionRef.set(e);
       }
-    }, Thread.ofVirtual().factory().newThread(Runnable::run));
+    }, Thread.ofVirtual().factory()::newThread);
     
     // Wait for the registration to complete
     registerFuture.join();
@@ -219,7 +219,7 @@ public class VirtualThreadMBeanExporterTest
       catch (Exception e) {
         exceptionRef.set(e);
       }
-    }, Thread.ofVirtual().factory().newThread(Runnable::run));
+    }, Thread.ofVirtual().factory()::newThread);
     
     // Wait for the unregistration to complete
     unregisterFuture.join();
@@ -246,15 +246,15 @@ public class VirtualThreadMBeanExporterTest
     
     // Test with platform threads
     long platformThreadTime = measureJmxOperations(platformThreadFactory, concurrentOperations);
-    log.info("Platform thread execution time for {} operations: {} ms", concurrentOperations, platformThreadTime);
+    logger.info("Platform thread execution time for {} operations: {} ms", concurrentOperations, platformThreadTime);
     
     // Test with virtual threads
     long virtualThreadTime = measureJmxOperations(virtualThreadFactory, concurrentOperations);
-    log.info("Virtual thread execution time for {} operations: {} ms", concurrentOperations, virtualThreadTime);
+    logger.info("Virtual thread execution time for {} operations: {} ms", concurrentOperations, virtualThreadTime);
     
     // Virtual threads should generally be more efficient for I/O-bound operations like JMX
     // However, we don't make a strict assertion here as performance can vary by environment
-    log.info("Performance ratio (platform/virtual): {}", (double) platformThreadTime / virtualThreadTime);
+    logger.info("Performance ratio (platform/virtual): {}", (double) platformThreadTime / virtualThreadTime);
     
     // For high concurrency operations, virtual threads should show better scalability
     if (concurrentOperations >= 1000) {
@@ -306,7 +306,7 @@ public class VirtualThreadMBeanExporterTest
             }
           }
           catch (Exception e) {
-            log.error("JMX operation failed", e);
+            logger.error("JMX operation failed", e);
             failureCount.incrementAndGet();
           }
           finally {
@@ -322,7 +322,7 @@ public class VirtualThreadMBeanExporterTest
       long endTime = System.currentTimeMillis();
       
       // Log results
-      log.info("JMX operations completed: {}, success: {}, failure: {}", 
+      logger.info("JMX operations completed: {}, success: {}, failure: {}", 
           completed ? "all" : "timeout", successCount.get(), failureCount.get());
       
       // Verify all operations succeeded
@@ -397,7 +397,7 @@ public class VirtualThreadMBeanExporterTest
             }
           }
           catch (Exception e) {
-            log.error("MBean registration failed for index " + index, e);
+            logger.error("MBean registration failed for index " + index, e);
             registrationFailureCount.incrementAndGet();
           }
           finally {
@@ -436,7 +436,7 @@ public class VirtualThreadMBeanExporterTest
             }
           }
           catch (Exception e) {
-            log.error("MBean unregistration failed for index " + index, e);
+            logger.error("MBean unregistration failed for index " + index, e);
             unregistrationFailureCount.incrementAndGet();
           }
           finally {
@@ -449,9 +449,9 @@ public class VirtualThreadMBeanExporterTest
       boolean completed = latch.await(30, TimeUnit.SECONDS);
       
       // Log results
-      log.info("Concurrent MBean operations completed: {}", completed ? "all" : "timeout");
-      log.info("Registration success: {}, failure: {}", registrationSuccessCount.get(), registrationFailureCount.get());
-      log.info("Unregistration success: {}, failure: {}", unregistrationSuccessCount.get(), unregistrationFailureCount.get());
+      logger.info("Concurrent MBean operations completed: {}", completed ? "all" : "timeout");
+      logger.info("Registration success: {}, failure: {}", registrationSuccessCount.get(), registrationFailureCount.get());
+      logger.info("Unregistration success: {}, failure: {}", unregistrationSuccessCount.get(), unregistrationFailureCount.get());
       
       // Verify all operations succeeded
       assertThat("All MBean registrations should succeed", registrationSuccessCount.get(), greaterThan(0));

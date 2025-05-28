@@ -14,12 +14,13 @@ package org.sonatype.nexus.common.hash;
 
 import java.util.Map;
 import java.util.Optional;
-
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.hash.Funnel;
 import com.google.common.hash.HashCode;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hasher;
@@ -159,6 +160,36 @@ public class HashAlgorithm
       hasher.putLong(input);
       return hasher.hash();
     }
+
+	@Override
+	public Hasher newHasher(int expectedInputSize) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public HashCode hashBytes(byte[] input, int off, int len) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public HashCode hashBytes(ByteBuffer input) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public HashCode hashUnencodedChars(CharSequence input) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public <T> HashCode hashObject(T instance, Funnel<? super T> funnel) {
+		// TODO Auto-generated method stub
+		return null;
+	}
   }
   
   /**
@@ -250,6 +281,19 @@ public class HashAlgorithm
       funnel.funnel(instance, this);
       return this;
     }
+
+	@Override
+	public Hasher putBytes(ByteBuffer bytes) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	@Override
+	public Hasher putUnencodedChars(CharSequence charSequence) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+	
   }
   
   static {
@@ -314,5 +358,4 @@ public class HashAlgorithm
   public static Optional<HashAlgorithm> getHashAlgorithm(final String algorithm) {
     return ofNullable(ALL_HASH_ALGORITHMS.get(algorithm));
   }
-  
 }

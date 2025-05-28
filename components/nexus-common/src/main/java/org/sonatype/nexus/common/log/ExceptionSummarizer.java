@@ -46,7 +46,7 @@ public class ExceptionSummarizer
    * Cached template processor for efficient summary message generation.
    * This avoids recreating the template processor for each summary message.
    */
-  private static final StringTemplate.Processor<String> SUMMARY_TEMPLATE_PROCESSOR = 
+  private static final StringTemplate.Processor<String, RuntimeException> SUMMARY_TEMPLATE_PROCESSOR = 
       template -> STR."{template.fragments().get(0)}: {template.values().get(0)} - occurred {template.values().get(1)} times in last {template.values().get(2)} seconds";
 
   private final BiPredicate<Exception, Exception> matcher;

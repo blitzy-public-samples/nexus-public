@@ -19,10 +19,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import org.sonatype.nexus.common.thread.Java21TestGroup;
-
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -37,7 +37,7 @@ import static org.hamcrest.Matchers.is;
 @Category(Java21TestGroup.class)
 public class MultiHashingInputStreamFactoryTest
 {
-  @Before
+  @BeforeAll
   public void teardown() {
     MultiHashingInputStreamFactory.enableParallel();
     MultiHashingInputStreamFactory.setThreshold(-1);

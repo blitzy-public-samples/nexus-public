@@ -91,7 +91,7 @@ public class ReflectionMBeanBuilder
           // Already handled by the if statement above, but included for completeness
           continue;
         }
-        case DescriptorPair(var attr, null) -> {
+        case DescriptorPair(var attr, var op) when op == null -> {
           log.trace(STR."Processing attribute descriptor: \{attr}");
 
           // add attribute
@@ -132,7 +132,7 @@ public class ReflectionMBeanBuilder
             builder.setter(method);
           }
         }
-        case DescriptorPair(null, var op) -> {
+        case DescriptorPair(var attr, var op) when attr == null -> {
           log.trace(STR."Processing operation descriptor: \{op}");
 
           // add operation

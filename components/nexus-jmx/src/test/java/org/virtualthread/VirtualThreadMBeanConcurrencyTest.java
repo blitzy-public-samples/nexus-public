@@ -81,7 +81,7 @@ public class VirtualThreadMBeanConcurrencyTest
    */
   @Test
   public void testConcurrentReadWithVirtualThreads() throws Exception {
-    log.info("Testing concurrent read operations with virtual threads");
+    logger.info("Testing concurrent read operations with virtual threads");
     
     // Set initial value
     managedObject.setName("initialValue");
@@ -112,7 +112,7 @@ public class VirtualThreadMBeanConcurrencyTest
             return true;
           }
           catch (Exception e) {
-            log.error("Error in virtual thread", e);
+            logger.error("Error in virtual thread", e);
             return false;
           }
           finally {
@@ -134,7 +134,7 @@ public class VirtualThreadMBeanConcurrencyTest
       long endTime = System.nanoTime();
       long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
       
-      log.info("Virtual threads read test completed in {} ms", durationMs);
+      logger.info("Virtual threads read test completed in {} ms", durationMs);
       
       // Verify all threads completed successfully
       assertThat("All threads should complete in time", completed, equalTo(true));
@@ -151,7 +151,7 @@ public class VirtualThreadMBeanConcurrencyTest
    */
   @Test
   public void testConcurrentWriteWithVirtualThreads() throws Exception {
-    log.info("Testing concurrent write operations with virtual threads");
+    logger.info("Testing concurrent write operations with virtual threads");
     
     // Create a countdown latch to synchronize thread start
     CountDownLatch startLatch = new CountDownLatch(1);
@@ -191,7 +191,7 @@ public class VirtualThreadMBeanConcurrencyTest
             return true;
           }
           catch (Exception e) {
-            log.error("Error in virtual thread", e);
+            logger.error("Error in virtual thread", e);
             return false;
           }
           finally {
@@ -213,7 +213,7 @@ public class VirtualThreadMBeanConcurrencyTest
       long endTime = System.nanoTime();
       long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
       
-      log.info("Virtual threads write test completed in {} ms", durationMs);
+      logger.info("Virtual threads write test completed in {} ms", durationMs);
       
       // Verify all threads completed successfully
       assertThat("All threads should complete in time", completed, equalTo(true));
@@ -233,7 +233,7 @@ public class VirtualThreadMBeanConcurrencyTest
    */
   @Test
   public void testConcurrentOperationInvocationWithVirtualThreads() throws Exception {
-    log.info("Testing concurrent operation invocation with virtual threads");
+    logger.info("Testing concurrent operation invocation with virtual threads");
     
     // Set initial value
     managedObject.setName("initialValue");
@@ -277,7 +277,7 @@ public class VirtualThreadMBeanConcurrencyTest
             return true;
           }
           catch (Exception e) {
-            log.error("Error in virtual thread", e);
+            logger.error("Error in virtual thread", e);
             return false;
           }
           finally {
@@ -299,7 +299,7 @@ public class VirtualThreadMBeanConcurrencyTest
       long endTime = System.nanoTime();
       long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
       
-      log.info("Virtual threads operation invocation test completed in {} ms", durationMs);
+      logger.info("Virtual threads operation invocation test completed in {} ms", durationMs);
       
       // Verify all threads completed successfully
       assertThat("All threads should complete in time", completed, equalTo(true));
@@ -319,7 +319,7 @@ public class VirtualThreadMBeanConcurrencyTest
    */
   @Test
   public void testCompareVirtualThreadsVsPlatformThreads() throws Exception {
-    log.info("Comparing virtual threads vs platform threads for JMX operations");
+    logger.info("Comparing virtual threads vs platform threads for JMX operations");
     
     // Number of threads for comparison (reduced for platform threads to avoid resource exhaustion)
     final int comparisonThreadCount = 500;
@@ -339,9 +339,9 @@ public class VirtualThreadMBeanConcurrencyTest
         operationsPerThread,
         "Platform Threads");
     
-    log.info("Performance comparison results:");
-    log.info("  Virtual Threads: {} ms", virtualThreadsDuration);
-    log.info("  Platform Threads: {} ms", platformThreadsDuration);
+    logger.info("Performance comparison results:");
+    logger.info("  Virtual Threads: {} ms", virtualThreadsDuration);
+    logger.info("  Platform Threads: {} ms", platformThreadsDuration);
     
     // Virtual threads should generally be more efficient for I/O-bound operations like JMX
     // However, the exact performance difference depends on many factors
@@ -398,7 +398,7 @@ public class VirtualThreadMBeanConcurrencyTest
             return true;
           }
           catch (Exception e) {
-            log.error("Error in {} thread", executorType, e);
+            logger.error("Error in {} thread", executorType, e);
             return false;
           }
           finally {
@@ -420,7 +420,7 @@ public class VirtualThreadMBeanConcurrencyTest
       long endTime = System.nanoTime();
       long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
       
-      log.info("{} test completed in {} ms", executorType, durationMs);
+      logger.info("{} test completed in {} ms", executorType, durationMs);
       
       // Verify all threads completed successfully
       assertThat("All threads should complete in time", completed, equalTo(true));
@@ -443,7 +443,7 @@ public class VirtualThreadMBeanConcurrencyTest
    */
   @Test
   public void testResourceUtilization() throws Exception {
-    log.info("Testing resource utilization of virtual threads vs platform threads");
+    logger.info("Testing resource utilization of virtual threads vs platform threads");
     
     // Number of threads for comparison
     final int resourceThreadCount = 1000;
@@ -495,9 +495,9 @@ public class VirtualThreadMBeanConcurrencyTest
     long afterVirtualThreads = getUsedMemory();
     long virtualThreadsMemory = afterVirtualThreads - beforeVirtualThreads;
     
-    log.info("Memory usage for {} threads:", resourceThreadCount);
-    log.info("  Platform threads: {} bytes", platformThreadsMemory);
-    log.info("  Virtual threads: {} bytes", virtualThreadsMemory);
+    logger.info("Memory usage for {} threads:", resourceThreadCount);
+    logger.info("  Platform threads: {} bytes", platformThreadsMemory);
+    logger.info("  Virtual threads: {} bytes", virtualThreadsMemory);
     
     // Virtual threads should use significantly less memory
     assertThat("Virtual threads should use less memory than platform threads",

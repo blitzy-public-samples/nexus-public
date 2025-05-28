@@ -28,8 +28,8 @@ import javax.management.MBeanServer;
 import javax.management.ObjectName;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -264,8 +264,8 @@ public class VirtualThreadJmxOperationsTest
     long virtualThreadOperations = testBean.getOperationCount();
     
     // Log the results
-    log.info("Platform Threads: {} operations in {} ms", platformThreadOperations, platformThreadDuration);
-    log.info("Virtual Threads: {} operations in {} ms", virtualThreadOperations, virtualThreadDuration);
+    logger.info("Platform Threads: {} operations in {} ms", platformThreadOperations, platformThreadDuration);
+    logger.info("Virtual Threads: {} operations in {} ms", virtualThreadOperations, virtualThreadDuration);
     
     // Virtual threads should complete all operations
     assertThat("Virtual threads should complete all operations", 
@@ -381,7 +381,7 @@ public class VirtualThreadJmxOperationsTest
       // Due to race conditions, the final value will be less than operationCount
       // but we can verify it's greater than zero and less than or equal to operationCount
       int finalValue = testBean.getValue();
-      log.info("Final value after {} concurrent increments: {}", operationCount, finalValue);
+      logger.info("Final value after {} concurrent increments: {}", operationCount, finalValue);
       
       assertThat("Final value should be greater than zero", 
           finalValue, is(greaterThan(0)));
@@ -489,7 +489,7 @@ public class VirtualThreadJmxOperationsTest
           } 
           catch (Exception e) {
             // Log but continue
-            log.error("Error during JMX operation", e);
+            logger.error("Error during JMX operation", e);
           } 
           finally {
             latch.countDown();
@@ -502,7 +502,7 @@ public class VirtualThreadJmxOperationsTest
       long endTime = System.currentTimeMillis();
       
       if (!completed) {
-        log.warn("Not all operations completed within timeout using {} threads", 
+        logger.warn("Not all operations completed within timeout using {} threads", 
             useVirtualThreads ? "virtual" : "platform");
       }
       

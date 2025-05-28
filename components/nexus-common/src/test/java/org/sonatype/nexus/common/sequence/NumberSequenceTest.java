@@ -13,10 +13,8 @@
 package org.sonatype.nexus.common.sequence;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.junit.Assert;
-import org.junit.Test;
 import org.junit.experimental.categories.Category;
 // Using both JUnit 4 and JUnit 5 Test annotations for compatibility
 import org.junit.jupiter.api.Test;
@@ -33,7 +31,6 @@ public class NumberSequenceTest
     extends TestSupport
 {
   @Test
-  @org.junit.jupiter.api.Test
   public void constantSequenceGeneratesExpectedValues() {
     long startValue = 10;
 
@@ -51,7 +48,6 @@ public class NumberSequenceTest
   }
 
   @Test
-  @org.junit.jupiter.api.Test
   public void linearSequenceGeneratesExpectedValues() {
     long startValue = 0;
 
@@ -75,7 +71,6 @@ public class NumberSequenceTest
   }
 
   @Test
-  @org.junit.jupiter.api.Test
   public void linearSequenceWithComplexParametersGeneratesExpectedValues() {
     long startValue = 0;
 
@@ -104,7 +99,6 @@ public class NumberSequenceTest
   }
 
   @Test
-  @org.junit.jupiter.api.Test
   public void fibonacciSequenceGeneratesExpectedValues() {
     int[] fibonacciNumbers = new int[]{1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233};
 
@@ -122,7 +116,6 @@ public class NumberSequenceTest
   }
 
   @Test
-  @org.junit.jupiter.api.Test
   public void customizedFibonacciSequenceGeneratesExpectedValues() {
     int[] fibonacciNumbers = new int[]{10, 10, 20, 30, 50, 80, 130, 210, 340, 550, 890, 1440, 2330};
 
@@ -156,7 +149,6 @@ public class NumberSequenceTest
   }
 
   @Test
-  @org.junit.jupiter.api.Test
   public void fibonacciSequenceSupportsBackwardTraversal() {
     int[] fibonacciNumbers = new int[]{10, 10, 20, 30, 50, 80, 130, 210, 340, 550, 890, 1440, 2330};
 
@@ -180,7 +172,6 @@ public class NumberSequenceTest
   }
 
   @Test
-  @org.junit.jupiter.api.Test
   public void lowerLimitNumberSequenceRespectsMinimumValue() {
     long startValue = 0;
 

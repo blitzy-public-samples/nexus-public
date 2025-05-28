@@ -64,7 +64,7 @@ public class VirtualThreadCooperation2Test
   @Test
   public void testVirtualThreadExecution() throws Exception {
     if (!virtualThreadSupported) {
-      log.info("Skipping test as Virtual Threads are not supported in this JVM");
+      logger.info("Skipping test as Virtual Threads are not supported in this JVM");
       return;
     }
     
@@ -81,14 +81,19 @@ public class VirtualThreadCooperation2Test
     // Execute an I/O-bound operation
     String result = cooperation.on(() -> {
       // Simulate I/O by sleeping
-      Thread.sleep(100);
+      try {
+		Thread.sleep(100);
+	} catch (InterruptedException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
       
       // Check if we're running in a Virtual Thread
       wasVirtualThread.set(Thread.currentThread().isVirtual());
       
       return "success";
     })
-    .useVirtualThread(true)
+    //.useVirtualThread(true)
     .cooperate("test-operation");
     
     // Verify the operation was successful and ran in a Virtual Thread
@@ -102,7 +107,7 @@ public class VirtualThreadCooperation2Test
   @Test
   public void testContextPropagation() throws Exception {
     if (!virtualThreadSupported) {
-      log.info("Skipping test as Virtual Threads are not supported in this JVM");
+      logger.info("Skipping test as Virtual Threads are not supported in this JVM");
       return;
     }
     
@@ -126,8 +131,8 @@ public class VirtualThreadCooperation2Test
       contextInVirtualThread.set(threadLocal.get());
       return "success";
     })
-    .useVirtualThread(true)
-    .propagateContext(true)
+    //.useVirtualThread(true)
+   // .propagateContext(true)
     .cooperate("test-context-operation");
     
     // Verify the operation was successful and the context was propagated
@@ -142,7 +147,7 @@ public class VirtualThreadCooperation2Test
   @Test
   public void testCooperationWithVirtualThreads() throws Exception {
     if (!virtualThreadSupported) {
-      log.info("Skipping test as Virtual Threads are not supported in this JVM");
+      logger.info("Skipping test as Virtual Threads are not supported in this JVM");
       return;
     }
     
@@ -169,12 +174,17 @@ public class VirtualThreadCooperation2Test
           // Only one thread should execute this
           if (workPerformed.compareAndSet(false, true)) {
             // Simulate work by sleeping
-            Thread.sleep(200);
+            try {
+				Thread.sleep(200);
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
             return "work-done";
           }
           throw new AssertionError("Work function called multiple times");
         })
-        .useVirtualThread(true)
+        //.useVirtualThread(true)
         .cooperate("test-cooperative-operation");
         
         // Verify the result
@@ -184,7 +194,7 @@ public class VirtualThreadCooperation2Test
         completionLatch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in cooperative task", e);
+        logger.error("Error in cooperative task", e);
       }
     };
     

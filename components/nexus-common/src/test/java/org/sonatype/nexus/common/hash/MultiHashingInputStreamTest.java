@@ -136,7 +136,7 @@ public class MultiHashingInputStreamTest
             }
           } 
           catch (Exception e) {
-            log.error("Error in virtual thread execution", e);
+            logger.error("Error in virtual thread execution", e);
           } 
           finally {
             latch.countDown();
@@ -178,8 +178,8 @@ public class MultiHashingInputStreamTest
     processBytesWithVirtualThreads(CONCURRENT_TASKS, LARGE_BYTE_ARRAY_SIZE);
     long durationVirtual = System.nanoTime() - startTimeVirtual;
     
-    log.info("Standard threads execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(durationStandard));
-    log.info("Virtual threads execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(durationVirtual));
+    logger.info("Standard threads execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(durationStandard));
+    logger.info("Virtual threads execution time: {} ms", TimeUnit.NANOSECONDS.toMillis(durationVirtual));
     
     // For I/O bound operations, virtual threads should generally perform better
     // However, this is a simple test and might not always show significant differences
@@ -228,7 +228,7 @@ public class MultiHashingInputStreamTest
           assertThat(hashCode.toString().length(), is(128));
         } 
         catch (Exception e) {
-          log.error("Error processing large data volume", e);
+          logger.error("Error processing large data volume", e);
           throw new RuntimeException(e);
         }
       }).get(60, TimeUnit.SECONDS); // Wait for completion with timeout
@@ -249,7 +249,7 @@ public class MultiHashingInputStreamTest
             createAndUseHashingStream(bytes);
           } 
           catch (Exception e) {
-            log.error("Error in standard thread execution", e);
+            logger.error("Error in standard thread execution", e);
           } 
           finally {
             latch.countDown();
@@ -275,7 +275,7 @@ public class MultiHashingInputStreamTest
             createAndUseHashingStream(bytes);
           } 
           catch (Exception e) {
-            log.error("Error in virtual thread execution", e);
+            logger.error("Error in virtual thread execution", e);
           } 
           finally {
             latch.countDown();

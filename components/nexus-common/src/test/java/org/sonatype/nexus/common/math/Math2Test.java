@@ -12,16 +12,17 @@
  */
 package org.sonatype.nexus.common.math;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
-
+import org.junit.jupiter.api.Tag;
+import org.sonatype.goodies.testsupport.TestSupport;
 /**
  * Tests for {@link Math2}
  */
-@Category(Java21TestGroup.class)
+@Tag("Java21TestGroup")
 public class Math2Test
     extends TestSupport
 {

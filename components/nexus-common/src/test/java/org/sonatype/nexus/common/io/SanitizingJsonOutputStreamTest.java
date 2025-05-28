@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Resources;

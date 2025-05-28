@@ -79,7 +79,7 @@ public class DryRunPrefix
    * @return a StringTemplate processor that prepends the dry-run prefix
    * @since 3.60
    */
-  public Processor<String> asProcessor() {
+  public Processor<String, RuntimeException> asProcessor() {
     return template -> {
       StringBuilder result = new StringBuilder(prefix);
       int fragmentCount = template.fragments().size();

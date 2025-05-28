@@ -15,7 +15,7 @@ package org.sonatype.nexus.common.template;
 import java.util.stream.Stream;
 
 import org.sonatype.nexus.common.encoding.EncodingUtil;
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang3.StringEscapeUtils;
 
 import static java.lang.StringTemplate.STR;
 import static java.util.stream.Collectors.joining;
@@ -29,7 +29,7 @@ import static java.util.stream.Collectors.joining;
 public class EscapeHelper
 {
   public String html(final String value) {
-    return StringEscapeUtils.escapeHtml(value);
+    return StringEscapeUtils.escapeHtml4(value);
   }
 
   public String html(final Object value) {

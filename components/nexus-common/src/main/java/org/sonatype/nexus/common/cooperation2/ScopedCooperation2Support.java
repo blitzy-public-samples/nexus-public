@@ -242,5 +242,11 @@ public abstract class ScopedCooperation2Support
         throw e.getCause();
       }
     }
+
+	@Override
+	public Builder<R> useVirtualThreads(boolean useVirtualThreads) {
+		this.useVirtualThreads = useVirtualThreads;
+		return this;
+	}
   }
 }

@@ -192,12 +192,13 @@ public class ReflectionMBeanOperation
       MBeanParameterInfo[] result = new MBeanParameterInfo[parameters.length];
       for (int i = 0; i < parameters.length; i++) {
         // Use record pattern to extract parameter information
-        if (parameters[i] instanceof Parameter(String name, int modifiers, Class<?> type, boolean namePresent)) {
+        if (parameters[i] instanceof Parameter param) {
+        	// Parameter(String name, int modifiers, Class<?> type, boolean namePresent)
           Descriptor descriptor = DescriptorHelper.build(annotations[i]);
           String paramDescription = DescriptorHelper.stringValue(descriptor, "description");
           
           // Use the parameter name if available, otherwise generate a default name
-          String paramName = namePresent ? name : "arg" + i;
+          String paramName = param.isNamePresent() ? param.getName() : "arg" + i;
           
           result[i] = new MBeanParameterInfo(
               paramName,

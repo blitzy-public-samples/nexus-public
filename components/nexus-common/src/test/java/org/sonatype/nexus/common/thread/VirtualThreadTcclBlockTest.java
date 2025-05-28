@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import org.junit.Test;
@@ -35,7 +34,7 @@ import static org.hamcrest.Matchers.sameInstance;
 /**
  * Tests for {@link TcclBlock} with Java 21 Virtual Threads.
  */
-@Category({Java21TestGroup.class, VirtualThreadTestGroup.class})
+@Category({org.sonatype.nexus.content.testsuite.groups.Java21TestGroup.class, VirtualThreadTestGroup.class})
 public class VirtualThreadTcclBlockTest
     extends TestSupport
 {
@@ -70,7 +69,7 @@ public class VirtualThreadTcclBlockTest
         testCompleted.set(true);
       }
       catch (Exception e) {
-        log.error("Error in virtual thread test", e);
+        logger.error("Error in virtual thread test", e);
       }
     });
     
@@ -121,7 +120,7 @@ public class VirtualThreadTcclBlockTest
             // Verify the ClassLoader was correctly set
             ClassLoader currentClassLoader = Thread.currentThread().getContextClassLoader();
             if (currentClassLoader != customClassLoader) {
-              log.error("ClassLoader not correctly set in virtual thread");
+              logger.error("ClassLoader not correctly set in virtual thread");
               hasErrors.set(true);
             }
             
@@ -132,12 +131,12 @@ public class VirtualThreadTcclBlockTest
           // Verify the ClassLoader was correctly restored
           ClassLoader restoredClassLoader = Thread.currentThread().getContextClassLoader();
           if (restoredClassLoader != originalClassLoader) {
-            log.error("ClassLoader not correctly restored in virtual thread");
+            logger.error("ClassLoader not correctly restored in virtual thread");
             hasErrors.set(true);
           }
         }
         catch (Exception e) {
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
           hasErrors.set(true);
         }
         finally {
@@ -206,7 +205,7 @@ public class VirtualThreadTcclBlockTest
             }
           }
           catch (ClassNotFoundException e) {
-            log.error("Error loading class", e);
+            logger.error("Error loading class", e);
           }
         }
         
@@ -215,7 +214,7 @@ public class VirtualThreadTcclBlockTest
         testCompleted.set(true);
       }
       catch (Exception e) {
-        log.error("Error in virtual thread test", e);
+        logger.error("Error in virtual thread test", e);
       }
     });
     

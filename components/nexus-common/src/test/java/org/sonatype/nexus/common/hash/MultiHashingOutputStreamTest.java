@@ -22,8 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.hash.HashCode;
@@ -139,7 +138,7 @@ public class MultiHashingOutputStreamTest
   }
   
   @Test
-  @Category(VirtualThreadTestGroup.class)
+  @Category(org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup.class)
   public void shouldWorkCorrectlyWithVirtualThreads() throws Exception {
     // Create a virtual thread executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {

@@ -12,6 +12,18 @@
  */
 package org.sonatype.nexus.common.io;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.not;
+import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.exists;
+import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isDirectory;
+import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isEmptyDirectory;
+import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isFile;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileSystemException;
@@ -27,35 +39,22 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nullable;
 
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
-
-import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.jupiter.api.Tag;
 import org.junit.rules.TemporaryFolder;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.not;
-import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.exists;
-import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isDirectory;
-import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isEmptyDirectory;
-import static org.sonatype.goodies.testsupport.hamcrest.FileMatchers.isFile;
+import com.google.common.base.Function;
+import com.google.common.base.Predicate;
+import com.google.common.collect.Lists;
 
 /**
  * Tests for {@link DirectoryHelper}.
@@ -402,11 +401,32 @@ public class DirectoryHelperTest
   }
   
   /**
+   * Determines if the current JVM supports Virtual Threads (Java 21+).
+   * 
+   * <p>This method checks for the presence of the {@code Thread.ofVirtual()} method,
+   * which is the primary API for creating Virtual Threads in Java 21 and later.</p>
+   * 
+   * <p>Virtual Threads are lightweight threads that dramatically reduce the effort of writing,
+   * maintaining, and debugging high-throughput concurrent applications. They are particularly
+   * beneficial for I/O-bound operations where threads spend significant time waiting.</p>
+   * 
+   * @return true if Virtual Threads are supported, false otherwise
+   */
+  private static boolean isVirtualThreadSupported() {
+    try {
+      // Check if Thread class has the ofVirtual method (Java 21+)
+      Thread.class.getMethod("ofVirtual");
+      return true;
+    } catch (NoSuchMethodException e) {
+      return false;
+    }
+  }
+  /**
    * Tests directory operations with Virtual Threads to ensure they work correctly
    * in a concurrent environment with the new Java 21 threading model.
    */
   @Test
-  @Category(VirtualThreadTestGroup.class)
+  @Tag("VirtualThreadTestGroup")
   public void parallelDirectoryOperationsWithVirtualThreadsWork() throws Exception {
     // Skip test if Virtual Threads are not supported
     VirtualThreadTestSupport.assumeVirtualThreadSupported();
@@ -502,7 +522,7 @@ public class DirectoryHelperTest
    * negatively impact performance with Virtual Threads.
    */
   @Test
-  @Category(org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup.class)
+  @Tag("VirtualThreadTestGroup")
   public void directoryOperationsDoNotCauseThreadPinning() throws Exception {
     // Skip test if Virtual Threads are not supported
     VirtualThreadTestSupport.assumeVirtualThreadSupported();
@@ -560,7 +580,7 @@ public class DirectoryHelperTest
    * Virtual Threads versus Platform Threads.
    */
   @Test
-  @Category(VirtualThreadTestGroup.class)
+  @Tag("VirtualThreadTestGroup")
   public void directoryOperationsPerformanceWithVirtualThreads() throws Exception {
     // Skip test if Virtual Threads are not supported
     VirtualThreadTestSupport.assumeVirtualThreadSupported();

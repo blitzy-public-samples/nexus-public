@@ -27,8 +27,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.sonatype.nexus.common.thread.Java21TestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 
 import com.google.common.hash.HashCode;
 import com.google.common.io.ByteStreams;
@@ -253,7 +253,7 @@ public class ParallelMultiHashingInputStreamTest
     
     try {
       final ParallelMultiHashingInputStream hashingStream = new ParallelMultiHashingInputStream(
-          algorithms, new ByteArrayInputStream(bytes), virtualThreadExecutor);
+          algorithms, new ByteArrayInputStream(bytes));
 
       ByteStreams.copy(hashingStream, ByteStreams.nullOutputStream());
       return hashingStream;
@@ -269,7 +269,7 @@ public class ParallelMultiHashingInputStreamTest
       long startTime = System.nanoTime();
       
       final ParallelMultiHashingInputStream hashingStream = new ParallelMultiHashingInputStream(
-          Arrays.asList(HashAlgorithm.SHA512), new ByteArrayInputStream(data), virtualThreadExecutor);
+          Arrays.asList(HashAlgorithm.SHA512), new ByteArrayInputStream(data));
 
       ByteStreams.copy(hashingStream, ByteStreams.nullOutputStream());
       

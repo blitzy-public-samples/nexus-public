@@ -155,7 +155,7 @@ public class DescriptorHelper
    * Thrown when @DescriptorKey type coercion fails.
    */
   @VisibleForTesting
-  static class InvalidDescriptorKeyException
+  public static class InvalidDescriptorKeyException
       extends RuntimeException
   {
     public InvalidDescriptorKeyException(final DescriptorKey key, final Annotation annotation, final Method method) {
@@ -169,7 +169,7 @@ public class DescriptorHelper
    * Leverages Java 21's improved reflection API for better performance.
    */
   @VisibleForTesting
-  static List<Annotation> findAllAnnotations(final Annotation... annotations) {
+  public static List<Annotation> findAllAnnotations(final Annotation... annotations) {
     Set<Annotation> visited = Sets.newHashSet();
     List<Annotation> found = Lists.newArrayList();
     visitAnnotations(visited, found, annotations);

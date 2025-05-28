@@ -23,42 +23,42 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *
  * @since 3.0
  */
-public record DetachedEntityId(@Nonnull String value)
-    implements EntityId, Serializable
-{
-  private static final long serialVersionUID = 1L;
+public record DetachedEntityId(@Nonnull String value) implements EntityId, Serializable {
+	private static final long serialVersionUID = 1L;
 
-  /**
-   * Creates a new detached entity ID with the given value.
-   *
-   * @param value the entity ID value (must not be null)
-   */
-  public DetachedEntityId {
-    this.value = checkNotNull(value);
-  }
+	/**
+	 * Creates a new detached entity ID with the given value.
+	 *
+	 * @param value the entity ID value (must not be null)
+	 */
+	public DetachedEntityId {
+		checkNotNull(value);
+	}
 
-  @Override
-  public boolean equals(final Object o) {
-    if (this == o) {
-      return true;
-    }
-    else if (!(o instanceof EntityId)) {
-      return false;
-    }
+	@Override
+	public boolean equals(final Object o) {
+		if (this == o) {
+			return true;
+		} else if (!(o instanceof EntityId)) {
+			return false;
+		}
 
-    EntityId that = (EntityId) o;
-    return getValue().equals(that.getValue());
-  }
+		EntityId that = (EntityId) o;
+		return getValue().equals(that.getValue());
+	}
 
-  @Override
-  public int hashCode() {
-    return getValue().hashCode();
-  }
+	@Override
+	public int hashCode() {
+		return getValue().hashCode();
+	}
 
-  @Override
-  public String toString() {
-    return getClass().getSimpleName() + "{" +
-        "value='" + value + '\'' +
-        '}';
-  }
+	@Override
+	public String toString() {
+		return getClass().getSimpleName() + "{" + "value='" + value + '\'' + '}';
+	}
+
+	@Override
+	public String getValue() {
+		return this.value;
+	}
 }

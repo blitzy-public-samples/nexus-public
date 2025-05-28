@@ -1501,6 +1501,7 @@ owners.
 										<exclude>javax.xml.bind:jaxb-api:*</exclude>
 										<exclude>com.sun.xml.bind:jaxb-core:*</exclude>
 										<exclude>com.sun.xml.bind:jaxb-impl:*</exclude>
+										<exclude>javax.inject:javax.inject</exclude>
 									</excludes>
 
 									<!--
@@ -1517,6 +1518,7 @@ owners.
                     -->
 										<include>org.hamcrest:*:1.3</include>
 									</includes>
+									<searchTransitive>true</searchTransitive>
 								</bannedDependencies>
 							</rules>
 						</configuration>

@@ -57,13 +57,13 @@ public class TaskLogCleanup
 
     if (taskLogsHome == null) {
       // we are forgiving if the task logs home is not defined. Just log a message with a call to action.
-      log.warn(STR."Unable to cleanup task log files. Please check that the 'tasklogfile' appender exists in logback.xml");
+      log.warn("Unable to cleanup task log files. Please check that the 'tasklogfile' appender exists in logback.xml");
       return;
     }
 
     File logFilesHome = new File(taskLogsHome);
 
-    log.info(STR."Cleaning up log files in \{logFilesHome.getAbsolutePath()} older than \{numberOfDays} days");
+    log.info("Cleaning up log files in " + logFilesHome.getAbsolutePath() + " older than " + numberOfDays + " days");
 
     LocalDate now = LocalDate.now().minusDays(numberOfDays);
     var thresholdDate = now.atStartOfDay(ZoneId.systemDefault()).toInstant();
@@ -76,10 +76,10 @@ public class TaskLogCleanup
         executor.submit(() -> {
           try {
             forceDelete(file);
-            log.info(STR."Removed task log file \{file}");
+            log.info("Removed task log file " + file);
           }
           catch (IOException e) { // NOSONAR
-            log.error(STR."Unable to delete task file \{file}. Message was \{e.getMessage()}.");
+            log.error("Unable to delete task file " + file + ". Message was " + e.getMessage() + ".");
           }
         });
       });
@@ -94,3 +94,4 @@ public class TaskLogCleanup
     return taskLogHome;
   }
 }
+

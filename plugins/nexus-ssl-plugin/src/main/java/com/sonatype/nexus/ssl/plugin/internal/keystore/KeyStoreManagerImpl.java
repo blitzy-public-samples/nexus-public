@@ -61,7 +61,7 @@ public class KeyStoreManagerImpl
       @Named(NAME) final KeyStoreManagerConfiguration config)
   {
     super(crypto, storageManager, config);
-    log.info(STR."Initialized SSL KeyStoreManager with Java 21 optimizations for \{NAME}");
+    log.info("Initialized SSL KeyStoreManager with Java 21 optimizations for " + NAME);
   }
   
   /**

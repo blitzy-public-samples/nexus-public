@@ -108,10 +108,11 @@ public class CleanupPolicyRule
             cleanupPolicyStorageProvider.get().remove(cleanupPolicy);
           }
           catch (Exception e) {
-            log.error(STR."Failed to remove CleanupPolicy \{cleanupPolicy}", e);
+            log.error("Failed to remove CleanupPolicy " + cleanupPolicy, e);
           }
         });
       }
     } // executor is auto-closed here, and we wait for all tasks to complete
   }
 }
+

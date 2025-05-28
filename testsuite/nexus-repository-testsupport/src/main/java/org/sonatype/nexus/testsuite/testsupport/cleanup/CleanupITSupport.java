@@ -483,7 +483,7 @@ public class CleanupITSupport
     for (String versionKept : versionsOfComponentsToKeep) {
       assertTrue(componentAssetTestHelper.componentExistsWithAssetPathMatching(repository,
           componentMatchesByVersion(versionKept)), 
-          STR."Component with version \{versionKept} should exist but was not found");
+          "Component with version " + versionKept + " should exist but was not found");
     }
   }
 
@@ -629,7 +629,7 @@ public class CleanupITSupport
     for (String name: endNameVersionsMap.keySet()) {
       for (String version: endNameVersionsMap.get(name)) {
         assertTrue(componentAssetTestHelper.componentExists(repository, name, version),
-                STR."Component does not exist in (\{components}): \{name}:\{version}");
+                "Component does not exist in (" + components + "): " + name + ":" + version);
       }
     }
   }
@@ -660,7 +660,7 @@ public class CleanupITSupport
     int versionCount = lastMajorVersion - firstMajorVersion + 1;
     String[] versions = new String[versionCount];
     for (int i = 0; i < versionCount; i++) {
-      versions[i] = STR."\{firstMajorVersion + i}.0.0";
+      versions[i] = (firstMajorVersion + i) + ".0.0";
     }
     return versions;
   }
@@ -669,3 +669,4 @@ public class CleanupITSupport
     return RandomStringUtils.random(5, "abcdefghijklmnopqrstuvwxyz".toCharArray());
   }
 }
+

@@ -140,7 +140,7 @@ public class CertificateApiResource
     catch (Exception e) {
       log.error("An error occurred retrieving certificates", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error retrieving certificates: \{e.getMessage()}");
-    }
+    }00
   }
 
   @Override

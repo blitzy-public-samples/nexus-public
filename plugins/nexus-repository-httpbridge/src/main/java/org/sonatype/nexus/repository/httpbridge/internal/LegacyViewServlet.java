@@ -93,7 +93,7 @@ public class LegacyViewServlet
           return processFormatSpecificUri(request, response);
         }
         catch (Exception e) {
-          log.error(STR."Error processing format-specific URI: {e.getMessage()}", e);
+          log.error("Error processing format-specific URI: " + e.getMessage(), e);
           throw new RuntimeException(e);
         }
       }).join();

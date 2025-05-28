@@ -394,7 +394,7 @@ public class SecurityRule implements BeforeEachCallback, AfterEachCallback
     if (privileges.size() != privilegeNames.length) {
       String privilegeNamesStr = Arrays.stream(privilegeNames).collect(Collectors.joining(", "));
       throw new IllegalStateException(
-          STR."Missing privileges names: \{privilegeNamesStr} privileges: \{privileges}");
+          "Missing privileges names: " + privilegeNamesStr + " privileges: " + privileges);
     }
 
     List<Role> roles = Arrays.stream(roleIds)
@@ -404,7 +404,7 @@ public class SecurityRule implements BeforeEachCallback, AfterEachCallback
 
     if (roles.size() != roleIds.length) {
       String roleIdsStr = Arrays.stream(roleIds).collect(Collectors.joining(", "));
-      throw new IllegalStateException(STR."Missing role IDs: \{roleIdsStr} roles: \{roles}");
+      throw new IllegalStateException("Missing role IDs: " + roleIdsStr + " roles: " + roles);
     }
 
     return createRole(name, roles, privileges);
@@ -655,3 +655,4 @@ public class SecurityRule implements BeforeEachCallback, AfterEachCallback
     realmManagerProvider.get().enableRealm(roleRealmName);
   }
 }
+

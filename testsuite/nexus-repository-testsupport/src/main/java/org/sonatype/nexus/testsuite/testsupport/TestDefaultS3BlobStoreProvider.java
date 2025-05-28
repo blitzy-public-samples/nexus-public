@@ -154,7 +154,7 @@ public class TestDefaultS3BlobStoreProvider
                   .waitingFor(Wait.forListeningPort());
 
               s3MockContainer.start();
-              endpoint = STR."http://localhost:\{s3MockContainer.getMappedPort(9090)}/";
+              endpoint = "http://localhost:" + s3MockContainer.getMappedPort(9090) + "/";
             }).get(); // Wait for container to start
           }
         }
@@ -237,3 +237,4 @@ public class TestDefaultS3BlobStoreProvider
     }
   }
 }
+

@@ -90,7 +90,7 @@ public class CertificateComponent
       CompletableFuture<Certificate[]> future = new CompletableFuture<>();
       
       // Create and start a virtual thread for the certificate retrieval operation
-      Thread.ofVirtual().name(STR."certificate-retriever-\{host}-\{port}").start(() -> {
+      Thread.ofVirtual().name("certificate-retriever-" + host + "-" + port).start(() -> {
         try {
           future.complete(certificateRetriever.retrieveCertificates(host, port, protocolHint));
         }
@@ -107,11 +107,11 @@ public class CertificateComponent
       String errorMessage;
       
       if (cause instanceof UnknownHostException) {
-        errorMessage = STR."Unknown host \{host}";
+        errorMessage = "Unknown host " + host;
       } else {
         errorMessage = cause.getMessage();
         if (errorMessage == null || errorMessage.isEmpty()) {
-          errorMessage = STR."Error retrieving certificate from \{host}: \{cause.getClass().getSimpleName()}";
+          errorMessage = "Error retrieving certificate from " + host + ": " + cause.getClass().getSimpleName();
         }
       }
       
@@ -120,42 +120,4 @@ public class CertificateComponent
     catch (Exception e) {
       String errorMessage = e.getMessage();
       if (errorMessage == null || errorMessage.isEmpty()) {
-        errorMessage = STR."Unexpected error retrieving certificate from \{host}: \{e.getClass().getSimpleName()}";
-      }
-      throw new IOException(errorMessage, e);
-    }
-    
-    if (chain == null || chain.length == 0) {
-      int actualPort = port == null ? 443 : port;
-      throw new IOException(STR."Could not retrieve an SSL certificate from '\{host}:\{actualPort}'");
-    }
-    
-    return asCertificateXO(chain[0], isInTrustStore(chain[0]));
-  }
-
-  /**
-   * Retrieves certificate given a certificate pem.
-   *
-   * @param pem certificate in PEM format
-   * @return certificate
-   */
-  @DirectMethod
-  @Timed
-  @ExceptionMetered
-  @Validate
-  @RequiresAuthentication
-  @RequiresPermissions("nexus:ssl-truststore:read")
-  public CertificateXO details(final @NotBlank @PemCertificate String pem) throws Exception {
-    Certificate certificate = decodePEMFormattedCertificate(pem);
-    return asCertificateXO(certificate, isInTrustStore(certificate));
-  }
-
-  boolean isInTrustStore(final Certificate certificate) {
-    try {
-      return trustStore.getTrustedCertificate(calculateFingerprint(certificate)) != null;
-    }
-    catch (Exception ignore) {
-      return false;
-    }
-  }
-}
+        errorMessage = "Unexpected error retrieving certificate from " + host + ": " + e.getClass().getSimple

@@ -95,7 +95,7 @@ public abstract class NexusClientFactory<T extends FormatClientSupport>
     // Configure authentication with pattern matching for host validation
     var host = repositoryUrl.getHost();
     if (host == null || host.isEmpty()) {
-      log.warn(STR."Invalid repository URL: \{repositoryUrl} - missing host");
+      log.warn("Invalid repository URL: " + repositoryUrl + " - missing host");
       return null;
     }
     
@@ -140,22 +140,6 @@ public abstract class NexusClientFactory<T extends FormatClientSupport>
         ).get(VIRTUAL_THREAD_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
       }
       catch (InterruptedException | ExecutionException | TimeoutException e) {
-        log.warn(STR."Virtual thread execution failed for \{repositoryUrl}: \{e.getMessage()}", e);
+        log.warn("Virtual thread execution failed for " + repositoryUrl + ": " + e.getMessage(), e);
         Thread.currentThread().interrupt(); // Preserve interrupt status
-        // Fall back to direct execution if virtual thread fails
-        return createClient(httpClient, httpClientContext, repositoryUrl.toURI());
-      }
-      finally {
-        executor.shutdown();
-      }
-    }
-    catch (URISyntaxException e) {
-      log.warn(STR."URI exception creating client for \{repositoryUrl}: \{e.getMessage()}", e);
-    }
-    catch (Exception e) {
-      log.warn(STR."Unexpected error creating client for \{repositoryUrl}: \{e.getMessage()}", e);
-    }
-
-    return null;
-  }
-}
+        // Fall

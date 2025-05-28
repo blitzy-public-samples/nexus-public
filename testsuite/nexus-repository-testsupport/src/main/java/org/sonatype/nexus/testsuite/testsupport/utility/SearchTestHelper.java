@@ -90,7 +90,7 @@ public class SearchTestHelper
   {
     String repositoryName = repository.getName();
     List<Map<String, Object>> items = searchForComponent(nexusSearchWebTarget, repositoryName, name, version);
-    assertThat(STR."Component \{name}:\{version} existence check", items.size(), is(exists ? 1 : 0));
+    assertThat("Component " + name + ":" + version + " existence check", items.size(), is(exists ? 1 : 0));
   }
 
   /**
@@ -158,3 +158,4 @@ public class SearchTestHelper
     return (List<Map<String, Object>>) map.get("items");
   }
 }
+

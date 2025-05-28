@@ -146,9 +146,10 @@ public class CleanupTestSystem
         } catch (Exception e) {
           // Log and continue with other removals
           Thread.currentThread().interrupt();
-          throw new RuntimeException(STR."Failed to remove cleanup policy: \{e.getMessage()}", e);
+          throw new RuntimeException("Failed to remove cleanup policy: " + e.getMessage(), e);
         }
       }
     }
   }
 }
+

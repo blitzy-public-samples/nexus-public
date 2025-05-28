@@ -69,7 +69,7 @@ public abstract class FormatClientITSupport
   public static Option[] configureNexus() {
     return options(RepositoryITSupport.configureNexus(),
         nexusFeature("org.sonatype.nexus.testsuite", "nexus-docker-testsupport"),
-        withHttps(resolveBaseFile(STR."target/it-resources/ssl/\{DOCKER_HOST_NAME}.jks")));
+        withHttps(resolveBaseFile("target/it-resources/ssl/" + DOCKER_HOST_NAME + ".jks")));
   }
 
   /**
@@ -227,7 +227,7 @@ public abstract class FormatClientITSupport
       repoUrl = repoUrl.replaceAll("localhost", findLocalHostAddress());
     }
     catch (Exception e) {
-      throw new RuntimeException(STR."Unable to get Repo URL: \{e.getMessage()}", e);
+      throw new RuntimeException("Unable to get Repo URL: " + e.getMessage(), e);
     }
 
     return repoUrl;
@@ -253,7 +253,7 @@ public abstract class FormatClientITSupport
    * @return String with Repo URL path
    */
   protected String getRepoUrl(final URL url, final String repoName) {
-    return resolveUrl(url, STR."/repository/\{repoName}/").toString();
+    return resolveUrl(url, "/repository/" + repoName + "/").toString();
   }
 
   /**
@@ -263,6 +263,7 @@ public abstract class FormatClientITSupport
    * @return String containing the absolute path to given file in the {@link #rootTemporaryFolder}
    */
   protected String fromRoot(final String fileName) {
-    return STR."\{rootTemporaryFolder}/\{fileName}";
+    return rootTemporaryFolder + "/" + fileName;
   }
 }
+

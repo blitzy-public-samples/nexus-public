@@ -156,7 +156,7 @@ public class DockerContainerClientTestIT
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Submit multiple concurrent commands
       for (int i = 0; i < commandCount; i++) {
-        final String command = STR."echo 'Virtual Thread Test \{i}'";
+        final String command = "echo 'Virtual Thread Test " + i + "'";
         CompletableFuture.runAsync(() -> {
           try {
             Optional<ExecResult> result = underTest.exec(command);
@@ -169,7 +169,7 @@ public class DockerContainerClientTestIT
             }
           } catch (Exception e) {
             synchronized (failedCommands) {
-              failedCommands.add(STR."\{command} (Exception: \{e.getMessage()})";
+              failedCommands.add(command + " (Exception: " + e.getMessage() + ")");
             }
           } finally {
             latch.countDown();
@@ -182,7 +182,7 @@ public class DockerContainerClientTestIT
       
       // Verify results
       assertEquals(commandCount, successCount.get(), 
-          STR."Expected all \{commandCount} commands to succeed, but \{failedCommands.size()} failed: \{failedCommands}");
+          "Expected all " + commandCount + " commands to succeed, but " + failedCommands.size() + " failed: " + failedCommands);
     }
   }
   
@@ -221,9 +221,9 @@ public class DockerContainerClientTestIT
     });
     
     // Log and assert results
-    System.out.println(STR."Platform thread execution time: \{platformThreadTime}ms");
-    System.out.println(STR."Virtual thread execution time: \{virtualThreadTime}ms");
-    
+    System.out.println("Platform thread execution time: " + platformThreadTime + "ms");
+    System.out.println("Virtual thread execution time: " + virtualThreadTime + "ms");
+
     // Virtual threads should generally be more efficient for I/O-bound operations
     // but we don't make this a hard assertion as it depends on the environment
     assertThat("Virtual threads should handle more concurrent I/O operations efficiently", 
@@ -255,7 +255,7 @@ public class DockerContainerClientTestIT
         CompletableFuture.runAsync(() -> {
           try {
             // Simple echo command with unique index
-            Optional<ExecResult> result = underTest.exec(STR."echo 'Scalability Test \{index}'";
+            Optional<ExecResult> result = underTest.exec("echo 'Scalability Test " + index + "'");
             if (result.isPresent() && result.get().getExitCode() == 0) {
               successCount.incrementAndGet();
             }
@@ -270,7 +270,7 @@ public class DockerContainerClientTestIT
       
       // Verify that most commands succeeded (allow for some failures in case of resource constraints)
       int minimumSuccessCount = (int)(commandCount * 0.9); // 90% success rate
-      assertThat(STR."Expected at least \{minimumSuccessCount} of \{commandCount} commands to succeed",
+      assertThat("Expected at least " + minimumSuccessCount + " of " + commandCount + " commands to succeed",
           successCount.get(), greaterThan(minimumSuccessCount));
     }
   }

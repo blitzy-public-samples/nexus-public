@@ -60,15 +60,15 @@ public class HostnameOrIpAddressValidator
     return switch (value) {
       case null -> "Hostname or IP address cannot be null";
       case "" -> "Hostname or IP address cannot be empty";
-      case String s when s.contains(" ") -> STR."\{s} is invalid: Hostname or IP address cannot contain spaces";
-      case String s when s.startsWith("-") || s.endsWith("-") -> 
-          STR."\{s} is invalid: Hostname cannot start or end with a hyphen";
-      case String s when s.contains(":") && !isValidIpv6Format(s) -> 
-          STR."\{s} is invalid: Not a valid IPv6 address format";
-      case String s when containsIpv4Characters(s) && !InetAddresses.isInetAddress(s) -> 
-          STR."\{s} is invalid: Not a valid IPv4 address format";
-      case String s when !InternetDomainName.isValid(s) -> 
-          STR."\{s} is invalid: Not a valid hostname format";
+      case String s when s.contains(" ") -> s + " is invalid: Hostname or IP address cannot contain spaces";
+      case String s when s.startsWith("-") || s.endsWith("-") ->
+          s + " is invalid: Hostname cannot start or end with a hyphen";
+      case String s when s.contains(":") && !isValidIpv6Format(s) ->
+          s + " is invalid: Not a valid IPv6 address format";
+      case String s when containsIpv4Characters(s) && !InetAddresses.isInetAddress(s) ->
+          s + " is invalid: Not a valid IPv4 address format";
+      case String s when !InternetDomainName.isValid(s) ->
+          s + " is invalid: Not a valid hostname format";
       default -> "Invalid hostname or IP address format";
     };
   }
@@ -94,3 +94,4 @@ public class HostnameOrIpAddressValidator
     return value.contains(":") && value.matches("^[0-9a-fA-F:]+$");
   }
 }
+

@@ -93,8 +93,8 @@ public class AuditCapability
   protected String renderDescription() {
     // Using Java 21 String Template for status message
     return context().isActive() 
-        ? STR."\{messages.enabled()}"
-        : STR."\{messages.disabled()}";
+        ? messages.enabled()
+        : messages.disabled();
   }
 
   @Override
@@ -180,3 +180,4 @@ public class AuditCapability
     }
   }
 }
+

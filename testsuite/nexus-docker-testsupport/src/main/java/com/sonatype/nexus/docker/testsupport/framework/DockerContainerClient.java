@@ -161,7 +161,7 @@ public class DockerContainerClient
     // Use CompletableFuture with virtual threads for I/O operations
     CompletableFuture.runAsync(() -> {
       dockerClient.copyFileFromContainer(fromContainerPath, toLocal.getAbsolutePath());
-      log.debug(STR."Downloaded file from \{fromContainerPath} to \{toLocal.getAbsolutePath()}");
+      log.debug("Downloaded file from " + fromContainerPath + " to " + toLocal.getAbsolutePath());
     }, virtualThreadExecutor).join();
   }
 
@@ -175,14 +175,14 @@ public class DockerContainerClient
   {
     var image = config.getImage();
     if (startedContainer == null) {
-      log.warn(STR."Attempting to exec commands '\{commands}' for image '\{image}' which is not started");
+      log.warn("Attempting to exec commands '" + commands + "' for image '" + image + "' which is not started");
       return Optional.empty();
     }
 
     var containerId = startedContainer.getId();
     var shortId = left(containerId, SHORT_ID_LENGTH);
 
-    log.info(STR."Attempting to exec commands '\{commands}' in container '\{shortId}' for image '\{image}'");
+    log.info("Attempting to exec commands '" + commands + "' in container '" + shortId + "' for image '" + image + "'");
 
     try {
       // Use CompletableFuture with virtual threads for I/O operations
@@ -192,27 +192,27 @@ public class DockerContainerClient
               return dockerClient.execInContainer(cmd(commands));
             }
             catch (IOException | InterruptedException e) {
-              throw new RuntimeException(STR."Failed to execute command: \{commands}", e);
+              throw new RuntimeException("Failed to execute command: " + commands, e);
             }
           },
           virtualThreadExecutor
       ).join();
       
-      log.debug(STR."$ \{commands}");
+      log.debug("$ " + commands);
       String stderr = execResult.getStderr();
 
-      log.debug(STR."Output of command '\{commands}' in container '\{shortId}' for image '\{image}' was:\n\{execResult}");
+      log.debug("Output of command '" + commands + "' in container '" + shortId + "' for image '" + image + "' was:\n" + execResult);
       if (!stderr.isEmpty() && execResult.getExitCode() != 0) {
-        log.error(STR."Failed exec commands '\{commands}' in container '\{shortId}' for image '\{image}'. Error message: \{stderr}");
+        log.error("Failed exec commands '" + commands + "' in container '" + shortId + "' for image '" + image + "'. Error message: " + stderr);
       }
       else {
-        log.info(STR."Successfully exec commands '\{commands}' in container '\{shortId}' for image '\{image}'");
+        log.info("Successfully exec commands '" + commands + "' in container '" + shortId + "' for image '" + image + "'");
       }
 
       return Optional.of(execResult);
     }
     catch (Exception e) {
-      log.error(STR."Failed to exec commands '\{commands}' in container '\{shortId}' for image '\{image}'", e);
+      log.error("Failed to exec commands '" + commands + "' in container '" + shortId + "' for image '" + image + "'", e);
     }
 
     return Optional.empty();
@@ -237,8 +237,8 @@ public class DockerContainerClient
       if (nonNull(startedContainer) && dockerClient.isRunning()) {
         var shortDockerId = left(startedContainer.getId(), SHORT_ID_LENGTH);
         var msg = image != null ?
-            STR."image '\{image}'" : STR."Dockerfile '\{dockerfile}'";
-        log.info(STR."Using existing container '\{shortDockerId}' for \{msg}");
+            "image '" + image + "'" : "Dockerfile '" + dockerfile + "'";
+        log.info("Using existing container '" + shortDockerId + "' for " + msg);
         return;
       }
       if (log.isInfoEnabled()) {
@@ -256,7 +256,7 @@ public class DockerContainerClient
       if (!config.getExposedPorts().isEmpty()) {
         List<String> portBindings = config.getExposedPorts().stream()
             // hostPort:containerPort
-            .map(port -> STR."\{PortAllocator.nextFreePort()}:\{port}")
+            .map(port -> PortAllocator.nextFreePort() + ":" + port)
             .collect(Collectors.toList());
         dockerClient.setPortBindings(portBindings);
         dockerClient.setWaitStrategy(Wait.forListeningPort());
@@ -288,7 +288,7 @@ public class DockerContainerClient
       var shortId = left(containerId, SHORT_ID_LENGTH);
 
       if (log.isInfoEnabled()) {
-        log.info(buildLogMessage(STR."Successfully run container '\{shortId}'", image, dockerfile, commands));
+        log.info(buildLogMessage("Successfully run container '" + shortId + "'", image, dockerfile, commands));
       }
     }
   }
@@ -310,13 +310,13 @@ public class DockerContainerClient
   {
     StringBuilder msg = new StringBuilder(message);
     if (commands != null) {
-      msg.append(STR." with commands '\{commands}'");
+      msg.append(" with commands '" + commands + "'");
     }
     if (image != null) {
-      msg.append(STR." for image '\{image}'");
+      msg.append(" for image '" + image + "'");
     }
     if (dockerfile != null) {
-      msg.append(STR." for Dockerfile '\{dockerfile}'");
+      msg.append(" for Dockerfile '" + dockerfile + "'");
     }
 
     return msg.toString();
@@ -342,3 +342,4 @@ public class DockerContainerClient
     return dockerClient.getMappedPort(Integer.parseInt(containerPort));
   }
 }
+

@@ -37,7 +37,8 @@ public class CondaClientITConfigFactory
    */
   public static DockerContainerConfig createCondaConfig(final String imageTag) {
     // Using Java 21 string template for image name construction
-    String imageName = STR."{IMAGE_CONDA}:{imageTag}";
+    String imageName = IMAGE_CONDA + ":" + imageTag;
     return DockerContainerConfig.builder(imageName).build();
   }
 }
+

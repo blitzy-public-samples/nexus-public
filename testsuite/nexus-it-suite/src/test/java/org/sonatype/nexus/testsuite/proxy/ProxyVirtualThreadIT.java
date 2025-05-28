@@ -263,7 +263,7 @@ public class ProxyVirtualThreadIT
     String repoUrl = repository.getConfiguration().attributes("proxy").get("remoteUrl").toString();
     
     // Use string templates to create messages
-    String message = STR."Repository \{repoName} proxies content from \{repoUrl}";
+    String message = "Repository " + repoName + " proxies content from " + repoUrl;
     assertThat(message, containsString(repoName));
     assertThat(message, containsString(repoUrl));
     
@@ -639,3 +639,4 @@ public class ProxyVirtualThreadIT
     return "Handled map config with " + config.size() + " entries";
   }
 }
+

@@ -56,10 +56,11 @@ public class InitiatorProviderImpl
     ClientInfo clientInfo = clientInfoProvider.getCurrentThreadClientInfo();
     if (clientInfo != null) {
       // Using Java 21 String Templates for more efficient and readable string concatenation
-      return STR."\{clientInfo.getUserid()}/\{clientInfo.getRemoteIP()}";
+      return clientInfo.getUserid() + "/" + clientInfo.getRemoteIP();
     }
     else {
       return UserIdHelper.get();
     }
   }
 }
+

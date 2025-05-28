@@ -132,8 +132,8 @@ public class FormatClientSupport
    * Execute an HTTP request with a specific context using a virtual thread for I/O operations.
    */
   protected CloseableHttpResponse execute(final HttpUriRequest request, HttpContext context) throws IOException {
-    log.info(STR."Requesting \{request}");
-    
+    log.info("Requesting " + request);
+
     try {
       // Use CompletableFuture with virtual threads to handle I/O-bound operations
       CloseableHttpResponse response = virtualThreadExecutor.submit(() -> {
@@ -144,7 +144,7 @@ public class FormatClientSupport
         }
       }).join();
       
-      log.info(STR."Received \{response}");
+      log.info("Received " + response);
       return response;
     } catch (UncheckedIOException e) {
       throw e.getCause();
@@ -157,8 +157,8 @@ public class FormatClientSupport
   protected CloseableHttpResponse execute(final HttpUriRequest request, String username, String password)
       throws IOException
   {
-    log.debug(STR."Authorizing request for \{request.getURI()} using credentials provided for username: \{username}");
-    
+    log.debug("Authorizing request for " + request.getURI() + " using credentials provided for username: " + username);
+
     // Create credentials provider and set up authentication
     var credsProvider = new BasicCredentialsProvider();
     credsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, password));
@@ -215,3 +215,4 @@ public class FormatClientSupport
     return response;
   }
 }
+

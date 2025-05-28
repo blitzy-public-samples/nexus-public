@@ -148,7 +148,7 @@ public class AptClient
    */
   public HttpResponse snapshotAll(String snapshotId) throws Exception {
     HttpUriRequest mkcolRequest = RequestBuilder.create("MKCOL")
-        .setUri(resolve(STR."snapshots/\{snapshotId}")).build();
+        .setUri(resolve("snapshots/" + snapshotId)).build();
     return execute(mkcolRequest);
   }
 
@@ -160,7 +160,7 @@ public class AptClient
    */
   public HttpResponse deleteSnapshot(String snapshotId) throws Exception {
     HttpUriRequest deleteRequest = RequestBuilder.create("DELETE")
-        .setUri(resolve(STR."snapshots/\{snapshotId}")).build();
+        .setUri(resolve("snapshots/" + snapshotId)).build();
     return execute(deleteRequest);
   }
 
@@ -177,3 +177,4 @@ public class AptClient
     return consume(execute(get));
   }
 }
+

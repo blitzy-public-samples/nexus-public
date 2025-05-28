@@ -63,7 +63,7 @@ public class FineGrainedDispatch
    * @return this dispatcher for method chaining
    */
   public FineGrainedDispatch serve(final RequestMatcher matcher, final Behaviour... behaviours) {
-    final String dispatchPath = STR."/internalDispatch\{pathNumber++}";
+    final String dispatchPath = "/internalDispatch" + pathNumber++;
 
     routes.put(matcher, dispatchPath);
     proxyServer.serve(dispatchPath).withBehaviours(behaviours);
@@ -88,7 +88,7 @@ public class FineGrainedDispatch
       if (e instanceof RuntimeException runtimeException) {
         throw runtimeException;
       }
-      throw new ServletException(STR."Unexpected error during dispatch: \{e.getMessage()}", e);
+      throw new ServletException("Unexpected error during dispatch: " + e.getMessage(), e);
     }
   }
 
@@ -113,3 +113,4 @@ public class FineGrainedDispatch
     throw new RuntimeException("No matching route found");
   }
 }
+

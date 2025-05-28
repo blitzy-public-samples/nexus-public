@@ -61,10 +61,10 @@ public class DataStoreRule
         executor.submit(() -> {
           try {
             dataStoreManagerProvider.get().delete(storeName);
-            log.debug(STR."Removed data store: \{storeName}");
+            log.debug("Removed data store: " + storeName);
           }
           catch (Exception e) { // NOSONAR
-            log.info(STR."Unable to clean up data store \{storeName}", e);
+            log.info("Unable to clean up data store " + storeName, e);
           }
         });
       });
@@ -85,7 +85,7 @@ public class DataStoreRule
       return dataStore;
     }
     catch (Exception e) {
-      throw new RuntimeException(STR."Failed to create data store with configuration: \{configuration.getName()}", e);
+      throw new RuntimeException("Failed to create data store with configuration: " + configuration.getName(), e);
     }
   }
 
@@ -137,7 +137,7 @@ public class DataStoreRule
       return dataStore;
     }
     catch (Exception e) {
-      throw new RuntimeException(STR."Failed to create data store: \{storeName}", e);
+      throw new RuntimeException("Failed to create data store: " + storeName, e);
     }
   }
 
@@ -159,3 +159,4 @@ public class DataStoreRule
     managedDataStores.remove(storeName);
   }
 }
+

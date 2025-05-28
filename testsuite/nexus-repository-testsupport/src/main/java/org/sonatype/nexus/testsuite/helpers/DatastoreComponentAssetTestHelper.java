@@ -323,7 +323,7 @@ public class DatastoreComponentAssetTestHelper
   {
     List<FluentComponent> components = browseComponents(repository);
     String gav = substring(version, 0, indexOf(version, SNAPSHOT_VERSION_SUFFIX));
-    String versionWithDate = STR."{gav}-{now().format(YEAR_MONTH_DAY_FORMAT)}";
+    String versionWithDate = gav + "-" + now().format(YEAR_MONTH_DAY_FORMAT);
     return components.stream()
         .filter(comp -> comp.name().equals(name))
         .filter(comp -> startsWith(comp.version(), versionWithDate))
@@ -450,7 +450,7 @@ public class DatastoreComponentAssetTestHelper
 
     Timestamp time = Timestamp.from(Instant.now().minusSeconds(minusSeconds));
 
-    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ?";
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset SET last_downloaded = ? WHERE repository_id = ?";
 
     updateWithVirtualThread(sql, stmt -> {
       stmt.setTimestamp(1, time);
@@ -475,7 +475,7 @@ public class DatastoreComponentAssetTestHelper
 
     Timestamp time = Timestamp.from(Instant.now().minusSeconds(minusSeconds));
 
-    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ? AND path ~ ?";
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset SET last_downloaded = ? WHERE repository_id = ? AND path ~ ?";
 
     updateWithVirtualThread(sql, stmt -> {
       stmt.setTimestamp(1, time);
@@ -491,7 +491,7 @@ public class DatastoreComponentAssetTestHelper
   public void setLastDownloadedTime(final Repository repository, final String path, final Date date) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ? AND path = ?";
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset SET last_downloaded = ? WHERE repository_id = ? AND path = ?";
 
     updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
@@ -510,7 +510,9 @@ public class DatastoreComponentAssetTestHelper
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
     String format = repository.getFormat().getValue();
 
-    updateWithVirtualThread(STR."UPDATE {format}_asset SET created = ? WHERE repository_id = ? AND path = ?", stmt -> {
+    String sql = "UPDATE " + format + "_asset SET created = ? WHERE repository_id = ? AND path = ?";
+
+    updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
       stmt.setInt(2, repositoryId);
       stmt.setString(3, adjustedPath(path));
@@ -525,7 +527,7 @@ public class DatastoreComponentAssetTestHelper
   private void setLastUpdatedTime(final Repository repository, final Date date, final String table) {
     int repositoryId = ((ContentFacetSupport) repository.facet(ContentFacet.class)).contentRepositoryId();
 
-    String sql = STR."UPDATE {repository.getFormat().getValue()}_{table} SET last_updated = ? WHERE repository_id = ?";
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_" + table + " SET last_updated = ? WHERE repository_id = ?";
 
     updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
@@ -545,7 +547,7 @@ public class DatastoreComponentAssetTestHelper
   private void setLastUpdatedTime(final Repository repository, final String path, final Date date, final String table) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = STR."UPDATE {repository.getFormat().getValue()}_{table} SET last_updated = ? WHERE repository_id = ? AND path = ?";
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_" + table + " SET last_updated = ? WHERE repository_id = ? AND path = ?";
 
     updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
@@ -558,12 +560,10 @@ public class DatastoreComponentAssetTestHelper
   public void setBlobUpdatedTime(final Repository repository, final String pathRegex, final Date date) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = STR."""
-            UPDATE {repository.getFormat().getValue()}_asset_blob ab 
-            SET blob_created = ? 
-            WHERE EXISTS (SELECT * FROM {repository.getFormat().getValue()}_asset a 
-            WHERE a.asset_blob_id = ab.asset_blob_id AND a.repository_id = ? AND a.path ~ ?)
-            """;
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset_blob ab " +
+            "SET blob_created = ? " +
+            "WHERE EXISTS (SELECT * FROM " + repository.getFormat().getValue() + "_asset a " +
+            "WHERE a.asset_blob_id = ab.asset_blob_id AND a.repository_id = ? AND a.path ~ ?)";
 
     updateWithVirtualThread(sql, stmt -> {
       setDate(date, (timestamp, calendar) -> stmt.setTimestamp(1, timestamp, calendar));
@@ -582,7 +582,7 @@ public class DatastoreComponentAssetTestHelper
     }
     else {
       // Note behaviour difference with Orient
-      log.info(STR."SQL does not support setting last_modified for non-proxy repositories: {repository.getName()} path: {path}");
+      log.info("SQL does not support setting last_modified for non-proxy repositories: " + repository.getName() + " path: " + path);
     }
   }
 
@@ -590,7 +590,7 @@ public class DatastoreComponentAssetTestHelper
   public void setLastDownloadedTimeNull(final Repository repository) {
     int repositoryId = repository.facet(ContentFacet.class).contentRepositoryId();
 
-    String sql = STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ?";
+    String sql = "UPDATE " + repository.getFormat().getValue() + "_asset SET last_downloaded = ? WHERE repository_id = ?";
 
     updateWithVirtualThread(sql, stmt -> {
       stmt.setNull(1, Types.TIMESTAMP);
@@ -631,14 +631,14 @@ public class DatastoreComponentAssetTestHelper
         futures.add(CompletableFuture.runAsync(() -> {
           try (Connection connection = sessionSupplier.openConnection(DEFAULT_DATASTORE_NAME);
                PreparedStatement stmt = connection.prepareStatement(
-                   STR."UPDATE {repository.getFormat().getValue()}_asset SET last_downloaded = ? WHERE repository_id = ? AND path = ?")) {
+                   "UPDATE " + repository.getFormat().getValue() + "_asset SET last_downloaded = ? WHERE repository_id = ? AND path = ?")) {
             stmt.setTimestamp(1, time);
             stmt.setInt(2, repositoryId);
             stmt.setString(3, path);
 
             stmt.execute();
             if (stmt.getWarnings() != null) {
-              throw new RuntimeException(STR."{UPDATE_TIME_ERROR_MESSAGE}{stmt.getWarnings()}");
+              throw new RuntimeException(UPDATE_TIME_ERROR_MESSAGE + stmt.getWarnings());
             }
           }
           catch (SQLException e) {
@@ -788,7 +788,7 @@ public class DatastoreComponentAssetTestHelper
         stmt.execute();
 
         if (stmt.getWarnings() != null) {
-          throw new RuntimeException(STR."{UPDATE_TIME_ERROR_MESSAGE}{stmt.getWarnings()}");
+          throw new RuntimeException(UPDATE_TIME_ERROR_MESSAGE + stmt.getWarnings());
         }
       }
       catch (SQLException e) {
@@ -910,3 +910,4 @@ public class DatastoreComponentAssetTestHelper
     return System.currentTimeMillis() - startTime;
   }
 }
+

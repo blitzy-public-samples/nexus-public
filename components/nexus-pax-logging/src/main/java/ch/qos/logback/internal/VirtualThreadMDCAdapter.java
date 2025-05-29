@@ -12,15 +12,14 @@
  */
 package ch.qos.logback.internal;
 
+import org.slf4j.helpers.ThreadLocalMapOfStacks;
+import org.slf4j.spi.MDCAdapter;
+
 import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
-import org.slf4j.helpers.ThreadLocalMapOfStacks;
-import org.slf4j.spi.MDCAdapter;
 
 /**
  * A specialized MDC adapter implementation that properly handles context propagation for virtual threads.
@@ -187,7 +186,6 @@ public class VirtualThreadMDCAdapter
    *
    * @return The Set of keys in the MDC or null if the MDC is empty
    */
-  @Override
   public Set<String> getKeys() {
     Map<String, String> map = readWriteThreadLocalMap.get();
     
@@ -302,7 +300,6 @@ public class VirtualThreadMDCAdapter
    * @param key   The key for the stack
    * @param value The value to push onto the stack
    */
-  @Override
   public void pushByKey(String key, String value) {
     threadLocalMapOfDeques.pushByKey(key, value);
   }
@@ -313,7 +310,6 @@ public class VirtualThreadMDCAdapter
    * @param key The key for the stack
    * @return The value at the top of the stack or null if the stack is empty
    */
-  @Override
   public String popByKey(String key) {
     return threadLocalMapOfDeques.popByKey(key);
   }

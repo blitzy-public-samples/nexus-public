@@ -68,7 +68,7 @@ public class VirtualThreadIdConverter
   @Override
   public String convert(ILoggingEvent event) {
     Thread currentThread = Thread.currentThread();
-    long threadId = currentThread.getId();
+    long threadId = currentThread.threadId();
     
     if (isVirtualThread(currentThread)) {
       return VIRTUAL_PREFIX + threadId;

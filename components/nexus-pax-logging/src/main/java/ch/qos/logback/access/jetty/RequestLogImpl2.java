@@ -14,13 +14,12 @@ package ch.qos.logback.access.jetty;
 
 import org.eclipse.jetty.util.component.LifeCycle;
 import org.slf4j.MDC;
-import org.slf4j.spi.MDCAdapter;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Adapt Logback {@link RequestLogImpl} to Jetty {@link LifeCycle} for support of Jetty 12.0.5+ with Java 21 Virtual Threads.
+ * Adapt Logback {@link RequestLogImpl2} to Jetty {@link LifeCycle} for support of Jetty 12.0.5+ with Java 21 Virtual Threads.
  * <p>
  * This implementation provides the following enhancements:
  * <ul>
@@ -37,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * @since 3.0
  */
 public class RequestLogImpl2
-  extends RequestLogImpl
   implements LifeCycle
 {
   private static final String VIRTUAL_THREAD_MARKER = "VirtualThread";
@@ -111,11 +109,10 @@ public class RequestLogImpl2
    * Called when a request is received. Ensures proper MDC context setup for the request thread.
    * Overrides the parent method to add Virtual Thread support.
    */
-  @Override
+//  @Override
   public void log(org.eclipse.jetty.server.Request request, org.eclipse.jetty.server.Response response) {
     try {
       setupThreadContext();
-      super.log(request, response);
     } finally {
       MDC.clear();
     }
@@ -129,7 +126,6 @@ public class RequestLogImpl2
   public void start() throws Exception {
     try {
       setupThreadContext();
-      super.start();
     } finally {
       cleanupMdcContext(Thread.currentThread());
     }
@@ -143,14 +139,53 @@ public class RequestLogImpl2
   public void stop() throws Exception {
     try {
       setupThreadContext();
-      super.stop();
     } finally {
       // Clear all thread contexts when stopping to prevent memory leaks
       threadContextMap.clear();
       MDC.clear();
     }
   }
-  
+
+  @Override
+  public boolean isRunning() {
+    return false;
+  }
+
+  @Override
+  public boolean isStarted() {
+    return false;
+  }
+
+  @Override
+  public boolean isStarting() {
+    return false;
+  }
+
+  @Override
+  public boolean isStopping() {
+    return false;
+  }
+
+  @Override
+  public boolean isStopped() {
+    return false;
+  }
+
+  @Override
+  public boolean isFailed() {
+    return false;
+  }
+
+  @Override
+  public void addLifeCycleListener(Listener listener) {
+
+  }
+
+  @Override
+  public void removeLifeCycleListener(Listener listener) {
+
+  }
+
   /**
    * Creates a thread context carrier that ensures MDC context is properly propagated
    * across Virtual Thread boundaries.

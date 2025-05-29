@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import ch.qos.logback.access.pattern.AccessConverter;
-import ch.qos.logback.access.spi.IAccessEvent;
+import ch.qos.logback.access.common.pattern.AccessConverter;
+import ch.qos.logback.access.common.spi.IAccessEvent;
 
 /**
  * Converter to include thread information with Java 21 Virtual Thread support.

@@ -12,14 +12,13 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import ch.qos.logback.access.PatternLayout;
-import ch.qos.logback.access.pattern.RemoteUserConverter;
-import ch.qos.logback.access.spi.IAccessEvent;
+import ch.qos.logback.access.common.PatternLayout;
+import ch.qos.logback.access.common.spi.IAccessEvent;
 import ch.qos.logback.core.pattern.PatternLayoutEncoderBase;
 
 /**
  * Encoder that configures {@code %u}, {@code %user}, and {@code %thread} converter patterns to be converted by
- * {@link NexusUserIdConverter}, and {@link NexusThreadConverter} instead of {@link RemoteUserConverter}.
+ * {@link NexusUserIdConverter}, and {@link NexusThreadConverter} instead of {@link ch.qos.logback.access.common.pattern.RemoteUserConverter}.
  *
  * @since 3.0
  */

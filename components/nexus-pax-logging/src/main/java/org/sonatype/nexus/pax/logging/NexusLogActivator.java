@@ -12,14 +12,11 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import org.sonatype.nexus.logging.task.ProgressTaskLogger;
-import org.sonatype.nexus.common.thread.VirtualThreadMetricsCollector;
-import org.sonatype.nexus.pax.logging.mdc.VirtualThreadMDCAdapter;
-
 import org.osgi.framework.BundleContext;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.slf4j.spi.MDCAdapter;
+import org.sonatype.nexus.logging.task.ProgressTaskLogger;
 
 import java.lang.reflect.Method;
 

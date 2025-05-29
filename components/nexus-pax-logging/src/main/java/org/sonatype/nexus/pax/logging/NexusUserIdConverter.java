@@ -12,8 +12,9 @@
  */
 package org.sonatype.nexus.pax.logging;
 
-import ch.qos.logback.access.pattern.AccessConverter;
-import ch.qos.logback.access.spi.IAccessEvent;
+
+import ch.qos.logback.access.common.pattern.AccessConverter;
+import ch.qos.logback.access.common.spi.IAccessEvent;
 
 /**
  * Converter for the request attribute named by {@link #ATTR_USER_ID}
@@ -26,7 +27,7 @@ public class NexusUserIdConverter
   /**
    * "nexus.user.id" request attribute name
    *
-   * @see org.sonatype.nexus.web.SecurityFilter
+   * @see org.sonatype.nexus.security.SecurityFilter
    */
   private static final String ATTR_USER_ID = "nexus.user.id";
 

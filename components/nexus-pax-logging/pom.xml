@@ -77,7 +77,22 @@
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-security</artifactId>
     </dependency>
-
+    <!-- Update Apache Shiro dependencies to 2.0.0 for Java 21 compatibility -->
+    <dependency>
+      <groupId>org.apache.shiro</groupId>
+      <artifactId>shiro-core</artifactId>
+      <version>2.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.shiro</groupId>
+      <artifactId>shiro-web</artifactId>
+      <version>2.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.shiro</groupId>
+      <artifactId>shiro-guice</artifactId>
+      <version>2.0.0</version>
+    </dependency>
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-testsupport</artifactId>

@@ -12,15 +12,17 @@
  */
 package org.sonatype.nexus.pax.logging;
 
+import org.slf4j.MDC;
+import org.slf4j.spi.MDCAdapter;
+
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
 
-import org.slf4j.spi.MDCAdapter;
-import org.sonatype.nexus.thread.internal.MDCUtils;
+//import org.sonatype.nexus.thread.internal.MDCUtils;
 
 /**
  * A specialized MDC adapter for Java 21 Virtual Threads that ensures proper context propagation
@@ -70,19 +72,27 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
    * ScopedValue for Virtual Thread context - leverages Java 21's ScopedValue API for efficient
    * context propagation across Virtual Thread boundaries.
    */
-  private static final Object SCOPED_CONTEXT;
-  
+  private static Object SCOPED_CONTEXT;
+  private static Method SCOPED_CONTEXT_GET_METHOD;
+
+
   // Initialize SCOPED_CONTEXT using reflection to avoid direct dependency on Java 21 API
   static {
-    Object scopedValue = null;
     try {
       Class<?> scopedValueClass = Class.forName("java.lang.ScopedValue");
-      scopedValue = scopedValueClass.getMethod("newInstance").invoke(null);
+      Method newInstanceMethod = scopedValueClass.getMethod("newInstance");
+      Object scopedValue = newInstanceMethod.invoke(null);
+
+      Method getMethod = scopedValueClass.getMethod("get");
+
+      SCOPED_CONTEXT = scopedValue;
+      SCOPED_CONTEXT_GET_METHOD = getMethod;
     } catch (Exception e) {
-      // If ScopedValue is not available, leave it as null
+      SCOPED_CONTEXT = null;
+      SCOPED_CONTEXT_GET_METHOD = null;
     }
-    SCOPED_CONTEXT = scopedValue;
   }
+
 
   /**
    * Determines if the current thread is a virtual thread.
@@ -104,19 +114,36 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
    * 
    * @return the context map for the current thread, or null if none exists
    */
+  @SuppressWarnings("unchecked")
   private Map<String, String> getContextMap() {
     if (isVirtualThread()) {
-      // Try to get context from ScopedValue first
-      if (isScopedValueBound()) {
-        return SCOPED_CONTEXT.get();
+      if (isScopedValueBound() && SCOPED_CONTEXT != null && SCOPED_CONTEXT_GET_METHOD != null) {
+        try {
+          return (Map<String, String>) SCOPED_CONTEXT_GET_METHOD.invoke(SCOPED_CONTEXT);
+        } catch (Exception e) {
+          // Fallback if reflection fails
+          return VIRTUAL_THREAD_CONTEXT.get(Thread.currentThread());
+        }
       }
-      // Fall back to thread map if ScopedValue is not bound
       return VIRTUAL_THREAD_CONTEXT.get(Thread.currentThread());
     } else {
-      // Use InheritableThreadLocal for platform threads
       return INHERITABLE_CONTEXT.get();
     }
   }
+
+//  private Map<String, String> getContextMap() {
+//    if (isVirtualThread()) {
+//      // Try to get context from ScopedValue first
+//      if (isScopedValueBound()) {
+//        return SCOPED_CONTEXT.get();
+//      }
+//      // Fall back to thread map if ScopedValue is not bound
+//      return VIRTUAL_THREAD_CONTEXT.get(Thread.currentThread());
+//    } else {
+//      // Use InheritableThreadLocal for platform threads
+//      return INHERITABLE_CONTEXT.get();
+//    }
+//  }
   
   /**
    * Gets a copy of the context map that is safe to inherit across thread boundaries.
@@ -125,7 +152,7 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
    * @return a copy of the inheritable context map, or null if none exists
    */
   private Map<String, String> getInheritableContextMap() {
-    return MDCUtils.getCopyOfContextMap();
+    return MDC.getCopyOfContextMap();
   }
 
   /**
@@ -146,42 +173,42 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
     }
   }
 
-  /**
-   * Creates or updates the context map for the current thread.
-   *
-   * @param contextMap the context map to set
-   */
-  private void setContextMap(Map<String, String> contextMap) {
-    if (contextMap == null) {
-      clear();
-      return;
-    }
-
-    Map<String, String> newMap = new HashMap<>(contextMap);
-    
-    if (isVirtualThread()) {
-      // For Virtual Threads, we use both storage mechanisms for compatibility
-      // and to ensure context is available in all scenarios
-      Thread currentThread = Thread.currentThread();
-      VIRTUAL_THREAD_CONTEXT.put(currentThread, newMap);
-      
-      // If we're in a scope where ScopedValue can be bound, bind it
-      if (canBindScopedValue()) {
-        bindScopedValue(newMap);
-      }
-    } else {
-      // For platform threads, use InheritableThreadLocal
-      INHERITABLE_CONTEXT.set(newMap);
-    }
-    
-    // Ensure user ID is set in MDC if needed
-    try {
-      Class<?> userIdMdcHelperClass = Class.forName("org.sonatype.nexus.security.UserIdMdcHelper");
-      userIdMdcHelperClass.getMethod("setIfNeeded").invoke(null);
-    } catch (Exception e) {
-      // If UserIdMdcHelper is not available, continue without it
-    }
-  }
+//  /**
+//   * Creates or updates the context map for the current thread.
+//   *
+//   * @param contextMap the context map to set
+//   */
+//  private void setContextMap(Map<String, String> contextMap) {
+//    if (contextMap == null) {
+//      clear();
+//      return;
+//    }
+//
+//    Map<String, String> newMap = new HashMap<>(contextMap);
+//
+//    if (isVirtualThread()) {
+//      // For Virtual Threads, we use both storage mechanisms for compatibility
+//      // and to ensure context is available in all scenarios
+//      Thread currentThread = Thread.currentThread();
+//      VIRTUAL_THREAD_CONTEXT.put(currentThread, newMap);
+//
+//      // If we're in a scope where ScopedValue can be bound, bind it
+//      if (canBindScopedValue()) {
+//        bindScopedValue(newMap);
+//      }
+//    } else {
+//      // For platform threads, use InheritableThreadLocal
+//      INHERITABLE_CONTEXT.set(newMap);
+//    }
+//
+//    // Ensure user ID is set in MDC if needed
+//    try {
+//      Class<?> userIdMdcHelperClass = Class.forName("org.sonatype.nexus.security.UserIdMdcHelper");
+//      userIdMdcHelperClass.getMethod("setIfNeeded").invoke(null);
+//    } catch (Exception e) {
+//      // If UserIdMdcHelper is not available, continue without it
+//    }
+//  }
 
   /**
    * Checks if we can bind a ScopedValue in the current context.
@@ -345,7 +372,7 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
    */
   public static Map<String, String> captureContext() {
     // Use MDCUtils to ensure we only capture inheritable context
-    Map<String, String> contextMap = MDCUtils.getCopyOfContextMap();
+    Map<String, String> contextMap = MDC.getCopyOfContextMap();
     return contextMap != null ? contextMap : Collections.emptyMap();
   }
 
@@ -357,6 +384,6 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
    */
   public static void applyContext(Map<String, String> contextMap) {
     // Use MDCUtils to ensure proper context application
-    MDCUtils.setContextMap(contextMap);
+    MDC.setContextMap(contextMap);
   }
 }

@@ -12,14 +12,14 @@
  */
 package org.sonatype.nexus;
 
-import java.util.Map;
-import java.util.HashMap;
-import java.util.concurrent.Callable;
-import java.util.function.Supplier;
-
 import org.apache.logging.log4j.ThreadContext;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 
 /**
  * Utility class for propagating thread-local context across Virtual Thread boundaries in Java 21.
@@ -134,7 +134,7 @@ public final class VirtualThreadContextPropagator
    */
   private static void applySecurityContext(final Subject securityContext) {
     if (securityContext != null) {
-      SecurityUtils.getSubject().associateWith(securityContext.getSession());
+      SecurityUtils.getSubject().associateWith((Runnable) securityContext.getSession());
     }
   }
 

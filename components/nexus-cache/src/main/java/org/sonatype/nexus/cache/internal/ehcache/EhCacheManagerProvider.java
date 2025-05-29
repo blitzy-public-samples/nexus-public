@@ -17,25 +17,25 @@ import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-import javax.annotation.Nullable;
 import javax.cache.CacheManager;
 import javax.cache.Caching;
 import javax.cache.spi.CachingProvider;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.annotation.Nullable;
 
 import org.sonatype.goodies.lifecycle.LifecycleSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
-import org.sonatype.nexus.common.app.BindAsLifecycleSupport;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.inject.AbstractModule;
 import org.ehcache.jsr107.EhcacheCachingProvider;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
 
 /**
@@ -47,118 +47,121 @@ import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
  */
 @Named("ehcache")
 @ManagedLifecycle(phase = STORAGE)
-// not a singleton because we want to provide a new manager when bouncing services
 public class EhCacheManagerProvider
     extends LifecycleSupport
     implements Provider<CacheManager>
 {
-  private static final String CONFIG_FILE = "ehcache.xml";
+    private static final String CONFIG_FILE = "ehcache.xml";
 
-  private final URI configUri;
+    private final URI configUri;
 
-  // provide same manager instance until bounced
-  private volatile CacheManager cacheManager;
-  
-  // future to track asynchronous initialization
-  private volatile CompletableFuture<CacheManager> initializationFuture;
+    // provide same manager instance until bounced
+    private volatile CacheManager cacheManager;
 
-  @Inject
-  public EhCacheManagerProvider(final ApplicationDirectories directories) {
-    checkNotNull(directories);
-    File file = new File(directories.getConfigDirectory("fabric"), CONFIG_FILE);
-    
-    // Use pattern matching to determine if the configuration file exists
-    configUri = switch (file) {
-      case File f when f.exists() -> {
-        log.debug(STR."Found configuration file: \{f.getAbsolutePath()}");
-        yield f.toURI();
-      }
-      default -> {
-        log.warn(STR."Missing configuration: \{file.getAbsolutePath()}");
-        yield null;
-      }
-    };
-  }
+    // future to track asynchronous initialization
+    private volatile CompletableFuture<CacheManager> initializationFuture;
 
-  @VisibleForTesting
-  public EhCacheManagerProvider(@Nullable final URI uri) {
-    this.configUri = uri;
-  }
+    @Inject
+    public EhCacheManagerProvider(final ApplicationDirectories directories) {
+        checkNotNull(directories);
+        File file = new File(directories.getConfigDirectory("fabric"), CONFIG_FILE);
+        if (file.exists()) {
+            log.debug("Found configuration file: {}", file.getAbsolutePath());
+            this.configUri = file.toURI();
+        }
+        else {
+            log.warn("Missing configuration: {}", file.getAbsolutePath());
+            this.configUri = null;
+        }
+    }
 
-  private CacheManager create(@Nullable final URI config) {
-    CachingProvider provider = Caching.getCachingProvider(
-        EhcacheCachingProvider.class.getName(),
-        EhcacheCachingProvider.class.getClassLoader());
+    @VisibleForTesting
+    public EhCacheManagerProvider(@Nullable final URI uri) {
+        this.configUri = uri;
+    }
 
-    log.info(STR."Creating cache-manager with configuration: \{config}");
-    CacheManager manager = provider.getCacheManager(config, getClass().getClassLoader());
-    log.debug(STR."Created cache-manager: \{manager}");
-    return manager;
-  }
+    private CacheManager create(@Nullable final URI config) {
+        CachingProvider provider = Caching.getCachingProvider(
+            EhcacheCachingProvider.class.getName(),
+            EhcacheCachingProvider.class.getClassLoader());
 
-  /**
-   * Initializes the CacheManager asynchronously using a Virtual Thread.
-   * This improves startup performance by allowing the initialization to happen in parallel.
-   */
-  private synchronized void initializeAsync() {
-    if (initializationFuture == null) {
-      initializationFuture = CompletableFuture.supplyAsync(() -> {
-        log.debug(STR."Starting asynchronous CacheManager initialization with config: \{configUri}");
-        CacheManager manager = create(configUri);
-        log.debug(STR."Completed asynchronous CacheManager initialization");
+        log.info("Creating cache-manager with configuration: {}", config);
+        CacheManager manager = provider.getCacheManager(config, getClass().getClassLoader());
+        log.debug("Created cache-manager: {}", manager);
         return manager;
-      }, task -> Thread.startVirtualThread(() -> task.run()));
     }
-  }
 
-  @Override
-  public synchronized CacheManager get() {
-    checkState(!isStopped(), "Cache-manager destroyed");
-    
-    if (cacheManager == null) {
-      if (initializationFuture == null) {
-        // Start async initialization if not already started
-        initializeAsync();
-      }
-      
-      try {
-        // Wait for the initialization to complete
-        cacheManager = initializationFuture.get();
-        log.info(STR."Cache-manager initialized and ready for use");
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        throw new RuntimeException(STR."CacheManager initialization interrupted: \{e.getMessage()}", e);
-      } catch (ExecutionException e) {
-        throw new RuntimeException(STR."Failed to initialize CacheManager: \{e.getCause().getMessage()}", e.getCause());
-      }
+    /**
+     * Initializes the CacheManager asynchronously using a Virtual Thread.
+     * This improves startup performance by allowing the initialization to happen in parallel.
+     */
+    private synchronized void initializeAsync() {
+        if (initializationFuture == null) {
+            initializationFuture = CompletableFuture.supplyAsync(() -> {
+                log.debug("Starting asynchronous CacheManager initialization with config: {}", configUri);
+                CacheManager manager = create(configUri);
+                log.debug("Completed asynchronous CacheManager initialization");
+                return manager;
+            }, Thread::startVirtualThread);
+        }
     }
-    
-    return cacheManager;
-  }
 
-  @Override
-  protected void doStop() {
-    if (cacheManager != null) {
-      cacheManager.close();
-      log.info(STR."Cache-manager closed successfully");
-      cacheManager = null;
-    }
-    
-    if (initializationFuture != null) {
-      initializationFuture.cancel(true);
-      initializationFuture = null;
-      log.debug(STR."Cancelled any pending CacheManager initialization");
-    }
-  }
+    @Override
+    public synchronized CacheManager get() {
+        checkState(!isStopped(), "Cache-manager destroyed");
 
-  /**
-   * Provider implementations are not automatically exposed under additional interfaces.
-   * This small module is a workaround to expose this provider as a (managed) lifecycle.
-   */
-  @Named
-  private static class BindAsLifecycle
-      extends BindAsLifecycleSupport<EhCacheManagerProvider>
-  {
-    // empty
-  }
+        if (cacheManager == null) {
+            if (initializationFuture == null) {
+                // Start async initialization if not already started
+                initializeAsync();
+            }
+
+            try {
+                // Wait for the initialization to complete
+                cacheManager = initializationFuture.get();
+                log.info("Cache-manager initialized and ready for use");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("CacheManager initialization interrupted", e);
+            } catch (ExecutionException e) {
+                throw new RuntimeException("Failed to initialize CacheManager", e.getCause());
+            }
+        }
+
+        return cacheManager;
+    }
+
+    @Override
+    protected void doStart() {
+        // Eagerly initialize the cache manager
+        get();
+    }
+
+    @Override
+    protected void doStop() {
+        if (cacheManager != null) {
+            cacheManager.close();
+            log.info("Cache-manager closed successfully");
+            cacheManager = null;
+        }
+
+        if (initializationFuture != null) {
+            initializationFuture.cancel(true);
+            initializationFuture = null;
+            log.debug("Cancelled any pending CacheManager initialization");
+        }
+    }
+
+    /**
+     * Module to bind this provider as a managed lifecycle.
+     */
+    @Named
+    public static class Module
+        extends AbstractModule
+    {
+        @Override
+        protected void configure() {
+            bind(EhCacheManagerProvider.class).asEagerSingleton();
+        }
+    }
 }

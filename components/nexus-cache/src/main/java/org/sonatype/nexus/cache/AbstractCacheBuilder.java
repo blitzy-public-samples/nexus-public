@@ -14,7 +14,10 @@ package org.sonatype.nexus.cache;
 
 import java.util.function.BiConsumer;
 
+import javax.cache.Cache;
+import javax.cache.CacheManager;
 import javax.cache.configuration.Factory;
+import javax.cache.configuration.MutableConfiguration;
 import javax.cache.expiry.ExpiryPolicy;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -23,11 +26,11 @@ import org.sonatype.goodies.common.ComponentSupport;
  * Abstracts cache builder to contain all of the getters/setters
  *
  * <p>This implementation leverages Java 21 features including Record Patterns for more concise
- * and type-safe configuration handling, improved type inference for fluent API methods, and
- * String Templates for more structured logging.</p>
+ * and type-safe configuration handling, improved type inference for fluent API methods.</p>
  *
  * @since 3.14
  */
+@SuppressWarnings("unchecked") // Safe unchecked casts due to builder pattern with type parameters
 public abstract class AbstractCacheBuilder<K, V>
     extends ComponentSupport
     implements CacheBuilder<K, V>
@@ -90,7 +93,7 @@ public abstract class AbstractCacheBuilder<K, V>
   }
 
   @Override
-  public <T extends CacheBuilder<K, V>> T name(final String name) {
+  public CacheBuilder<K, V> name(final String name) {
     log.debug(STR."Setting cache name: \{name}");
     this.properties = new CacheProperties<>(
         name,
@@ -103,12 +106,12 @@ public abstract class AbstractCacheBuilder<K, V>
         properties.valueType(),
         properties.persister()
     );
-    return (T) this;
+    return this;
   }
 
   @Override
-  public <T extends CacheBuilder<K, V>> T cacheSize(final int cacheSize) {
-    log.debug(STR."Setting cache size: \{cacheSize}");
+  public CacheBuilder<K, V> cacheSize(final int cacheSize) {
+    log.debug("Setting cache size: {}", cacheSize);
     this.properties = new CacheProperties<>(
         properties.name(),
         properties.expiryFactory(),
@@ -120,12 +123,12 @@ public abstract class AbstractCacheBuilder<K, V>
         properties.valueType(),
         properties.persister()
     );
-    return (T) this;
+    return this;
   }
 
   @Override
-  public <T extends CacheBuilder<K, V>> T expiryFactory(final Factory<? extends ExpiryPolicy> expiryFactory) {
-    log.debug(STR."Setting expiry factory: \{expiryFactory != null ? expiryFactory.getClass().getSimpleName() : "null"}");
+  public CacheBuilder<K, V> expiryFactory(final Factory<? extends ExpiryPolicy> expiryFactory) {
+    log.debug("Setting expiry factory: {}", expiryFactory != null ? expiryFactory.getClass().getSimpleName() : "null");
     this.properties = new CacheProperties<>(
         properties.name(),
         expiryFactory,
@@ -137,12 +140,46 @@ public abstract class AbstractCacheBuilder<K, V>
         properties.valueType(),
         properties.persister()
     );
-    return (T) this;
+    return this;
   }
 
   @Override
-  public <T extends CacheBuilder<K, V>> T storeByValue(final boolean storeByValue) {
-    log.debug(STR."Setting storeByValue: \{storeByValue}");
+  public CacheBuilder<K, V> managementEnabled(final boolean enabled) {
+    log.debug("Setting managementEnabled: {}", enabled);
+    this.properties = new CacheProperties<>(
+        properties.name(),
+        properties.expiryFactory(),
+        properties.cacheSize(),
+        properties.storeByValue(),
+        enabled,
+        properties.statisticsEnabled(),
+        properties.keyType(),
+        properties.valueType(),
+        properties.persister()
+    );
+    return this;
+  }
+
+  @Override
+  public CacheBuilder<K, V> statisticsEnabled(final boolean enabled) {
+    log.debug("Setting statisticsEnabled: {}", enabled);
+    this.properties = new CacheProperties<>(
+        properties.name(),
+        properties.expiryFactory(),
+        properties.cacheSize(),
+        properties.storeByValue(),
+        properties.managementEnabled(),
+        enabled,
+        properties.keyType(),
+        properties.valueType(),
+        properties.persister()
+    );
+    return this;
+  }
+
+  @Override
+  public CacheBuilder<K, V> storeByValue(final boolean storeByValue) {
+    log.debug("Setting storeByValue: {}", storeByValue);
     this.properties = new CacheProperties<>(
         properties.name(),
         properties.expiryFactory(),
@@ -154,80 +191,12 @@ public abstract class AbstractCacheBuilder<K, V>
         properties.valueType(),
         properties.persister()
     );
-    return (T) this;
+    return this;
   }
 
   @Override
-  public <T extends CacheBuilder<K, V>> T managementEnabled(final boolean enabled) {
-    log.debug(STR."Setting managementEnabled: \{enabled}");
-    this.properties = new CacheProperties<>(
-        properties.name(),
-        properties.expiryFactory(),
-        properties.cacheSize(),
-        properties.storeByValue(),
-        enabled,
-        properties.statisticsEnabled(),
-        properties.keyType(),
-        properties.valueType(),
-        properties.persister()
-    );
-    return (T) this;
-  }
-
-  @Override
-  public <T extends CacheBuilder<K, V>> T statisticsEnabled(final boolean enabled) {
-    log.debug(STR."Setting statisticsEnabled: \{enabled}");
-    this.properties = new CacheProperties<>(
-        properties.name(),
-        properties.expiryFactory(),
-        properties.cacheSize(),
-        properties.storeByValue(),
-        properties.managementEnabled(),
-        enabled,
-        properties.keyType(),
-        properties.valueType(),
-        properties.persister()
-    );
-    return (T) this;
-  }
-
-  @Override
-  public <T extends CacheBuilder<K, V>> T keyType(final Class<K> keyType) {
-    log.debug(STR."Setting keyType: \{keyType != null ? keyType.getSimpleName() : "null"}");
-    this.properties = new CacheProperties<>(
-        properties.name(),
-        properties.expiryFactory(),
-        properties.cacheSize(),
-        properties.storeByValue(),
-        properties.managementEnabled(),
-        properties.statisticsEnabled(),
-        keyType,
-        properties.valueType(),
-        properties.persister()
-    );
-    return (T) this;
-  }
-
-  @Override
-  public <T extends CacheBuilder<K, V>> T valueType(final Class<V> valueType) {
-    log.debug(STR."Setting valueType: \{valueType != null ? valueType.getSimpleName() : "null"}");
-    this.properties = new CacheProperties<>(
-        properties.name(),
-        properties.expiryFactory(),
-        properties.cacheSize(),
-        properties.storeByValue(),
-        properties.managementEnabled(),
-        properties.statisticsEnabled(),
-        properties.keyType(),
-        valueType,
-        properties.persister()
-    );
-    return (T) this;
-  }
-
-  @Override
-  public <T extends CacheBuilder<K, V>> T persister(final BiConsumer<K, V> persister) {
-    log.debug(STR."Setting persister: \{persister != null ? persister.getClass().getSimpleName() : "null"}");
+  public CacheBuilder<K, V> persister(final BiConsumer<K, V> persister) {
+    log.debug("Setting persister: {}", persister != null ? persister.getClass().getSimpleName() : "null");
     this.properties = new CacheProperties<>(
         properties.name(),
         properties.expiryFactory(),
@@ -239,47 +208,54 @@ public abstract class AbstractCacheBuilder<K, V>
         properties.valueType(),
         persister
     );
-    return (T) this;
+    return this;
   }
-  
-  /**
-   * Gets the current cache properties.
-   * This method can be used with Record Patterns for concise property access.
-   *
-   * @return the current cache properties record
-   */
-  protected CacheProperties<K, V> getProperties() {
-    return properties;
+
+  @Override
+  public Cache<K, V> build(final CacheManager cacheManager) {
+    validateConfiguration();
+
+    MutableConfiguration<K, V> config = new MutableConfiguration<K, V>()
+        .setTypes(properties.keyType(), properties.valueType())
+        .setStoreByValue(properties.storeByValue())
+        .setExpiryPolicyFactory(properties.expiryFactory())
+        .setManagementEnabled(properties.managementEnabled())
+        .setStatisticsEnabled(properties.statisticsEnabled());
+
+    Cache<K, V> cache = cacheManager.createCache(properties.name(), config);
+    log.debug("Built cache {} with configuration: keyType={}, valueType={}, storeByValue={}, managementEnabled={}, statisticsEnabled={}",
+        properties.name(),
+        properties.keyType().getSimpleName(),
+        properties.valueType().getSimpleName(),
+        properties.storeByValue(),
+        properties.managementEnabled(),
+        properties.statisticsEnabled());
+
+    return cache;
   }
-  
-  /**
-   * Validates that the cache configuration is secure according to Java 21's enhanced security model.
-   * This method should be called before building the cache to ensure all security requirements are met.
-   *
-   * @throws IllegalStateException if the configuration does not meet security requirements
-   */
-  protected void validateSecurity() {
-    // Use Record Pattern for concise property access
-    var CacheProperties(name, expiryFactory, cacheSize, storeByValue, _, _, keyType, valueType, _) = properties;
-    
+
+  protected void validateConfiguration() {
+    String name = properties.name();
+    Class<K> keyType = properties.keyType();
+    Class<V> valueType = properties.valueType();
+    int cacheSize = properties.cacheSize();
+
     if (name == null || name.isEmpty()) {
-      throw new IllegalStateException(STR."Cache name must be specified: \{name}");
+      throw new IllegalStateException("Cache name must be specified");
     }
-    
+
     if (keyType == null) {
-      throw new IllegalStateException(STR."Key type must be specified for cache: \{name}");
+      throw new IllegalStateException("Key type must be specified for cache: " + name);
     }
-    
+
     if (valueType == null) {
-      throw new IllegalStateException(STR."Value type must be specified for cache: \{name}");
+      throw new IllegalStateException("Value type must be specified for cache: " + name);
     }
-    
+
     if (cacheSize <= 0) {
-      throw new IllegalStateException(STR."Cache size must be positive for cache: \{name}, size: \{cacheSize}");
+      throw new IllegalStateException("Cache size must be positive for cache: " + name);
     }
-    
-    // Log security-relevant configuration
-    log.debug(STR."Cache security validation passed for \{name}: keyType=\{keyType.getSimpleName()}, "
-        + STR."valueType=\{valueType.getSimpleName()}, storeByValue=\{storeByValue}");
+
+
   }
 }

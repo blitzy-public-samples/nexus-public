@@ -15,12 +15,14 @@ package org.sonatype.nexus.cache.internal;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 import javax.cache.CacheManager;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.node.NodeAccess;
@@ -49,11 +51,13 @@ import static com.google.common.base.Preconditions.checkState;
 // not a singleton because we want to provide a new manager when bouncing services
 public class RuntimeCacheManagerProvider
     extends ComponentSupport
-    implements Provider<CacheManager>
+    implements Provider<CacheManager>, AutoCloseable
 {
   private final Map<String, Provider<CacheManager>> providers;
 
   private final String name;
+
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RuntimeCacheManagerProvider(
@@ -65,8 +69,8 @@ public class RuntimeCacheManagerProvider
     this.providers = checkNotNull(providers);
     this.name = customName != null ? customName : getCustomName(orient, nodeAccess);
     checkArgument(!"default".equals(name));
-    log.info(STR."Cache-provider: \{name}");
-    checkState(providers.containsKey(name), STR."Missing cache-provider: \{name}");
+    log.info("Cache-provider: {}", name);
+    checkState(providers.containsKey(name), "Missing cache-provider: {}", name);
   }
 
   /**
@@ -74,16 +78,11 @@ public class RuntimeCacheManagerProvider
    * Uses Pattern Matching for switch to improve code readability and maintainability.
    */
   private String getCustomName(@Named("nexus.orient.enabled") final boolean orient, final NodeAccess nodeAccess) {
-    return switch (new ClusterConfig(orient, nodeAccess.isClustered())) {
-      case ClusterConfig(true, true) -> "hazelcast";
-      default -> "ehcache";
-    };
+    if (orient && nodeAccess.isClustered()) {
+      return "hazelcast";
+    }
+    return "ehcache";
   }
-
-  /**
-   * Record for pattern matching in switch statement.
-   */
-  private record ClusterConfig(boolean orient, boolean clustered) {}
 
   /**
    * Gets a CacheManager instance using Virtual Threads for improved concurrency.
@@ -94,52 +93,47 @@ public class RuntimeCacheManagerProvider
   @Override
   public CacheManager get() {
     Provider<CacheManager> provider = providers.get(name);
-    checkState(provider != null, STR."Cache-provider vanished: \{name}");
-    
-    // Use Virtual Thread to instantiate the CacheManager
-    // This improves concurrency and reduces resource consumption
+    checkState(provider != null, "Cache-provider vanished: %s", name);
+
     try {
-      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+      return virtualThreadExecutor.submit(() -> {
         CacheManager manager = provider.get();
-        log.debug(STR."Constructed cache-provider: \{name} -> \{manager}");
+        log.debug("Constructed cache-provider: {} -> {}", name, manager);
         return manager;
       }).get();
     }
     catch (InterruptedException e) {
       Thread.currentThread().interrupt(); // Preserve interrupt status
-      log.error(STR."Thread interrupted while creating CacheManager: \{e.getMessage()}");
-      // Fallback to direct instantiation if virtual thread execution fails
-      CacheManager manager = provider.get();
-      log.debug(STR."Constructed cache-provider (fallback): \{name} -> \{manager}");
-      return manager;
+      return handleProviderError("Thread interrupted while creating CacheManager", e, provider);
     }
     catch (ExecutionException e) {
-      log.error(STR."Failed to create CacheManager using virtual thread: \{e.getMessage()}");
-      // Fallback to direct instantiation if virtual thread execution fails
-      CacheManager manager = provider.get();
-      log.debug(STR."Constructed cache-provider (fallback): \{name} -> \{manager}");
-      return manager;
+      return handleProviderError("Failed to create CacheManager using virtual thread", e.getCause(), provider);
     }
   }
 
-  /**
-   * Ensures proper cleanup of Virtual Threads when the provider is no longer needed.
-   * This method is called by the JVM when the object is garbage collected.
-   */
-  /**
-   * Ensures proper cleanup of Virtual Threads when the provider is no longer needed.
-   * 
-   * Note: While finalize() is deprecated, it's used here as a safety mechanism for Virtual Thread cleanup.
-   * In production code, consider using try-with-resources or explicit shutdown methods instead.
-   */
+  private CacheManager handleProviderError(String message, Throwable e, Provider<CacheManager> provider) {
+    log.error("{}: {}", message, e.getMessage());
+    // Fallback to direct instantiation if virtual thread execution fails
+    CacheManager manager = provider.get();
+    log.debug("Constructed cache-provider (fallback): {} -> {}", name, manager);
+    return manager;
+  }
+
   @Override
-  protected void finalize() throws Throwable {
-    try {
-      // Allow any remaining virtual threads to complete their work
-      Thread.sleep(100);
-    }
-    finally {
-      super.finalize();
+  public void close() {
+    if (!virtualThreadExecutor.isShutdown()) {
+      virtualThreadExecutor.shutdown();
+      try {
+        if (!virtualThreadExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+          log.warn("Virtual thread executor did not terminate in time");
+          virtualThreadExecutor.shutdownNow();
+        }
+      }
+      catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        virtualThreadExecutor.shutdownNow();
+      }
     }
   }
 }
+

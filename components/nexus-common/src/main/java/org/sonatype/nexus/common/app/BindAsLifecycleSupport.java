@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.common.app;
 
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 

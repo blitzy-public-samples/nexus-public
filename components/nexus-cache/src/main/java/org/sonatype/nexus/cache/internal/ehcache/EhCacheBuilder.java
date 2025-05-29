@@ -20,9 +20,10 @@ import java.util.function.Supplier;
 
 import javax.cache.Cache;
 import javax.cache.CacheManager;
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.cache.AbstractCacheBuilder;
+import org.sonatype.nexus.cache.CacheBuilder;
 
 import org.ehcache.config.CacheRuntimeConfiguration;
 import org.ehcache.config.builders.CacheConfigurationBuilder;
@@ -37,112 +38,181 @@ import org.ehcache.jsr107.Eh107Configuration;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * EhCache JCache {@link CacheBuilder}.
+ * EhCache implementation of {@link org.sonatype.nexus.cache.CacheBuilder}.
  *
  * @since 3.14
  */
 @Named("ehcache")
+@SuppressWarnings("unused")  // Used by DI container
 public class EhCacheBuilder<K, V>
     extends AbstractCacheBuilder<K, V>
+    implements AutoCloseable
 {
-  @Override
-  @SuppressWarnings("unchecked")
-  public Cache<K, V> build(final CacheManager manager) {
-    checkNotNull(manager);
-    checkNotNull(keyType);
-    checkNotNull(valueType);
-    checkNotNull(name);
-    checkNotNull(expiryFactory);
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    CacheConfigurationBuilder<K, V> builder = CacheConfigurationBuilder.newCacheConfigurationBuilder(
-        keyType,
-        valueType,
-        ResourcePoolsBuilder.heap(cacheSize));
-
-    builder.withExpiry(mapToEhCacheExpiry(expiryFactory.create()));
-
-    log.debug(STR."Creating cache \{name} with key type \{keyType.getSimpleName()} and value type \{valueType.getSimpleName()}");
-    Cache<K, V> cache = manager.createCache(name, Eh107Configuration.fromEhcacheCacheConfiguration(builder));
-
-    manager.enableStatistics(name, statisticsEnabled);
-    manager.enableManagement(name, managementEnabled);
-
-    if (persister != null) {
-      log.debug(STR."Registering event listener for cache \{name} with persister");
-      
-      // Create a virtual thread executor for asynchronous event processing
-      ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
-      
-      CacheEventListener<K, V> listener = cacheEvent -> {
-        try {
-          executor.submit(() -> persister.accept(cacheEvent.getKey(), cacheEvent.getOldValue()));
-        } 
-        catch (Exception e) {
-          // Use pattern matching to handle different types of exceptions
-          switch (e) {
-            case RuntimeException re -> log.error(STR."Runtime error in cache event listener for \{name}: \{re.getMessage()}", re);
-            case InterruptedException ie -> {
-              log.warn(STR."Cache event listener for \{name} was interrupted", ie);
-              Thread.currentThread().interrupt();
+    private CacheEventListener<K, V> createListener() {
+        return cacheEvent -> {
+            try {
+                executor.submit(() -> properties.persister().accept(cacheEvent.getKey(), cacheEvent.getOldValue()));
             }
-            default -> log.error(STR."Error in cache event listener for \{name}: \{e.getMessage()}", e);
-          }
-        }
-      };
-
-      Eh107Configuration<K, V> configuration = cache.getConfiguration(Eh107Configuration.class);
-      configuration.unwrap(CacheRuntimeConfiguration.class)
-          .registerCacheEventListener(listener, EventOrdering.UNORDERED, EventFiring.ASYNCHRONOUS,
-              EventType.EVICTED, EventType.REMOVED, EventType.EXPIRED);
-      
-      log.debug(STR."Event listener registered for cache \{name} for events: EVICTED, REMOVED, EXPIRED");
+            catch (RuntimeException e) {
+                log.error("Error in cache event listener for {}: {}", properties.name(), e.getMessage(), e);
+            }
+        };
     }
 
-    return cache;
-  }
+    @Override
+    public Cache<K, V> build(final CacheManager manager) {
+        checkNotNull(manager);
+        checkNotNull(properties.keyType());
+        checkNotNull(properties.valueType());
+        checkNotNull(properties.name());
+        checkNotNull(properties.expiryFactory());
 
-  private ExpiryPolicy<K, V> mapToEhCacheExpiry(final javax.cache.expiry.ExpiryPolicy policy) {
-    return new ExpiryPolicy<K, V>()
-    {
-      @Override
-      public Duration getExpiryForCreation(final K key, final V value) {
-        return toJavaDuration(policy.getExpiryForCreation());
-      }
+        Cache<K, V> cache = null;
+        try {
+            CacheConfigurationBuilder<K, V> builder = CacheConfigurationBuilder.newCacheConfigurationBuilder(
+                properties.keyType(),
+                properties.valueType(),
+                ResourcePoolsBuilder.heap(properties.cacheSize()));
 
-      @Override
-      public Duration getExpiryForAccess(final K key, final Supplier<? extends V> value) {
-        return toJavaDuration(policy.getExpiryForAccess());
-      }
+            builder.withExpiry(mapToEhCacheExpiry(properties.expiryFactory().create()));
 
-      @Override
-      public Duration getExpiryForUpdate(final K key, final Supplier<? extends V> oldValue, final V newValue) {
-        return toJavaDuration(policy.getExpiryForUpdate());
-      }
+            cache = manager.createCache(properties.name(),
+                Eh107Configuration.fromEhcacheCacheConfiguration(builder));
 
-      private Duration toJavaDuration(final javax.cache.expiry.Duration duration) {
-        if (duration == null) {
-          return null;
+            manager.enableStatistics(properties.name(), properties.statisticsEnabled());
+            manager.enableManagement(properties.name(), properties.managementEnabled());
+
+            if (properties.persister() != null) {
+                log.debug("Registering event listener for cache {} with persister", properties.name());
+                registerEventListener(cache);
+            }
+
+            return cache;
         }
-        
-        if (duration.isEternal()) {
-          return Duration.of(1, ChronoUnit.FOREVER);
+        catch (Exception e) {
+            log.error("Failed to build cache {}: {}", properties.name(), e.getMessage(), e);
+            if (cache != null) {
+                manager.destroyCache(properties.name());
+            }
+            throw e;
         }
-        
-        // Use switch expression with pattern matching for more concise code
-        return switch (duration.getTimeUnit()) {
-          case DAYS -> Duration.of(duration.getDurationAmount(), ChronoUnit.DAYS);
-          case HOURS -> Duration.of(duration.getDurationAmount(), ChronoUnit.HOURS);
-          case MICROSECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.MICROS);
-          case MILLISECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.MILLIS);
-          case MINUTES -> Duration.of(duration.getDurationAmount(), ChronoUnit.MINUTES);
-          case NANOSECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.NANOS);
-          case SECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.SECONDS);
-          default -> {
-            log.warn(STR."Unknown time unit \{duration.getTimeUnit()}, defaulting to SECONDS");
-            yield Duration.of(duration.getDurationAmount(), ChronoUnit.SECONDS);
-          }
+        finally {
+            // The executor is intentionally not shut down here since it's needed for the entire
+            // cache lifecycle. It will be properly shut down in the close() method when the cache
+            // is destroyed.
+        }
+    }
+
+    private void registerEventListener(Cache<K, V> cache) {
+        Eh107Configuration<K, V> configuration = cache.getConfiguration(Eh107Configuration.class);
+        configuration.unwrap(CacheRuntimeConfiguration.class)
+            .registerCacheEventListener(createListener(), EventOrdering.UNORDERED, EventFiring.ASYNCHRONOUS,
+                EventType.EVICTED, EventType.REMOVED, EventType.EXPIRED);
+
+        log.debug("Event listener registered for cache {} for events: EVICTED, REMOVED, EXPIRED", properties.name());
+    }
+
+    @Override
+    public CacheBuilder<K, V> keyType(final Class<K> keyType) {
+        setProperty("keyType", keyType);
+        return this;
+    }
+
+    @Override
+    public CacheBuilder<K, V> valueType(final Class<V> valueType) {
+        setProperty("valueType", valueType);
+        return this;
+    }
+
+    @SuppressWarnings("unchecked")
+    protected void setProperty(String name, Object value) {
+        // Use reflection to update the protected property
+        try {
+            java.lang.reflect.Field field = AbstractCacheBuilder.class.getDeclaredField("properties");
+            field.setAccessible(true);
+            CacheProperties<K, V> current = (CacheProperties<K, V>) field.get(this);
+
+            // Create a copy of the record with the updated field
+            java.lang.reflect.Constructor<?> constructor = current.getClass().getDeclaredConstructors()[0];
+            constructor.setAccessible(true);
+
+            Object[] args;
+            if ("keyType".equals(name)) {
+                args = new Object[] {
+                    current.name(), current.expiryFactory(), current.cacheSize(),
+                    current.storeByValue(), current.managementEnabled(), current.statisticsEnabled(),
+                    value, current.valueType(), current.persister()
+                };
+            } else {
+                args = new Object[] {
+                    current.name(), current.expiryFactory(), current.cacheSize(),
+                    current.storeByValue(), current.managementEnabled(), current.statisticsEnabled(),
+                    current.keyType(), value, current.persister()
+                };
+            }
+
+            field.set(this, constructor.newInstance(args));
+        }
+        catch (Exception e) {
+            log.error("Failed to update property {}: {}", name, e.getMessage(), e);
+            throw new RuntimeException("Failed to update property: " + name, e);
+        }
+    }
+
+    private ExpiryPolicy<K, V> mapToEhCacheExpiry(final javax.cache.expiry.ExpiryPolicy policy) {
+        return new ExpiryPolicy<>() {
+            @Override
+            public Duration getExpiryForCreation(final K key, final V value) {
+                return toJavaDuration(policy.getExpiryForCreation());
+            }
+
+            @Override
+            public Duration getExpiryForAccess(final K key, final Supplier<? extends V> value) {
+                return toJavaDuration(policy.getExpiryForAccess());
+            }
+
+            @Override
+            public Duration getExpiryForUpdate(final K key, final Supplier<? extends V> oldValue, final V newValue) {
+                return toJavaDuration(policy.getExpiryForUpdate());
+            }
+
+            private Duration toJavaDuration(final javax.cache.expiry.Duration duration) {
+                if (duration == null) {
+                    return null;
+                }
+
+                if (duration.isEternal()) {
+                    return Duration.of(1, ChronoUnit.FOREVER);
+                }
+
+                return switch (duration.getTimeUnit()) {
+                    case DAYS -> Duration.of(duration.getDurationAmount(), ChronoUnit.DAYS);
+                    case HOURS -> Duration.of(duration.getDurationAmount(), ChronoUnit.HOURS);
+                    case MICROSECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.MICROS);
+                    case MILLISECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.MILLIS);
+                    case MINUTES -> Duration.of(duration.getDurationAmount(), ChronoUnit.MINUTES);
+                    case NANOSECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.NANOS);
+                    case SECONDS -> Duration.of(duration.getDurationAmount(), ChronoUnit.SECONDS);
+                };
+            }
         };
-      }
-    };
-  }
+    }
+
+    /**
+     * Closes the cache event executor service.
+     *
+     * @throws InterruptedException if interrupted while waiting for executor shutdown
+     */
+    @Override
+    public void close() throws InterruptedException {
+        if (!executor.isShutdown()) {
+            executor.shutdown();
+            if (!executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                log.warn("Cache event executor did not terminate in time, forcing shutdown");
+                executor.shutdownNow();
+            }
+        }
+    }
 }

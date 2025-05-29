@@ -14,11 +14,11 @@ package org.sonatype.nexus.cache.internal;
 
 import java.util.Map;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.cache.CacheBuilder;
@@ -71,10 +71,10 @@ public class DefaultCacheBuilderProvider
       @Named("nexus.orient.enabled") final boolean orient,
       final NodeAccess nodeAccess)
   {
-    return switch (orient) {
-      case true when nodeAccess.isClustered() -> "hazelcast";
-      case true, false -> "ehcache";
-    };
+    if (orient && nodeAccess.isClustered()) {
+      return "hazelcast";
+    }
+    return "ehcache";
   }
 
   @Override
@@ -82,7 +82,8 @@ public class DefaultCacheBuilderProvider
     Provider<CacheBuilder> provider = providers.get(name);
     checkState(provider != null, "Cache-builder vanished: %s", name);
     CacheBuilder builder = provider.get();
-    log.debug(STR."Constructed cache-builder: \{name} -> \{builder}");
+    log.debug("Constructed cache-builder: {} -> {}", name, builder);
     return builder;
   }
 }
+

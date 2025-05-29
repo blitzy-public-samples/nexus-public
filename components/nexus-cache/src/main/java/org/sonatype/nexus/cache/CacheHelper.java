@@ -18,16 +18,18 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
-import javax.annotation.Nullable;
+
 import javax.cache.Cache;
 import javax.cache.CacheManager;
 import javax.cache.configuration.Factory;
 import javax.cache.configuration.MutableConfiguration;
 import javax.cache.expiry.ExpiryPolicy;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
+
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 
@@ -67,7 +69,13 @@ public class CacheHelper
   }
 
   private CacheManager manager() {
-    return cacheManagerProvider.get();
+    try {
+      return cacheManagerProvider.get();
+    }
+    catch (Exception e) {
+      log.error("Failed to get cache manager", e);
+      throw e;
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -90,64 +98,66 @@ public class CacheHelper
     checkNotNull(name);
     checkNotNull(mutableConfiguration);
 
-    // Record JFR event for cache creation attempt
     CacheCreationEvent event = new CacheCreationEvent();
     event.cacheName = name;
+    Instant start = Instant.now();
     event.begin();
     
     try {
       // Check if cache already exists
-      Cache<K, V> cache = manager()
-          .getCache(name, mutableConfiguration.getKeyType(), mutableConfiguration.getValueType());
+      Cache<K, V> cache;
+      try (CacheManager manager = manager()) {
+        cache = manager.getCache(name, mutableConfiguration.getKeyType(), mutableConfiguration.getValueType());
 
-      if (cache == null) {
-        // Get or create a lock for this specific cache name
-        ReentrantLock lock = cacheLocks.computeIfAbsent(name, k -> new ReentrantLock());
-        
-        // Only lock when we need to create the cache
-        if (lock.tryLock()) {
-          try {
-            // Double-check after acquiring the lock
-            cache = manager().getCache(name, mutableConfiguration.getKeyType(), mutableConfiguration.getValueType());
-            
-            if (cache == null) {
-              // Create the cache using a virtual thread to handle potential I/O operations
-              CompletableFuture<Cache<K, V>> future = CompletableFuture.supplyAsync(() -> {
-                Cache<K, V> newCache = manager().createCache(name, mutableConfiguration);
-                log.debug(STR."Created cache: \{newCache}");
-                return newCache;
-              }, runnable -> Thread.startVirtualThread(runnable));
-              
-              cache = future.join(); // Wait for completion
-              event.wasCreated = true;
+        if (cache == null) {
+          // Get or create a lock for this specific cache name
+          ReentrantLock lock = cacheLocks.computeIfAbsent(name, k -> new ReentrantLock());
+
+          // Only lock when we need to create the cache
+          if (lock.tryLock()) {
+            try {
+              // Double-check after acquiring the lock
+              cache = manager.getCache(name, mutableConfiguration.getKeyType(), mutableConfiguration.getValueType());
+
+              if (cache == null) {
+                // Create the cache using a virtual thread
+                CompletableFuture<Cache<K, V>> future = CompletableFuture.supplyAsync(() -> {
+                  Cache<K, V> newCache = manager.createCache(name, mutableConfiguration);
+                  log.debug("Created cache: {}", newCache);
+                  return newCache;
+                }, Thread::startVirtualThread);
+
+                cache = future.join(); // Wait for completion
+                event.wasCreated = true;
+              }
+              else {
+                log.debug("Re-using existing cache: {}", cache);
+              }
             }
-            else {
-              log.debug(STR."Re-using existing cache: \{cache}");
+            finally {
+              lock.unlock();
             }
           }
-          finally {
-            lock.unlock();
+          else {
+            // Another thread is creating the cache, wait for it to complete
+            lock.lock();
+            try {
+              cache = manager.getCache(name, mutableConfiguration.getKeyType(), mutableConfiguration.getValueType());
+            }
+            finally {
+              lock.unlock();
+            }
           }
         }
         else {
-          // Another thread is creating the cache, wait for it to complete
-          lock.lock();
-          try {
-            cache = manager().getCache(name, mutableConfiguration.getKeyType(), mutableConfiguration.getValueType());
-          }
-          finally {
-            lock.unlock();
-          }
+          log.debug("Re-using existing cache: {}", cache);
         }
-      }
-      else {
-        log.debug(STR."Re-using existing cache: \{cache}");
-      }
 
-      return cache;
+        return cache;
+      }
     }
     finally {
-      event.end();
+      event.computeDuration(start);
       event.commit();
     }
   }
@@ -161,66 +171,61 @@ public class CacheHelper
    */
   public <K, V> Cache<K, V> getOrCreate(final CacheBuilder<K, V> builder) {
     checkNotNull(builder);
-    
     String name = builder.getName();
     
-    // Record JFR event for cache retrieval/creation
     CacheCreationEvent event = new CacheCreationEvent();
     event.cacheName = name;
+    Instant start = Instant.now();
     event.begin();
     
     try {
-      // Check if cache already exists
-      Cache<K, V> cache = manager().getCache(builder.getName(), builder.getKeyType(), builder.getValueType());
+      Cache<K, V> cache;
+      try (CacheManager manager = manager()) {
+        cache = manager.getCache(builder.getName(), builder.getKeyType(), builder.getValueType());
 
-      if (cache == null) {
-        // Get or create a lock for this specific cache name
-        ReentrantLock lock = cacheLocks.computeIfAbsent(name, k -> new ReentrantLock());
-        
-        // Only lock when we need to create the cache
-        if (lock.tryLock()) {
-          try {
-            // Double-check after acquiring the lock
-            cache = manager().getCache(builder.getName(), builder.getKeyType(), builder.getValueType());
-            
-            if (cache == null) {
-              // Create the cache using a virtual thread to handle potential I/O operations
-              CompletableFuture<Cache<K, V>> future = CompletableFuture.supplyAsync(() -> {
-                Cache<K, V> newCache = builder.build(manager());
-                log.debug(STR."Created cache: \{newCache}");
-                return newCache;
-              }, runnable -> Thread.startVirtualThread(runnable));
-              
-              cache = future.join(); // Wait for completion
-              event.wasCreated = true;
+        if (cache == null) {
+          ReentrantLock lock = cacheLocks.computeIfAbsent(name, k -> new ReentrantLock());
+
+          if (lock.tryLock()) {
+            try {
+              cache = manager.getCache(builder.getName(), builder.getKeyType(), builder.getValueType());
+
+              if (cache == null) {
+                CompletableFuture<Cache<K, V>> future = CompletableFuture.supplyAsync(() -> {
+                  Cache<K, V> newCache = builder.build(manager);
+                  log.debug("Created cache: {}", newCache);
+                  return newCache;
+                }, Thread::startVirtualThread);
+
+                cache = future.join();
+                event.wasCreated = true;
+              }
+              else {
+                log.debug("Re-using existing cache: {}", cache);
+              }
             }
-            else {
-              log.debug(STR."Re-using existing cache: \{cache}");
+            finally {
+              lock.unlock();
             }
           }
-          finally {
-            lock.unlock();
+          else {
+            lock.lock();
+            try {
+              cache = manager.getCache(builder.getName(), builder.getKeyType(), builder.getValueType());
+            }
+            finally {
+              lock.unlock();
+            }
           }
         }
         else {
-          // Another thread is creating the cache, wait for it to complete
-          lock.lock();
-          try {
-            cache = manager().getCache(builder.getName(), builder.getKeyType(), builder.getValueType());
-          }
-          finally {
-            lock.unlock();
-          }
+          log.debug("Re-using existing cache: {}", cache);
         }
       }
-      else {
-        log.debug(STR."Re-using existing cache: \{cache}");
-      }
-
       return cache;
     }
     finally {
-      event.end();
+      event.computeDuration(start);
       event.commit();
     }
   }
@@ -289,25 +294,24 @@ public class CacheHelper
    * @param name the cache name
    */
   public void maybeDestroyCache(final String name) {
-    // Record JFR event for cache destruction
     CacheDestructionEvent event = new CacheDestructionEvent();
     event.cacheName = name;
+    Instant start = Instant.now();
     event.begin();
     
     try {
-      // Use a virtual thread for potentially I/O-bound cache destruction
       CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-        manager().destroyCache(name);
-        log.debug(STR."Destroyed cache: \{name}");
-        
-        // Remove the lock for this cache if it exists
-        cacheLocks.remove(name);
-      }, runnable -> Thread.startVirtualThread(runnable));
-      
-      future.join(); // Wait for completion
+        try (CacheManager manager = manager()) {
+          manager.destroyCache(name);
+          log.debug("Destroyed cache: {}", name);
+          cacheLocks.remove(name);
+        }
+      }, Thread::startVirtualThread);
+
+      future.join();
     }
     finally {
-      event.end();
+      event.computeDuration(start);
       event.commit();
     }
   }
@@ -331,10 +335,8 @@ public class CacheHelper
     @Description("Time taken to create or retrieve the cache")
     Duration duration;
     
-    @Override
-    public void end() {
-      super.end();
-      duration = Duration.between(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(endTime));
+    void computeDuration(Instant start) {
+      duration = Duration.between(start, Instant.now());
     }
   }
   
@@ -354,10 +356,8 @@ public class CacheHelper
     @Description("Time taken to destroy the cache")
     Duration duration;
     
-    @Override
-    public void end() {
-      super.end();
-      duration = Duration.between(Instant.ofEpochMilli(startTime), Instant.ofEpochMilli(endTime));
+    void computeDuration(Instant start) {
+      duration = Duration.between(start, Instant.now());
     }
   }
 }

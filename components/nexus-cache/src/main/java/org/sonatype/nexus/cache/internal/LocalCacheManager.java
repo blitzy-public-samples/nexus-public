@@ -17,12 +17,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import javax.cache.expiry.CreatedExpiryPolicy;
 import javax.cache.expiry.Duration;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.cache.CacheHelper;
@@ -30,7 +30,6 @@ import org.sonatype.nexus.cache.CacheManager;
 import org.sonatype.nexus.cache.NexusCache;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static java.lang.StringTemplate.STR;
 
 /**
  * The cache manager which creates the {@link LocalCache}.
@@ -98,7 +97,7 @@ public class LocalCacheManager<K, V>
       final Class<V> valueType,
       final Duration expiryAfter)
   {
-    log.debug(STR."Creating cache: \{cacheName} with key type: \{keyType}, value type: \{valueType}");
+    log.debug("Creating cache: {} with key type: {}, value type: {}", cacheName, keyType, valueType);
     return new LocalCache<>(
         cacheHelper.maybeCreateCache(cacheName, keyType, valueType, CreatedExpiryPolicy.factoryOf(expiryAfter)));
   }
@@ -120,7 +119,7 @@ public class LocalCacheManager<K, V>
       final Class<V> valueType,
       final Duration expiryAfter)
   {
-    log.debug(STR."Asynchronously creating cache: \{cacheName}");
+    log.debug("Asynchronously creating cache: {}", cacheName);
     return CompletableFuture.supplyAsync(
         () -> getCache(cacheName, keyType, valueType, expiryAfter),
         virtualThreadExecutor
@@ -136,7 +135,7 @@ public class LocalCacheManager<K, V>
    */
   @Override
   public void destroyCache(final String cacheName) {
-    log.debug(STR."Destroying cache: \{cacheName}");
+    log.debug("Destroying cache: {}", cacheName);
     cacheHelper.maybeDestroyCache(cacheName);
   }
   
@@ -149,7 +148,7 @@ public class LocalCacheManager<K, V>
    */
   @Override
   public CompletableFuture<Void> destroyCacheAsync(final String cacheName) {
-    log.debug(STR."Asynchronously destroying cache: \{cacheName}");
+    log.debug("Asynchronously destroying cache: {}", cacheName);
     return CompletableFuture.runAsync(
         () -> destroyCache(cacheName),
         virtualThreadExecutor
@@ -167,16 +166,21 @@ public class LocalCacheManager<K, V>
    */
   @Override
   public <C> NexusCache<K, V> getOrCreateCache(final String cacheName, final C cacheConfig) {
-    log.debug(STR."Getting or creating cache: \{cacheName} with config type: \{cacheConfig.getClass().getSimpleName()}");
-    
-    // Using Pattern Matching for instanceof to handle different configuration types
-    return switch (cacheConfig) {
-      case CacheConfig(var keyType, var valueType, var expiryAfter) -> 
-        getCache(cacheName, keyType, valueType, expiryAfter);
-      case Duration duration -> 
-        getCache(cacheName, null, null, duration);
-      default -> throw new IllegalArgumentException(STR."Unsupported cache configuration type: \{cacheConfig.getClass().getName()}");
-    };
+    log.debug("Getting or creating cache: {} with config type: {}",
+        cacheName, cacheConfig.getClass().getSimpleName());
+
+    if (cacheConfig instanceof CacheConfig<?, ?> config) {
+        @SuppressWarnings("unchecked")
+        Class<K> keyType = (Class<K>) config.keyType();
+        @SuppressWarnings("unchecked")
+        Class<V> valueType = (Class<V>) config.valueType();
+        return getCache(cacheName, keyType, valueType, config.expiryAfter());
+    } else if (cacheConfig instanceof Duration duration) {
+        return getCache(cacheName, null, null, duration);
+    } else {
+        throw new IllegalArgumentException(String.format("Unsupported cache configuration type: %s",
+            cacheConfig.getClass().getName()));
+    }
   }
   
   /**
@@ -200,7 +204,7 @@ public class LocalCacheManager<K, V>
       final Duration expiryAfter,
       final Function<NexusCache<K, V>, R> cacheFunction) 
   {
-    log.debug(STR."Executing function with temporary cache: \{cacheName}");
+    log.debug("Executing function with temporary cache: {}", cacheName);
     NexusCache<K, V> cache = getCache(cacheName, keyType, valueType, expiryAfter);
     try {
       return cacheFunction.apply(cache);

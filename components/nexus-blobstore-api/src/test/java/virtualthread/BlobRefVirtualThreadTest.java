@@ -395,7 +395,7 @@ public class BlobRefVirtualThreadTest
       // Create BlobRefs to test
       final BlobRef canonicalRef = new BlobRef(STORE_NAME, BLOB_ID);
       final BlobRef legacyOrientRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID);
-      final BlobRef dateBasedRef = new BlobRef(STORE_NAME, BLOB_ID, DATE_CREATED);
+      final BlobRef dateBasedRef = new BlobRef(NODE_ID, STORE_NAME, BLOB_ID, DATE_CREATED);
       
       // Submit concurrent tasks
       for (int i = 0; i < CONCURRENT_THREADS; i++) {

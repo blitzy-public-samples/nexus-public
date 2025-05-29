@@ -17,8 +17,7 @@ import java.time.ZoneOffset;
 
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
-
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;

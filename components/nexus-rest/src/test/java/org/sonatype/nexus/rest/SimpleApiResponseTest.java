@@ -83,13 +83,13 @@ public class SimpleApiResponseTest
   private void assertResponse(Response simpleApiResponse, Status status, String value) {
     assertEquals(status.getStatusCode(), simpleApiResponse.getStatus());
     SimpleApiResponse entity = (SimpleApiResponse) simpleApiResponse.getEntity();
-    assertEquals(status.getStatusCode(), entity.getStatus());
-    assertEquals("message", entity.getMessage());
+    assertEquals(status.getStatusCode(), entity.status());
+    assertEquals("message", entity.message());
     if (value == null) {
-      assertNull(entity.getData());
+      assertNull(entity.data());
     }
     else {
-      assertEquals("bar", ((Data) entity.getData()).getFoo());
+      assertEquals("bar", ((Data) entity.data()).getFoo());
     }
   }
 

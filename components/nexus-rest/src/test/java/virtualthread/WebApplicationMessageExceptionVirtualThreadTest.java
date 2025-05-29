@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Test;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.WebApplicationMessageException;
 
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,8 +51,8 @@ public class WebApplicationMessageExceptionVirtualThreadTest
       Object entity = response.getEntity();
 
       assertInstanceOf(ValidationErrorXO.class, entity);
-      assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
-      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+      assertEquals("Message", ((ValidationErrorXO) entity).message());
+      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
       assertEquals(ImmutableList.of(MediaType.APPLICATION_JSON), response.getHeaders().get("Content-Type"));
     });
   }
@@ -72,8 +72,8 @@ public class WebApplicationMessageExceptionVirtualThreadTest
       Object entity = response.getEntity();
 
       assertInstanceOf(ValidationErrorXO.class, entity);
-      assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
-      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+      assertEquals("Message", ((ValidationErrorXO) entity).message());
+      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
       assertEquals(ImmutableList.of(MediaType.TEXT_PLAIN), response.getHeaders().get("Content-Type"));
     });
   }
@@ -86,9 +86,9 @@ public class WebApplicationMessageExceptionVirtualThreadTest
     executeInVirtualThread(() -> {
       String resourceId = "test-resource-123";
       String action = "update";
-      
-      // Using Java 21 String Template feature
-      String errorMessage = STR."Resource \{resourceId} cannot be \{action}d";
+
+      // Using standard string concatenation
+      String errorMessage = "Resource " + resourceId + " cannot be " + action + "d";
       
       WebApplicationMessageException exception = new WebApplicationMessageException(
           Response.Status.FORBIDDEN, errorMessage, MediaType.APPLICATION_JSON);
@@ -99,8 +99,8 @@ public class WebApplicationMessageExceptionVirtualThreadTest
       Object entity = response.getEntity();
 
       assertInstanceOf(ValidationErrorXO.class, entity);
-      assertEquals("Resource test-resource-123 cannot be updated", ((ValidationErrorXO) entity).getMessage());
-      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+      assertEquals("Resource test-resource-123 cannot be updated", ((ValidationErrorXO) entity).message());
+      assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
     });
   }
 
@@ -131,7 +131,7 @@ public class WebApplicationMessageExceptionVirtualThreadTest
             // Verify the entity is a ValidationErrorXO with the correct message
             Object entity = response.getEntity();
             assertInstanceOf(ValidationErrorXO.class, entity);
-            assertEquals(message, ((ValidationErrorXO) entity).getMessage());
+            assertEquals(message, ((ValidationErrorXO) entity).message());
           } 
           catch (Throwable t) {
             failure.set(t);

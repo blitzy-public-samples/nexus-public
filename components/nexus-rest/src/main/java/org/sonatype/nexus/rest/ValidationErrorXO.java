@@ -61,7 +61,7 @@ public record ValidationErrorXO(
    * @param message validation description
    */
   public ValidationErrorXO {
-    this.id = id == null ? GENERIC : id;
+    id = id == null ? GENERIC : id;
   }
 
   /**

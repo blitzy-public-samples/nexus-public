@@ -29,7 +29,7 @@ import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
  * @since 3.0
  */
 public abstract class ExceptionMapperSupport<E extends Throwable>
-    implements ExceptionMapper<E>, Component
+        implements ExceptionMapper<E>, Component
 {
   public static final String X_SIESTA_FAULT_ID = "X-Siesta-FaultId";
 
@@ -43,10 +43,10 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
 
     // debug/trace log exception details
     if (log.isTraceEnabled()) {
-      log.trace(STR."(ID \{id}) Mapping exception: \{exception}", exception);
+      log.trace("(ID " + id + ") Mapping exception: " + exception, exception);
     }
     else {
-      log.debug(STR."(ID \{id}) Mapping exception: \{exception}");
+      log.debug("(ID " + id + ") Mapping exception: " + exception);
     }
 
     // Prepare the response
@@ -55,7 +55,7 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
       response = convert(exception, id);
     }
     catch (Exception e) {
-      log.warn(STR."(ID \{id}) Failed to map exception", e);
+      log.warn("(ID " + id + ") Failed to map exception", e);
       response = Response.serverError().entity(new FaultXO(id, e)).build();
     }
 
@@ -64,8 +64,9 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
 
     // Log terse (unless debug enabled) warning with fault details
     final Object entity = response.getEntity();
-    log.warn(STR."(ID \{id}) Response: [\{response.getStatus()}] \{entity == null ? "(no entity/body)" : String.format("'%s'", entity)}; mapped from: \{exception}",
-        log.isDebugEnabled() ? exception : null);
+    log.warn("(ID " + id + ") Response: [" + response.getStatus() + "] " +
+                    (entity == null ? "(no entity/body)" : String.format("'%s'", entity)) + "; mapped from: " + exception,
+            log.isDebugEnabled() ? exception : null);
 
     return response;
   }
@@ -84,11 +85,11 @@ public abstract class ExceptionMapperSupport<E extends Throwable>
 
   protected Response unexpectedResponse(final Throwable exception, final String id) {
     // always log unexpected exception with stack
-    log.warn(STR."(ID \{id}) Unexpected exception: \{exception.toString()}", exception);
+    log.warn("(ID " + id + ") Unexpected exception: " + exception.toString(), exception);
 
     return Response.serverError()
-        .entity(STR."ERROR: (ID \{id}) \{exception}")
-        .type(TEXT_PLAIN)
-        .build();
+            .entity("ERROR: (ID " + id + ") " + exception)
+            .type(TEXT_PLAIN)
+            .build();
   }
 }

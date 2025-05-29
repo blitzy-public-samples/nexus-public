@@ -140,7 +140,7 @@ public class ValidationErrorsException
       } else {
         first = false;
       }
-      sb.append(error.getMessage());
+      sb.append(error.message());
     }
     
     return sb.toString();

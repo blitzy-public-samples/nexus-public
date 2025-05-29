@@ -36,8 +36,8 @@ public class WebApplicationMessageExceptionTest
     Object entity = response.getEntity();
 
     assertTrue(entity instanceof ValidationErrorXO);
-    assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+    assertEquals("Message", ((ValidationErrorXO) entity).message());
+    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
     assertEquals(ImmutableList.of(MediaType.APPLICATION_JSON), response.getHeaders().get("Content-Type"));
   }
 
@@ -53,8 +53,8 @@ public class WebApplicationMessageExceptionTest
     Object entity = response.getEntity();
 
     assertTrue(entity instanceof ValidationErrorXO);
-    assertEquals("Message", ((ValidationErrorXO) entity).getMessage());
-    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).getId());
+    assertEquals("Message", ((ValidationErrorXO) entity).message());
+    assertEquals(ValidationErrorXO.GENERIC, ((ValidationErrorXO) entity).id());
     assertEquals(ImmutableList.of(MediaType.TEXT_PLAIN), response.getHeaders().get("Content-Type"));
   }
 }

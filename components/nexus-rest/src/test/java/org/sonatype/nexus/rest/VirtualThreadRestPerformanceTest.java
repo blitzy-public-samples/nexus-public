@@ -275,9 +275,10 @@ public class VirtualThreadRestPerformanceTest
     Instant start = Instant.now();
     
     for (int i = 0; i < operationCount; i++) {
+      final int index = i;
       final String message = "Test message " + i;
       CompletableFuture<Response> future = CompletableFuture.supplyAsync(
-          () -> SimpleApiResponse.ok(message, new TestData("value-" + i)),
+          () -> SimpleApiResponse.ok(message, new TestData("value-" + index)),
           virtualExecutor
       );
       
@@ -386,8 +387,8 @@ public class VirtualThreadRestPerformanceTest
             case 0 -> new WebApplicationMessageException(Status.BAD_REQUEST, "Bad request " + index, APPLICATION_JSON);
             case 1 -> new WebApplicationMessageException(Status.NOT_FOUND, "Not found " + index);
             case 2 -> new WebApplicationMessageException(Status.UNAUTHORIZED, "Unauthorized " + index);
-            case 3 -> WebApplicationMessageException.forStatus(Status.FORBIDDEN);
-            case 4 -> WebApplicationMessageException.forStatus(429); // Too Many Requests
+            case 3 -> new WebApplicationMessageException(Status.FORBIDDEN, "Forbidden", APPLICATION_JSON);
+            case 4 -> new WebApplicationMessageException(Status.TOO_MANY_REQUESTS, "Too Many Requests", APPLICATION_JSON);
             default -> throw new IllegalStateException("Unexpected value");
           };
           

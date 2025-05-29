@@ -74,7 +74,7 @@ public class VirtualThreadSupport
    */
   public static <T> T runInVirtualThread(Callable<T> task, Duration timeout) {
     try {
-      Future<T> future = Thread.ofVirtual().name("virtual-test-thread").start(task);
+      Future<T> future = Executors.newSingleThreadExecutor(Thread.ofVirtual().factory()).submit(task);
       return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
     }
     catch (InterruptedException e) {

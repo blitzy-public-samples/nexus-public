@@ -15,12 +15,12 @@ package virtualthread;
 import org.junit.Test;
 import org.sonatype.nexus.rest.SimpleApiResponse;
 
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static javax.ws.rs.core.Response.Status.*;
+import static jakarta.ws.rs.core.Response.Status.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 
@@ -172,25 +172,25 @@ public class SimpleApiResponseVirtualThreadTest
               response = SimpleApiResponse.ok(message);
               assertThat(response.getStatus(), is(OK.getStatusCode()));
               SimpleApiResponse entity = (SimpleApiResponse) response.getEntity();
-              assertThat(entity.getMessage(), is(message));
+              assertThat(entity.message(), is(message));
               break;
             case 1:
               response = SimpleApiResponse.notFound(message);
               assertThat(response.getStatus(), is(NOT_FOUND.getStatusCode()));
               entity = (SimpleApiResponse) response.getEntity();
-              assertThat(entity.getMessage(), is(message));
+              assertThat(entity.message(), is(message));
               break;
             case 2:
               response = SimpleApiResponse.badRequest(message);
               assertThat(response.getStatus(), is(BAD_REQUEST.getStatusCode()));
               entity = (SimpleApiResponse) response.getEntity();
-              assertThat(entity.getMessage(), is(message));
+              assertThat(entity.message(), is(message));
               break;
             case 3:
               response = SimpleApiResponse.unauthorized(message);
               assertThat(response.getStatus(), is(UNAUTHORIZED.getStatusCode()));
               entity = (SimpleApiResponse) response.getEntity();
-              assertThat(entity.getMessage(), is(message));
+              assertThat(entity.message(), is(message));
               break;
           }
         } catch (Throwable t) {
@@ -220,13 +220,13 @@ public class SimpleApiResponseVirtualThreadTest
   private void assertResponse(Response simpleApiResponse, Status status, String value) {
     assertThat(simpleApiResponse.getStatus(), is(status.getStatusCode()));
     SimpleApiResponse entity = (SimpleApiResponse) simpleApiResponse.getEntity();
-    assertThat(entity.getStatus(), is(status.getStatusCode()));
-    assertThat(entity.getMessage(), is("message"));
+    assertThat(entity.status(), is(status.getStatusCode()));
+    assertThat(entity.message(), is("message"));
     if (value == null) {
-      assertThat(entity.getData(), is(nullValue()));
+      assertThat(entity.data(), is(nullValue()));
     }
     else {
-      assertThat(((Data) entity.getData()).getFoo(), is("bar"));
+      assertThat(((Data) entity.data()).getFoo(), is("bar"));
     }
   }
 

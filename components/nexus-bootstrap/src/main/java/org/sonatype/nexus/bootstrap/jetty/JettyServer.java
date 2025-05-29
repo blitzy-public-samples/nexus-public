@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.bootstrap.jetty;
 
+import java.io.FileInputStream;
 import java.net.URL;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -32,10 +33,11 @@ import org.sonatype.nexus.bootstrap.internal.PropertyMap;
 import org.sonatype.nexus.bootstrap.internal.ShutdownHelper;
 
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.handler.ContextHandler;
-import org.eclipse.jetty.server.handler.ContextHandler.Context;
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler; 
 import org.eclipse.jetty.util.component.LifeCycle;
+import org.eclipse.jetty.util.resource.PathResource;
 import org.eclipse.jetty.util.resource.Resource;
+import org.eclipse.jetty.util.resource.ResourceFactory;
 import org.eclipse.jetty.xml.XmlConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -150,12 +152,13 @@ public class JettyServer
     // For all arguments, load properties or parse XMLs
     XmlConfiguration last = null;
     for (String arg : args) {
-      URL url = Resource.newResource(arg).getURL();
+      //URL url = Resource.newResource(arg).getURL();
+      Resource url = ResourceFactory.root().newResource(arg);
 
-      if (url.getFile().toLowerCase(Locale.ENGLISH).endsWith(".properties")) {
+      if (url.getFileName().toLowerCase(Locale.ENGLISH).endsWith(".properties")) {
         log.info("Loading properties: {}", url);
-
-        props.load(url);
+        
+        props.load(new FileInputStream(url.getPath().toFile()));
       }
       else {
         log.info("Applying configuration: {}", url);
@@ -372,13 +375,19 @@ public class JettyServer
 
     private static void logStartupBanner(Server server) {
       Object banner = null;
+      
+      jakarta.servlet.ServletContext servletContext = null;
+      for (org.eclipse.jetty.server.Handler handler : server.getHandlers()) {
+          if (handler instanceof ServletContextHandler servletContextHandler) {
+               servletContext = servletContextHandler.getServletContext();
+               break;
+          }
+      }
 
-      ContextHandler contextHandler = server.getChildHandlerByClass(ContextHandler.class);
-      if (contextHandler != null) {
-        Context context = contextHandler.getServletContext();
-        if (context != null) {
-          banner = context.getAttribute("nexus-banner");
-        }
+      if (servletContext != null) {
+          banner = servletContext.getAttribute("nexus-banner");
+      } else {
+           log.warn("Could not find ServletContext for banner. No WebAppContext or ServletContextHandler found.");
       }
 
       StringBuilder buf = new StringBuilder();

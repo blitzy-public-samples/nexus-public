@@ -14,6 +14,7 @@ package org.sonatype.nexus.bootstrap.jetty;
 
 import java.util.Optional;
 
+import org.eclipse.jetty.http.HttpFields;
 import org.eclipse.jetty.http.HttpURI;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.HttpConfiguration;
@@ -64,8 +65,13 @@ public class NexusRequestCustomizer
     this.repositoryRequestPathPrefix = nexusContextPath + REPOSITORY;
     this.dockerBehindReverseProxyTokenRequestPattern = initDockerBehindReverseProxyTokenRequestPattern();
   }
-
+  
   @Override
+  public Request customize(Request request, HttpFields.Mutable responseHeaders) {
+	  // TODO: FIXME
+	  return request;
+  }
+  
   public void customize(final Connector connector, final HttpConfiguration channelConfig, final Request request) {
     HttpURI uri = request.getHttpURI();
     String path = uri.getPath();
@@ -102,7 +108,8 @@ public class NexusRequestCustomizer
     log.debug(STR."Found \{version} for \{uri}");
 
     if (isJettyPort(connector)) {
-      String repositoryName = DockerSubdomainRepositoryMapping.get(request.getHeader("Host"));
+    	
+      String repositoryName = DockerSubdomainRepositoryMapping.get(request.getHeaders().get("Host"));
       if (repositoryName != null) {
         String dockerLocation = extractDockerLocation(request);
         log.debug(STR."For \{repositoryName} dockerLocation \{dockerLocation}");
@@ -124,11 +131,11 @@ public class NexusRequestCustomizer
     HttpURI uri = request.getHttpURI();
 
     // Prefer proxy forwarded headers, fall back to what we know about the request
-    String scheme = Optional.ofNullable(request.getHeader("X-Forwarded-Proto"))
+    String scheme = Optional.ofNullable(request.getHeaders().get("X-Forwarded-Proto"))
         .orElseGet(uri::getScheme);
-    String host = Optional.ofNullable(request.getHeader("X-Forwarded-Host"))
+    String host = Optional.ofNullable(request.getHeaders().get("X-Forwarded-Host"))
         .orElseGet(uri::getHost);
-    int port = Optional.ofNullable(request.getHeader("X-Forwarded-Port"))
+    int port = Optional.ofNullable(request.getHeaders().get("X-Forwarded-Port"))
         .map(Integer::valueOf)
         .orElseGet(uri::getPort);
 
@@ -195,7 +202,8 @@ public class NexusRequestCustomizer
    * @param newPath The new path
    */
   private void setNewRequestURI(final Request request, final HttpURI uri, final String path, final String newPath) {
-    request.setHttpURI(HttpURI.build(uri).path(newPath).asImmutable());
-    request.setMetaData(request.getMetaData());
+    // TODOs: FIXME
+	 //request.setHttpURI(HttpURI.build(uri).path(newPath).asImmutable());
+    //request.setMetaData(request.getMetaData());
   }
 }

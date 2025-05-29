@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.servlet.Filter;
+import jakarta.servlet.Filter;
 
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.FrameworkUtil;

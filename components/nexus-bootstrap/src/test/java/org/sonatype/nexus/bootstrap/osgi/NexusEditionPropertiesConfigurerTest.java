@@ -15,22 +15,18 @@ package org.sonatype.nexus.bootstrap.osgi;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import uk.org.webcompere.systemstubs.jupiter.SystemStubsExtension;
-import uk.org.webcompere.systemstubs.environment.EnvironmentVariables;
-import uk.org.webcompere.systemstubs.SystemStub;
+import org.junit.contrib.java.lang.system.EnvironmentVariables;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-@ExtendWith(SystemStubsExtension.class)
 public class NexusEditionPropertiesConfigurerTest
 {
 
   private final NexusEditionPropertiesConfigurer underTest = new NexusEditionPropertiesConfigurer();
 
-  @SystemStub
   private EnvironmentVariables environmentVariables;
 
   @BeforeEach

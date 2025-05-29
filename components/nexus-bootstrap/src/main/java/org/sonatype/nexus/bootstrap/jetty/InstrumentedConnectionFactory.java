@@ -12,11 +12,13 @@
  */
 package org.sonatype.nexus.bootstrap.jetty;
 
+import java.util.EventListener;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeoutException;
 
-import io.dropwizard.metrics.SharedMetricRegistries;
-import io.dropwizard.metrics.Timer;
+import com.codahale.metrics.SharedMetricRegistries;
+import com.codahale.metrics.Timer;
 import org.eclipse.jetty.io.Connection;
 import org.eclipse.jetty.io.EndPoint;
 import org.eclipse.jetty.server.ConnectionFactory;
@@ -94,11 +96,6 @@ public final class InstrumentedConnectionFactory
     }
 
     @Override
-    public boolean isClosed() {
-      return delegate.isClosed();
-    }
-
-    @Override
     public EndPoint getEndPoint() {
       return delegate.getEndPoint();
     }
@@ -113,9 +110,52 @@ public final class InstrumentedConnectionFactory
       delegate.onClose(cause);
     }
 
-    @Override
-    public Executor getExecutor() {
-      return delegate.getExecutor();
-    }
+	@Override
+	public void addEventListener(EventListener listener) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void removeEventListener(EventListener listener) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public boolean onIdleExpired(TimeoutException timeoutException) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+
+	@Override
+	public long getMessagesIn() {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long getMessagesOut() {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long getBytesIn() {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long getBytesOut() {
+		// TODO Auto-generated method stub
+		return 0;
+	}
+
+	@Override
+	public long getCreatedTimeStamp() {
+		// TODO Auto-generated method stub
+		return 0;
+	}
   }
 }

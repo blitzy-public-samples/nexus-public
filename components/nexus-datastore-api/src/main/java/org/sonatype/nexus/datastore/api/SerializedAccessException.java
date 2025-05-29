@@ -56,7 +56,6 @@ public class SerializedAccessException
    *
    * @return the root cause of this exception
    */
-  @Override
   public Throwable getRootCause() {
     Throwable rootCause = this;
     while (rootCause.getCause() != null) {

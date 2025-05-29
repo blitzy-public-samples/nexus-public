@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Maps.transformEntries;
 import static java.util.regex.Pattern.compile;
-import static org.apache.commons.lang.StringUtils.containsIgnoreCase;
+import static org.apache.commons.lang3.StringUtils.containsIgnoreCase;
 import static org.sonatype.nexus.common.jdbc.JdbcUrlRedactor.redactPassword;
 
 /**

@@ -88,22 +88,23 @@
       <artifactId>org.osgi.compendium</artifactId>
       <optional>true</optional>
     </dependency>
+	
+	<!-- https://mvnrepository.com/artifact/org.eclipse.jetty.ee8/jetty-ee8-nested -->
+	<dependency>
+	    <groupId>org.eclipse.jetty.ee8</groupId>
+	    <artifactId>jetty-ee8-nested</artifactId>
+	    <version>12.0.16</version>
+	</dependency>
 
     <dependency>
-      <groupId>org.eclipse.jetty</groupId>
-      <artifactId>jetty-webapp</artifactId>
+      <groupId>org.eclipse.jetty.ee10</groupId>
+      <artifactId>jetty-ee10-webapp</artifactId>
       <optional>true</optional>
     </dependency>
 
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-xml</artifactId>
-      <optional>true</optional>
-    </dependency>
-
-    <dependency>
-      <groupId>io.dropwizard.metrics</groupId>
-      <artifactId>metrics-jetty9</artifactId>
       <optional>true</optional>
     </dependency>
 
@@ -123,7 +124,6 @@
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-core</artifactId>
-      <version>4.1.35</version>
     </dependency>
 
     <dependency>

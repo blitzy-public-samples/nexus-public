@@ -56,8 +56,8 @@
     </dependency>
 
     <dependency>
-      <groupId>org.eclipse.jetty</groupId>
-      <artifactId>jetty-webapp</artifactId>
+      <groupId>org.eclipse.jetty.ee10</groupId>
+      <artifactId>jetty-ee10-webapp</artifactId>
     </dependency>
 
     <dependency>
@@ -66,8 +66,8 @@
     </dependency>
 
     <dependency>
-      <groupId>org.eclipse.jetty</groupId>
-      <artifactId>jetty-servlet</artifactId>
+      <groupId>org.eclipse.jetty.ee10</groupId>
+      <artifactId>jetty-ee10-servlet</artifactId>
     </dependency>
 
     <dependency>
@@ -127,7 +127,7 @@
 
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
-      <artifactId>metrics-jetty9</artifactId>
+      <artifactId>metrics-jetty12</artifactId>
     </dependency>
 
     <dependency>

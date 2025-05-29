@@ -28,7 +28,8 @@
   <packaging>pom</packaging>
 
   <properties>
-    <eclipse-jetty.version>9.4.56.v20240826</eclipse-jetty.version>
+    <eclipse-jetty.version>12.0.16</eclipse-jetty.version>
+    <eclipse-jetty-continuation.version>9.4.56.v20240826</eclipse-jetty-continuation.version>
   </properties>
 
   <dependencyManagement>
@@ -39,16 +40,22 @@
         <version>3.1.0</version>
       </dependency>
 
+	<dependency>
+        <groupId>org.eclipse.jetty.ee10</groupId>
+        <artifactId>jetty-ee10-servlet</artifactId>
+        <version>${eclipse-jetty.version}</version>
+    </dependency>
+    
       <dependency>
-        <groupId>org.eclipse.jetty</groupId>
-        <artifactId>jetty-webapp</artifactId>
+        <groupId>org.eclipse.jetty.ee10</groupId>
+        <artifactId>jetty-ee10-webapp</artifactId>
         <version>${eclipse-jetty.version}</version>
       </dependency>
 
       <dependency>
         <groupId>org.eclipse.jetty</groupId>
         <artifactId>jetty-continuation</artifactId>
-        <version>${eclipse-jetty.version}</version>
+        <version>${eclipse-jetty-continuation.version}</version>
       </dependency>
 
       <dependency>

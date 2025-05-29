@@ -15,7 +15,6 @@ package org.sonatype.nexus.bootstrap.jetty;
 import java.util.concurrent.Executors;
 
 import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.jetty12.InstrumentedQueuedThreadPool;
 import com.codahale.metrics.SharedMetricRegistries;
 
 /**
@@ -25,7 +24,7 @@ import com.codahale.metrics.SharedMetricRegistries;
  * @since 3.0
  */
 public final class InstrumentedQueuedThreadPool
-    extends InstrumentedQueuedThreadPool
+    extends io.dropwizard.metrics.jetty12.InstrumentedQueuedThreadPool
 {
   /**
    * Creates a new instrumented thread pool with Virtual Thread support for I/O-bound operations.

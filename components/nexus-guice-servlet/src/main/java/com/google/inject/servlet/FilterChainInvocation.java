@@ -51,14 +51,17 @@ class FilterChainInvocation
   {
     // Ensure MDC context is properly set for Virtual Thread execution
     if (MDCUtils.isVirtualThread()) {
-      MDCUtils.setIfNeeded();
+    	// TODOs: FIXME. Below method does not exists.
+    	// MDCUtils.setIfNeeded();
     }
     
     // If we've reached the end of the filter chain, dispatch to the servlet pipeline
     if (filterIndex >= filterDefinitions.length) {
       // If servletPipeline has no servlets mapped, proceed to the next filter chain
       if (servletPipeline.hasServletsMapped()) {
-        servletPipeline.dispatch(request, response, proceedingFilterChain);
+          // TODOs: FIXME - which dispatch method ? How to Map FilterPipeline
+    	  //servletPipeline.dispatch(request, response, proceedingFilterChain);
+    	  servletPipeline.service(request, response);
       }
       else if (proceedingFilterChain != null) {
         proceedingFilterChain.doFilter(request, response);
@@ -68,7 +71,7 @@ class FilterChainInvocation
       // Otherwise, dispatch to the next filter in the chain
       final FilterDefinition filterDefinition = filterDefinitions[filterIndex++];
       try {
-        filterDefinition.doFilter(request, response, this);
+        filterDefinition.getFilter().doFilter(request, response, this);
       }
       catch (IOException | ServletException e) {
         throw e;

@@ -28,7 +28,7 @@
   <packaging>pom</packaging>
 
   <properties>
-    <metrics.version>4.1.35</metrics.version>
+    <metrics.version>4.2.29</metrics.version>
     <prometheus.version>0.16.0</prometheus.version>
     <metrics-guice.version>3.2.2</metrics-guice.version>
 </properties>
@@ -55,7 +55,7 @@
 
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
-            <artifactId>metrics-jetty9</artifactId>
+            <artifactId>metrics-jetty12</artifactId>
             <version>${metrics.version}</version>
             <exclusions>
                 <exclusion>

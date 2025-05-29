@@ -19,9 +19,9 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
-import javax.servlet.ServletContext;
-import javax.servlet.ServletContextEvent;
-import javax.servlet.ServletContextListener;
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletContextEvent;
+import jakarta.servlet.ServletContextListener;
 
 import org.apache.karaf.features.Feature;
 import org.apache.karaf.features.FeaturesService;
@@ -89,9 +89,19 @@ public class BootstrapListener
 
       // Use CompletableFuture to wait for services concurrently
       CompletableFuture<Void> listenerFuture = CompletableFuture.runAsync(
-          () -> listenerTracker.waitForService(0), virtualThreadExecutor);
+          () -> { try {
+			listenerTracker.waitForService(0);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for listenerFuture", e);
+		} }, virtualThreadExecutor);
       CompletableFuture<Void> filterFuture = CompletableFuture.runAsync(
-          () -> filterTracker.waitForService(0), virtualThreadExecutor);
+          () -> { try {
+			filterTracker.waitForService(0);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for listenerFuture", e);
+		} }, virtualThreadExecutor);
       
       // Wait for both services to be available
       CompletableFuture.allOf(listenerFuture, filterFuture).join();
@@ -112,9 +122,9 @@ public class BootstrapListener
     String editionName = properties.getProperty(NexusEditionPropertiesConfigurer.NEXUS_EDITION);
     if (editionName != null && !editionName.isEmpty()) {
       // Use try-with-resources to ensure tracker is closed properly
-      try (ServiceTracker<FeaturesService, FeaturesService> tracker = 
-          new ServiceTracker<>(ctx, FeaturesService.class, null)) {
-        tracker.open();
+      try {
+    	  ServiceTracker<FeaturesService, FeaturesService> tracker = new ServiceTracker<>(ctx, FeaturesService.class, null);
+         tracker.open();
         
         // Use Virtual Thread to wait for service asynchronously
         CompletableFuture<FeaturesService> featureServiceFuture = CompletableFuture.supplyAsync(() -> {
@@ -125,7 +135,7 @@ public class BootstrapListener
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while waiting for FeaturesService", e);
           }
-        }, Thread.ofVirtual().factory());
+        }, Executors.newVirtualThreadPerTaskExecutor());
         
         FeaturesService featuresService = featureServiceFuture.join();
         if (featuresService == null) {
@@ -166,6 +176,8 @@ public class BootstrapListener
         }
 
         log.info("Installed: {} ({})", editionFeature, dbFeature);
+      } finally {
+    	  
       }
     }
   }

@@ -21,7 +21,7 @@ public class DuplicateKeyException
     extends DataAccessException
 {
   // Updated serialVersionUID for Java 21 compatibility
-  private static final long serialVersionUID = 2023_09_15_98739582308995723L;
+  private static final long serialVersionUID = 2023_09_15_98739582308L;
 
   public static final String SQL_STATE = "23505";
 

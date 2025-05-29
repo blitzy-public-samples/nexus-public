@@ -29,7 +29,6 @@ import ch.qos.logback.classic.LoggerContext;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.impl.StaticLoggerBinder;
 import uk.org.lidalia.sysoutslf4j.context.SysOutOverSLF4J;
 
 /**
@@ -288,6 +287,6 @@ public class Launcher
     if (factory instanceof LoggerContext) {
       return (LoggerContext) factory;
     }
-    return (LoggerContext) StaticLoggerBinder.getSingleton().getLoggerFactory();
+    return (LoggerContext) LoggerFactory.getILoggerFactory();
   }
 }

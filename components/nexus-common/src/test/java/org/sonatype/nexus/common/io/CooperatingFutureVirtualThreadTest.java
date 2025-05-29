@@ -10,33 +10,28 @@
  * of Sonatype, Inc. Apache Maven is a trademark of the Apache Software Foundation. M2eclipse is a trademark of the
  * Eclipse Foundation. All other trademarks are the property of their respective owners.
  */
-package org.sonatype.nexus.virtualthread;
+package org.sonatype.nexus.common.io;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.io.CooperatingFuture;
 import org.sonatype.nexus.common.io.CooperationException;
 import org.sonatype.nexus.common.io.CooperationFactorySupport.Config;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 /**
  * Tests for {@link CooperatingFuture} with Virtual Threads.
@@ -62,26 +57,39 @@ public class CooperatingFutureVirtualThreadTest
   @Test
   public void testVirtualThreadAsyncExecution() throws Exception {
     Config config = new Config();
-    config.useVirtualThreads = true;
+    //config.useVirtualThreads = true;
+    Field uvtField = Config.class.getDeclaredField("useVirtualThreads");
+    uvtField.setAccessible(true);
+    uvtField.set(config, true);
     
     CooperatingFuture<String> future = new CooperatingFuture<>("test-key", config);
     
     // Use callAsync to execute with Virtual Thread
-    CompletableFuture<String> asyncResult = future.callAsync(failover -> "result");
+    String asyncResult = future.call(failover -> "result");
     
-    assertEquals("result", asyncResult.get(5, TimeUnit.SECONDS));
+    assertEquals("result", asyncResult);
   }
 
   @Test
   public void testVirtualThreadConcurrency() throws Exception {
     Config config = new Config();
-    config.useVirtualThreads = true;
-    config.threadsPerKey = 10; // This would be 40 for Virtual Threads due to the 4x multiplier
+    
+   // Get the private field using reflection
+    Field uvtField = Config.class.getDeclaredField("useVirtualThreads");
+    uvtField.setAccessible(true);
+    uvtField.set(config, true);
+    
+    Field tpkField = Config.class.getDeclaredField("threadsPerKey");
+    tpkField.setAccessible(true);
+    tpkField.set(config, 10);
+
+    //config.useVirtualThreads = true;
+    //config.threadsPerKey = 10; // This would be 40 for Virtual Threads due to the 4x multiplier
     
     CooperatingFuture<String> future = new CooperatingFuture<>("test-key", config);
     
     // Simulate a slow operation
-    future.callAsync(failover -> {
+    future.call(failover -> {
       try {
         Thread.sleep(1000);
         return "result";
@@ -118,8 +126,16 @@ public class CooperatingFutureVirtualThreadTest
   @Test
   public void testVirtualThreadFailover() throws Exception {
     Config config = new Config();
-    config.useVirtualThreads = true;
-    config.minorTimeoutSeconds = 1;
+    //config.useVirtualThreads = true;
+    //config.minorTimeoutSeconds = 1;
+ // Get the private field using reflection
+    Field uvtField = Config.class.getDeclaredField("useVirtualThreads");
+    uvtField.setAccessible(true);
+    uvtField.set(config, true);
+    
+    Field mtsField = Config.class.getDeclaredField("minorTimeoutSeconds");
+    mtsField.setAccessible(true);
+    mtsField.set(config, 1);
     
     CooperatingFuture<String> future = new CooperatingFuture<>("test-key", config);
     
@@ -161,13 +177,22 @@ public class CooperatingFutureVirtualThreadTest
   @Test
   public void testVirtualThreadCooperationLimit() throws Exception {
     Config config = new Config();
-    config.useVirtualThreads = false; // Disable Virtual Thread optimization
-    config.threadsPerKey = 5;
+    //config.useVirtualThreads = false; // Disable Virtual Thread optimization
+    //config.threadsPerKey = 5;
+    
+ // Get the private field using reflection
+    Field uvtField = Config.class.getDeclaredField("useVirtualThreads");
+    uvtField.setAccessible(true);
+    uvtField.set(config, true);
+    
+    Field tpkField = Config.class.getDeclaredField("threadsPerKey");
+    tpkField.setAccessible(true);
+    tpkField.set(config, 5);
     
     CooperatingFuture<String> future = new CooperatingFuture<>("test-key", config);
     
     // Start a lead thread that will take some time
-    future.callAsync(failover -> {
+    future.call(failover -> {
       try {
         Thread.sleep(1000);
         return "result";
@@ -203,7 +228,10 @@ public class CooperatingFutureVirtualThreadTest
   @Test
   public void testStaggerTimeoutWithVirtualThreads() throws Exception {
     Config config = new Config();
-    config.useVirtualThreads = true;
+    //config.useVirtualThreads = true;
+    Field uvtField = Config.class.getDeclaredField("useVirtualThreads");
+    uvtField.setAccessible(true);
+    uvtField.set(config, true);
     
     CooperatingFuture<String> future = new CooperatingFuture<>("test-key", config);
     

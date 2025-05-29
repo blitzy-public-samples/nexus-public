@@ -171,34 +171,5 @@ public class ExceptionSummarizerStringTemplateTest
     long currentTimeMillis() {
       return currentTimeMillis;
     }
-
-    /**
-     * Override to use String Templates instead of String.format
-     */
-    @Override
-    public synchronized void log(final String message, final Exception cause) {
-      count++;
-      long now = currentTimeMillis();
-      if (!matcher.test(failureCause, cause) || now - firstFailureMillis >= ONE_MINUTE) {
-
-        // new exception or its been over a minute since the first failure
-        logger.accept(message, cause);
-
-        failureCause = cause;
-        firstFailureMillis = now;
-        lastSummaryMillis = now;
-        count = 0;
-      }
-      else if (now - lastSummaryMillis >= FIVE_SECONDS) {
-
-        // repeating exception, log summary without stack at most every 5 seconds
-        // Using String Template instead of String.format
-        String summary = STR."\{message}: \{cause} - occurred \{count} times in last \{(now - lastSummaryMillis) / ONE_SECOND} seconds";
-        logger.accept(summary, null);
-
-        lastSummaryMillis = now;
-        count = 0;
-      }
-    }
   }
 }

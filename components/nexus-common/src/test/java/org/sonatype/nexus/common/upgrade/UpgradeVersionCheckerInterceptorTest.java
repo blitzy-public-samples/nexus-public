@@ -13,7 +13,7 @@
 package org.sonatype.nexus.common.upgrade;
 
 import java.lang.reflect.Method;
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.db.DatabaseCheck;

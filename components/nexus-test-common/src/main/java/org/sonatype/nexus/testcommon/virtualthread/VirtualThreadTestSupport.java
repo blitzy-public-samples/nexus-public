@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
+import org.opentest4j.TestAbortedException;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 /**
@@ -233,9 +234,9 @@ public class VirtualThreadTestSupport
    * Helper method to check if the current JVM supports Virtual Threads.
    * This is used in the setUp method to skip tests if Virtual Threads are not supported.
    */
-  private void assumeVirtualThreadSupported() {
+  public void assumeVirtualThreadSupported() {
     if (!isVirtualThreadSupported()) {
-      throw new org.junit.jupiter.api.TestAbortedException("Virtual Threads not supported in this JVM");
+      throw new TestAbortedException("Virtual Threads not supported in this JVM");
     }
   }
 }

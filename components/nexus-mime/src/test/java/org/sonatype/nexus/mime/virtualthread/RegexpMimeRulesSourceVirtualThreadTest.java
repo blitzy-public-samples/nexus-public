@@ -305,7 +305,7 @@ public class RegexpMimeRulesSourceVirtualThreadTest
     // Scale the platform thread time to match the virtual thread count
     long scaledPlatformThreadTime = platformThreadTime * 10; // 5000/500 = 10
     
-    log.info(STR."Performance comparison:\n" +
+    logger.info(STR."Performance comparison:\n" +
              STR."  Virtual Threads (5000): \{virtualThreadTime}ms\n" +
              STR."  Platform Threads (500): \{platformThreadTime}ms\n" +
              STR."  Scaled Platform Threads (equivalent to 5000): \{scaledPlatformThreadTime}ms");

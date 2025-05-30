@@ -77,14 +77,14 @@ public class NexusMimeTypesVirtualThreadTest
     
     // Run the actual test with virtual threads
     long virtualThreadTime = runConcurrentTest(THREAD_COUNT, true);
-    log.info("Virtual thread test completed in {} ms with {} threads", virtualThreadTime, THREAD_COUNT);
+    logger.info("Virtual thread test completed in {} ms with {} threads", virtualThreadTime, THREAD_COUNT);
     
     // Run the same test with platform threads for comparison
     long platformThreadTime = runConcurrentTest(THREAD_COUNT / 100, false);
-    log.info("Platform thread test completed in {} ms with {} threads", platformThreadTime, THREAD_COUNT / 100);
+    logger.info("Platform thread test completed in {} ms with {} threads", platformThreadTime, THREAD_COUNT / 100);
     
     // The test passes if all threads completed successfully without exceptions
-    log.info("Concurrent access test passed with {} virtual threads", THREAD_COUNT);
+    logger.info("Concurrent access test passed with {} virtual threads", THREAD_COUNT);
   }
   
   /**
@@ -130,7 +130,7 @@ public class NexusMimeTypesVirtualThreadTest
             failureCount.incrementAndGet();
           }
         } catch (Exception e) {
-          log.error("Error in thread {}", index, e);
+          logger.error("Error in thread {}", index, e);
           failureCount.incrementAndGet();
         } finally {
           completionLatch.countDown();
@@ -195,7 +195,7 @@ public class NexusMimeTypesVirtualThreadTest
             
             successCount.incrementAndGet();
           } catch (Exception e) {
-            log.error("Error in initialization thread {}", index, e);
+            logger.error("Error in initialization thread {}", index, e);
           } finally {
             completionLatch.countDown();
           }

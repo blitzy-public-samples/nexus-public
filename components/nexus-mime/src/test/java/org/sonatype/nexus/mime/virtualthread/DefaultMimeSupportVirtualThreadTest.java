@@ -339,7 +339,7 @@ public class DefaultMimeSupportVirtualThreadTest
     // Scale the platform thread time to match the virtual thread count
     long scaledPlatformThreadPathTime = platformThreadPathTime * 10; // 5000/500 = 10
     
-    log.info(STR."Performance comparison:\n" +
+    logger.info(STR."Performance comparison:\n" +
              STR."  Content-based MIME detection:\n" +
              STR."    Virtual Threads (5000): {virtualThreadContentTime}ms\n" +
              STR."    Platform Threads (500): {platformThreadContentTime}ms\n" +

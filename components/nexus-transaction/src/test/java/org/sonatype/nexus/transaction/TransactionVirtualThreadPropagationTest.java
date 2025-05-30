@@ -15,16 +15,11 @@ package org.sonatype.nexus.transaction;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.common.base.Suppliers;
@@ -35,6 +30,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 import org.mockito.Mock;
 import org.slf4j.MDC;
+import org.sonatype.nexus.common.hash.MultiHashingInputStreamFactory;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -53,6 +49,7 @@ import static org.mockito.Mockito.when;
 public class TransactionVirtualThreadPropagationTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(TransactionVirtualThreadPropagationTest.class);
   private static final String TEST_MDC_KEY = "test-mdc-key";
   private static final String TEST_MDC_VALUE = "test-mdc-value";
   
@@ -91,7 +88,7 @@ public class TransactionVirtualThreadPropagationTest
     // Use StructuredTaskScope with virtual threads
     try (var scope = new StructuredTaskScope.ShutdownOnFailure("test-scope", Thread.ofVirtual().factory())) {
       // Submit a task that verifies transaction context is available
-      Future<Transaction> future = scope.fork(() -> {
+      StructuredTaskScope.Subtask<Transaction> future = scope.fork(() -> {
         // In a structured task scope, the transaction context is not automatically propagated
         // We need to manually check if it's available (it should be null initially)
         Transaction initialTx = UnitOfWork.peekTransaction();
@@ -126,7 +123,7 @@ public class TransactionVirtualThreadPropagationTest
       scope.throwIfFailed();
 
       // Verify the transaction in the virtual thread matches the main thread's transaction
-      Transaction virtualThreadTx = future.resultNow();
+      Transaction virtualThreadTx = future.get();
       assertThat(virtualThreadTx, is(transaction));
     }
   }
@@ -448,9 +445,11 @@ public class TransactionVirtualThreadPropagationTest
       // Verify the operation succeeded with proper transaction context
       boolean success = future.get(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
       assertThat(success, is(true));
+    } catch (TimeoutException e) {
+        throw new RuntimeException(e);
     }
-    
-    // Verify main thread's transaction is still intact
+
+      // Verify main thread's transaction is still intact
     Transaction afterTx = UnitOfWork.peekTransaction();
     assertThat("Main thread transaction should remain intact",
                afterTx, is(transaction));
@@ -513,9 +512,11 @@ public class TransactionVirtualThreadPropagationTest
       // Verify the MDC context was properly maintained
       String virtualThreadMdc = future.get(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
       assertThat(virtualThreadMdc, is(TEST_MDC_VALUE));
+    } catch (TimeoutException e) {
+        throw new RuntimeException(e);
     }
-    
-    // Verify main thread's contexts are still intact
+
+      // Verify main thread's contexts are still intact
     Transaction afterTx = UnitOfWork.peekTransaction();
     assertThat("Main thread transaction should remain intact",
                afterTx, is(transaction));

@@ -44,11 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class RemoteTimeBasedRollingPolicyTest
@@ -248,13 +244,13 @@ public class RemoteTimeBasedRollingPolicyTest
 
     // Configure the mock to simulate a blocking operation
     AtomicInteger completedUploads = new AtomicInteger(0);
-    when(mockUploader.rollover(anyString(), anyString(), anyString())).thenAnswer(invocation -> {
+    doAnswer(invocation -> {
       // Simulate a blocking operation that could cause thread pinning
       // In a real scenario, this would be a synchronized block or other blocking operation
       Thread.sleep(50); // Short sleep to simulate work
       completedUploads.incrementAndGet();
-      return null;
-    });
+      return null; // needed even though it's void — just tells the mock framework you're done
+    }).when(mockUploader).rollover(anyString(), anyString(), anyString());
 
     when(bundleContext.getServiceReferences(eq(RollingPolicyUploader.class), anyString())).thenReturn(
         Collections.singletonList(mockServiceReference));

@@ -29,7 +29,7 @@ import java.lang.reflect.Method;
 public class NexusLogActivator
     extends org.ops4j.pax.logging.logback.internal.Activator
 {
-  static NexusLogActivator INSTANCE;
+  public static NexusLogActivator INSTANCE;
 
   private BundleContext context;
   private VirtualThreadMetricsCollector virtualThreadMetricsCollector;

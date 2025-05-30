@@ -49,13 +49,13 @@ public class MDCAwareCallable<T>
   public MDCAwareCallable(final Callable<T> delegate) {
     this.delegate = checkNotNull(delegate);
     // Use getContextMapForPropagation which is optimized for both platform and virtual threads
-    this.mdcContext = MDCUtils.getContextMapForPropagation();
+    this.mdcContext = MDCUtils.getCopyOfContextMap();
   }
 
   @Override
   public T call() throws Exception {
     // Apply the captured MDC context
-    MDCUtils.applyContextMap(mdcContext);
+    MDCUtils.setContextMap(mdcContext);
     try {
       // Execute the delegate with the applied MDC context
       return delegate.call();

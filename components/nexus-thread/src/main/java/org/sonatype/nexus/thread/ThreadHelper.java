@@ -17,13 +17,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
 
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
+
 
 /**
  * Helper utility for working with threads, particularly virtual threads in Java 21+.

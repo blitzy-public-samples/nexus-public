@@ -15,6 +15,7 @@ package ch.qos.logback.access.jetty;
 import org.eclipse.jetty.util.component.LifeCycle;
 import org.slf4j.MDC;
 
+import java.util.EventListener;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -177,13 +178,13 @@ public class RequestLogImpl2
   }
 
   @Override
-  public void addLifeCycleListener(Listener listener) {
-
+  public boolean addEventListener(EventListener eventListener) {
+    return false;
   }
 
   @Override
-  public void removeLifeCycleListener(Listener listener) {
-
+  public boolean removeEventListener(EventListener eventListener) {
+    return false;
   }
 
   /**

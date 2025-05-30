@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +44,7 @@ import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.sonatype.nexus.common.hash.MultiHashingInputStreamFactory;
 
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -69,6 +72,8 @@ public class TransactionPerformanceComparisonTest
   private static final int OPERATIONS_PER_THREAD = 100;
   private static final int RETRY_PROBABILITY_PERCENT = 10;
   private static final int MAX_RETRIES = 3;
+
+  public static final Logger log = LoggerFactory.getLogger(TransactionPerformanceComparisonTest.class);
   
   @TempDir
   File tempDir;
@@ -331,7 +336,7 @@ public class TransactionPerformanceComparisonTest
       
       // Verify that latency remains reasonable even at extreme concurrency
       assertThat("Latency should remain reasonable at high concurrency",
-          result.getP95LatencyMs(), lessThanOrEqualTo(5000.0)); // 5 seconds max
+          result.getP95LatencyMs(), lessThanOrEqualTo(5000L)); // 5 seconds max
     }
   }
   

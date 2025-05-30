@@ -96,19 +96,19 @@ public class VirtualThreadExecutorService
   @Override
   public <T> Future<T> submit(final Callable<T> task) {
     checkNotNull(task);
-    return delegate.submit(new MDCAwareCallable<>(subject, task));
+    return delegate.submit(new MDCAwareCallable<>(task));
   }
 
   @Override
   public <T> Future<T> submit(final Runnable task, final T result) {
     checkNotNull(task);
-    return delegate.submit(new MDCAwareRunnable(subject, task), result);
+    return delegate.submit(new MDCAwareRunnable(task), result);
   }
 
   @Override
   public Future<?> submit(final Runnable task) {
     checkNotNull(task);
-    return delegate.submit(new MDCAwareRunnable(subject, task));
+    return delegate.submit(new MDCAwareRunnable(task));
   }
 
   @Override
@@ -147,7 +147,7 @@ public class VirtualThreadExecutorService
   @Override
   public void execute(final Runnable command) {
     checkNotNull(command);
-    delegate.execute(new MDCAwareRunnable(subject, command));
+    delegate.execute(new MDCAwareRunnable(command));
   }
 
   /**
@@ -155,7 +155,7 @@ public class VirtualThreadExecutorService
    */
   private <T> Collection<? extends Callable<T>> wrapTasks(final Collection<? extends Callable<T>> tasks) {
     return tasks.stream()
-        .map(task -> new MDCAwareCallable<T>(subject, task))
+        .map(task -> new MDCAwareCallable<T>(task))
         .toList();
   }
 }

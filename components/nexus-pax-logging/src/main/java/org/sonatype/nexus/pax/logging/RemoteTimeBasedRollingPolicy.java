@@ -71,12 +71,12 @@ public class RemoteTimeBasedRollingPolicy<E>
   private final LongAdder uploadDuration = new LongAdder();
 
   @VisibleForTesting
-  String getContextPrefix() {
+  public String getContextPrefix() {
     return contextPrefix;
   }
 
   @VisibleForTesting
-  SimpleDateFormat getFilenameDateFormat() {
+  public SimpleDateFormat getFilenameDateFormat() {
     return filenameDateFormat;
   }
 
@@ -86,7 +86,7 @@ public class RemoteTimeBasedRollingPolicy<E>
   }
 
   @VisibleForTesting
-  ExecutorService getExecutor() {
+  public ExecutorService getExecutor() {
     return executor;
   }
   
@@ -111,7 +111,7 @@ public class RemoteTimeBasedRollingPolicy<E>
   }
 
   @VisibleForTesting
-  void doStart() {
+  public void doStart() {
     createLogger();
     setContext();
     setFileNameDateFormat();
@@ -131,7 +131,7 @@ public class RemoteTimeBasedRollingPolicy<E>
   }
 
   @VisibleForTesting
-  void doUpload(final String filePath) {
+  public void doUpload(final String filePath) {
     log.debug("file to upload : {} ", filePath);
 
     // get service reference through OSGi and upload the file in a separate virtual thread

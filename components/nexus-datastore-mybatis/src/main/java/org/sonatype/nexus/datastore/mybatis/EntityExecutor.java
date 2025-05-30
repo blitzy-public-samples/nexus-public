@@ -46,7 +46,7 @@ import static org.sonatype.nexus.datastore.mybatis.CombUUID.combUUID;
  *
  * @since 3.19
  */
-final class EntityExecutor
+public final class EntityExecutor
     implements Executor
 {
   private final Executor delegate;

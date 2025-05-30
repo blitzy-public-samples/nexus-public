@@ -17,7 +17,6 @@ import java.sql.SQLException;
 import org.sonatype.nexus.common.app.FrozenException;
 import org.sonatype.nexus.datastore.api.DuplicateKeyException;
 import org.sonatype.nexus.datastore.api.SerializedAccessException;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.apache.ibatis.executor.Executor;
 import org.apache.ibatis.mapping.MappedStatement;
@@ -27,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;

@@ -179,7 +179,7 @@ public class VirtualThreadTestSupport
     });
     
     // Start the recording in a separate thread
-    Thread recordingThread = Thread.ofPlatform().name("jfr-recording").daemon(true).start(rs);
+    Thread recordingThread = Thread.ofPlatform().name("jfr-recording").daemon(true).start(rs::start);
     
     return metrics;
   }
@@ -197,7 +197,8 @@ public class VirtualThreadTestSupport
     
     // Add more details from the event if available
     if (event.hasField("stackTrace")) {
-      sb.append("\nStack trace: ").append(event.getValue("stackTrace"));
+      String stackTraceValue = event.getValue("stackTrace");
+      sb.append("\nStack trace: ").append(stackTraceValue);
     }
     
     return sb.toString();
@@ -342,8 +343,8 @@ public class VirtualThreadTestSupport
    * @param virtualResult The performance result for virtual threads
    */
   protected void assertVirtualThreadsPerformBetter(PerformanceResult platformResult, PerformanceResult virtualResult) {
-    log.info("Platform thread performance: {} ops/sec", platformResult.getOperationsPerSecond());
-    log.info("Virtual thread performance: {} ops/sec", virtualResult.getOperationsPerSecond());
+    logger.info("Platform thread performance: {} ops/sec", platformResult.getOperationsPerSecond());
+    logger.info("Virtual thread performance: {} ops/sec", virtualResult.getOperationsPerSecond());
     
     assertThat("Virtual thread is faster than platform thread",
         virtualResult.getOperationsPerSecond(), greaterThan(platformResult.getOperationsPerSecond()));
@@ -361,8 +362,8 @@ public class VirtualThreadTestSupport
    */
   protected void assertNoPinning(VirtualThreadMetrics metrics) {
     if (metrics.getPinnedThreadCount() > 0) {
-      log.warn("Thread pinning detected! {} threads were pinned", metrics.getPinnedThreadCount());
-      metrics.getPinnedThreadStackTraces().forEach(trace -> log.warn(trace));
+      logger.warn("Thread pinning detected! {} threads were pinned", metrics.getPinnedThreadCount());
+      metrics.getPinnedThreadStackTraces().forEach(trace -> logger.warn(trace));
     }
     
     assertThat("No thread pinning should occur", metrics.getPinnedThreadCount(), is(0L));
@@ -393,7 +394,7 @@ public class VirtualThreadTestSupport
           try {
             task.run();
           } catch (Exception e) {
-            log.error("Error in virtual thread task", e);
+            logger.error("Error in virtual thread task", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -460,11 +461,11 @@ public class VirtualThreadTestSupport
     List<VirtualThreadMetrics> results = new ArrayList<>();
     
     for (int concurrency : concurrencyLevels) {
-      log.info("Testing with concurrency level: {}", concurrency);
+      logger.info("Testing with concurrency level: {}", concurrency);
       VirtualThreadMetrics metrics = runConcurrentVirtualThreadTest(concurrency, operation);
       results.add(metrics);
       
-      log.info("Concurrency {}: {} virtual threads created, {} pinned", 
+      logger.info("Concurrency {}: {} virtual threads created, {} pinned",
           concurrency, metrics.getTotalVirtualThreadsCreated(), metrics.getPinnedThreadCount());
     }
     
@@ -550,8 +551,8 @@ public class VirtualThreadTestSupport
     // Calculate and return the difference
     long platformMemory = afterPlatform - beforePlatform;
     long virtualMemory = afterVirtual - beforeVirtual;
-    
-    log.info("Memory usage for {} threads - Platform: {} bytes, Virtual: {} bytes", 
+
+    logger.info("Memory usage for {} threads - Platform: {} bytes, Virtual: {} bytes",
         threadCount, platformMemory, virtualMemory);
     
     return platformMemory - virtualMemory;
@@ -574,6 +575,6 @@ public class VirtualThreadTestSupport
     assertThat("Virtual threads should use significantly less memory than platform threads",
         memoryDifference, greaterThan(0L));
     
-    log.info("Memory savings with virtual threads: {} bytes", memoryDifference);
+    logger.info("Memory savings with virtual threads: {} bytes", memoryDifference);
   }
 }

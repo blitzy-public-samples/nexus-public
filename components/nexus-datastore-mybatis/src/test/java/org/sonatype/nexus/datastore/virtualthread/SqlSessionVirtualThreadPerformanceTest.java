@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.datastore.virtualthread;
 
+import java.lang.reflect.Field;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -31,11 +32,14 @@ import java.util.function.Supplier;
 
 import javax.sql.DataSource;
 
+import org.eclipse.sisu.inject.BeanLocator;
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.app.ApplicationVersion;
+import org.sonatype.nexus.common.log.LogManager;
+import org.sonatype.nexus.crypto.LegacyCipherFactory;
 import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.mybatis.MyBatisDataStore;
-import org.sonatype.nexus.testcommon.validation.VirtualThreadTestGroup;
 
 import org.apache.ibatis.session.ExecutorType;
 import org.apache.ibatis.session.SqlSession;
@@ -47,6 +51,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
+import org.sonatype.nexus.security.PasswordHelper;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
@@ -100,10 +105,23 @@ public class SqlSessionVirtualThreadPerformanceTest
     ApplicationVersion appVersion = mock(ApplicationVersion.class);
     when(appVersion.getVersion()).thenReturn("1.0.0");
     
-    DataStore<?> ds = new MyBatisDataStore("test", dataSource, appVersion);
-    this.dataStore = (MyBatisDataStore) ds;
-    this.sqlSessionFactory = dataStore.getSqlSessionFactory();
-    
+    LegacyCipherFactory.PbeCipher cipher = mock(LegacyCipherFactory.PbeCipher.class);
+    ClassLoader classLoader = getClass().getClassLoader();
+    PasswordHelper passwordHelper = mock(PasswordHelper.class);
+    ApplicationDirectories appDirs = mock(ApplicationDirectories.class);
+    BeanLocator beanLocator = mock(BeanLocator.class);
+    LogManager logManager = mock(LogManager.class);
+
+    this.dataStore = new MyBatisDataStore(
+            cipher,
+            classLoader,
+            passwordHelper,
+            appDirs,
+            beanLocator,
+            logManager
+    );
+    this.sqlSessionFactory = this.getSqlSessionFactoryViaReflection(dataStore);
+
     // Populate test data
     populateTestData(100);
     
@@ -113,7 +131,13 @@ public class SqlSessionVirtualThreadPerformanceTest
       runWithVirtualThreads(10, this::performQueryOperation);
     }
   }
-  
+
+  private SqlSessionFactory getSqlSessionFactoryViaReflection(MyBatisDataStore dataStore) throws Exception {
+    Field field = MyBatisDataStore.class.getDeclaredField("sqlSessionFactory");
+    field.setAccessible(true);
+    return (SqlSessionFactory) field.get(dataStore);
+  }
+
   @AfterEach
   void tearDown() throws Exception {
     // Clean up test table
@@ -132,9 +156,9 @@ public class SqlSessionVirtualThreadPerformanceTest
     PerformanceResult platformResult = runWithPlatformThreads(LOW_CONCURRENCY, this::performQueryOperation);
     PerformanceResult virtualResult = runWithVirtualThreads(LOW_CONCURRENCY, this::performQueryOperation);
     
-    log.info("Platform threads - Low concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Platform threads - Low concurrency: {} ops/sec, avg latency: {} ms",
         platformResult.getThroughput(), platformResult.getAverageLatency());
-    log.info("Virtual threads - Low concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - Low concurrency: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // At low concurrency, performance should be similar
@@ -152,9 +176,9 @@ public class SqlSessionVirtualThreadPerformanceTest
     PerformanceResult platformResult = runWithPlatformThreads(MEDIUM_CONCURRENCY, this::performQueryOperation);
     PerformanceResult virtualResult = runWithVirtualThreads(MEDIUM_CONCURRENCY, this::performQueryOperation);
     
-    log.info("Platform threads - Medium concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Platform threads - Medium concurrency: {} ops/sec, avg latency: {} ms",
         platformResult.getThroughput(), platformResult.getAverageLatency());
-    log.info("Virtual threads - Medium concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - Medium concurrency: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // At medium concurrency, virtual threads should start showing benefits
@@ -172,9 +196,9 @@ public class SqlSessionVirtualThreadPerformanceTest
     PerformanceResult platformResult = runWithPlatformThreads(HIGH_CONCURRENCY, this::performQueryOperation);
     PerformanceResult virtualResult = runWithVirtualThreads(HIGH_CONCURRENCY, this::performQueryOperation);
     
-    log.info("Platform threads - High concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Platform threads - High concurrency: {} ops/sec, avg latency: {} ms",
         platformResult.getThroughput(), platformResult.getAverageLatency());
-    log.info("Virtual threads - High concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - High concurrency: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // At high concurrency, virtual threads should show significant benefits
@@ -194,7 +218,7 @@ public class SqlSessionVirtualThreadPerformanceTest
   void testQueryPerformanceWithVeryHighConcurrency() throws Exception {
     PerformanceResult virtualResult = runWithVirtualThreads(VERY_HIGH_CONCURRENCY, this::performQueryOperation);
     
-    log.info("Virtual threads - Very high concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - Very high concurrency: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // Just verify that virtual threads can handle this level of concurrency
@@ -214,9 +238,9 @@ public class SqlSessionVirtualThreadPerformanceTest
     PerformanceResult platformResult = runWithPlatformThreads(MEDIUM_CONCURRENCY, this::performUpdateOperation);
     PerformanceResult virtualResult = runWithVirtualThreads(MEDIUM_CONCURRENCY, this::performUpdateOperation);
     
-    log.info("Platform threads - Update with medium concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Platform threads - Update with medium concurrency: {} ops/sec, avg latency: {} ms",
         platformResult.getThroughput(), platformResult.getAverageLatency());
-    log.info("Virtual threads - Update with medium concurrency: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - Update with medium concurrency: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // For updates, virtual threads should also show benefits
@@ -234,9 +258,9 @@ public class SqlSessionVirtualThreadPerformanceTest
     PerformanceResult platformResult = runWithPlatformThreads(MEDIUM_CONCURRENCY, this::performBatchOperation);
     PerformanceResult virtualResult = runWithVirtualThreads(MEDIUM_CONCURRENCY, this::performBatchOperation);
     
-    log.info("Platform threads - Batch operations: {} ops/sec, avg latency: {} ms", 
+    logger.info("Platform threads - Batch operations: {} ops/sec, avg latency: {} ms",
         platformResult.getThroughput(), platformResult.getAverageLatency());
-    log.info("Virtual threads - Batch operations: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - Batch operations: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // For batch operations, virtual threads should also show benefits
@@ -254,9 +278,9 @@ public class SqlSessionVirtualThreadPerformanceTest
     PerformanceResult platformResult = runWithPlatformThreads(HIGH_CONCURRENCY, this::performMixedOperation);
     PerformanceResult virtualResult = runWithVirtualThreads(HIGH_CONCURRENCY, this::performMixedOperation);
     
-    log.info("Platform threads - Mixed workload: {} ops/sec, avg latency: {} ms", 
+    logger.info("Platform threads - Mixed workload: {} ops/sec, avg latency: {} ms",
         platformResult.getThroughput(), platformResult.getAverageLatency());
-    log.info("Virtual threads - Mixed workload: {} ops/sec, avg latency: {} ms", 
+    logger.info("Virtual threads - Mixed workload: {} ops/sec, avg latency: {} ms",
         virtualResult.getThroughput(), virtualResult.getAverageLatency());
     
     // For mixed workloads, virtual threads should show significant benefits
@@ -293,8 +317,8 @@ public class SqlSessionVirtualThreadPerformanceTest
     long afterVirtualMem = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
     long virtualMemUsage = afterVirtualMem - beforeVirtualMem;
     
-    log.info("Platform threads memory usage: {} bytes", platformMemUsage);
-    log.info("Virtual threads memory usage: {} bytes", virtualMemUsage);
+    logger.info("Platform threads memory usage: {} bytes", platformMemUsage);
+    logger.info("Virtual threads memory usage: {} bytes", virtualMemUsage);
     
     // Virtual threads should use less memory per thread
     assertThat("Virtual threads should use less memory than platform threads",
@@ -349,7 +373,7 @@ public class SqlSessionVirtualThreadPerformanceTest
       finalValue = rs.getInt(1);
     }
     
-    log.info("Initial value: {}, Expected final value: {}, Actual final value: {}", 
+    logger.info("Initial value: {}, Expected final value: {}, Actual final value: {}",
         initialValue, expectedFinalValue, finalValue);
     
     // If ACID properties are maintained, the final value should match expected

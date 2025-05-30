@@ -32,7 +32,7 @@ import static org.apache.ibatis.mapping.SqlCommandType.SELECT;
  * Used by {@link EntityExecutor} to verify whether a {@link MappedStatement} is allowed to continue given the systems
  * freeze state.
  */
-class FrozenChecker
+public class FrozenChecker
     extends ComponentSupport
 {
   private final AtomicBoolean frozenMarker;
@@ -46,7 +46,7 @@ class FrozenChecker
     this.classLoader = checkNotNull(classLoader);
   }
 
-  void checkFrozen(final MappedStatement ms) {
+  public void checkFrozen(final MappedStatement ms) {
     SqlCommandType commandType = ms.getSqlCommandType();
     if (commandType != SELECT && frozenMarker.get() && !isFreezeImmune(ms)) {
       log.debug("Disallowing {} because the application is frozen", commandType);

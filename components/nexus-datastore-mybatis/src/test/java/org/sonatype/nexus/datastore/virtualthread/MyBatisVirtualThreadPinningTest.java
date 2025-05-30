@@ -287,7 +287,7 @@ public class MyBatisVirtualThreadPinningTest
       boolean isVirtualThread = currentThread.isVirtual();
       
       if (!isVirtualThread) {
-        log.warn("Test is not running on a virtual thread: {}", currentThread.getName());
+        logger.warn("Test is not running on a virtual thread: {}", currentThread.getName());
       }
       
       // Perform multiple operations
@@ -303,7 +303,7 @@ public class MyBatisVirtualThreadPinningTest
         if (duration > PINNING_THRESHOLD_MS) {
           // This might indicate thread pinning
           ThreadInfo threadInfo = threadMXBean.getThreadInfo(currentThread.threadId(), 10);
-          log.warn("Potential thread pinning detected: {} took {}ms\nStack trace: {}", 
+          logger.warn("Potential thread pinning detected: {} took {}ms\nStack trace: {}",
               operationType, duration, formatStackTrace(threadInfo));
           pinningDetected.set(true);
         }
@@ -312,7 +312,7 @@ public class MyBatisVirtualThreadPinningTest
       }
     } 
     catch (Exception e) {
-      log.error("Error during operation: {}", e.getMessage(), e);
+      logger.error("Error during operation: {}", e.getMessage(), e);
     } 
     finally {
       completionLatch.countDown();
@@ -431,7 +431,7 @@ public class MyBatisVirtualThreadPinningTest
         // Just access the data to ensure it's loaded
         String value = data.getValue();
         if (value == null) {
-          log.warn("Null value found for ID: {}", data.getId());
+          logger.warn("Null value found for ID: {}", data.getId());
         }
       }
     }

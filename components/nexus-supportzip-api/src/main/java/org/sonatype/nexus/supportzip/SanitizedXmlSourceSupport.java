@@ -49,8 +49,7 @@ import static com.google.common.base.Preconditions.checkState;
  * @since 3.0
  */
 public class SanitizedXmlSourceSupport
-    extends FileContentSourceSupport
-{
+    extends FileContentSourceSupport {
   private final String stylesheet;
 
   private byte[] content;
@@ -62,8 +61,7 @@ public class SanitizedXmlSourceSupport
                                    final String path,
                                    final File file,
                                    final Priority priority,
-                                   final String stylesheet)
-  {
+                                   final String stylesheet) {
     super(type, path, file, priority);
     this.stylesheet = checkNotNull(stylesheet);
   }
@@ -80,10 +78,10 @@ public class SanitizedXmlSourceSupport
   public void prepare() throws Exception {
     super.prepare();
     checkState(content == null);
-    
+
     // Create a CompletableFuture to hold the result of the transformation
     CompletableFuture<byte[]> future = new CompletableFuture<>();
-    
+
     // Start a virtual thread to perform the XML transformation
     // Virtual threads are lightweight and managed by the JVM, making them ideal for I/O operations
     Thread.startVirtualThread(() -> {
@@ -119,7 +117,7 @@ public class SanitizedXmlSourceSupport
         log.debug("Error during XML transformation in virtual thread: {}", e.getMessage());
       }
     });
-    
+
     try {
       // Wait for the transformation to complete and get the result
       content = future.get();
@@ -144,3 +142,4 @@ public class SanitizedXmlSourceSupport
     log.debug("Reading: {} from memory", file);
     return new BufferedInputStream(new ByteArrayInputStream(content));
   }
+}

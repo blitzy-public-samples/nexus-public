@@ -74,7 +74,7 @@ public class VirtualThreadFactoryTest
     
     AtomicReference<Boolean> isVirtual = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
+
     Thread thread = factory.newThread(() -> {
       isVirtual.set(Thread.currentThread().isVirtual());
       latch.countDown();

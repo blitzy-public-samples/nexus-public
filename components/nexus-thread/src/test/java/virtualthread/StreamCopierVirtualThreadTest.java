@@ -29,7 +29,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.hash.MultiHashingInputStreamFactory;
 import org.sonatype.nexus.thread.io.StreamCopier;
 
 import org.apache.commons.io.IOUtils;
@@ -56,6 +59,7 @@ import static org.junit.Assert.fail;
 public class StreamCopierVirtualThreadTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(StreamCopierVirtualThreadTest.class);
   private static final String DEFAULT_READ_OUTPUT = "Test read";
   private static final int LARGE_DATA_SIZE = 10 * 1024 * 1024; // 10MB
   private static final int CONCURRENT_OPERATIONS = 1000;

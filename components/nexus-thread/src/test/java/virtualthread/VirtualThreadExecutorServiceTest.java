@@ -26,7 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.hash.MultiHashingInputStreamFactory;
 import org.sonatype.nexus.security.subject.CurrentSubjectSupplier;
 import org.sonatype.nexus.thread.NexusExecutorService;
 
@@ -60,6 +63,7 @@ import static org.mockito.Mockito.when;
 public class VirtualThreadExecutorServiceTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(VirtualThreadExecutorServiceTest.class);
   private static final String TEST_PRINCIPAL = "test-user";
   private static final String TEST_REALM = "test-realm";
   

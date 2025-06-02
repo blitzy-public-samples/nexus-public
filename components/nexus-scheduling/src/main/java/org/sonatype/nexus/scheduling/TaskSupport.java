@@ -132,7 +132,8 @@ public abstract class TaskSupport
         var future = scope.fork(() -> execute());
         scope.join();
         // Propagate any exceptions from the task execution
-        return scope.throwIfFailed().result(future);
+        scope.throwIfFailed();
+        return  future.get();
       }
     }
     catch (TaskInterruptedException e) {

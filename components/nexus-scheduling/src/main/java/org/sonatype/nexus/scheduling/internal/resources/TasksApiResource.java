@@ -16,19 +16,20 @@ import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.Executors;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotAllowedException;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.WebApplicationException;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotAllowedException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.container.AsyncResponse;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.FeatureFlag;
@@ -49,9 +50,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.CONFLICT;
-import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.CONFLICT;
+import static jakarta.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
 import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_CLUSTERED_ENABLED;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
@@ -66,24 +67,21 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 @Path(TasksApiResource.RESOURCE_URI)
 @Produces(APPLICATION_JSON)
 @Consumes(APPLICATION_JSON)
-public class TasksApiResource
-    extends ComponentSupport
-    implements Resource, TasksApiResourceDoc
-{
-  public static final String RESOURCE_URI = V1_API_PREFIX + "/tasks";
+public class TasksApiResource extends ComponentSupport implements Resource, TasksApiResourceDoc {
+	public static final String RESOURCE_URI = V1_API_PREFIX + "/tasks";
 
-  private static final String TRIGGER_SOURCE = "REST API";
+	private static final String TRIGGER_SOURCE = "REST API";
 
-  private final TaskScheduler taskScheduler;
-  private final ThreadPinningDetector threadPinningDetector;
+	private final TaskScheduler taskScheduler;
+	private final ThreadPinningDetector threadPinningDetector;
 
-  @Inject
-  public TasksApiResource(final TaskScheduler taskScheduler) {
-    this.taskScheduler = checkNotNull(taskScheduler);
-    this.threadPinningDetector = new ThreadPinningDetector();
-  }
+	@Inject
+	public TasksApiResource(final TaskScheduler taskScheduler) {
+		this.taskScheduler = checkNotNull(taskScheduler);
+		this.threadPinningDetector = new ThreadPinningDetector();
+	}
 
-  @Override
+	@Override
   @GET
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:read")
@@ -109,7 +107,7 @@ public class TasksApiResource
     }
   }
 
-  @Override
+	@Override
   @GET
   @Path("/{id}")
   @RequiresAuthentication
@@ -131,8 +129,7 @@ public class TasksApiResource
     }
   }
 
-  @Override
-  @POST
+	@POST
   @Path("/{id}/run")
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:start")
@@ -179,8 +176,7 @@ public class TasksApiResource
     }
   }
 
-  @Override
-  @POST
+	@POST
   @Path("/{id}/stop")
   @RequiresAuthentication
   @RequiresPermissions("nexus:tasks:stop")
@@ -228,13 +224,24 @@ public class TasksApiResource
     }
   }
 
-  private TaskInfo getTaskInfo(final String id) {
-    return ofNullable(taskScheduler.getTaskById(id))
-        .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
-        .orElseThrow(() -> new NotFoundException("Unable to locate task with id " + id));
-  }
+	private TaskInfo getTaskInfo(final String id) {
+		return ofNullable(taskScheduler.getTaskById(id)).filter(taskInfo -> taskInfo.getConfiguration().isVisible())
+				.orElseThrow(() -> new NotFoundException("Unable to locate task with id " + id));
+	}
 
-  private static boolean typeParameterMatches(final String type, final TaskInfo taskInfo) {
-    return type == null || type.isEmpty() || type.equals(taskInfo.getTypeId());
-  }
+	private static boolean typeParameterMatches(final String type, final TaskInfo taskInfo) {
+		return type == null || type.isEmpty() || type.equals(taskInfo.getTypeId());
+	}
+
+	@Override
+	public void run(String id, AsyncResponse asyncResponse) {
+		// TODO Auto-generated method stub
+
+	}
+
+	@Override
+	public void stop(String id, AsyncResponse asyncResponse) {
+		// TODO Auto-generated method stub
+
+	}
 }

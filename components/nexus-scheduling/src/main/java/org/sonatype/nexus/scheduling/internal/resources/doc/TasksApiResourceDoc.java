@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.scheduling.internal.resources.doc;
 
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
+import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.Suspended;
 
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;

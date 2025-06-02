@@ -32,14 +32,14 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import javax.annotation.Nullable;
-import javax.annotation.PostConstruct;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerResponseContext;
-import javax.ws.rs.container.ContainerResponseFilter;
+import jakarta.annotation.Nullable;
+import jakarta.annotation.PostConstruct;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerResponseContext;
+import jakarta.ws.rs.container.ContainerResponseFilter;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
@@ -597,7 +597,7 @@ public class ThreadPinningDetector
   private boolean hasBlockingAnnotations(final Method method) {
     // This is a simplified implementation that looks for common annotations
     // that might indicate blocking operations
-    return method.isAnnotationPresent(javax.transaction.Transactional.class) ||
+    return method.isAnnotationPresent(jakarta.transaction.Transactional.class) ||
            method.getName().startsWith("get") || method.getName().startsWith("find") ||
            method.getName().startsWith("load") || method.getName().startsWith("save") ||
            method.getName().startsWith("delete") || method.getName().startsWith("update");

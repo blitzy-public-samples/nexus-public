@@ -467,4 +467,8 @@ public class TaskConfiguration
           '}';
     }
   }
+
+public boolean isUseVirtualThreads() {
+	return false;
+}
 }

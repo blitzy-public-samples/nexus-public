@@ -13,6 +13,8 @@
 package org.sonatype.nexus.scheduling.internal.upgrade.datastore;
 
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -105,25 +107,33 @@ public class UpgradeTaskStore
    * 
    * @return stream of upgrade tasks
    */
-  public Stream<UpgradeTaskData> browse() {
-    // Create a new transaction for each chunk of data to avoid thread pinning
-    // This allows Virtual Threads to yield during I/O operations
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      try {
-        UnitOfWork.begin(this::openSession);
-        try {
-          return StreamSupport.stream(dao().browse().spliterator(), false)
-              .map(this::detachFromTransaction);
-        }
-        finally {
-          UnitOfWork.end();
-        }
-      }
-      catch (Exception e) {
-        throw new RuntimeException("Failed to browse upgrade tasks", e);
-      }
-    }).join();
-  }
+	public Stream<UpgradeTaskData> browse() {
+		// Create a new transaction for each chunk of data to avoid thread pinning
+		// This allows Virtual Threads to yield during I/O operations
+		Stream<UpgradeTaskData> result = Stream.empty();
+		try (ExecutorService execute = Executors.newVirtualThreadPerTaskExecutor()) {
+			try {
+				result = execute.submit(() -> {
+					try {
+						UnitOfWork.begin(this::openSession);
+						try {
+							return StreamSupport.stream(dao().browse().spliterator(), false)
+									.map(this::detachFromTransaction);
+						} finally {
+							UnitOfWork.end();
+						}
+					} catch (Exception e) {
+						throw new RuntimeException("Failed to browse upgrade tasks", e);
+					}
+				}).get();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				e.printStackTrace();
+			}
+		}
+		return result;
+	}
 
   /**
    * Update an existing upgrade task.
@@ -142,22 +152,35 @@ public class UpgradeTaskStore
    */
   public Optional<UpgradeTaskData> next() {
     // Use Virtual Threads to avoid blocking platform threads during database operations
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      try {
-        UnitOfWork.begin(this::openSession);
-        try {
-          Optional<UpgradeTaskData> result = dao().next();
-          // Detach the result from the transaction to avoid thread pinning
-          return result.map(this::detachFromTransaction);
-        }
-        finally {
-          UnitOfWork.end();
-        }
-      }
-      catch (Exception e) {
-        throw new RuntimeException("Failed to get next upgrade task", e);
-      }
-    }).join();
+	  Optional<UpgradeTaskData> upgradeTaskData = Optional.empty();
+	  try(ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+		  try {
+			  upgradeTaskData = executor.submit(() -> {
+			      try {
+			        UnitOfWork.begin(this::openSession);
+			        try {
+			          Optional<UpgradeTaskData> result = dao().next();
+			          // Detach the result from the transaction to avoid thread pinning
+			          return result.map(this::detachFromTransaction);
+			        }
+			        finally {
+			          UnitOfWork.end();
+			        }
+			      }
+			      catch (Exception e) {
+			        throw new RuntimeException("Failed to get next upgrade task", e);
+			      }
+			    }
+			).get();
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ExecutionException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	  }
+	  return upgradeTaskData;
   }
   
   /**
@@ -177,9 +200,9 @@ public class UpgradeTaskStore
     detached.setId(task.getId());
     detached.setTaskId(task.getTaskId());
     detached.setStatus(task.getStatus());
-    detached.setMessage(task.getMessage());
-    detached.setCreated(task.getCreated());
-    detached.setLastUpdated(task.getLastUpdated());
+    //detached.setMessage(task.getMessage());
+    //detached.setCreated(task.getCreated());
+    //detached.setLastUpdated(task.getLastUpdated());
     return detached;
   }
 }

@@ -132,7 +132,7 @@ public class PeriodicJobServiceImpl
     // Create the appropriate executor for task execution based on configuration
     if (useVirtualThreads) {
       // Use virtual threads for task execution (better for I/O-bound operations)
-      taskExecutor = NexusExecutorService.forVirtualThreads(FakeAlmightySubject.TASK_SUBJECT);
+      taskExecutor = NexusExecutorService.forFixedSubjectVirtual(FakeAlmightySubject.TASK_SUBJECT);
       log.info("Using virtual threads for periodic job execution");
     } else {
       // Use platform threads for task execution (better for CPU-bound operations)

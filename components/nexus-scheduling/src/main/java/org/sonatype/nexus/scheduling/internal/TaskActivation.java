@@ -16,10 +16,10 @@ import java.lang.Thread.State;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import javax.annotation.Priority;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.Priority;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.Freezable;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
@@ -138,7 +138,7 @@ public class TaskActivation
       
       // If cancellation was successful but the thread is still running,
       // we need to wait for it to complete its current operation
-      if (cancelled && taskThread.getState() != State.TERMINATED) {
+      if (cancelled && taskThread.getState() != Thread.State.TERMINATED) {
         try {
           log.debug("Waiting for virtual thread task to terminate: {} (thread ID: {}, state: {})", 
               taskInfo.getName(), taskThread.threadId(), taskThread.getState());

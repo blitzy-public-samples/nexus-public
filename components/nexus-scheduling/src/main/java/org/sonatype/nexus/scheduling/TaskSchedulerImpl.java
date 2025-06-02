@@ -176,7 +176,7 @@ public class TaskSchedulerImpl
     config.setExposed(descriptor.isExposed());
     
     // Set whether this task should use virtual threads based on task characteristics
-    config.setUseVirtualThreads(shouldUseVirtualThreads(descriptor));
+    //config.setUseVirtualThreads(shouldUseVirtualThreads(descriptor));
 
     return config;
   }
@@ -277,17 +277,20 @@ public class TaskSchedulerImpl
     config.setUpdated(now);
 
     // Log whether this task will use virtual threads
-    if (config.isUseVirtualThreads()) {
-      log.debug("Task {} will use virtual threads", config.getTaskLogName());
-    }
+   // TODOS: FIXME: 
+	/*
+	 * if (config.isUseVirtualThreads()) {
+	 * log.debug("Task {} will use virtual threads", config.getTaskLogName()); }
+	 */
 
     TaskInfo taskInfo = getScheduler().scheduleTask(config, schedule);
 
     log.info("Task {} scheduled: {} (using {})",
         taskInfo.getConfiguration().getTaskLogName(),
-        taskInfo.getSchedule().getType(),
-        taskInfo.getConfiguration().isUseVirtualThreads() ? "virtual threads" : "platform threads"
+        taskInfo.getSchedule().getType()
     );
+    //taskInfo.getConfiguration().isUseVirtualThreads() ? "virtual threads" : "platform threads"
+    //);
     
     // Log diagnostics about potential thread pinning issues
     logThreadPinningDiagnostics(taskInfo);

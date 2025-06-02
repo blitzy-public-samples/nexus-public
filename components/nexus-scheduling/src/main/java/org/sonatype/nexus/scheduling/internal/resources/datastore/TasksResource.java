@@ -20,18 +20,18 @@ import java.util.concurrent.ExecutorService;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotAllowedException;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotAllowedException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.Suspended;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Page;
@@ -51,9 +51,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.CONFLICT;
-import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.CONFLICT;
+import static jakarta.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 
 /**
@@ -105,7 +105,7 @@ public class TasksResource
   @RequiresPermissions("nexus:tasks:read")
   public Page<TaskXO> getTasks(@QueryParam("type") final String type) {
     // Check for potential thread pinning in this operation
-    threadPinningDetector.warnIfPinning("getTasks");
+    threadPinningDetector.detectPinning();
     
     List<TaskXO> taskXOs = taskScheduler.listsTasks().stream()
         .filter(taskInfo -> taskInfo.getConfiguration().isVisible())
@@ -123,7 +123,7 @@ public class TasksResource
   @RequiresPermissions("nexus:tasks:read")
   public TaskXO getTaskById(@PathParam("id") final String id) {
     // Check for potential thread pinning in this operation
-    threadPinningDetector.warnIfPinning("getTaskById");
+    threadPinningDetector.detectPinning();
     
     TaskInfo task = getTaskInfo(id);
     return TaskXO.fromTaskInfo(task, taskScheduler.toExternalTaskState(task));
@@ -139,7 +139,7 @@ public class TasksResource
     CompletableFuture.runAsync(() -> {
       try {
         // Check for potential thread pinning in this operation
-        threadPinningDetector.warnIfPinning("run");
+        threadPinningDetector.detectPinning();
         
         TaskInfo taskInfo = getTaskInfo(id);
 
@@ -177,7 +177,7 @@ public class TasksResource
     CompletableFuture.runAsync(() -> {
       try {
         // Check for potential thread pinning in this operation
-        threadPinningDetector.warnIfPinning("stop");
+        threadPinningDetector.detectPinning();
         
         TaskInfo taskInfo = getTaskInfo(id);
         TaskState currentState = taskScheduler.toExternalTaskState(taskInfo).getState();

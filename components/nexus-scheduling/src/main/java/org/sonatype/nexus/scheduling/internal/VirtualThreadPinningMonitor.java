@@ -16,11 +16,11 @@ import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
@@ -122,12 +122,7 @@ public class VirtualThreadPinningMonitor
   @Guarded(by = STARTED)
   protected void doStop() throws Exception {
     if (eventStream != null) {
-      try {
-        eventStream.close();
-      }
-      catch (IOException e) {
-        log.warn("Error closing JFR recording stream", e);
-      }
+      eventStream.close();
       eventStream = null;
     }
     

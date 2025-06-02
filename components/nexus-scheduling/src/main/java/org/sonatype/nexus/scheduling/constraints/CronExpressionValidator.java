@@ -14,9 +14,9 @@ package org.sonatype.nexus.scheduling.constraints;
 
 import java.util.Date;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.validation.ConstraintValidatorContext;
 
 import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.schedule.ScheduleFactory;

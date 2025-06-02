@@ -57,7 +57,7 @@ public class TaskExecutorProvider
     
     if (useVirtualThreads && "virtual".equals(threadType)) {
       log.debug("Using Virtual Threads for task: {}", taskConfig.getTaskLogName());
-      return NexusExecutorService.forVirtualThreads(subject);
+      return NexusExecutorService.forFixedSubjectVirtual(subject);
     } else {
       log.debug("Using Platform Threads for task: {}", taskConfig.getTaskLogName());
       ExecutorService executor = Executors.newSingleThreadExecutor();

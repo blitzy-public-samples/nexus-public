@@ -30,14 +30,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 import javax.cache.Cache;
 import javax.cache.configuration.MutableConfiguration;
 import javax.cache.expiry.CreatedExpiryPolicy;
 import javax.cache.expiry.Duration;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.common.Time;
 import org.sonatype.nexus.blobstore.MemoryBlobSession;

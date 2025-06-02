@@ -65,9 +65,17 @@ public class BlobStoreResource
 {
   private final BlobStoreManager blobStoreManager;
 
-  private final BlobStoreConfigurationStore store;
+  public BlobStoreManager getBlobStoreManager() {
+	return blobStoreManager;
+}
 
-  private final BlobStoreQuotaService quotaService;
+private final BlobStoreConfigurationStore store;
+
+  public BlobStoreQuotaService getQuotaService() {
+	return quotaService;
+}
+
+private final BlobStoreQuotaService quotaService;
 
   private final Map<String, ConnectionChecker> connectionCheckers;
   
@@ -175,15 +183,15 @@ public class BlobStoreResource
   public void verifyConnection(final @NotNull @Valid BlobStoreConnectionXO blobStoreConnectionXO) {
     try {
       // Use pattern matching to simplify null check
-      ConnectionChecker conChecker = switch(connectionCheckers.get(blobStoreConnectionXO.getType())) {
-        case null -> throw new IllegalArgumentException(STR."No connection checker found for type \{blobStoreConnectionXO.getType()}");
+      ConnectionChecker conChecker = switch(connectionCheckers.get(blobStoreConnectionXO.type())) {
+        case null -> throw new IllegalArgumentException(STR."No connection checker found for type \{blobStoreConnectionXO.type()}");
         case ConnectionChecker checker -> checker;
       };
       
       // Use virtual threads for I/O-bound connection testing
       virtualThreadExecutor.execute(() -> {
         try {
-          conChecker.verifyConnection(blobStoreConnectionXO.getName(), blobStoreConnectionXO.getAttributes());
+          conChecker.verifyConnection(blobStoreConnectionXO.name(), blobStoreConnectionXO.attributes());
         } catch (Exception e) {
           // Propagate exception to the calling thread
           throw new RuntimeException(e);
@@ -195,11 +203,11 @@ public class BlobStoreResource
       Throwable cause = e.getCause() != null ? e.getCause() : e;
       
       if (cause instanceof BlobStoreConnectionException ce) {
-        log.error(STR."Can't connect to \{blobStoreConnectionXO.getType()} blob store", ce);
+        log.error(STR."Can't connect to \{blobStoreConnectionXO.type()} blob store", ce);
         throw new WebApplicationException(Response.status(BAD_REQUEST).entity(ce.getMessage()).build());
       }
       else {
-        log.warn(STR."Can't connect to \{blobStoreConnectionXO.getType()} blob store", cause);
+        log.warn(STR."Can't connect to \{blobStoreConnectionXO.type()} blob store", cause);
         throw new WebApplicationException(Response.status(BAD_REQUEST).entity(messages.connectionError()).build());
       }
     }

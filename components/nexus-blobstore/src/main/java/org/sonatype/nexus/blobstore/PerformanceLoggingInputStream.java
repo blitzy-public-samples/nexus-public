@@ -88,11 +88,12 @@ public class PerformanceLoggingInputStream
     final long elapsedNanos = totalNanosElapsed.sum();
     
     // Log performance metrics with Virtual Thread awareness
-    performanceLogger.logRead(bytesRead, elapsedNanos, isVirtualThread);
+    performanceLogger.logRead(bytesRead, elapsedNanos);
     
     // Capture additional Virtual Thread metrics if applicable
     if (isVirtualThread) {
-      performanceLogger.captureVirtualThreadMetrics("read", bytesRead, elapsedNanos);
+      // TODOs: FIXME: Below method creation pending.
+      //performanceLogger.captureVirtualThreadMetrics("read", bytesRead, elapsedNanos);
     }
   }
 

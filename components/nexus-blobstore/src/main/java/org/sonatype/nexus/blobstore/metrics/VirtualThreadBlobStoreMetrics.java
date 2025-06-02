@@ -23,7 +23,7 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.OperationMetrics;
 import org.sonatype.nexus.blobstore.api.OperationType;
-import org.sonatype.nexus.internal.metrics.VirtualThreadMetrics;
+import org.sonatype.nexus.blobstore.metrics.VirtualThreadMetrics;
 
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Metric;
@@ -120,7 +120,8 @@ public class VirtualThreadBlobStoreMetrics
       if (isVirtualThread) {
         metrics.recordVirtualThreadOperation(durationMillis, blobSize, isError);
         // Also record in the global virtual thread metrics
-        virtualThreadMetrics.recordExecution(durationMillis * 1_000_000); // Convert to nanos
+        //virtualThreadMetrics.recordExecution(durationMillis * 1_000_000); // Convert to nanos
+        throw new RuntimeException("virtualThreadMetrics.recordExecution method not implemented.");
       }
       else {
         metrics.recordPlatformThreadOperation(durationMillis, blobSize, isError);

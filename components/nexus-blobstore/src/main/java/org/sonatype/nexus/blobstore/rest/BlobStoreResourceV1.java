@@ -98,13 +98,13 @@ public class BlobStoreResourceV1
     // Use virtual threads for I/O-bound operations to improve scalability
     try {
       return virtualThreadExecutor.supplyAsync(() -> {
-        BlobStore blobStore = blobStoreManager.get(name);
+        BlobStore blobStore = getBlobStoreManager().get(name);
 
         if (blobStore == null) {
           throw new WebApplicationException(format("No blob store found for id '%s' ", name), NOT_FOUND);
         }
 
-        BlobStoreQuotaResult result = quotaService.checkQuota(blobStore);
+        BlobStoreQuotaResult result = getQuotaService().checkQuota(blobStore);
 
         return result != null ? BlobStoreQuotaResultXO.asQuotaXO(result) : BlobStoreQuotaResultXO.asNoQuotaXO(name);
       }).join();

@@ -43,7 +43,7 @@ import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.ItemselectFormField;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Streams.stream;

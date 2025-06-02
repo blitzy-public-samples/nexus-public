@@ -14,6 +14,8 @@ package org.sonatype.nexus.blobstore;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 
@@ -59,7 +61,7 @@ public abstract class BlobStoreDescriptorSupport
         // Execute validation in a Virtual Thread for better scalability
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
           quotaService.validateSoftQuotaConfig(configuration);
-        }, Thread.ofVirtual().factory());
+        }, Executors.newVirtualThreadPerTaskExecutor());
         
         // Wait for completion and propagate any exceptions
         future.get();

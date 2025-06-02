@@ -23,44 +23,44 @@ import org.slf4j.Logger;
 import static java.lang.StringTemplate.STR;
 
 /**
- * Logs blob store performance statistics, including Virtual Thread specific metrics.
+ * Logs blob store performance statistics, including Virtual Thread specific
+ * metrics.
  *
  * @since 3.21
  */
-public class PerformanceLogger
-{
+public class PerformanceLogger {
 
-  private static final String IOSTAT_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat";
-  private static final String VIRTUAL_THREAD_IOSTAT_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat.virtualthread";
-  private static final String THREAD_PINNING_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat.threadpinning";
+	private static final String IOSTAT_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat";
+	private static final String VIRTUAL_THREAD_IOSTAT_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat.virtualthread";
+	private static final String THREAD_PINNING_LOGGER_NAME = "org.sonatype.nexus.blobstore.iostat.threadpinning";
 
-  private final Logger log = Loggers.getLogger(IOSTAT_LOGGER_NAME);
-  private final Logger virtualThreadLog = Loggers.getLogger(VIRTUAL_THREAD_IOSTAT_LOGGER_NAME);
-  private final Logger threadPinningLog = Loggers.getLogger(THREAD_PINNING_LOGGER_NAME);
+	private final Logger log = Loggers.getLogger(IOSTAT_LOGGER_NAME);
+	private final Logger virtualThreadLog = Loggers.getLogger(VIRTUAL_THREAD_IOSTAT_LOGGER_NAME);
+	private final Logger threadPinningLog = Loggers.getLogger(THREAD_PINNING_LOGGER_NAME);
 
-  private String blobStoreName = "<not set>";
-  
-  // Threshold in milliseconds to consider a virtual thread operation as potentially pinned
-  private static final double PINNING_THRESHOLD_MS = 20.0;
+	private String blobStoreName = "<not set>";
 
-  public void setBlobStoreName(final String blobStoreName) {
-    this.blobStoreName = blobStoreName;
-  }
+	// Threshold in milliseconds to consider a virtual thread operation as
+	// potentially pinned
+	private static final double PINNING_THRESHOLD_MS = 20.0;
 
-  /**
-   * Wraps the input stream with performance logging if debug is enabled.
-   * Detects if running in a virtual thread and applies appropriate monitoring.
-   */
-  public InputStream maybeWrapForPerformanceLogging(final InputStream inputStream) {
-    if (log.isDebugEnabled() || virtualThreadLog.isDebugEnabled()) {
-      return new PerformanceLoggingInputStream(inputStream, this);
-    }
-    else {
-      return inputStream;
-    }
-  }
+	public void setBlobStoreName(final String blobStoreName) {
+		this.blobStoreName = blobStoreName;
+	}
 
-  /**
+	/**
+	 * Wraps the input stream with performance logging if debug is enabled. Detects
+	 * if running in a virtual thread and applies appropriate monitoring.
+	 */
+	public InputStream maybeWrapForPerformanceLogging(final InputStream inputStream) {
+		if (log.isDebugEnabled() || virtualThreadLog.isDebugEnabled()) {
+			return new PerformanceLoggingInputStream(inputStream, this);
+		} else {
+			return inputStream;
+		}
+	}
+
+	/**
    * Logs read performance metrics. Uses Java 21 String Templates for improved performance.
    * Detects if running in a virtual thread and logs appropriate metrics.
    */
@@ -94,7 +94,7 @@ public class PerformanceLogger
     }
   }
 
-  /**
+	/**
    * Logs blob creation performance metrics. Uses Java 21 String Templates for improved performance.
    * Detects if running in a virtual thread and logs appropriate metrics.
    */
@@ -129,7 +129,7 @@ public class PerformanceLogger
     }
   }
 
-  /**
+	/**
    * Logs blob deletion performance metrics. Uses Java 21 String Templates for improved performance.
    * Detects if running in a virtual thread and logs appropriate metrics.
    */
@@ -160,8 +160,8 @@ public class PerformanceLogger
       }
     }
   }
-  
-  /**
+
+	/**
    * Logs a virtual thread specific operation with performance metrics.
    * This method is used for tracking virtual thread specific operations that aren't
    * covered by the standard read/create/delete methods.
@@ -191,4 +191,9 @@ public class PerformanceLogger
       threadPinningLog.debug(STR."[POTENTIAL PINNING] VirtualThread \{operationName} operation in blobstore \{blobStoreName} took \{millis} ms");
     }
   }
+
+	public void captureVirtualThreadMetrics(String string, long bytesRead, long elapsedNanos) {
+		// TODO Auto-generated method stub
+
+	}
 }

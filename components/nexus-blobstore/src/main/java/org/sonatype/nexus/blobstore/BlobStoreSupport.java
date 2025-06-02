@@ -379,7 +379,7 @@ public abstract class BlobStoreSupport<T extends AttributesLocation>
     }
     
     if (virtualThreadMetrics != null) {
-      virtualThreadMetrics.recordOperation(name, value);
+      virtualThreadMetrics.recordOperation(name);
     }
   }
 

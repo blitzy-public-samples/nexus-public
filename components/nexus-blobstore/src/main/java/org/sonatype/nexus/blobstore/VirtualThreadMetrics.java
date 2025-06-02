@@ -15,10 +15,10 @@ package org.sonatype.nexus.blobstore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-import javax.annotation.PostConstruct;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.PostConstruct;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 
@@ -160,10 +160,11 @@ public class VirtualThreadMetrics
    * Usage: try (Timer.Context context = metrics.timerContext()) { ... }
    *
    * @return a timer context that will record the execution time when stopped
-   */
+   
   public Timer.Context timerContext() {
     recordThreadStart();
     Timer.Context context = executionTimer.time();
+    return context.stop();
     return new Timer.Context() {
       @Override
       public long stop() {
@@ -176,7 +177,7 @@ public class VirtualThreadMetrics
       }
     };
   }
-
+*/
   /**
    * Returns the total number of virtual threads created since the application started.
    *

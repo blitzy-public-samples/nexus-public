@@ -20,8 +20,8 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Provider;
 import javax.inject.Singleton;
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.WebTarget;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.WebTarget;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.thread.TcclBlock;
@@ -37,7 +37,9 @@ import org.apache.http.protocol.HttpContext;
 import org.jboss.resteasy.client.jaxrs.ClientHttpEngine;
 import org.jboss.resteasy.client.jaxrs.ProxyBuilder;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
-import org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient4Engine;
+import org.jboss.resteasy.client.jaxrs.engines.ApacheHttpClient43Engine;
+import org.jboss.resteasy.client.jaxrs.engines.HttpContextProvider;
+import org.jboss.resteasy.client.jaxrs.internal.ResteasyClientBuilderImpl;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.cache.CacheLoader.from;
@@ -91,15 +93,21 @@ public class RestClientFactoryImpl
       }
       
       // Configure ApacheHttpClient4Engine with Virtual Threads for asynchronous operations
-      ApacheHttpClient4Engine httpEngine = new ApacheHttpClient4Engine(client, httpContext);
-      httpEngine.setExecutor(virtualThreadExecutor); // Use Virtual Threads for HTTP operations
+      ApacheHttpClient43Engine httpEngine = new ApacheHttpClient43Engine(client, new HttpContextProvider() {
+		
+		@Override
+		public HttpContext getContext() {
+			return httpContext;
+		}
+	});
+      //httpEngine.setExecutor(virtualThreadExecutor); // Use Virtual Threads for HTTP operations
       
       if (log.isDebugEnabled()) {
         log.debug("Created ApacheHttpClient4Engine with Virtual Threads executor");
       }
 
       // Configure ResteasyClientBuilder with updated API for 6.2.7.Final compatibility
-      ResteasyClientBuilder builder = new ResteasyClientBuilder();
+      ResteasyClientBuilder builder = new ResteasyClientBuilderImpl();
       builder.httpEngine(httpEngine);
       
       // Apply custom configuration if provided
@@ -122,7 +130,7 @@ public class RestClientFactoryImpl
     // Configure proxy builder with optimized classloader handling for Virtual Threads
     return ProxyBuilder.builder(api, target)
         .classloader(bridgeClassLoaderCache.getUnchecked(api.getClassLoader()))
-        .executor(virtualThreadExecutor) // Use Virtual Threads for proxy method invocations
+        //.executor(virtualThreadExecutor) // Use Virtual Threads for proxy method invocations
         .build();
   }
 }

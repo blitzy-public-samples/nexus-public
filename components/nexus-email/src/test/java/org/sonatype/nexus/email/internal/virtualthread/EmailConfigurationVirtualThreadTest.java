@@ -153,7 +153,7 @@ public class EmailConfigurationVirtualThreadTest
         }
         catch (Exception e) {
           foundInconsistency.set(true);
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
         }
         finally {
           completionLatch.countDown();
@@ -220,7 +220,7 @@ public class EmailConfigurationVirtualThreadTest
           }
         }
         catch (Exception e) {
-          log.error("Error in virtual thread " + threadId, e);
+          logger.error("Error in virtual thread " + threadId, e);
         }
         finally {
           completionLatch.countDown();
@@ -352,7 +352,7 @@ public class EmailConfigurationVirtualThreadTest
         }
         catch (Exception e) {
           secretInconsistency.set(true);
-          log.error("Error in virtual thread " + threadId, e);
+          logger.error("Error in virtual thread " + threadId, e);
         }
         finally {
           completionLatch.countDown();
@@ -403,7 +403,7 @@ public class EmailConfigurationVirtualThreadTest
         firstThreadLatch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in first virtual thread", e);
+        logger.error("Error in first virtual thread", e);
       }
     }, virtualThreadExecutor);
     
@@ -427,7 +427,7 @@ public class EmailConfigurationVirtualThreadTest
         }
       }
       catch (Exception e) {
-        log.error("Error in second virtual thread", e);
+        logger.error("Error in second virtual thread", e);
       }
     }, virtualThreadExecutor);
     
@@ -485,7 +485,7 @@ public class EmailConfigurationVirtualThreadTest
           deleteSuccessCount.incrementAndGet();
         }
         catch (Exception e) {
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
         }
         finally {
           completionLatch.countDown();

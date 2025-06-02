@@ -16,7 +16,6 @@ import java.util.Locale;
 
 // Import Java 21 String Template related classes
 import static java.lang.StringTemplate.STR;
-import static java.lang.StringTemplate.FMT;
 import java.lang.StringTemplate;
 
 /**
@@ -186,7 +185,7 @@ public final class EmailStringTemplates
    */
   public static String i18nMessage(StringTemplate template, Locale locale) {
     // Using FMT processor with locale for internationalized messages
-    return FMT."\{locale}\{template}";
+    return STR."\{locale}\{template}";
   }
 
   /**

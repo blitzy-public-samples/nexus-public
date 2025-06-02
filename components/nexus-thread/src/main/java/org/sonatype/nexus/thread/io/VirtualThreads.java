@@ -103,10 +103,7 @@ public final class VirtualThreads
    * @param task the task to execute
    */
   public static void execute(final Runnable task) {
-    execute(() -> {
-      task.run();
-      return null;
-    });
+    execute(task);
   }
 
   /**

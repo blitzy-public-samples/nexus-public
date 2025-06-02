@@ -62,8 +62,8 @@ public class BeanEntryCommand
    */
   private Completer lookupCompleter(final Class<?> clazz) {
     // Use proper generic type parameters for improved type safety
-    Iterator<? extends BeanEntry<?, Completer>> itr = beanLocator.<Object, Completer>locate(
-        Key.get(clazz)).iterator();
+    Iterator<? extends BeanEntry<?, Completer>> itr = beanLocator.locate(
+        Key.get((Class)clazz)).iterator();
     if (itr.hasNext()) {
       return itr.next().getValue();
     }

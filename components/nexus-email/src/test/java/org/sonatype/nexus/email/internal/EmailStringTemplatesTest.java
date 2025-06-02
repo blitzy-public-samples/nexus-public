@@ -92,7 +92,7 @@ public class EmailStringTemplatesTest
       assertThat(message, notNullValue());
     } catch (Exception e) {
       // Expected in test environment without the actual resource bundle
-      log.info("Resource bundle not available in test environment: {}", e.getMessage());
+      logger.info("Resource bundle not available in test environment: {}", e.getMessage());
     }
   }
 

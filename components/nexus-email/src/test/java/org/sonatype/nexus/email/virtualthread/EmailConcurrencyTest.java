@@ -152,7 +152,7 @@ public class EmailConcurrencyTest
    */
   @Test
   public void testSmallConcurrency() throws Exception {
-    log.info("Testing with {} concurrent clients", SMALL_CONCURRENCY);
+    logger.info("Testing with {} concurrent clients", SMALL_CONCURRENCY);
     
     // Warm up
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -184,7 +184,7 @@ public class EmailConcurrencyTest
    */
   @Test
   public void testMediumConcurrency() throws Exception {
-    log.info("Testing with {} concurrent clients", MEDIUM_CONCURRENCY);
+    logger.info("Testing with {} concurrent clients", MEDIUM_CONCURRENCY);
     
     // Warm up
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -220,7 +220,7 @@ public class EmailConcurrencyTest
    */
   @Test
   public void testLargeConcurrency() throws Exception {
-    log.info("Testing with {} concurrent clients", LARGE_CONCURRENCY);
+    logger.info("Testing with {} concurrent clients", LARGE_CONCURRENCY);
     
     // Warm up
     for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -308,7 +308,7 @@ public class EmailConcurrencyTest
           catch (Exception e) {
             // Increment error count
             errorCount.incrementAndGet();
-            log.error("Error sending email", e);
+            logger.error("Error sending email", e);
           } 
           finally {
             // Signal completion
@@ -368,30 +368,30 @@ public class EmailConcurrencyTest
    * @param virtualResult the virtual thread test results
    */
   private void logResults(String testName, PerformanceResult platformResult, PerformanceResult virtualResult) {
-    log.info("----- {} Test Results -----", testName);
-    log.info("Platform Threads:");
-    log.info("  Avg Total Time: {} ms", platformResult.getAvgTotalTime());
-    log.info("  Avg Throughput: {} emails/sec", platformResult.getAvgThroughput());
-    log.info("  Avg Response Time: {} ms", platformResult.getAvgResponseTime());
-    log.info("  Avg Success Rate: {}%", platformResult.getAvgSuccessRate());
-    log.info("  Avg Memory Used: {} bytes", platformResult.getAvgMemoryUsed());
+    logger.info("----- {} Test Results -----", testName);
+    logger.info("Platform Threads:");
+    logger.info("  Avg Total Time: {} ms", platformResult.getAvgTotalTime());
+    logger.info("  Avg Throughput: {} emails/sec", platformResult.getAvgThroughput());
+    logger.info("  Avg Response Time: {} ms", platformResult.getAvgResponseTime());
+    logger.info("  Avg Success Rate: {}%", platformResult.getAvgSuccessRate());
+    logger.info("  Avg Memory Used: {} bytes", platformResult.getAvgMemoryUsed());
     
-    log.info("Virtual Threads:");
-    log.info("  Avg Total Time: {} ms", virtualResult.getAvgTotalTime());
-    log.info("  Avg Throughput: {} emails/sec", virtualResult.getAvgThroughput());
-    log.info("  Avg Response Time: {} ms", virtualResult.getAvgResponseTime());
-    log.info("  Avg Success Rate: {}%", virtualResult.getAvgSuccessRate());
-    log.info("  Avg Memory Used: {} bytes", virtualResult.getAvgMemoryUsed());
+    logger.info("Virtual Threads:");
+    logger.info("  Avg Total Time: {} ms", virtualResult.getAvgTotalTime());
+    logger.info("  Avg Throughput: {} emails/sec", virtualResult.getAvgThroughput());
+    logger.info("  Avg Response Time: {} ms", virtualResult.getAvgResponseTime());
+    logger.info("  Avg Success Rate: {}%", virtualResult.getAvgSuccessRate());
+    logger.info("  Avg Memory Used: {} bytes", virtualResult.getAvgMemoryUsed());
     
     // Calculate improvement percentages
     double throughputImprovement = ((virtualResult.getAvgThroughput() / platformResult.getAvgThroughput()) - 1) * 100;
     double responseTimeImprovement = ((platformResult.getAvgResponseTime() / virtualResult.getAvgResponseTime()) - 1) * 100;
     double memoryImprovement = ((platformResult.getAvgMemoryUsed() / virtualResult.getAvgMemoryUsed()) - 1) * 100;
     
-    log.info("Improvements with Virtual Threads:");
-    log.info("  Throughput: {}%", String.format("%.2f", throughputImprovement));
-    log.info("  Response Time: {}%", String.format("%.2f", responseTimeImprovement));
-    log.info("  Memory Usage: {}%", String.format("%.2f", memoryImprovement));
+    logger.info("Improvements with Virtual Threads:");
+    logger.info("  Throughput: {}%", String.format("%.2f", throughputImprovement));
+    logger.info("  Response Time: {}%", String.format("%.2f", responseTimeImprovement));
+    logger.info("  Memory Usage: {}%", String.format("%.2f", memoryImprovement));
   }
 
   /**

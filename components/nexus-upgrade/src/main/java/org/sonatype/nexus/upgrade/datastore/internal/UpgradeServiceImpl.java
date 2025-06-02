@@ -14,11 +14,11 @@ package org.sonatype.nexus.upgrade.datastore.internal;
 
 import java.util.Optional;
 
-import javax.annotation.Nullable;
-import javax.annotation.Priority;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.Nullable;
+import jakarta.annotation.Priority;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.common.app.FeatureFlags;

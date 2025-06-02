@@ -164,7 +164,7 @@ public class EmailManagerVirtualThreadTests
             emailManager.send(email);
           } catch (Exception e) {
             errorCount.incrementAndGet();
-            log.error("Error sending email", e);
+            logger.error("Error sending email", e);
           } finally {
             latch.countDown();
           }
@@ -209,8 +209,8 @@ public class EmailManagerVirtualThreadTests
     // Test with virtual threads
     long virtualThreadTime = measureExecutionTime(virtualThreadFactory, 500);
     
-    log.info("Platform Thread execution time: {} ms", platformThreadTime);
-    log.info("Virtual Thread execution time: {} ms", virtualThreadTime);
+    logger.info("Platform Thread execution time: {} ms", platformThreadTime);
+    logger.info("Virtual Thread execution time: {} ms", virtualThreadTime);
     
     // Virtual threads should be more efficient for I/O bound operations
     assertThat("Virtual threads should perform better than platform threads for I/O bound operations",
@@ -247,7 +247,7 @@ public class EmailManagerVirtualThreadTests
             emailManager.setConfiguration(emailConfig, "password" + configIndex);
             successCount.incrementAndGet();
           } catch (Exception e) {
-            log.error("Error updating configuration", e);
+            logger.error("Error updating configuration", e);
           } finally {
             latch.countDown();
           }
@@ -287,7 +287,7 @@ public class EmailManagerVirtualThreadTests
             
             emailManager.send(email);
           } catch (Exception e) {
-            log.error("Error in performance test", e);
+            logger.error("Error in performance test", e);
           } finally {
             latch.countDown();
           }

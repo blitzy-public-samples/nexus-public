@@ -244,3 +244,5 @@ public class VirtualThreadScheduledExecutorService
   public static VirtualThreadScheduledExecutorService forCurrentSubject(final ScheduledExecutorService delegate) {
     return new VirtualThreadScheduledExecutorService(delegate, new CurrentSubjectSupplier());
   }
+  
+}

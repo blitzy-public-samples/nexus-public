@@ -15,8 +15,8 @@ package org.sonatype.nexus.capability;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import javax.annotation.Nullable;
-import javax.validation.ValidationException;
+import jakarta.annotation.Nullable;
+import jakarta.validation.ValidationException;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.CapabilityDescriptor.ValidationMode;
@@ -190,7 +190,6 @@ public class CapabilityDescriptorSupportTest
       return uniqueProperties;
     }
     
-    @Override
     protected String renderReason(final ValidationMode mode) {
       return switch(mode) {
         case ValidationMode.CREATE -> STR."Cannot create capability of type \{name()}";

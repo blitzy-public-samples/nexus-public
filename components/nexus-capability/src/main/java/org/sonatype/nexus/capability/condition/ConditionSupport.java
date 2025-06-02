@@ -13,7 +13,7 @@
 package org.sonatype.nexus.capability.condition;
 
 
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.capability.Condition;

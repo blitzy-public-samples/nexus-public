@@ -58,13 +58,13 @@ public class CapabilityOfTypeActiveCondition
   @Subscribe
   public void handle(final CapabilityEvent.AfterActivated event) {
     // Ensure thread safety when handling events from Virtual Threads
-    long stamp = lock.readLock();
+    long stamp = getLock().readLock();
     try {
       if (!isSatisfied() && type.equals(event.getReference().context().type())) {
         checkAllCapabilities();
       }
     } finally {
-      lock.unlockRead(stamp);
+      getLock().unlockRead(stamp);
     }
   }
 
@@ -72,13 +72,13 @@ public class CapabilityOfTypeActiveCondition
   @Subscribe
   public void handle(final CapabilityEvent.BeforePassivated event) {
     // Ensure thread safety when handling events from Virtual Threads
-    long stamp = lock.readLock();
+    long stamp = getLock().readLock();
     try {
       if (isSatisfied() && type.equals(event.getReference().context().type())) {
         checkAllCapabilities();
       }
     } finally {
-      lock.unlockRead(stamp);
+      getLock().unlockRead(stamp);
     }
   }
 

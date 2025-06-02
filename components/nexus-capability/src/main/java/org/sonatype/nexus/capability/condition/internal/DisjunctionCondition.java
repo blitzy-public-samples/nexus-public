@@ -37,18 +37,14 @@ public class DisjunctionCondition
 
   @Override
   protected boolean reevaluate(final Condition... conditions) {
-    // Use pattern matching for switch to evaluate conditions more efficiently
-    // Capture the current thread context to ensure proper propagation
-    return switch (findSatisfiedCondition(conditions)) {
-      case Condition satisfied when satisfied != null -> {
-        lastSatisfied = satisfied;
-        yield true;
-      }
-      case null -> {
-        lastSatisfied = null;
-        yield false;
-      }
-    };
+	  for (final Condition condition : conditions) {
+	      if (condition.isSatisfied()) {
+	        lastSatisfied = condition;
+	        return true;
+	      }
+	    }
+	    lastSatisfied = null;
+	    return false;
   }
   
   /**

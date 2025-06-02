@@ -57,22 +57,14 @@ public class ConjunctionCondition
    */
   @Override
   protected boolean reevaluate(final Condition... conditions) {
-    // Use pattern matching for switch to handle condition evaluation more efficiently
-    for (final Condition condition : conditions) {
-      // Capture the current condition to ensure proper thread context propagation
-      boolean satisfied = condition.isSatisfied();
-      
-      // Use pattern matching with switch to handle the condition state
-      switch (satisfied) {
-        case false -> {
-          lastNotSatisfied = condition;
-          return false;
-        }
-        case true -> { /* Continue checking other conditions */ }
-      }
-    }
-    lastNotSatisfied = null;
-    return true;
+	  for (final Condition condition : conditions) {
+	      if (!condition.isSatisfied()) {
+	        lastNotSatisfied = condition;
+	        return false;
+	      }
+	    }
+	    lastNotSatisfied = null;
+	    return true;
   }
 
   /**

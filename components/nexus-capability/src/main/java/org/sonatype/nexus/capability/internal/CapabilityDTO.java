@@ -46,30 +46,19 @@ public class CapabilityDTO
    *
    * @param reference the capability reference (must not be null)
    */
-  public CapabilityDTO(final CapabilityReference reference) {
-    checkNotNull(reference);
-    
-    // Use Pattern Matching to extract context and capability in one step
-    if (reference instanceof CapabilityReference(var context, var capability)) {
-      checkNotNull(context);
-      
-      id = context.id().toString();
-      type = context.type().toString();
-      enabled = context.isEnabled();
-      notes = context.notes();
-      properties = processProperties(context.properties(), capability);
-    }
-    else {
-      // Fallback for backward compatibility
-      CapabilityContext context = checkNotNull(reference.context());
-      
-      id = context.id().toString();
-      type = context.type().toString();
-      enabled = context.isEnabled();
-      notes = context.notes();
-      properties = CapabilityResource.filterProperties(context.properties(), reference.capability());
-    }
-  }
+	public CapabilityDTO(final CapabilityReference reference) {
+		checkNotNull(reference);
+
+		// Fallback for backward compatibility
+		CapabilityContext context = checkNotNull(reference.context());
+
+		id = context.id().toString();
+		type = context.type().toString();
+		enabled = context.isEnabled();
+		notes = context.notes();
+		properties = CapabilityResource.filterProperties(context.properties(), reference.capability());
+
+	}
   
   /**
    * Process properties using Record Patterns when handling capability configuration data.

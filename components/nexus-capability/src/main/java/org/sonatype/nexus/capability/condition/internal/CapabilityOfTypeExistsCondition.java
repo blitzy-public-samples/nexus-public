@@ -43,7 +43,11 @@ public class CapabilityOfTypeExistsCondition
 
   final CapabilityType type;
 
-  final String typeName;
+  public StampedLock getLock() {
+	return lock;
+}
+
+final String typeName;
 
   public CapabilityOfTypeExistsCondition(final EventManager eventManager,
                                          final CapabilityDescriptorRegistry descriptorRegistry,

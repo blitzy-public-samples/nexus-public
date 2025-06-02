@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 /**
  * Facet to retrieve the format, or subformat of a repository

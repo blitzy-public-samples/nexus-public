@@ -14,8 +14,8 @@ package org.sonatype.nexus.repository;
 
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
-import javax.annotation.Nonnull;
-import javax.inject.Inject;
+import jakarta.annotation.Nonnull;
+import jakarta.inject.Inject;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventBus;

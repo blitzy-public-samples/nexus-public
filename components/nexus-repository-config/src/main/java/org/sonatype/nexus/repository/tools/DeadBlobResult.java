@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.tools;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 

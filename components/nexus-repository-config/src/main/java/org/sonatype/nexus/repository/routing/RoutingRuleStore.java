@@ -14,7 +14,7 @@ package org.sonatype.nexus.repository.routing;
 
 import java.util.List;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 /**
  * @since 3.16

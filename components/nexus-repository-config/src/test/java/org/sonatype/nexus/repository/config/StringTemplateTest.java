@@ -107,7 +107,7 @@ public class StringTemplateTest
     
     // Using Java 21 String Template for error message formatting
     String errorMessage = STR."Error accessing attribute '\{invalidAttribute}' in repository \{name} (\{recipeName}). " +
-        "Available attributes: \{String.join(", ", configuration.getAttributes().keySet())}";
+            STR."Available attributes: \{String.join(", ", configuration.getAttributes().keySet())}";
 
     assertThat(errorMessage, containsString("Error accessing attribute 'nonexistent' in repository test-repo (maven2-hosted)"));
     assertThat(errorMessage, containsString("Available attributes: "));
@@ -184,11 +184,14 @@ public class StringTemplateTest
     ));
 
     // Using Java 21 String Template with sensitive information handling
+    @SuppressWarnings("unchecked") // Optional, for clean compilation
     String secureMessage = STR."""
-        Repository \{secureConfig.getName()} (\{secureConfig.getRecipeName()}) authentication:
-        Username: \{secureConfig.getAttributes().get("httpclient").get("authentication").get("username")}
-        Password: \{maskPassword(secureConfig.getAttributes().get("httpclient").get("authentication").get("password").toString())}
-        """;
+    Repository \{secureConfig.getName()} (\{secureConfig.getRecipeName()}) authentication:
+    Username: \{((Map<String, Object>) ((Map<String, Object>) secureConfig.getAttributes()
+            .get("httpclient")).get("authentication")).get("username")}
+    Password: \{maskPassword(((Map<String, Object>) ((Map<String, Object>) secureConfig.getAttributes()
+            .get("httpclient")).get("authentication")).get("password").toString())}
+    """;
 
     assertThat(secureMessage, containsString("Repository secure-repo (maven2-proxy) authentication:"));
     assertThat(secureMessage, containsString("Username: admin"));
@@ -215,8 +218,8 @@ public class StringTemplateTest
     
     // Using Java 21 String Template for validation error messages
     String validationError = STR."Validation failed for repository configuration: " +
-        "\{invalidConfig.getName() == null ? "name is required" : ""}" +
-        "\{invalidConfig.getRoutingRuleId() == null ? ", routing rule is required" : ""}";
+            STR."\{invalidConfig.getName() == null ? "name is required" : ""}" +
+            STR."\{invalidConfig.getRoutingRuleId() == null ? ", routing rule is required" : ""}";
     
     assertThat(validationError, containsString("Validation failed for repository configuration: name is required"));
     assertThat(validationError, containsString(", routing rule is required"));

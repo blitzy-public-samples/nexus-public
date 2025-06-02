@@ -22,6 +22,7 @@ import org.sonatype.nexus.common.entity.EntityId;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -154,12 +155,16 @@ public class RecordPatternTest
     // Test pattern matching in switch expressions
     for (RepoConfig config : List.of(mavenConfig, npmConfig)) {
       String result = switch (config) {
-        case RepoConfig(var name, "maven2", true, var id) -> 
-            "Online Maven repository: " + name;
-        case RepoConfig(var name, "npm", false, var id) -> 
-            "Offline NPM repository: " + name;
-        default -> 
-            "Unknown repository configuration";
+        case RepoConfig(String name, String type, boolean online, EntityId id)
+                when "maven2".equals(type) && online ->
+                "Online Maven repository: " + name;
+
+        case RepoConfig(String name, String type, boolean online, EntityId id)
+                when "npm".equals(type) && !online ->
+                "Offline NPM repository: " + name;
+
+        default ->
+                "Unknown repository configuration";
       };
       
       if (config == mavenConfig) {

@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.types;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.repository.Type;
 

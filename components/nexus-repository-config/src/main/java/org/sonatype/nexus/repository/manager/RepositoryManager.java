@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.nexus.datastore.DataStoreUsageChecker;

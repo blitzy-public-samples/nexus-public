@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.internal.blobstore;
 
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.junit.After;
 import org.junit.Before;

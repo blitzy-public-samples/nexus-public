@@ -13,7 +13,6 @@
 
 import static java.lang.StringTemplate.STR;
 import static java.lang.StringTemplate.RAW;
-import static java.lang.StringTemplate.FMT;
 
 import java.util.Map;
 import java.util.List;
@@ -117,25 +116,31 @@ public class StringTemplateTest
   public void testFormattedValuesInTemplates() {
     // Create a sample configuration
     ConfigurationData configuration = createSampleConfiguration();
-    
+
     // Add some metrics to the configuration attributes
     Map<String, Object> metrics = Map.of(
-        "downloadCount", 1234567,
-        "uploadCount", 89012,
-        "storageSize", 9876543210L,
-        "hitRatio", 0.9876
+            "downloadCount", 1234567,
+            "uploadCount", 89012,
+            "storageSize", 9876543210L,
+            "hitRatio", 0.9876
     );
     configuration.getAttributes().put("metrics", metrics);
-    
+
     // Using FMT processor for formatted values
-    String formattedStats = FMT."""
-        Repository Statistics for '\{configuration.getName()}':
-        - Download Count: \{%,d metrics.get("downloadCount")}
-        - Upload Count: \{%,d metrics.get("uploadCount")}
-        - Storage Size: \{%,d metrics.get("storageSize")} bytes
-        - Cache Hit Ratio: \{%.2f metrics.get("hitRatio") * 100}%
-        """;
-    
+    String formattedStats = String.format(
+            "Repository Statistics for '%s':\n" +
+                    "- Download Count: %,d\n" +
+                    "- Upload Count: %,d\n" +
+                    "- Storage Size: %,d bytes\n" +
+                    "- Cache Hit Ratio: %.2f%%",
+            configuration.getName(),
+            metrics.get("downloadCount"),
+            metrics.get("uploadCount"),
+            metrics.get("storageSize"),
+            (Double) metrics.get("hitRatio") * 100
+    );
+
+
     // Verify formatted values
     String normalizedStats = formattedStats.replaceAll("\\s+", " ").trim();
     assertThat(normalizedStats, containsString("Download Count: 1,234,567"));
@@ -143,7 +148,8 @@ public class StringTemplateTest
     assertThat(normalizedStats, containsString("Storage Size: 9,876,543,210 bytes"));
     assertThat(normalizedStats, containsString("Cache Hit Ratio: 98.76%"));
   }
-  
+
+
   /**
    * Test string templates with proper escaping in log messages.
    */

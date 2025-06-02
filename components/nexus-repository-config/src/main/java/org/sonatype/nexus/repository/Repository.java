@@ -14,7 +14,7 @@ package org.sonatype.nexus.repository;
 
 import java.util.Optional;
 import java.util.concurrent.locks.Lock;
-import javax.annotation.Nonnull;
+import jakarta.annotation.Nonnull;
 
 import org.sonatype.nexus.repository.config.Configuration;
 

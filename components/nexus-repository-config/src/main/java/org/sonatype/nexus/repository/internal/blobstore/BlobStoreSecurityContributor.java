@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.internal.blobstore;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityConfiguration;

@@ -14,9 +14,9 @@ package org.sonatype.nexus.repository;
 
 import java.util.Set;
 
-import javax.annotation.Nonnull;
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.annotation.Nonnull;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.goodies.common.MultipleFailures;
 import org.sonatype.nexus.repository.manager.RepositoryManager;

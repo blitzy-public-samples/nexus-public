@@ -23,12 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -213,34 +208,37 @@ public class VirtualThreadTest
   public void testResourceManagementWithVirtualThreads() throws Exception {
     int threadCount = 100;
     List<File> exportFiles = new ArrayList<>();
-    
-    // Create a scope for virtual threads to ensure proper resource management
-    try (var scope = new java.lang.ThreadBuilderFactory.Container()) {
-      // Create and start virtual threads
+
+    // Create and manage tasks using structured concurrency
+    try (var scope = new StructuredTaskScope.ShutdownOnFailure()) {
       for (int i = 0; i < threadCount; i++) {
         final int index = i;
         File exportFile = tempDir.resolve("resource-export-" + index + ".json").toFile();
         exportFiles.add(exportFile);
-        
-        Thread thread = Thread.ofVirtual().name("resource-thread-" + index).factory(scope).start(() -> {
+
+        scope.fork(() -> {
           try {
             ConfigurationExport exporter = new ConfigurationExport(configurationStore, routingRuleStore);
             exporter.export(exportFile);
-          }
-          catch (Exception e) {
+            return null; // required because fork expects a Callable
+          } catch (Exception e) {
             throw new RuntimeException("Export failed", e);
           }
         });
       }
-    } // All threads will be joined when the scope is closed
-    
+
+      scope.join();           // Wait for all tasks to finish
+      scope.throwIfFailed();  // Re-throw any task exceptions
+    }
+
     // Verify all exports were successful
     for (File file : exportFiles) {
       assertTrue("Export file should exist: " + file.getName(), file.exists());
       assertTrue("Export file should have content: " + file.getName(), file.length() > 0);
     }
   }
-  
+
+
   /**
    * Tests error handling with virtual threads.
    * Validates that exceptions in virtual threads are properly propagated and handled.

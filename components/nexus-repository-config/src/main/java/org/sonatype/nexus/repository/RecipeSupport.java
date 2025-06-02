@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.db.DatabaseCheck;

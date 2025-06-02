@@ -26,7 +26,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.junit.After;
 import org.junit.Before;

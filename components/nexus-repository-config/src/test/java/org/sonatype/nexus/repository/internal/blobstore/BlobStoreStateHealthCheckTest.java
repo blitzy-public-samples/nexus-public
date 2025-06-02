@@ -14,7 +14,7 @@
 package org.sonatype.nexus.repository.internal.blobstore;
 
 import java.util.Collections;
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;

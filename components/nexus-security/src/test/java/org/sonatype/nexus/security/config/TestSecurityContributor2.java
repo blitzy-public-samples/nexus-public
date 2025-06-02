@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.security.config;
 
-import javax.inject.Singleton;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege.MemoryCPrivilegeBuilder;
 import org.sonatype.nexus.security.config.memory.MemoryCRole;

@@ -15,8 +15,8 @@ package org.sonatype.nexus.security.realm;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.apache.shiro.authc.AuthenticationException;
 import org.apache.shiro.authc.AuthenticationInfo;

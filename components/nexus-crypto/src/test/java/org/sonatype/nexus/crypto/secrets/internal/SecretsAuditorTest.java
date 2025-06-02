@@ -25,6 +25,8 @@ import org.sonatype.nexus.audit.AuditRecorder;
 import org.sonatype.nexus.common.event.EventHelper;
 import org.sonatype.nexus.crypto.secrets.ActiveKeyChangeEvent;
 
+import jakarta.inject.Provider;
+
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;

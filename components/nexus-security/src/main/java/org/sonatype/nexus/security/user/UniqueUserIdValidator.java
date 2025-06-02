@@ -12,10 +12,13 @@
  */
 package org.sonatype.nexus.security.user;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;
 
@@ -28,8 +31,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class UniqueUserIdValidator
-    extends ConstraintValidatorSupport<UniqueUserId, String>
+        implements ConstraintValidator<UniqueUserId, String>
 {
+  private static final Logger log = LoggerFactory.getLogger(UniqueUserIdValidator.class);
+
   private final UserManager userManager;
 
   @Inject

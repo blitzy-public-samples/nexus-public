@@ -12,14 +12,16 @@
  */
 package org.sonatype.nexus.security.authz;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 
 import org.apache.shiro.web.filter.authz.HttpMethodPermissionFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
 
 /**
  * Nexus {@link HttpMethodPermissionFilter}.
@@ -35,17 +37,17 @@ import org.slf4j.LoggerFactory;
 @Named
 @Singleton
 public class NexusHttpMethodPermissionFilter
-  extends HttpMethodPermissionFilter
+        extends HttpMethodPermissionFilter
 {
   public static final String NAME = "nx-http-permissions";
 
   protected final Logger log = LoggerFactory.getLogger(getClass());
-  
+
   @Override
-  protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws Exception {
+  protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws IOException {
     String requestMethod = request.getParameter("method");
     if (requestMethod != null) {
-      log.debug(STR."Access denied for request method: \{requestMethod}");
+      log.debug("Access denied for request method: " + requestMethod);
     }
     return super.onAccessDenied(request, response);
   }

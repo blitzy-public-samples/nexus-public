@@ -14,15 +14,15 @@ package org.sonatype.nexus.security.role.rest;
 
 import java.util.Comparator;
 import java.util.List;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Response.Status;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
@@ -30,13 +30,13 @@ import org.sonatype.nexus.rest.WebApplicationMessageException;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.NoSuchAuthorizationManagerException;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.toList;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.security.role.rest.RoleApiResource.SOURCE_NOT_FOUND;
 
 @Named

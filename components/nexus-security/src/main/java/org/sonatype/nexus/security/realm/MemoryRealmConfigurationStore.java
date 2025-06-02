@@ -16,8 +16,8 @@ import java.util.List;
 
 import javax.annotation.Nullable;
 import javax.annotation.Priority;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 

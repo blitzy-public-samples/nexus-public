@@ -12,9 +12,10 @@
  */
 package org.sonatype.nexus.security.privilege;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
 
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;
@@ -28,8 +29,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class UniquePrivilegeIdValidator
-    extends ConstraintValidatorSupport<UniquePrivilegeId, String>
+        implements ConstraintValidator<UniquePrivilegeId, String>
 {
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(UniquePrivilegeIdValidator.class);
+
   private final SecuritySystem securitySystem;
 
   @Inject

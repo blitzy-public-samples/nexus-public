@@ -12,10 +12,13 @@
  */
 package org.sonatype.nexus.security.realm;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;
 
 import org.apache.shiro.mgt.RealmSecurityManager;
@@ -30,8 +33,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class RealmExistsValidator
-    extends ConstraintValidatorSupport<RealmExists, String>
-{
+        implements ConstraintValidator<RealmExists, String> {
+
+  private static final Logger log = LoggerFactory.getLogger(RealmExistsValidator.class);
+
   private final RealmSecurityManager realmSecurityManager;
 
   @Inject

@@ -13,11 +13,12 @@
 package org.sonatype.nexus.security;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.Cookie;
@@ -86,8 +87,8 @@ public class JwtSecurityFilter
         if (!Strings2.isEmpty(jwt)) {
           try {
             // Use virtual thread for JWT verification which is I/O bound
-            DecodedJWT decodedJwt = executor.submit(() -> jwtHelper.verifyJwt(jwt)).join();
-            
+            //DecodedJWT decodedJwt = executor.submit(() -> jwtHelper.verifyJwt(jwt)).join();
+            DecodedJWT decodedJwt = ((CompletableFuture<DecodedJWT>) executor.submit(() -> jwtHelper.verifyJwt(jwt))).join();
             // Create session with Java 21 compatibility
             SimpleSession session = new SimpleSession(request.getRemoteHost());
             session.setTimeout(TimeUnit.SECONDS.toMillis(jwtHelper.getExpirySeconds()));
@@ -95,9 +96,9 @@ public class JwtSecurityFilter
             
             // Use pattern matching for claim extraction
             return switch (decodedJwt) {
-              case DecodedJWT jwt when jwt.getClaim(USER) != null && jwt.getClaim(REALM) != null -> {
-                Claim user = jwt.getClaim(USER);
-                Claim realm = jwt.getClaim(REALM);
+              case DecodedJWT decoded when decoded.getClaim(USER) != null && decoded.getClaim(REALM) != null -> {
+                Claim user = decoded.getClaim(USER);
+                Claim realm = decoded.getClaim(REALM);
                 
                 PrincipalCollection principals = new SimplePrincipalCollection(
                     user.asString(),
@@ -123,7 +124,7 @@ public class JwtSecurityFilter
               }
             };
           }
-          catch (JwtVerificationException e) {
+          catch (Exception e) {
             log.debug(STR."Expire and reset the JWT cookie due to the error: \{e.getMessage()}");
             cookie.setValue("");
             cookie.setMaxAge(0);

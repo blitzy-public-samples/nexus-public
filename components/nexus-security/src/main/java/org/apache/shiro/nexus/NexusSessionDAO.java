@@ -23,7 +23,6 @@ import org.apache.shiro.session.mgt.eis.SessionDAO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static java.lang.StringTemplate.STR;
 
 /**
  * Custom {@link SessionDAO} with Java 21 optimizations.
@@ -40,34 +39,33 @@ public class NexusSessionDAO
 
   @Override
   protected Serializable doCreate(final Session session) {
-    // Use a virtual thread to handle session creation for improved I/O performance
-    try {
-      return Thread.startVirtualThread(() -> {
-        Serializable id = super.doCreate(session);
-        // Use Java 21 String Templates for logging
+    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+      Serializable id = executor.submit(() -> {
+        Serializable result = super.doCreate(session);
         if (log.isTraceEnabled()) {
-          log.trace(STR."Created session-id: \{id} for session: \{session}");
+          log.trace("Created session-id: " + result + " for session: " + session);
         }
-        return id;
-      }).join();
+        return result;
+      }).get();
+
+      return id;
     } catch (Exception e) {
-      log.error(STR."Error creating session: \{e.getMessage()}", e);
-      // Fall back to synchronous execution if virtual thread fails
+      log.error("Error creating session: " + e.getMessage(), e);
       Serializable id = super.doCreate(session);
       if (log.isTraceEnabled()) {
-        log.trace(STR."Created session-id: \{id} for session: \{session} (synchronous fallback)");
+        log.trace("Created session-id: " + id + " for session: " + session + " (synchronous fallback)");
       }
       return id;
     }
   }
-  
+
   @Override
   protected Session doReadSession(Serializable sessionId) {
     // Optimize session reading with CompletableFuture and virtual threads
     if (sessionId == null) {
       return null;
     }
-    
+
     try {
       return sessionCache.computeIfAbsent(sessionId, id -> {
         CompletableFuture<Session> future = new CompletableFuture<>();
@@ -76,17 +74,17 @@ public class NexusSessionDAO
             Session session = super.doReadSession(id);
             future.complete(session);
             if (log.isTraceEnabled() && session != null) {
-              log.trace(STR."Read session: \{session} with id: \{id} using virtual thread");
+              log.trace("Read session: " + session + " with id: " + id + " using virtual thread");
             }
           } catch (Exception e) {
             future.completeExceptionally(e);
-            log.error(STR."Error reading session with id: \{id}", e);
+            log.error("Error reading session with id: " + id, e);
           }
         });
         return future;
       }).get();
     } catch (InterruptedException | ExecutionException e) {
-      log.error(STR."Failed to read session with id: \{sessionId}", e);
+      log.error("Failed to read session with id: " + sessionId, e);
       // Fall back to synchronous execution if virtual thread approach fails
       return super.doReadSession(sessionId);
     }
@@ -103,14 +101,14 @@ public class NexusSessionDAO
       try {
         super.doUpdate(session);
         if (log.isTraceEnabled()) {
-          log.trace(STR."Updated session: \{session}");
+          log.trace("Updated session: " + session);
         }
         // Update the cache with the latest session
         CompletableFuture<Session> future = new CompletableFuture<>();
         future.complete(session);
         sessionCache.put(session.getId(), future);
       } catch (Exception e) {
-        log.error(STR."Error updating session: \{session.getId()}", e);
+        log.error("Error updating session: " + session.getId(), e);
         // Remove from cache on error to force a fresh read
         sessionCache.remove(session.getId());
       }
@@ -128,12 +126,12 @@ public class NexusSessionDAO
       try {
         super.doDelete(session);
         if (log.isTraceEnabled()) {
-          log.trace(STR."Deleted session: \{session}");
+          log.trace("Deleted session: " + session);
         }
         // Remove from cache when deleted
         sessionCache.remove(session.getId());
       } catch (Exception e) {
-        log.error(STR."Error deleting session: \{session.getId()}", e);
+        log.error("Error deleting session: " + session.getId(), e);
       }
     });
   }
@@ -145,7 +143,7 @@ public class NexusSessionDAO
   public void clearCache() {
     sessionCache.clear();
     if (log.isDebugEnabled()) {
-      log.debug(STR."Session cache cleared");
+      log.debug("Session cache cleared");
     }
   }
 }

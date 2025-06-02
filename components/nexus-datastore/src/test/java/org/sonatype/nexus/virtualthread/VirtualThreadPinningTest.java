@@ -26,7 +26,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingStream;
@@ -54,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * To run these tests with additional pinning detection, use the JVM flag:
  * -Djdk.tracePinnedThreads=full
  */
-@Tag(Java21TestGroup.TAG)
+@Tag("Java21TestGroup")
 public class VirtualThreadPinningTest
     extends TestSupport
 {
@@ -81,7 +80,7 @@ public class VirtualThreadPinningTest
       String threadName = event.getString("virtualThread");
       Duration duration = Duration.ofNanos(event.getLong("duration"));
       detectedPinningEvents.add(new PinningEvent(threadName, duration));
-      log.warn("Virtual thread pinning detected: {} pinned for {}", threadName, duration);
+      logger.warn("Virtual thread pinning detected: {} pinned for {}", threadName, duration);
     });
     recordingStream.startAsync();
   }
@@ -131,7 +130,7 @@ public class VirtualThreadPinningTest
     assertFalse(detectedPinningEvents.isEmpty(), 
         "No thread pinning detected, but expected pinning with synchronized blocks and I/O");
     
-    log.info("Detected {} pinning events with synchronized blocks", detectedPinningEvents.size());
+    logger.info("Detected {} pinning events with synchronized blocks", detectedPinningEvents.size());
   }
   
   /**
@@ -177,7 +176,7 @@ public class VirtualThreadPinningTest
     assertTrue(detectedPinningEvents.isEmpty(), 
         "Thread pinning detected with ReentrantLock, but expected no pinning");
     
-    log.info("No pinning events detected with ReentrantLock");
+    logger.info("No pinning events detected with ReentrantLock");
   }
   
   /**
@@ -211,7 +210,7 @@ public class VirtualThreadPinningTest
         "Timed out waiting for threads to complete");
     
     // Log the results - native method pinning may or may not be detected depending on JVM implementation
-    log.info("Detected {} pinning events with native methods", detectedPinningEvents.size());
+    logger.info("Detected {} pinning events with native methods", detectedPinningEvents.size());
   }
   
   /**
@@ -231,7 +230,7 @@ public class VirtualThreadPinningTest
     assertEquals(THREAD_COUNT * OPERATIONS_PER_THREAD, pinnedTransactionCount);
     assertEquals(THREAD_COUNT * OPERATIONS_PER_THREAD, unpinnedTransactionCount);
     
-    log.info("Completed {} transactions with synchronized (pinned) and {} with ReentrantLock (unpinned)",
+    logger.info("Completed {} transactions with synchronized (pinned) and {} with ReentrantLock (unpinned)",
         pinnedTransactionCount, unpinnedTransactionCount);
   }
   
@@ -287,9 +286,9 @@ public class VirtualThreadPinningTest
     
     // Log pinning events
     if (useSynchronized) {
-      log.info("Detected {} pinning events with synchronized transactions", detectedPinningEvents.size());
+      logger.info("Detected {} pinning events with synchronized transactions", detectedPinningEvents.size());
     } else {
-      log.info("Detected {} pinning events with ReentrantLock transactions", detectedPinningEvents.size());
+      logger.info("Detected {} pinning events with ReentrantLock transactions", detectedPinningEvents.size());
     }
     
     return completedTransactions[0];
@@ -314,7 +313,7 @@ public class VirtualThreadPinningTest
       // Clean up
       Files.delete(tempFile);
     } catch (IOException e) {
-      log.error("Error during simulated I/O operation", e);
+      logger.error("Error during simulated I/O operation", e);
     }
   }
   
@@ -339,7 +338,7 @@ public class VirtualThreadPinningTest
     
     // Use the result to prevent optimization
     if (duration < 0) {
-      log.warn("Unexpected negative duration: {}", duration);
+      logger.warn("Unexpected negative duration: {}", duration);
     }
   }
   

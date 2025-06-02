@@ -12,15 +12,21 @@
  */
 package org.sonatype.nexus.datastore;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static java.lang.String.CASE_INSENSITIVE_ORDER;
+import static java.util.Comparator.comparingInt;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Spliterators;
 import java.util.TreeSet;
 import java.util.function.Function;
-import java.util.SequencedCollection;
+import java.util.stream.StreamSupport;
 
-import jakarta.annotation.Priority;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -28,11 +34,7 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.lang.String.CASE_INSENSITIVE_ORDER;
-import static java.util.Comparator.comparingInt;
+import jakarta.annotation.Priority;
 
 /**
  * Manages {@link DataStoreConfiguration}s supplied by one or more sources.
@@ -62,11 +64,16 @@ public class DataStoreConfigurationManager
         .stream()
         .filter(DataStoreConfigurationSource::isEnabled)
         .sorted(comparingInt(this::getPriority).reversed())
-        .flatMap(source -> source.browseStoreNames().stream()
+        .flatMap(source -> {
+        	//source.browseStoreNames().stream()
             // Use TreeSet's add method which returns true if the element was added (not already present)
             // This efficiently handles deduplication of store names
-            .filter(configuredStores::add)
-            .map(configLoader(source)))
+            
+        	var storeNames = source.browseStoreNames().iterator();
+        	return StreamSupport.stream(Spliterators.spliteratorUnknownSize(storeNames, 0), false)
+        	.filter(configuredStores::add)
+            .map(configLoader(source));
+         })
         .filter(Objects::nonNull)
         .collect(toImmutableList());
   }

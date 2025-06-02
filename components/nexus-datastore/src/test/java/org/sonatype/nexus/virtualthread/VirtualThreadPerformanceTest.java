@@ -20,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -37,6 +38,8 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.stateguard.StateGuardModule;
 import org.sonatype.nexus.datastore.DataStoreSupport;
+import org.sonatype.nexus.datastore.api.DataAccess;
+import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 
 import com.google.common.collect.ImmutableMap;
@@ -87,57 +90,52 @@ public class VirtualThreadPerformanceTest extends TestSupport
   /**
    * Test data store implementation for performance testing.
    */
-  static class TestDataStore extends DataStoreSupport<Connection>
+  static class TestDataStore extends DataStoreSupport<DataSession<?>>
   {
     private final DataSource dataSource;
     
     public TestDataStore(DataSource dataSource) {
       this.dataSource = dataSource;
     }
-    
+   
     @Override
-    public void register(final Class<?> accessType) {
+    public void register(final Class<? extends DataAccess> accessType) {
       // no-op
     }
 
     @Override
-    public void unregister(final Class<?> accessType) {
+    public void unregister(final Class<? extends DataAccess> accessType) {
       // no-op
     }
 
     @Override
-    public Connection openSession() {
-      try {
-        return dataSource.getConnection();
-      }
-      catch (SQLException e) {
-        throw new RuntimeException("Failed to open connection", e);
-      }
+    public DataSession<?> openSession() {
+      return mock(DataSession.class);
     }
 
     @Override
     public Connection openConnection() {
-      return openSession();
+      return mock(Connection.class);
     }
 
     @Override
     public DataSource getDataSource() {
-      return dataSource;
+      return mock(DataSource.class);
     }
 
     @Override
     protected void doStart(final String storeName, final Map<String, String> attributes) throws Exception {
-      // no-op
+      // do nothing
     }
 
     @Override
     public void freeze() {
-      // no-op
+      // do nothing
     }
 
     @Override
     public void unfreeze() {
-      // no-op
+      // do nothing
     }
 
     @Override
@@ -147,8 +145,9 @@ public class VirtualThreadPerformanceTest extends TestSupport
 
     @Override
     public void backup(final String location) throws SQLException {
-      // no-op
+      // do nothing
     }
+
   }
   
   /**
@@ -238,7 +237,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
   
   @BeforeEach
   void setUp(TestInfo testInfo) throws Exception {
-    log.info("Setting up test: {}", testInfo.getDisplayName());
+    logger.info("Setting up test: {}", testInfo.getDisplayName());
     
     // Initialize H2 in-memory database
     JdbcDataSource h2DataSource = new JdbcDataSource();
@@ -250,7 +249,8 @@ public class VirtualThreadPerformanceTest extends TestSupport
     // Create test data store
     Injector injector = createInjector(new StateGuardModule());
     dataStore = injector.getInstance(TestDataStore.class);
-    dataStore.setDataSource(dataSource);
+    // TODOS: Fixme below line
+    //dataStore.setDataSource(dataSource);
     
     DataStoreConfiguration config = new DataStoreConfiguration();
     config.setName("virtualthread-test");
@@ -258,7 +258,8 @@ public class VirtualThreadPerformanceTest extends TestSupport
     config.setSource("local");
     config.setAttributes(ImmutableMap.of("jdbcUrl", DB_URL));
     dataStore.setConfiguration(config);
-    dataStore.setFreezeService(mock(FreezeService.class));
+    // TODOs: FIXME - why agent added below line ?
+    //dataStore.setFreezeService(mock(FreezeService.class));
     dataStore.start();
     
     // Initialize database schema
@@ -282,7 +283,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
    * Warm up the JVM to stabilize performance measurements.
    */
   private void warmup() throws Exception {
-    log.info("Warming up JVM with {} operations", WARMUP_COUNT);
+    logger.info("Warming up JVM with {} operations", WARMUP_COUNT);
     
     // Insert test data
     try (Connection conn = dataSource.getConnection()) {
@@ -331,7 +332,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
       warmupExecutor.awaitTermination(1, TimeUnit.MINUTES);
     }
     
-    log.info("Warmup completed");
+    logger.info("Warmup completed");
   }
   
   /**
@@ -354,7 +355,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
    */
   private PerformanceResult runBenchmark(String threadType, ExecutorService executor, int concurrentOperations) 
       throws Exception {
-    log.info("Running benchmark with {} threads, concurrency: {}", threadType, concurrentOperations);
+    logger.info("Running benchmark with {} threads, concurrency: {}", threadType, concurrentOperations);
     
     // Reset memory counters
     System.gc();
@@ -395,7 +396,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
           maxMemoryUsed.updateAndGet(current -> Math.max(current, memoryUsed));
         }
         catch (Exception e) {
-          log.error("Error in database operation", e);
+          logger.error("Error in database operation", e);
         }
         finally {
           completionLatch.countDown();
@@ -412,7 +413,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
     Instant endTime = Instant.now();
     
     if (!completed) {
-      log.warn("Benchmark did not complete within timeout");
+      logger.warn("Benchmark did not complete within timeout");
     }
     
     // Calculate results
@@ -474,13 +475,13 @@ public class VirtualThreadPerformanceTest extends TestSupport
         Math.min(concurrentOperations, Runtime.getRuntime().availableProcessors() * 2));
     try {
       PerformanceResult platformResult = runBenchmark("Platform Threads", platformExecutor, concurrentOperations);
-      log.info("Platform Thread Result: {}", platformResult);
+      logger.info("Platform Thread Result: {}", platformResult);
       
       // Run virtual thread benchmark
       ExecutorService virtualExecutor = createVirtualThreadExecutor();
       try {
         PerformanceResult virtualResult = runBenchmark("Virtual Threads", virtualExecutor, concurrentOperations);
-        log.info("Virtual Thread Result: {}", virtualResult);
+        logger.info("Virtual Thread Result: {}", virtualResult);
         
         // Compare results
         compareResults(platformResult, virtualResult);
@@ -500,20 +501,20 @@ public class VirtualThreadPerformanceTest extends TestSupport
    * Compares performance results between platform threads and virtual threads.
    */
   private void compareResults(PerformanceResult platformResult, PerformanceResult virtualResult) {
-    log.info("Performance Comparison ({}):")
-        .add("Concurrent Operations", platformResult.getConcurrentOperations())
-        .add("Platform Thread Throughput", String.format("%.2f ops/sec", platformResult.getOperationsPerSecond()))
-        .add("Virtual Thread Throughput", String.format("%.2f ops/sec", virtualResult.getOperationsPerSecond()))
-        .add("Throughput Improvement", String.format("%.2f%%", 
+    logger.atInfo().addArgument("Performance Comparison ({}):")
+        .addKeyValue("Concurrent Operations", platformResult.getConcurrentOperations())
+        .addKeyValue("Platform Thread Throughput", String.format("%.2f ops/sec", platformResult.getOperationsPerSecond()))
+        .addKeyValue("Virtual Thread Throughput", String.format("%.2f ops/sec", virtualResult.getOperationsPerSecond()))
+        .addKeyValue("Throughput Improvement", String.format("%.2f%%", 
             (virtualResult.getOperationsPerSecond() / platformResult.getOperationsPerSecond() - 1) * 100))
-        .add("Platform Thread Avg Latency", String.format("%.2f ms", platformResult.getAvgLatencyMs()))
-        .add("Virtual Thread Avg Latency", String.format("%.2f ms", virtualResult.getAvgLatencyMs()))
-        .add("Latency Improvement", String.format("%.2f%%", 
+        .addKeyValue("Platform Thread Avg Latency", String.format("%.2f ms", platformResult.getAvgLatencyMs()))
+        .addKeyValue("Virtual Thread Avg Latency", String.format("%.2f ms", virtualResult.getAvgLatencyMs()))
+        .addKeyValue("Latency Improvement", String.format("%.2f%%", 
             (1 - virtualResult.getAvgLatencyMs() / platformResult.getAvgLatencyMs()) * 100))
-        .add("Platform Thread P95 Latency", String.format("%.2f ms", platformResult.getP95LatencyMs()))
-        .add("Virtual Thread P95 Latency", String.format("%.2f ms", virtualResult.getP95LatencyMs()))
-        .add("Platform Thread Memory", String.format("%d MB", platformResult.getMaxMemoryUsed() / (1024 * 1024)))
-        .add("Virtual Thread Memory", String.format("%d MB", virtualResult.getMaxMemoryUsed() / (1024 * 1024)))
+        .addKeyValue("Platform Thread P95 Latency", String.format("%.2f ms", platformResult.getP95LatencyMs()))
+        .addKeyValue("Virtual Thread P95 Latency", String.format("%.2f ms", virtualResult.getP95LatencyMs()))
+        .addKeyValue("Platform Thread Memory", String.format("%d MB", platformResult.getMaxMemoryUsed() / (1024 * 1024)))
+        .addKeyValue("Virtual Thread Memory", String.format("%d MB", virtualResult.getMaxMemoryUsed() / (1024 * 1024)))
         .log();
     
     // For high concurrency operations, virtual threads should show better performance
@@ -585,7 +586,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
       long afterPlatform = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
       long platformMemoryUsed = afterPlatform - beforePlatform;
       
-      log.info("Platform Thread Memory Usage: {} MB", platformMemoryUsed / (1024 * 1024));
+      logger.info("Platform Thread Memory Usage: {} MB", platformMemoryUsed / (1024 * 1024));
       
       // Run virtual thread benchmark
       ExecutorService virtualExecutor = createVirtualThreadExecutor();
@@ -597,13 +598,13 @@ public class VirtualThreadPerformanceTest extends TestSupport
         long afterVirtual = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
         long virtualMemoryUsed = afterVirtual - beforeVirtual;
         
-        log.info("Virtual Thread Memory Usage: {} MB", virtualMemoryUsed / (1024 * 1024));
+        logger.info("Virtual Thread Memory Usage: {} MB", virtualMemoryUsed / (1024 * 1024));
         
         // Virtual threads should use significantly less memory per concurrent operation
         double platformMemoryPerOperation = (double) platformMemoryUsed / concurrentOperations;
         double virtualMemoryPerOperation = (double) virtualMemoryUsed / concurrentOperations;
         
-        log.info("Memory per operation - Platform: {} KB, Virtual: {} KB",
+        logger.info("Memory per operation - Platform: {} KB, Virtual: {} KB",
             platformMemoryPerOperation / 1024, virtualMemoryPerOperation / 1024);
         
         assertThat("Virtual threads should use less memory per concurrent operation",
@@ -628,7 +629,7 @@ public class VirtualThreadPerformanceTest extends TestSupport
     int concurrentOperations = 500;
     int durationSeconds = 30;
     
-    log.info("Testing sustained load throughput for {} seconds with {} concurrent operations",
+    logger.info("Testing sustained load throughput for {} seconds with {} concurrent operations",
         durationSeconds, concurrentOperations);
     
     // Run platform thread benchmark
@@ -678,10 +679,10 @@ public class VirtualThreadPerformanceTest extends TestSupport
             .average()
             .orElse(0);
         
-        log.info("Sustained Load Results:")
-            .add("Platform Thread Avg Throughput", String.format("%.2f ops/sec", platformAvgThroughput))
-            .add("Virtual Thread Avg Throughput", String.format("%.2f ops/sec", virtualAvgThroughput))
-            .add("Throughput Improvement", String.format("%.2f%%", 
+        logger.atInfo().addArgument("Sustained Load Results:")
+            .addKeyValue("Platform Thread Avg Throughput", String.format("%.2f ops/sec", platformAvgThroughput))
+            .addKeyValue("Virtual Thread Avg Throughput", String.format("%.2f ops/sec", virtualAvgThroughput))
+            .addKeyValue("Throughput Improvement", String.format("%.2f%%", 
                 (virtualAvgThroughput / platformAvgThroughput - 1) * 100))
             .log();
         

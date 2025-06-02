@@ -17,20 +17,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.StreamSupport;
 
-import javax.annotation.Priority;
+import jakarta.annotation.Priority;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+
+import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -48,7 +50,7 @@ import static org.mockito.Mockito.when;
  * {@link DataStoreConfigurationManager} tests.
  */
 @ExtendWith(MockitoExtension.class)
-@Java21TestGroup
+@Category(Java21TestGroup.class)
 public class DataStoreConfigurationManagerTest
     extends TestSupport
 {

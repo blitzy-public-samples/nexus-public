@@ -19,9 +19,9 @@ import java.util.Map;
 import javax.sql.DataSource;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.common.stateguard.InvalidStateException;
 import org.sonatype.nexus.common.stateguard.StateGuardModule;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.datastore.api.DataAccess;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataStoreConfiguration;

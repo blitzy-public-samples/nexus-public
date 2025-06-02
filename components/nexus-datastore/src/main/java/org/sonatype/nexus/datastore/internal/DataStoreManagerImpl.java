@@ -12,21 +12,29 @@
  */
 package org.sonatype.nexus.datastore.internal;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+import static java.lang.Integer.MAX_VALUE;
+import static java.util.Optional.ofNullable;
+import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED_NAMED;
+import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
+import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
+import static org.sonatype.nexus.common.text.Strings2.lower;
+
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.util.Spliterators;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.StreamSupport;
 
-import javax.annotation.Priority;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Provider;
-import jakarta.inject.Singleton;
-
+import org.eclipse.sisu.BeanEntry;
+import org.eclipse.sisu.Mediator;
+import org.eclipse.sisu.inject.BeanLocator;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventHelper;
 import org.sonatype.nexus.common.event.EventManager;
@@ -48,18 +56,12 @@ import org.sonatype.nexus.jmx.reflect.ManagedObject;
 import org.sonatype.nexus.transaction.TransactionIsolation;
 
 import com.google.inject.Key;
-import org.eclipse.sisu.BeanEntry;
-import org.eclipse.sisu.Mediator;
-import org.eclipse.sisu.inject.BeanLocator;
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-import static java.lang.Integer.MAX_VALUE;
-import static java.util.Optional.ofNullable;
-import static org.sonatype.nexus.common.app.FeatureFlags.DATASTORE_ENABLED_NAMED;
-import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.STORAGE;
-import static org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport.State.STARTED;
-import static org.sonatype.nexus.common.text.Strings2.lower;
+import jakarta.annotation.Priority;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
 
 /**
  * Default {@link DataStoreManager} implementation.
@@ -127,10 +129,11 @@ public class DataStoreManagerImpl
   protected void doStart() throws Exception {
     if (enabled) {
       // Use CompletableFuture with Virtual Threads to parallelize DataStore restoration
-      CompletableFuture<?>[] futures = configurationManager.load().stream()
-          .map(config -> CompletableFuture.runAsync(() -> tryRestore(config), virtualThreadExecutor))
-          .toArray(CompletableFuture[]::new);
-      
+     var configIterator = configurationManager.load().iterator();
+      CompletableFuture<?>[] futures = StreamSupport
+      		.stream(Spliterators.spliteratorUnknownSize(configIterator, 0), false)
+      		.map(config -> CompletableFuture.runAsync(() -> tryRestore(config), virtualThreadExecutor))
+            .toArray(CompletableFuture[]::new);
       // Wait for all restoration tasks to complete
       CompletableFuture.allOf(futures).join();
     }

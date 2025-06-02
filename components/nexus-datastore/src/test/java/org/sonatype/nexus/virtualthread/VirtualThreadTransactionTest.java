@@ -12,10 +12,22 @@
  */
 package org.sonatype.nexus.virtualthread;
 
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -28,25 +40,15 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.inject.Inject;
 
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.datastore.api.DataStore;
 import org.sonatype.nexus.datastore.api.DataStoreManager;
 import org.sonatype.nexus.transaction.Transaction;
-import org.sonatype.nexus.transaction.TransactionSupport;
-import org.sonatype.nexus.transaction.UnitOfWork;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import org.sonatype.nexus.transaction.TransactionalSession;
 
 /**
  * Integration test for validating transaction integrity when database operations are executed across multiple
@@ -78,11 +80,11 @@ public class VirtualThreadTransactionTest
 
   @Before
   public void setUp() throws Exception {
-    dataStore = dataStoreManager.get(TEST_DATASTORE);
+    dataStore = dataStoreManager.get(TEST_DATASTORE).get();
     
     // Create test table
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection()) {
+    try (TransactionalSession<Transaction> session = dataStore.openSession();
+         Connection connection = dataStore.openConnection()) {
       try (PreparedStatement stmt = connection.prepareStatement(CREATE_TABLE_SQL)) {
         stmt.execute();
       }
@@ -96,8 +98,8 @@ public class VirtualThreadTransactionTest
   @After
   public void tearDown() throws Exception {
     // Clean up test data
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection()) {
+    try (TransactionalSession<Transaction> session = dataStore.openSession();
+         Connection connection =dataStore.openConnection()) {
       try (PreparedStatement stmt = connection.prepareStatement(TRUNCATE_SQL)) {
         stmt.execute();
       }
@@ -124,11 +126,15 @@ public class VirtualThreadTransactionTest
     final AtomicReference<Exception> threadException = new AtomicReference<>();
 
     // Start a transaction in the main thread
-    Transaction.begin();
+ // Start a transaction in the main thread
+    TransactionalSession<Transaction> session = dataStore.openSession();
+    Transaction transaction = session.getTransaction();
+    transaction.begin();
+    
     try {
       // Insert initial data in the main thread
-      try (DataSession<?> session = dataStore.openSession();
-           Connection connection = session.getConnection();
+      try (TransactionalSession<Transaction> session1 = dataStore.openSession();
+           Connection connection =dataStore.openConnection();
            PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
         stmt.setInt(1, testId);
         stmt.setString(2, initialValue);
@@ -142,11 +148,11 @@ public class VirtualThreadTransactionTest
           startLatch.await();
           
           // Verify transaction context is available in the virtual thread
-          assertTrue("Transaction should be active in virtual thread", Transaction.isActive());
+          assertTrue(transaction.isActive(), () -> "Transaction should be active in virtual thread");
           
           // Update data in the same transaction
-          try (DataSession<?> session = dataStore.openSession();
-               Connection connection = session.getConnection();
+          try (TransactionalSession<Transaction> session2 = dataStore.openSession();
+               Connection connection = dataStore.openConnection();
                PreparedStatement stmt = connection.prepareStatement(UPDATE_SQL)) {
             stmt.setString(1, updatedValue);
             stmt.setInt(2, testId);
@@ -172,20 +178,20 @@ public class VirtualThreadTransactionTest
       }
       
       // Commit the transaction
-      Transaction.commit();
+      transaction.commit();
     }
     catch (Exception e) {
-      Transaction.rollback();
+      transaction.rollback();
       throw e;
     }
 
     // Verify the data was updated correctly
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (TransactionalSession<Transaction> session3 = dataStore.openSession();
+         Connection connection =dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, testId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertTrue("Result should exist", rs.next());
+        assertNotNull("Result should exist", rs.next());
         assertThat(rs.getString(1), is(equalTo(updatedValue)));
       }
     }
@@ -204,11 +210,13 @@ public class VirtualThreadTransactionTest
     final AtomicReference<RuntimeException> threadException = new AtomicReference<>(new RuntimeException("Simulated error"));
 
     // Start a transaction in the main thread
-    Transaction.begin();
+    TransactionalSession<Transaction> session = dataStore.openSession();
+    Transaction transaction = session.getTransaction();
+    transaction.begin();
     try {
       // Insert initial data in the main thread
-      try (DataSession<?> session = dataStore.openSession();
-           Connection connection = session.getConnection();
+      try (TransactionalSession<Transaction> session1 = dataStore.openSession();
+           Connection connection = dataStore.openConnection();
            PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
         stmt.setInt(1, testId);
         stmt.setString(2, initialValue);
@@ -222,7 +230,7 @@ public class VirtualThreadTransactionTest
           startLatch.await();
           
           // Verify transaction context is available in the virtual thread
-          assertTrue("Transaction should be active in virtual thread", Transaction.isActive());
+          assertTrue(transaction.isActive(), () -> "Transaction should be active in virtual thread");
           
           // Throw an exception to trigger rollback
           throw threadException.get();
@@ -249,16 +257,16 @@ public class VirtualThreadTransactionTest
     }
     catch (Exception e) {
       // Expected exception, rollback the transaction
-      Transaction.rollback();
+      transaction.rollback();
     }
 
     // Verify the data was rolled back (should not exist)
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (TransactionalSession<Transaction> session2 = dataStore.openSession();
+         Connection connection =dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, testId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertFalse("Result should not exist after rollback", rs.next());
+        assertEquals(null, rs.next(), "Result should not exist after rollback");
       }
     }
   }
@@ -281,8 +289,7 @@ public class VirtualThreadTransactionTest
     final AtomicReference<String> valueSeenInTransaction2 = new AtomicReference<>();
 
     // Insert initial data outside of test transactions
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
       stmt.setInt(1, testId);
       stmt.setString(2, initialValue);
@@ -293,7 +300,9 @@ public class VirtualThreadTransactionTest
     // Start transaction 1 in a virtual thread - will update the data
     Future<?> future1 = virtualThreadExecutor.submit(() -> {
       try {
-        Transaction.begin();
+			TransactionalSession<Transaction> session = dataStore.openSession();
+			Transaction transaction = session.getTransaction();
+			transaction.begin();
         try {
           // Signal that transaction 1 has started
           transaction1Started.countDown();
@@ -302,8 +311,7 @@ public class VirtualThreadTransactionTest
           transaction2Started.await();
           
           // Update data in transaction 1
-          try (DataSession<?> session = dataStore.openSession();
-               Connection connection = session.getConnection();
+          try (Connection connection = dataStore.openConnection();
                PreparedStatement stmt = connection.prepareStatement(UPDATE_SQL)) {
             stmt.setString(1, updatedValue);
             stmt.setInt(2, testId);
@@ -317,10 +325,10 @@ public class VirtualThreadTransactionTest
           transaction2Completed.await();
           
           // Commit transaction 1
-          Transaction.commit();
+          transaction.commit();
         }
         catch (Exception e) {
-          Transaction.rollback();
+        	transaction.rollback();
           throw e;
         }
       }
@@ -334,8 +342,9 @@ public class VirtualThreadTransactionTest
       try {
         // Wait for transaction 1 to start
         transaction1Started.await();
-        
-        Transaction.begin();
+        TransactionalSession<Transaction> session = dataStore.openSession();
+		Transaction transaction = session.getTransaction();
+		transaction.begin();
         try {
           // Signal that transaction 2 has started
           transaction2Started.countDown();
@@ -344,12 +353,11 @@ public class VirtualThreadTransactionTest
           transaction1Completed.await();
           
           // Read data in transaction 2 - should still see the initial value due to isolation
-          try (DataSession<?> session = dataStore.openSession();
-               Connection connection = session.getConnection();
+          try (Connection connection = dataStore.openConnection();
                PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
             stmt.setInt(1, testId);
             try (ResultSet rs = stmt.executeQuery()) {
-              assertTrue("Result should exist", rs.next());
+            	assertNotNull("Result should exist", rs.next());
               valueSeenInTransaction2.set(rs.getString(1));
             }
           }
@@ -358,10 +366,10 @@ public class VirtualThreadTransactionTest
           transaction2Completed.countDown();
           
           // Commit transaction 2
-          Transaction.commit();
+          transaction.commit();
         }
         catch (Exception e) {
-          Transaction.rollback();
+        	transaction.rollback();
           throw e;
         }
       }
@@ -386,12 +394,11 @@ public class VirtualThreadTransactionTest
     assertThat(valueSeenInTransaction2.get(), is(equalTo(initialValue)));
 
     // Verify that after both transactions are committed, the data has the updated value
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, testId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertTrue("Result should exist", rs.next());
+        assertNotNull("Result should exist", rs.next());
         assertThat(rs.getString(1), is(equalTo(updatedValue)));
       }
     }
@@ -413,11 +420,13 @@ public class VirtualThreadTransactionTest
     final AtomicBoolean innerTransactionRolledBack = new AtomicBoolean(false);
 
     // Start outer transaction in the main thread
-    Transaction.begin();
+    TransactionalSession<Transaction> session = dataStore.openSession();
+	 Transaction transaction = session.getTransaction();
+	 transaction.begin();
     try {
       // Insert data for outer transaction
-      try (DataSession<?> session = dataStore.openSession();
-           Connection connection = session.getConnection();
+      try (
+           Connection connection = dataStore.openConnection();
            PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
         stmt.setInt(1, outerRecordId);
         stmt.setString(2, outerValue);
@@ -431,14 +440,14 @@ public class VirtualThreadTransactionTest
           startLatch.await();
           
           // Verify outer transaction context is available in the virtual thread
-          assertTrue("Outer transaction should be active in virtual thread", Transaction.isActive());
+          assertTrue( transaction.isActive(), () -> "Outer transaction should be active in virtual thread");
           
           // Start inner transaction
-          Transaction.begin();
+          transaction.begin();
           try {
             // Insert data for inner transaction
-            try (DataSession<?> session = dataStore.openSession();
-                 Connection connection = session.getConnection();
+            try (
+                 Connection connection = dataStore.openConnection();
                  PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
               stmt.setInt(1, innerRecordId);
               stmt.setString(2, innerValue);
@@ -446,11 +455,11 @@ public class VirtualThreadTransactionTest
             }
             
             // Rollback inner transaction
-            Transaction.rollback();
+            transaction.rollback();
             innerTransactionRolledBack.set(true);
           }
           catch (Exception e) {
-            Transaction.rollback();
+        	  transaction.rollback();
             throw e;
           }
           
@@ -474,34 +483,32 @@ public class VirtualThreadTransactionTest
       }
       
       // Commit the outer transaction
-      Transaction.commit();
+      transaction.commit();
     }
     catch (Exception e) {
-      Transaction.rollback();
+    	transaction.rollback();
       throw e;
     }
 
     // Verify that inner transaction was rolled back
-    assertTrue("Inner transaction should have been rolled back", innerTransactionRolledBack.get());
+    assertTrue(innerTransactionRolledBack.get(), () -> "Inner transaction should have been rolled back");
 
     // Verify the outer transaction data was committed
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, outerRecordId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertTrue("Outer record should exist", rs.next());
+        assertNotNull("Outer record should exist", rs.next());
         assertThat(rs.getString(1), is(equalTo(outerValue)));
       }
     }
 
     // Verify the inner transaction data was rolled back
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, innerRecordId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertFalse("Inner record should not exist after rollback", rs.next());
+        assertNull("Inner record should not exist after rollback", rs.next());
       }
     }
   }
@@ -530,11 +537,13 @@ public class VirtualThreadTransactionTest
           startLatch.await();
           
           // Start a transaction
-          Transaction.begin();
+       // Insert data specific to this thread
+    	  TransactionalSession<Transaction> session = dataStore.openSession();
+    	  session.getTransaction().begin();
           try {
-            // Insert data specific to this thread
-            try (DataSession<?> session = dataStore.openSession();
-                 Connection connection = session.getConnection();
+            
+            try (
+                 Connection connection = dataStore.openConnection();
                  PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
               stmt.setInt(1, threadId);
               stmt.setString(2, value);
@@ -542,11 +551,11 @@ public class VirtualThreadTransactionTest
             }
             
             // Commit the transaction
-            Transaction.commit();
+            session.getTransaction().commit();
             successCount.incrementAndGet();
           }
           catch (Exception e) {
-            Transaction.rollback();
+        	  session.getTransaction().rollback();
             throw e;
           }
         }
@@ -587,20 +596,18 @@ public class VirtualThreadTransactionTest
       final int threadId = 100 + i;
       final String expectedValue = "value-" + threadId;
       
-      try (DataSession<?> session = dataStore.openSession();
-           Connection connection = session.getConnection();
+      try (Connection connection = dataStore.openConnection();
            PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
         stmt.setInt(1, threadId);
         try (ResultSet rs = stmt.executeQuery()) {
-          assertTrue("Record for thread " + threadId + " should exist", rs.next());
+          assertNotNull("Record for thread " + threadId + " should exist", rs.next());
           assertThat(rs.getString(1), is(equalTo(expectedValue)));
         }
       }
     }
 
     // Verify the total count of records
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(COUNT_SQL);
          ResultSet rs = stmt.executeQuery()) {
       assertTrue(rs.next());
@@ -622,11 +629,14 @@ public class VirtualThreadTransactionTest
     // Start a long-running transaction in a virtual thread
     Future<?> future = virtualThreadExecutor.submit(() -> {
       try {
-        Transaction.begin();
+    	// Start a transaction in the main thread
+    	    TransactionalSession<Transaction> session = dataStore.openSession();
+    	    Transaction transaction = session.getTransaction();
+    	    transaction.begin();
         try {
           // Insert data
-          try (DataSession<?> session = dataStore.openSession();
-               Connection connection = session.getConnection();
+          try (TransactionalSession<Transaction> session1 = dataStore.openSession();
+               Connection connection =dataStore.openConnection();
                PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
             stmt.setInt(1, testId);
             stmt.setString(2, value);
@@ -637,14 +647,14 @@ public class VirtualThreadTransactionTest
           Thread.sleep(2000);
           
           // Verify transaction is still active
-          assertTrue("Transaction should still be active", Transaction.isActive());
+          assertTrue(transaction.isActive(), () -> "Transaction should still be active");
           
           // Commit the transaction
-          Transaction.commit();
+          transaction.commit();
           transactionCompleted.set(true);
         }
         catch (Exception e) {
-          Transaction.rollback();
+          transaction.rollback();
           throw e;
         }
       }
@@ -662,15 +672,15 @@ public class VirtualThreadTransactionTest
     }
 
     // Verify the transaction completed successfully
-    assertTrue("Transaction should have completed", transactionCompleted.get());
+    assertTrue( transactionCompleted.get(), () -> "Transaction should have completed");
 
     // Verify the data was inserted correctly
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (TransactionalSession<Transaction> session = dataStore.openSession();
+         Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, testId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertTrue("Result should exist", rs.next());
+        assertNotNull("Result should exist", rs.next());
         assertThat(rs.getString(1), is(equalTo(value)));
       }
     }
@@ -693,11 +703,12 @@ public class VirtualThreadTransactionTest
     final AtomicReference<Exception> threadException = new AtomicReference<>();
 
     // Start a transaction in the main thread
-    Transaction.begin();
+    TransactionalSession<Transaction> session = dataStore.openSession();
+    Transaction transaction = session.getTransaction();
+    transaction.begin();
     try {
       // Insert initial data in the main thread
-      try (DataSession<?> session = dataStore.openSession();
-           Connection connection = session.getConnection();
+      try (Connection connection =dataStore.openConnection();
            PreparedStatement stmt = connection.prepareStatement(INSERT_SQL)) {
         stmt.setInt(1, testId);
         stmt.setString(2, initialValue);
@@ -711,11 +722,11 @@ public class VirtualThreadTransactionTest
           thread1Started.countDown();
           
           // Verify transaction context is available
-          assertTrue("Transaction should be active in first virtual thread", Transaction.isActive());
+          assertTrue(transaction.isActive(), () -> "Transaction should be active in first virtual thread");
           
           // Update data in the same transaction
-          try (DataSession<?> session = dataStore.openSession();
-               Connection connection = session.getConnection();
+          try (TransactionalSession<Transaction> session1 = dataStore.openSession();
+               Connection connection =dataStore.openConnection();
                PreparedStatement stmt = connection.prepareStatement(UPDATE_SQL)) {
             stmt.setString(1, middleValue);
             stmt.setInt(2, testId);
@@ -746,11 +757,11 @@ public class VirtualThreadTransactionTest
           thread2Started.countDown();
           
           // Verify transaction context is available
-          assertTrue("Transaction should be active in second virtual thread", Transaction.isActive());
+          assertTrue( transaction.isActive(), () -> "Transaction should be active in second virtual thread");
           
           // Update data in the same transaction
-          try (DataSession<?> session = dataStore.openSession();
-               Connection connection = session.getConnection();
+          try (TransactionalSession<Transaction> session2 = dataStore.openSession();
+               Connection connection =dataStore.openConnection();
                PreparedStatement stmt = connection.prepareStatement(UPDATE_SQL)) {
             stmt.setString(1, finalValue);
             stmt.setInt(2, testId);
@@ -775,20 +786,20 @@ public class VirtualThreadTransactionTest
       }
 
       // Commit the transaction in the main thread
-      Transaction.commit();
+      transaction.commit();
     }
     catch (Exception e) {
-      Transaction.rollback();
+      transaction.rollback();
       throw e;
     }
 
     // Verify the data was updated correctly through all handoffs
-    try (DataSession<?> session = dataStore.openSession();
-         Connection connection = session.getConnection();
+    try (TransactionalSession<Transaction> session3 = dataStore.openSession();
+         Connection connection = dataStore.openConnection();
          PreparedStatement stmt = connection.prepareStatement(SELECT_SQL)) {
       stmt.setInt(1, testId);
       try (ResultSet rs = stmt.executeQuery()) {
-        assertTrue("Result should exist", rs.next());
+        assertNotNull("Result should exist", rs.next());
         assertThat(rs.getString(1), is(equalTo(finalValue)));
       }
     }

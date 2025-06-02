@@ -13,6 +13,9 @@
 package org.sonatype.nexus.datastore;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.sonatype.nexus.common.stateguard.StateGuardLifecycleSupport;
 import org.sonatype.nexus.datastore.api.DataSession;
@@ -79,28 +82,28 @@ public abstract class TransactionalStoreSupport
       // Capture the current transaction context
       Object context = TRANSACTION_CONTEXT.get();
       
-      // Create a virtual thread to execute the database operation
-      return Thread.startVirtualThread(() -> {
-        try {
-          // Propagate the transaction context to the virtual thread
-          if (context != null) {
-            TRANSACTION_CONTEXT.set(context);
-          }
-          
-          // Execute the database operation
-          return operation.call();
-        } catch (Exception e) {
-          if (e instanceof RuntimeException) {
-            throw (RuntimeException) e;
-          }
-          throw new RuntimeException(STR."Error executing database operation: \{e.getMessage()}", e);
-        } finally {
-          // Clean up the thread-local context
-          if (context != null) {
-            TRANSACTION_CONTEXT.remove();
-          }
-        }
-      }).join();
+      try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+	    	 Future<T> future = executor.submit(() -> {
+	        try {
+	          // Propagate the transaction context to the virtual thread
+	          if (context != null) {
+	            TRANSACTION_CONTEXT.set(context);
+	          }
+	          
+	          // Execute the database operation
+	          return operation.call();
+	        } catch (Exception e) {
+	          throw new RuntimeException(STR."Error executing database operation: \{e.getMessage()}", e);
+	        } finally {
+	          // Clean up the thread-local context
+	          if (context != null) {
+	            TRANSACTION_CONTEXT.remove();
+	          }
+	        }
+	      });
+	      return future.get();	 
+      }
+      
     } catch (Exception e) {
       if (e instanceof RuntimeException) {
         throw (RuntimeException) e;

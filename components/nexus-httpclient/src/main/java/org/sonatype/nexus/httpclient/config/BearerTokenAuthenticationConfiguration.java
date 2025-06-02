@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.httpclient.config;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.crypto.secrets.Secret;

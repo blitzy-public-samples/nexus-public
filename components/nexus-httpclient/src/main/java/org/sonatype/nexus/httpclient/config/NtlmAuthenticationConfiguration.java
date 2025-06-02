@@ -12,13 +12,13 @@
  */
 package org.sonatype.nexus.httpclient.config;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.crypto.secrets.Secret;
 
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * NTLM authentication configuration.

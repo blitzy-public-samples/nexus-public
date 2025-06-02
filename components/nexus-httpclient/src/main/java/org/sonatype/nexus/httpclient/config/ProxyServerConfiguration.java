@@ -12,12 +12,12 @@
  */
 package org.sonatype.nexus.httpclient.config;
 
-import javax.annotation.Nullable;
-import javax.validation.Valid;
+import jakarta.annotation.Nullable;
+import jakarta.validation.Valid;
 
 import org.sonatype.nexus.validation.constraint.PortNumber;
 
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * Proxy-server configuration.

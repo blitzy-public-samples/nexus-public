@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.blobstore.file.rest;
 
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotEmpty;
 
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;

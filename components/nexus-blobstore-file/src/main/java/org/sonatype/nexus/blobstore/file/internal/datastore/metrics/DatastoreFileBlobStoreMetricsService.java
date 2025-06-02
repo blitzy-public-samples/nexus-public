@@ -17,9 +17,9 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 
-import javax.annotation.Priority;
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.annotation.Priority;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.blobstore.AccumulatingBlobStoreMetrics;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;

@@ -19,5 +19,5 @@ package org.sonatype.nexus.blobstore.api;
  */
 public enum OperationType
 {
-  UPLOAD, DOWNLOAD
+  UPLOAD, DOWNLOAD, DELETE, COMPACT, DELETE_TEMP_FILES, UNDELETE
 }

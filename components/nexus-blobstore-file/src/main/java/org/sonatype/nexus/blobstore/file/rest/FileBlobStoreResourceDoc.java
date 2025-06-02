@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.blobstore.file.rest;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 import org.sonatype.nexus.validation.Validate;
 

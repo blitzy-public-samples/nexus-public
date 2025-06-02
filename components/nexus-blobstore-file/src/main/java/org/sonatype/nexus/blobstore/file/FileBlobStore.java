@@ -46,9 +46,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.blobstore.BlobIdLocationResolver;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
@@ -93,7 +93,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.hash.HashCode;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.AgeFileFilter;
-import org.apache.commons.lang.time.DateUtils;
+import org.apache.commons.lang3.time.DateUtils;
 import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormat;
 

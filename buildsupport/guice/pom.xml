@@ -29,7 +29,7 @@
 
   <properties>
     <eclipse-sisu.version>0.9.0.M3</eclipse-sisu.version> 
-    <guice.version>7.0.0</guice.version> 
+    <guice.version>6.0.0</guice.version> 
     <jakarta.annotation-api.version>2.1.1</jakarta.annotation-api.version>
     <jakarta.inject-api.version>2.0.1</jakarta.inject-api.version>
     <jakarta.enterprise.cdi-api.version>4.1.0</jakarta.enterprise.cdi-api.version>

@@ -28,18 +28,18 @@
   <packaging>pom</packaging>
 
   <properties>
-    <httpclient5.version>5.3.1</httpclient5.version>
-    <httpcore5.version>5.2.5</httpcore5.version>
-    <httpmime5.version>5.3.1</httpmime5.version>
+    <httpclient.version>4.5.14</httpclient.version>
+    <httpcore.version>4.4.15</httpcore.version>
+    <httpmime.version>5.3.1</httpmime.version>
 </properties>
 
 <dependencyManagement>
     <dependencies>
 
         <dependency>
-            <groupId>org.apache.hc.client5</groupId>
-            <artifactId>httpclient5</artifactId>
-            <version>${httpclient5.version}</version>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>${httpclient.version}</version>
             <exclusions>
                 <exclusion>
                     <groupId>commons-logging</groupId>
@@ -61,9 +61,9 @@
         </dependency>
 
         <dependency>
-            <groupId>org.apache.hc.core5</groupId>
-            <artifactId>httpcore5</artifactId>
-            <version>${httpcore5.version}</version>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <version>${httpcore.version}</version>
         </dependency>
 
         <dependency>

@@ -15,7 +15,7 @@ package org.sonatype.nexus.extender;
 import java.util.List;
 import java.util.Map;
 
-import jakarta.servlet.ServletContext;
+import javax.servlet.ServletContext;
 
 import org.sonatype.nexus.common.guice.AbstractInterceptorModule;
 import org.sonatype.nexus.common.guice.TypeConverterSupport;

@@ -18,9 +18,10 @@ import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 
+import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamWriteConstraints;
 import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNodeFeature;
+import com.fasterxml.jackson.databind.cfg.JsonNodeFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -41,20 +42,22 @@ public class ObjectMapperProvider
   private final ObjectMapper mapper;
 
   public ObjectMapperProvider() {
-    // Use JsonMapper.builder() for better performance in Jackson 2.16.1
-    JsonMapper.Builder builder = JsonMapper.builder()
+	// Configure StreamWriteConstraints for improved security
+	    StreamWriteConstraints streamWriteConstraints = StreamWriteConstraints.builder()
+	        .maxNestingDepth(1000) // Reasonable limit for nesting depth
+	        .build();
+	    JsonFactory factory = new JsonFactory();
+	    factory.setStreamWriteConstraints(streamWriteConstraints);
+	    
+	  
+	  // Use JsonMapper.builder() for better performance in Jackson 2.16.1
+    JsonMapper.Builder builder = JsonMapper.builder(factory)
         .enable(SerializationFeature.INDENT_OUTPUT)
         .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         // Enable sorted properties for more consistent output (useful for canonical JSON)
         .enable(JsonNodeFeature.WRITE_PROPERTIES_SORTED);
-    
-    // Configure StreamWriteConstraints for improved security
-    StreamWriteConstraints streamWriteConstraints = StreamWriteConstraints.builder()
-        .maxNestingDepth(1000) // Reasonable limit for nesting depth
-        .build();
-    builder.streamWriteConstraints(streamWriteConstraints);
     
     this.mapper = builder.build();
   }

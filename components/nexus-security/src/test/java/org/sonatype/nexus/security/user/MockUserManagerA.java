@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.security.user;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 

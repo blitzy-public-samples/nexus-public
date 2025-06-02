@@ -23,8 +23,6 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 
@@ -44,8 +42,6 @@ import static org.mockito.Mockito.when;
 public class AdminPasswordFileManagerImplTest
     extends TestSupport
 {
-  private static final Logger log = LoggerFactory.getLogger(AdminPasswordFileManagerImplTest.class);
-
   private AdminPasswordFileManagerImpl underTest;
 
   @Mock
@@ -199,4 +195,4 @@ public class AdminPasswordFileManagerImplTest
         executor.shutdownNow();
       }
     }
-  }}
+  }

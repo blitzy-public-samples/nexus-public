@@ -17,13 +17,13 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import javax.annotation.Nullable;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import jakarta.ws.rs.HttpMethod;
-import jakarta.ws.rs.core.MediaType;
+import javax.ws.rs.HttpMethod;
+import javax.ws.rs.core.MediaType;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.text.Strings2;

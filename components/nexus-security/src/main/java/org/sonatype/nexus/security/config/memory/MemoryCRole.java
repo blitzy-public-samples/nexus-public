@@ -168,8 +168,7 @@ public class MemoryCRole
   }
 
   public MemoryCRole withPrivileges(final String... privileges) {
-      //this.privileges = LinkedHashSet.of(privileges);
-    this.privileges = new LinkedHashSet<>(Set.of(privileges));
+    this.privileges = LinkedHashSet.of(privileges);
     return this;
   }
 
@@ -179,8 +178,7 @@ public class MemoryCRole
   }
 
   public MemoryCRole withRoles(final String... roles) {
-    //this.roles = LinkedHashSet.of(roles);
-    this.privileges = new LinkedHashSet<>(Set.of(roles));
+    this.roles = LinkedHashSet.of(roles);
     return this;
   }
 
@@ -199,7 +197,7 @@ public class MemoryCRole
         copy.privileges = switch (this.privileges) {
           case LinkedHashSet<String> lhs -> new LinkedHashSet<>(lhs);
           case SequencedSet<String> ss -> new LinkedHashSet<>(ss);
-          //case Set<String> s -> new LinkedHashSet<>(s);
+          default -> new LinkedHashSet<>(this.privileges);
         };
       }
 
@@ -207,7 +205,7 @@ public class MemoryCRole
         copy.roles = switch (this.roles) {
           case LinkedHashSet<String> lhs -> new LinkedHashSet<>(lhs);
           case SequencedSet<String> ss -> new LinkedHashSet<>(ss);
-          //case Set<String> s -> new LinkedHashSet<>(s);
+          default -> new LinkedHashSet<>(this.roles);
         };
       }
 
@@ -220,17 +218,14 @@ public class MemoryCRole
 
   @Override
   public String toString() {
-//    return STR."{getClass().getSimpleName()}{
-//        id='{id}'
-//        name='{name}'
-//        description='{description}'
-//        privileges={privileges}
-//        roles={roles}
-//        readOnly={readOnly}
-//        version={version}
-//        }";
-        return String.format("%s{id='%s', name='%s', description='%s', privileges=%s, roles=%s, readOnly=%b, version=%d}",
-  getClass().getSimpleName(), id, name, description, privileges, roles, readOnly, version);
-
+    return STR."{getClass().getSimpleName()}{
+        id='{id}'
+        name='{name}'
+        description='{description}'
+        privileges={privileges}
+        roles={roles}
+        readOnly={readOnly}
+        version={version}
+        }";
   }
 }

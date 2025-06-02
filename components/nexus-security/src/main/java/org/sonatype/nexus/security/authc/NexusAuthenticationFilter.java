@@ -15,9 +15,8 @@ package org.sonatype.nexus.security.authc;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
 
-import jakarta.inject.Inject;
+import javax.inject.Inject;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 
@@ -103,7 +102,7 @@ public class NexusAuthenticationFilter
             );
             return null;
           }
-        },  Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory())))
+        }, Thread.ofVirtual().factory()))
         .toList();
 
     // Return the first non-null token

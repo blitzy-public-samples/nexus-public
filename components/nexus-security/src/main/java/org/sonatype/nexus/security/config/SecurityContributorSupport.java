@@ -20,7 +20,7 @@ import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege.MemoryCPrivilegeBuilder;
 import org.sonatype.nexus.security.config.memory.MemoryCRole;
 
-import static org.apache.commons.lang3.StringUtils.capitalize;
+import static org.apache.commons.lang.StringUtils.capitalize;
 
 /**
  * @since 3.37

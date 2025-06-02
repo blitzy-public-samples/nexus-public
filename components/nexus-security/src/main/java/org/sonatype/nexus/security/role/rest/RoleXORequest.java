@@ -23,20 +23,20 @@ import javax.validation.constraints.NotEmpty;
 public class RoleXORequest
 {
   @NotEmpty
-  @ApiModelProperty("Role ID description")
+  @ApiModelProperty(NexusSecurityApiConstants.ROLE_ID_DESCRIPTION)
   private String id;
 
   @NotEmpty
-  @ApiModelProperty("Role name description")
+  @ApiModelProperty(NexusSecurityApiConstants.ROLE_NAME_DESCRIPTION)
   private String name;
 
-  @ApiModelProperty("Role description description")
+  @ApiModelProperty(NexusSecurityApiConstants.ROLE_DESCRIPTION_DESCRIPTION)
   private String description;
 
-  @ApiModelProperty("Role privileges description")
+  @ApiModelProperty(NexusSecurityApiConstants.ROLE_PRIVILEGES_DESCRIPTION)
   private Set<String> privileges;
 
-  @ApiModelProperty("Role roles description")
+  @ApiModelProperty(NexusSecurityApiConstants.ROLE_ROLES_DESCRIPTION)
   private Set<String> roles;
 
   public void setRoles(final Set<String> roles) {

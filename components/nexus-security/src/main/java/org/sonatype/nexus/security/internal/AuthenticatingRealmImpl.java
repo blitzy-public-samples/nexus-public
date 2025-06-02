@@ -16,9 +16,9 @@ import java.util.ConcurrentModificationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.security.NexusSimpleAuthenticationInfo;
 import org.sonatype.nexus.security.RealmCaseMapping;

@@ -16,8 +16,8 @@ import java.io.IOException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
@@ -50,7 +50,7 @@ import static org.sonatype.nexus.security.SecurityFilter.ATTR_USER_PRINCIPAL;
 @Named
 @Singleton
 public class NexusBasicHttpAuthenticationFilter
-        extends BasicHttpAuthenticationFilter
+    extends BasicHttpAuthenticationFilter
 {
   public static final String NAME = "nx-basic-authc";
 
@@ -61,7 +61,7 @@ public class NexusBasicHttpAuthenticationFilter
    * @since 3.1
    */
   public static final String BASIC_AUTH_REALM = "Sonatype Nexus Repository Manager";
-
+  
   /**
    * Virtual Thread executor for handling authentication processing
    * @since Java 21
@@ -88,12 +88,12 @@ public class NexusBasicHttpAuthenticationFilter
    */
   @Override
   public boolean onPreHandle(final ServletRequest request, final ServletResponse response, final Object mappedValue)
-          throws Exception
+      throws Exception
   {
     // Basic auth should never create sessions; we do not want session overhead for non-user clients that supply
     // credentials
     request.setAttribute(DefaultSubjectContext.SESSION_CREATION_ENABLED, Boolean.FALSE);
-
+    
     // Use super implementation but avoid operations that would cause thread pinning
     return super.onPreHandle(request, response, mappedValue);
   }
@@ -104,7 +104,7 @@ public class NexusBasicHttpAuthenticationFilter
    */
   @Override
   protected void cleanup(final ServletRequest request, final ServletResponse response, Exception failure)
-          throws ServletException, IOException
+      throws ServletException, IOException
   {
     // Use pattern matching for switch to handle exceptions more elegantly
     switch (failure) {
@@ -126,33 +126,33 @@ public class NexusBasicHttpAuthenticationFilter
 
   /**
    * Handle authorization exceptions with appropriate HTTP status codes.
-   *
+   * 
    * @param request the servlet request
    * @param response the servlet response
    * @throws IOException if an I/O error occurs
    * @throws ServletException if a servlet error occurs
    */
-  private void handleAuthorizationException(ServletRequest request, ServletResponse response)
-          throws IOException, ServletException
+  private void handleAuthorizationException(ServletRequest request, ServletResponse response) 
+      throws IOException, ServletException 
   {
     Subject subject = getSubject(request, response);
     boolean authenticated = subject.getPrincipal() != null && subject.isAuthenticated();
 
     if (authenticated) {
       // authenticated subject -> 403 forbidden
-      log.debug("User " + subject.getPrincipal() + " is authenticated but not authorized for the requested resource");
+      log.debug(STR."User \{subject.getPrincipal()} is authenticated but not authorized for the requested resource");
       WebUtils.toHttp(response).sendError(HttpServletResponse.SC_FORBIDDEN);
     }
     else {
       // unauthenticated subject -> 401 inform to authenticate
-      log.debug("Unauthenticated access attempt to protected resource");
+      log.debug(STR."Unauthenticated access attempt to protected resource");
       try {
         // TODO: Should we build in browser detecting to avoid sending 401, should that be its own filter?
         onAccessDenied(request, response);
       }
       catch (Exception e) {
-        log.error("Error during access denied handling: " + e.getMessage(), e);
-        throw new ServletException("Error during access denied handling", e);
+        log.error(STR."Error during access denied handling: \{e.getMessage()}", e);
+        throw e;
       }
     }
   }
@@ -166,7 +166,7 @@ public class NexusBasicHttpAuthenticationFilter
                                    Subject subject,
                                    ServletRequest request,
                                    ServletResponse response)
-          throws Exception
+      throws Exception
   {
     if (request instanceof HttpServletRequest) {
       // Prefer the subject principal over the token's, as these could be different for token-based auth
@@ -179,9 +179,9 @@ public class NexusBasicHttpAuthenticationFilter
       // Attach principal+userId to request so we can use that in the request-log
       request.setAttribute(ATTR_USER_PRINCIPAL, principal);
       request.setAttribute(ATTR_USER_ID, userId);
-
+      
       // Log successful authentication with String Templates for better security diagnostics
-      log.debug("Successful authentication for user: " + userId);
+      log.debug(STR."Successful authentication for user: \{userId}");
     }
     return super.onLoginSuccess(token, subject, request, response);
   }

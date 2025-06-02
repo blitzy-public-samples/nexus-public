@@ -15,8 +15,8 @@ package org.sonatype.nexus.security.internal;
 import java.security.NoSuchAlgorithmException;
 import java.security.Provider;
 import java.security.Security;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.apache.shiro.authc.credential.DefaultPasswordService;
 import org.apache.shiro.authc.credential.PasswordService;
@@ -55,13 +55,13 @@ public class LegacyNexusPasswordService
   public LegacyNexusPasswordService() {
     // Create a secure random number generator optimized for Java 21
     SecureRandomNumberGenerator secureRng = new SecureRandomNumberGenerator();
-//    try {
-//      // Use the strongest available algorithm
-//      //secureRng.setHashAlgorithmName("NativePRNGNonBlocking");
-//    } catch (Exception e) {
-//      // Fall back to default if the algorithm is not available
-//      log.debug("NativePRNGNonBlocking not available, using default SecureRandom algorithm", e);
-//    }
+    try {
+      // Use the strongest available algorithm
+      secureRng.setAlgorithmName("NativePRNGNonBlocking");
+    } catch (Exception e) {
+      // Fall back to default if the algorithm is not available
+      log.debug("NativePRNGNonBlocking not available, using default SecureRandom algorithm", e);
+    }
     
     //Initialize and configure sha1 password service
     this.sha1PasswordService = new DefaultPasswordService();

@@ -14,8 +14,8 @@ package org.sonatype.nexus.security.internal;
 
 import java.util.Map;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
@@ -54,18 +54,18 @@ public class UserRoleMappingAuditor
   public void on(final UserRoleMappingEvent event) {
     if (isRecording()) {
       // Using Record Patterns to extract data from the event
-      if (event instanceof org.sonatype.nexus.security.user.UserRoleMappingEvent) {
+      if (event instanceof UserRoleMappingEvent(var userId, var userSource, var roles)) {
         AuditData data = new AuditData();
         data.setDomain(DOMAIN);
         data.setType(type(event.getClass()));
-        data.setContext(event.getUserId());
+        data.setContext(userId);
 
         Map<String, Object> attributes = data.getAttributes();
-        attributes.put("id", event.getUserId());
-        attributes.put("source", event.getUserSource());
+        attributes.put("id", userId);
+        attributes.put("source", userSource);
         
         // Using String Templates for improved readability in audit logging
-        attributes.put("roles", STR."\{string(event.getRoles())}\{event.getRoles().isEmpty() ? " (empty)" : ""}");
+        attributes.put("roles", STR."\{string(roles)}\{roles.isEmpty() ? " (empty)" : ""}");
 
         record(data);
       }

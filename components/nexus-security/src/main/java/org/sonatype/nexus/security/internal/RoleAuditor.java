@@ -14,8 +14,8 @@ package org.sonatype.nexus.security.internal;
 
 import java.util.Map;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
@@ -53,9 +53,7 @@ public class RoleAuditor
   public void on(final RoleEvent event) {
     if (isRecording()) {
       // Use Record Pattern to extract role data directly
-      //if (event instanceof RoleEvent(var role)) {
-        if (event instanceof RoleEvent) {
-          Role role = ((RoleEvent) event).getRole();
+      if (event instanceof RoleEvent(var role)) {
         // Create audit data using String Templates for improved readability
         AuditData data = new AuditData();
         data.setDomain(DOMAIN);

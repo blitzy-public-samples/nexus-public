@@ -14,8 +14,8 @@ package org.sonatype.nexus.security.internal;
 
 import java.util.ConcurrentModificationException;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.security.config.CRole;

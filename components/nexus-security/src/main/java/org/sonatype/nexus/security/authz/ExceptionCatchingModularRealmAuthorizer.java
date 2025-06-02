@@ -20,8 +20,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Provider;
+import javax.inject.Inject;
+import javax.inject.Provider;
 
 import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.authz.Authorizer;
@@ -130,12 +130,12 @@ public class ExceptionCatchingModularRealmAuthorizer
         if (((Authorizer) realm).hasRole(subjectPrincipal, roleIdentifier)) {
           return true;
         }
-      } catch (Exception e) {
-        if(e instanceof AuthorizationException || e instanceof RuntimeException) {
-          logAndIgnore(realm, e);
-        }
+      }
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+        logAndIgnore(realm, e);
       }
     }
+
     return false;
   }
 
@@ -153,10 +153,9 @@ public class ExceptionCatchingModularRealmAuthorizer
         for (int i = 0; i < combinedResult.length; i++) {
           combinedResult[i] = combinedResult[i] | result[i];
         }
-      } catch (Exception e) {
-        if (e instanceof AuthorizationException || e instanceof RuntimeException) {
-          logAndIgnore(realm, e);
-        }
+      }
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+        logAndIgnore(realm, e);
       }
     }
 
@@ -200,12 +199,10 @@ public class ExceptionCatchingModularRealmAuthorizer
         logger.trace(STR."Realm: \{realm.getName()} user: \{subjectPrincipal.iterator().next()} does NOT have permission: \{permission}");
       }
       return permitted;
-    } catch (Exception e) {
-      if(e instanceof AuthorizationException || e instanceof RuntimeException) {
-        logAndIgnore(realm, e);
-      }
-        return false;
-      }
+    } catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+      logAndIgnore(realm, e);
+      return false;
+    }
   }
 
   @Override
@@ -239,10 +236,8 @@ public class ExceptionCatchingModularRealmAuthorizer
   private boolean checkPermissionInRealm(Realm realm, PrincipalCollection subjectPrincipal, Permission permission) {
     try {
       return ((Authorizer) realm).isPermitted(subjectPrincipal, permission);
-    } catch (Exception e) {
-      if (e instanceof AuthorizationException || e instanceof RuntimeException) {
-        logAndIgnore(realm, e);
-      }
+    } catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+      logAndIgnore(realm, e);
       return false;
     }
   }
@@ -262,10 +257,8 @@ public class ExceptionCatchingModularRealmAuthorizer
           combinedResult[i] = combinedResult[i] | result[i];
         }
       }
-      catch (Exception e) {
-        if (e instanceof AuthorizationException || e instanceof RuntimeException) {
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
         logAndIgnore(realm, e);
-        }
       }
     }
 
@@ -287,11 +280,8 @@ public class ExceptionCatchingModularRealmAuthorizer
           combinedResult[i] = combinedResult[i] | result[i];
         }
       }
-      catch (Exception e) {
-        if (e instanceof AuthorizationException || e instanceof RuntimeException) {
-          logAndIgnore(realm, e);
-        }
-
+      catch (Exception e) when (e instanceof AuthorizationException || e instanceof RuntimeException) {
+        logAndIgnore(realm, e);
       }
     }
 

@@ -15,16 +15,15 @@ package org.sonatype.nexus.security.jwt.rest;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.security.SecureRandom;
-import java.util.concurrent.ExecutorService;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.Response;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.Response;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.FeatureFlag;
@@ -36,9 +35,9 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor;
-import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
-import static jakarta.ws.rs.core.Response.status;
-import static jakarta.ws.rs.core.Response.Status.OK;
+import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static javax.ws.rs.core.Response.status;
+import static javax.ws.rs.core.Response.Status.OK;
 import static org.sonatype.nexus.common.app.FeatureFlags.JWT_ENABLED;
 import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 import static org.sonatype.nexus.security.jwt.rest.JwtSecretApiResourceV1.PATH;
@@ -61,7 +60,7 @@ public class JwtSecretApiResourceV1
   public static final String PATH = V1_API_PREFIX + "/security/jwt";
 
   private final SecretStore secretStore;
-  private final ExecutorService virtualThreadExecutor;
+  private final Executor virtualThreadExecutor;
   private final SecureRandom secureRandom;
 
   @Inject

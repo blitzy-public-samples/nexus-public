@@ -18,13 +18,10 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorContext;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.validation.ConstraintValidatorContext;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
@@ -41,10 +38,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class RoleNotContainSelfValidator
-        implements ConstraintValidator<RoleNotContainSelf, Object>
+    extends ConstraintValidatorSupport<RoleNotContainSelf, Object> // Collection<String> expected
 {
-  private static final Logger log = LoggerFactory.getLogger(RoleNotContainSelfValidator.class);
-
   private final AuthorizationManager authorizationManager;
 
   private String idField;

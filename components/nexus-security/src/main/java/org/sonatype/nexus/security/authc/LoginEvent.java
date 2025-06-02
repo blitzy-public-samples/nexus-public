@@ -29,9 +29,28 @@ import java.io.Serializable;
  * </pre>
  */
 public class LoginEvent
-        extends SecurityEvent
+  extends SecurityEvent
+  implements Serializable
 {
+  private static final long serialVersionUID = 1L;
+  
+  /**
+   * Creates a new login event.
+   *
+   * @param principal the user principal that logged in
+   * @param realm the security realm used for authentication
+   */
   public LoginEvent(final String principal, final String realm) {
     super(principal, realm);
+  }
+  
+  /**
+   * Returns a string representation of this event using Java 21 String Templates.
+   *
+   * @return a string representation of this event
+   */
+  @Override
+  public String toString() {
+    return STR."LoginEvent{principal=\{getPrincipal()}, realm=\{getRealm()}}";
   }
 }

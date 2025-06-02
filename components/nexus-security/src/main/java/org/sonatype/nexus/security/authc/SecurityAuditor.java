@@ -15,27 +15,26 @@ package org.sonatype.nexus.security.authc;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
 import org.sonatype.nexus.common.event.EventAware;
-import org.sonatype.nexus.security.authc.LogoutEvent;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 
 /**
  * Security auditor that records security events using virtual threads for asynchronous processing.
- *
+ * 
  * @since 3.60
  */
 @Named
 @Singleton
 public class SecurityAuditor
-        extends AuditorSupport
-        implements EventAware
+    extends AuditorSupport
+    implements EventAware
 {
   /**
    * Virtual thread executor for processing audit events asynchronously.
@@ -45,14 +44,14 @@ public class SecurityAuditor
   public SecurityAuditor() {
     registerType(LoginEvent.class, "login");
     registerType(LogoutEvent.class, "logout");
-
+    
     // Create a virtual thread per task executor for asynchronous audit processing
     this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
    * Handles security events by processing them asynchronously using virtual threads.
-   *
+   * 
    * @param event the security event to process
    */
   @Subscribe
@@ -61,28 +60,27 @@ public class SecurityAuditor
     // Process the event asynchronously using a virtual thread
     virtualThreadExecutor.execute(() -> processSecurityEvent(event));
   }
-
+  
   /**
    * Processes a security event by creating audit data and recording it.
-   * Uses String.format for consistent log message generation.
-   *
+   * Uses String Templates for consistent log message generation.
+   * 
    * @param event the security event to process
    */
   private void processSecurityEvent(final SecurityEvent event) {
     if (!isRecording()) {
       return;
     }
-
+    
     AuditData data = new AuditData();
     data.setDomain(event.getRealm());
     data.setType(type(event.getClass()));
     data.getAttributes().put("principal", event.getPrincipal());
-
-    // Use String.format for consistent log message generation
-    String eventDescription = String.format("Security event: %s for principal %s in realm %s",
-            type(event.getClass()), event.getPrincipal(), event.getRealm());
+    
+    // Use String Templates for consistent log message generation
+    String eventDescription = STR."Security event: \{type(event.getClass())} for principal \{event.getPrincipal()} in realm \{event.getRealm()}";
     data.getAttributes().put("description", eventDescription);
-
+    
     record(data);
   }
 }

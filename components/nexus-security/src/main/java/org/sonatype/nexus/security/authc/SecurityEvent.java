@@ -20,22 +20,33 @@ import java.io.Serializable;
  *
  * @since 3.0
  */
-public abstract class SecurityEvent
+public sealed abstract record SecurityEvent(
+    String principal,
+    String realm
+) implements Serializable permits LoginEvent, LogoutEvent
 {
-  private final String realm;
+  private static final long serialVersionUID = 1L;
 
-  private final String principal;
-
-  protected SecurityEvent(final String principal, final String realm) {
-    this.realm = realm;
-    this.principal = principal;
+  /**
+   * Creates a new SecurityEvent with the specified principal and realm.
+   *
+   * @param principal the user or entity principal identifier
+   * @param realm the authentication realm
+   */
+  public SecurityEvent {
+    // Validate parameters
+    if (principal == null) {
+      throw new IllegalArgumentException("Principal cannot be null");
+    }
   }
 
-  public String getRealm() {
-    return realm;
-  }
-
-  public String getPrincipal() {
-    return principal;
+  /**
+   * Returns a formatted string representation of this security event using Java 21 String Templates.
+   *
+   * @return a string representation of this event
+   */
+  @Override
+  public String toString() {
+    return STR."\{getClass().getSimpleName()}[principal='\{principal}', realm='\{realm}']";
   }
 }

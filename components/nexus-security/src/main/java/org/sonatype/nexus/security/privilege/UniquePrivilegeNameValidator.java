@@ -12,13 +12,10 @@
  */
 package org.sonatype.nexus.security.privilege;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorContext;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.validation.ConstraintValidatorContext;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;
 
@@ -31,10 +28,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class UniquePrivilegeNameValidator
-        implements ConstraintValidator<UniquePrivilegeName, String> {
-
-  private static final Logger log = LoggerFactory.getLogger(UniquePrivilegeNameValidator.class);
-
+    extends ConstraintValidatorSupport<UniquePrivilegeName, String>
+{
   private final SecuritySystem securitySystem;
 
   @Inject

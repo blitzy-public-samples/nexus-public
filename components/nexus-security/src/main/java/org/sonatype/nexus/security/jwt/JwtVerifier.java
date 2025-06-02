@@ -84,7 +84,7 @@ public class JwtVerifier
       };
       
       log.debug(errorMsg, e);
-      throw new JwtVerificationException(errorMsg);
+      throw new JwtVerificationException(errorMsg, e);
     }
   }
 
@@ -140,7 +140,7 @@ public class JwtVerifier
       if (e instanceof JwtVerificationException) {
         throw (JwtVerificationException) e;
       }
-      throw new JwtVerificationException("Error validating claims");
+      throw new JwtVerificationException("Error validating claims", e);
     }
   }
 }

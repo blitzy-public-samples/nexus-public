@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.security.token;
 
-import jakarta.inject.Inject;
+import javax.inject.Inject;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.security.SecurityHelper;

@@ -17,12 +17,11 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.CompletableFuture;
 
-import jakarta.inject.Inject;
+import javax.inject.Inject;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 
-import org.apache.shiro.authc.AuthenticationException;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.authc.NexusApiKeyAuthenticationToken;
 
@@ -72,7 +71,7 @@ public class ApiKeyAuthenticationFilter
    * This implementation uses Virtual Threads to process API key extraction concurrently,
    * improving performance for requests with multiple potential API key sources.
    */
-  //@Override
+  @Override
   protected boolean isLoginAttempt(ServletRequest request, ServletResponse response) {
     final HttpServletRequest http = WebUtils.toHttp(request);
     
@@ -145,7 +144,7 @@ public class ApiKeyAuthenticationFilter
           return onLoginSuccess(token, subject, request, response);
         } catch (Exception e) {
           try {
-            return onLoginFailure(token, (AuthenticationException)e, request, response);
+            return onLoginFailure(token, e, request, response);
           } catch (Exception e1) {
             log.error(STR."Error handling authentication failure for token: \{token}", e1);
             return false;
@@ -158,11 +157,5 @@ public class ApiKeyAuthenticationFilter
       log.error(STR."Error during authentication process: \{e.getMessage()}", e);
       return false;
     }
-  }
-
-  @Override
-  protected boolean onAccessDenied(ServletRequest servletRequest, ServletResponse servletResponse) throws Exception {
-    //todo not overriden by module
-    return false;
   }
 }

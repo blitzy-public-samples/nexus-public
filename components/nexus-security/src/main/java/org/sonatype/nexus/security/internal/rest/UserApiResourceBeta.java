@@ -12,11 +12,10 @@
  */
 package org.sonatype.nexus.security.internal.rest;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
-
-import jakarta.ws.rs.Path;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.ws.rs.Path;
 
 import org.sonatype.nexus.rest.APIConstants;
 import org.sonatype.nexus.security.SecuritySystem;

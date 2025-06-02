@@ -16,8 +16,8 @@ import java.util.Collection;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Named;
+import javax.inject.Singleton;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletResponse;
@@ -78,22 +78,15 @@ public class CookieFilter
     
     for (final String cookie : cookies) {
       // Use pattern matching to determine if the cookie already has the Secure flag
-      String cookieVal;
-
-      if (cookie != null && cookie.lastIndexOf(SECURE_FLAG) == -1) {
-        // Secure flag not found, add it
-        cookieVal = "Cookie=" + cookie + "; Secure";
-      } else {
-        // Secure flag already present
-        cookieVal = cookie;
-      }
-
-
+      String cookieVal = switch (cookie) {
+        case String c when c.lastIndexOf(SECURE_FLAG) == -1 -> STR."\{c}\{SECURE_FLAG}";
+        default -> cookie;
+      };
+      
       // Use pattern matching to determine whether to set or add the header
-      if (mustAdd) {
-        response.addHeader(SET_COOKIE, cookieVal);
-      } else {
-        response.setHeader(SET_COOKIE, cookieVal);
+      switch (mustAdd) {
+        case true -> response.addHeader(SET_COOKIE, cookieVal);
+        case false -> response.setHeader(SET_COOKIE, cookieVal);
       }
       
       mustAdd = true;

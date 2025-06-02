@@ -19,9 +19,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventAware;
@@ -127,16 +127,18 @@ public class AuthorizationManagerImpl
       target.setReadOnly(role.isReadOnly());
 
       // Using pattern matching with null check
-      if (role.getPrivileges() != null) {
-        target.setPrivileges(Sets.newHashSet(role.getPrivileges()));
-      } else {
+      if (var privileges = role.getPrivileges()) {
+        target.setPrivileges(Sets.newHashSet(privileges));
+      }
+      else {
         target.setPrivileges(Sets.<String>newHashSet());
       }
 
       // Using pattern matching with null check
-      if (role.getRoles() != null) {
-        target.setRoles(Sets.newHashSet(role.getRoles()));
-      } else {
+      if (var roles = role.getRoles()) {
+        target.setRoles(Sets.newHashSet(roles));
+      }
+      else {
         target.setRoles(Sets.<String>newHashSet());
       }
 
@@ -157,8 +159,8 @@ public class AuthorizationManagerImpl
       target.setType(privilege.getType());
       
       // Using pattern matching with null check
-      if (privilege.getProperties() != null) {
-        target.setProperties(Maps.newHashMap(privilege.getProperties()));
+      if (var properties = privilege.getProperties()) {
+        target.setProperties(Maps.newHashMap(properties));
       }
 
       return target;
@@ -178,8 +180,7 @@ public class AuthorizationManagerImpl
 
     // expose permission string representation
     // Using pattern matching for improved type checking
-    PrivilegeDescriptor descriptor = descriptor(source.getType());
-    if (descriptor != null) {
+    if (var descriptor = descriptor(source.getType())) {
       target.setPermission(descriptor.createPermission(source));
     }
 
@@ -210,9 +211,8 @@ public class AuthorizationManagerImpl
 
       for (CRole cRole : secRoles) {
         // Using pattern matching for improved type checking
-        Role convertedRole = this.convert(cRole);
-        if (convertedRole != null) {
-          roles.add(convertedRole);
+        if (var role = this.convert(cRole)) {
+          roles.add(role);
         }
       }
 

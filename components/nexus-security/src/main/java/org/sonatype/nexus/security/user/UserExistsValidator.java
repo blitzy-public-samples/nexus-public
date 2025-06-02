@@ -12,14 +12,12 @@
  */
 package org.sonatype.nexus.security.user;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorContext;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.validation.ConstraintValidatorContext;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.security.SecuritySystem;
+import org.sonatype.nexus.validation.ConstraintValidatorSupport;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -30,10 +28,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class UserExistsValidator
-        implements ConstraintValidator<UserExists, String>
+    extends ConstraintValidatorSupport<UserExists, String>
 {
-  private static final Logger log = LoggerFactory.getLogger(UserExistsValidator.class);
-
   private final SecuritySystem securitySystem;
 
   @Inject
@@ -45,7 +41,7 @@ public class UserExistsValidator
   public boolean isValid(final String value, final ConstraintValidatorContext context) {
     log.trace("Validating user exists: {}", value);
     try {
-      securitySystem.getUser(value);
+      User user = securitySystem.getUser(value);
       return true;
     }
     catch (UserNotFoundException e) {

@@ -20,23 +20,10 @@ import java.io.Serializable;
  *
  * @since 3.0
  */
-public final class LogoutEvent extends SecurityEvent implements Serializable {
-    private static final long serialVersionUID = 1L;
-
-    private final String principal;
-    private final String realm;
-
-    public LogoutEvent(String principal, String realm) {
-        super(principal, realm);
-        this.principal = principal;
-        this.realm = realm;
-    }
-
-    public String getPrincipal() {
-        return principal;
-    }
-
-    public String getRealm() {
-        return realm;
-    }
+public final record LogoutEvent(
+    String principal,
+    String realm
+) extends SecurityEvent(principal, realm) implements Serializable
+{
+  private static final long serialVersionUID = 1L;
 }

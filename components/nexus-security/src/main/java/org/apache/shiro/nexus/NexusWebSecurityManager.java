@@ -17,9 +17,9 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Provider;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Provider;
 
 import org.sonatype.goodies.common.Time;
 import org.sonatype.nexus.cache.CacheHelper;

@@ -38,7 +38,7 @@ public interface SecurityApiResourceDoc
       notes = "Returns all configured user sources with optimized performance using Java 21 Virtual Threads.")
   @ApiResponses(value = {
       @ApiResponse(code = 200, message = "Successfully retrieved list of user sources"),
-      @ApiResponse(code = 403, message = "The user does not have permission to perform the operation.")
+      @ApiResponse(code = 403, message = NexusSecurityApiConstants.INVALID_PERMISSIONS)
   })
   List<ApiUserSource> getUserSources();
 }

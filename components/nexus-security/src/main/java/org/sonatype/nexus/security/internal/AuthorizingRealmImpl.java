@@ -18,9 +18,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.RoleMappingUserManager;
@@ -33,6 +33,7 @@ import org.apache.shiro.authc.credential.HashedCredentialsMatcher;
 import org.apache.shiro.authz.AuthorizationException;
 import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.authz.SimpleAuthorizationInfo;
+import org.apache.shiro.crypto.hash.Sha1Hash;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.realm.Realm;
@@ -87,7 +88,7 @@ public class AuthorizingRealmImpl
     
     // Configure credentials matcher
     HashedCredentialsMatcher credentialsMatcher = new HashedCredentialsMatcher();
-    credentialsMatcher.setHashAlgorithmName("SHA-1");
+    credentialsMatcher.setHashAlgorithmName(Sha1Hash.ALGORITHM_NAME);
     setCredentialsMatcher(credentialsMatcher);
     
     // Set realm name

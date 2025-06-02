@@ -12,13 +12,10 @@
  */
 package org.sonatype.nexus.security.role;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorContext;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.validation.ConstraintValidatorContext;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
 import org.sonatype.nexus.security.authz.NoSuchAuthorizationManagerException;
@@ -34,10 +31,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class UniqueRoleIdValidator
-        implements ConstraintValidator<UniqueRoleId, String>
+    extends ConstraintValidatorSupport<UniqueRoleId, String>
 {
-  private static final Logger log = LoggerFactory.getLogger(UniqueRoleIdValidator.class);
-
   private final AuthorizationManager authorizationManager;
 
   @Inject

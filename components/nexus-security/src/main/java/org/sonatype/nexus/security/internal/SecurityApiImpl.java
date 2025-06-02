@@ -18,9 +18,9 @@ import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.security.SecurityApi;
@@ -97,13 +97,10 @@ public class SecurityApiImpl
       final List<String> roleIds) throws NoSuchUserManagerException
   {
     // Using pattern matching for switch to determine user status
-//    UserStatus status = switch (active) {
-//      case true -> UserStatus.active;
-//      case false -> UserStatus.disabled;
-//    };
-    UserStatus status;
-    if(active) status=UserStatus.active;
-    else status=UserStatus.disabled;
+    UserStatus status = switch (active) {
+      case true -> UserStatus.active;
+      case false -> UserStatus.disabled;
+    };
     
     User user = new User();
     user.setUserId(checkNotNull(id));
@@ -138,14 +135,14 @@ public class SecurityApiImpl
         case null -> throw new NullPointerException("Privileges cannot be null");
         case List<String> list when list.isEmpty() -> Set.of();
         case List<String> list -> Set.copyOf(list); // Immutable copy using Java 21 Set.copyOf
-        //
+        default -> Set.of();
       });
       
       role.setRoles(switch (roles) {
         case null -> throw new NullPointerException("Roles cannot be null");
         case List<String> list when list.isEmpty() -> Set.of();
         case List<String> list -> Set.copyOf(list); // Immutable copy using Java 21 Set.copyOf
-        //default -> Set.of();
+        default -> Set.of();
       });
 
       return securitySystem.getAuthorizationManager(DEFAULT_SOURCE).addRole(role);

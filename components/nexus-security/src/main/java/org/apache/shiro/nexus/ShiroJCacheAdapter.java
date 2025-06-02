@@ -56,9 +56,7 @@ public class ShiroJCacheAdapter<K, V>
   public V put(final K key, final V value) {
     // Use virtual thread for potentially blocking cache operation
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> cache.getAndPut(key, value)).get();
-    } catch (Exception e) {
-      throw new RuntimeException("Error during put operation", e);
+      return executor.submit(() -> cache.getAndPut(key, value)).join();
     }
   }
 
@@ -66,9 +64,7 @@ public class ShiroJCacheAdapter<K, V>
   public V remove(final K key) {
     // Use virtual thread for potentially blocking cache operation
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> cache.getAndRemove(key)).get();
-    } catch (Exception e) {
-      throw new RuntimeException("Error during remove operation", e);
+      return executor.submit(() -> cache.getAndRemove(key)).join();
     }
   }
 
@@ -82,9 +78,7 @@ public class ShiroJCacheAdapter<K, V>
       executor.submit(() -> {
         cache.clear();
         return null;
-      }).get();
-    } catch (Exception e) {
-      throw new RuntimeException("Error during clear operation", e);
+      }).join();
     }
   }
 
@@ -113,7 +107,7 @@ public class ShiroJCacheAdapter<K, V>
   public Collection<V> values() {
     // Using ConcurrentLinkedDeque which implements SequencedCollection in Java 21
     Collection<V> values = new ConcurrentLinkedDeque<>();
-
+    
     // Use virtual thread for potentially blocking cache iteration
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       executor.submit(() -> {
@@ -121,11 +115,9 @@ public class ShiroJCacheAdapter<K, V>
           values.add(entry.getValue());
         }
         return null;
-      }).get();
-    } catch (Exception e) {
-      throw new RuntimeException("Error during values operation", e);
+      }).join();
     }
-
+    
     return Collections.unmodifiableCollection(values);
   }
 

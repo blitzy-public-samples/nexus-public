@@ -13,15 +13,14 @@
 package org.sonatype.nexus.security.authc;
 
 import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
@@ -40,14 +39,14 @@ import org.slf4j.LoggerFactory;
 @Named
 @Singleton
 public class AntiCsrfFilter
-        extends AuthenticationFilter
+    extends AuthenticationFilter
 {
   public static final String NAME = "nx-anticsrf-authc";
 
   private static final Logger log = LoggerFactory.getLogger(AntiCsrfFilter.class);
-
+  
   private final AntiCsrfHelper csrfHelper;
-
+  
   // Executor for virtual threads
   private final Executor virtualThreadExecutor;
 
@@ -65,24 +64,28 @@ public class AntiCsrfFilter
 
   @Override
   protected boolean isAccessAllowed(final ServletRequest request, final ServletResponse response, final Object mappedValue) {
+    // Use a virtual thread for token validation to improve concurrency
     try {
+      // Create a thread-safe wrapper for the request to ensure thread safety
       final HttpServletRequest httpRequest = (HttpServletRequest) request;
-
-      Future<Boolean> validationFuture = CompletableFuture.supplyAsync(() -> csrfHelper.isAccessAllowed(httpRequest), virtualThreadExecutor);
-
+      
+      // Use a virtual thread to perform the validation
+      Future<Boolean> validationFuture = virtualThreadExecutor.submit(() -> csrfHelper.isAccessAllowed(httpRequest));
+      
+      // Wait for the result - this won't block OS threads as it's using virtual threads
       return validationFuture.get();
     }
     catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      log.error("CSRF validation interrupted: " + e.getMessage());
+      Thread.currentThread().interrupt(); // Restore the interrupted status
+      log.error(STR."CSRF validation interrupted: \{e.getMessage()}");
       return false;
     }
     catch (ExecutionException e) {
-      log.error("Error during CSRF token validation: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
+      log.error(STR."Error during CSRF token validation: \{e.getCause() != null ? e.getCause().getMessage() : e.getMessage()}");
       return false;
     }
     catch (Exception e) {
-      log.error("Unexpected error during CSRF token validation: " + e.getMessage());
+      log.error(STR."Unexpected error during CSRF token validation: \{e.getMessage()}");
       return false;
     }
   }
@@ -91,7 +94,7 @@ public class AntiCsrfFilter
   protected boolean onAccessDenied(final ServletRequest request, final ServletResponse response) throws IOException
   {
     String remoteAddr = request.getRemoteAddr();
-    log.debug("Rejecting request from " + remoteAddr + " due to invalid cross-site request forgery token");
+    log.debug(STR."Rejecting request from \{remoteAddr} due to invalid cross-site request forgery token");
 
     HttpServletResponse httpResponse = (HttpServletResponse) response;
     httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

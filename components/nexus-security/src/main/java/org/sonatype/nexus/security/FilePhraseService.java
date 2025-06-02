@@ -16,9 +16,9 @@ import java.io.File;
 import java.io.IOException;
 
 import javax.annotation.Nullable;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.nexus.crypto.AbstractPhraseService;
 import org.sonatype.nexus.crypto.PhraseService;

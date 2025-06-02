@@ -21,16 +21,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.MediaType;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
+import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.user.ConfiguredUsersUserManager;
 import org.sonatype.nexus.security.user.UserManager;
 
@@ -49,8 +50,8 @@ import org.apache.shiro.subject.Subject;
 @RequiresAuthentication
 @Produces(MediaType.APPLICATION_JSON)
 public class SecurityApiResource
-        extends ComponentSupport
-        implements Resource, SecurityApiResourceDoc
+    extends ComponentSupport
+    implements Resource, SecurityApiResourceDoc
 {
   private final Map<String, UserManager> userManagers;
 
@@ -59,47 +60,69 @@ public class SecurityApiResource
     this.userManagers = userManagers;
   }
 
+  /**
+   * Retrieves a list of available user sources using Java 21 Virtual Threads for improved performance.
+   * This method filters out the ConfiguredUsersUserManager source and processes each UserManager
+   * concurrently using Virtual Threads when appropriate.
+   *
+   * Virtual Threads are particularly effective for I/O-bound operations like retrieving user sources
+   * from external systems or databases, which may be the case for some UserManager implementations.
+   *
+   * @return List of ApiUserSource objects representing available user sources
+   */
   @Override
   @GET
   @Path("user-sources")
   @RequiresPermissions("nexus:users:read")
   public List<ApiUserSource> getUserSources() {
     try {
+      // Capture the current Shiro subject to maintain security context in virtual threads
       Subject currentSubject = SecurityUtils.getSubject();
-
+      
+      // Filter user managers to exclude ConfiguredUsersUserManager.SOURCE
       List<UserManager> filteredManagers = userManagers.values().stream()
-              .filter(um -> !ConfiguredUsersUserManager.SOURCE.equals(um.getSource()))
-              .toList();
-
+          .filter(um -> !ConfiguredUsersUserManager.SOURCE.equals(um.getSource()))
+          .toList(); // Using Java 21's toList() for immutable list collection
+      
+      // For very small number of managers, it's more efficient to process directly
       if (filteredManagers.size() <= 1) {
         return filteredManagers.stream()
-                .map(um -> {
-                  try {
-                    return new ApiUserSource(um);
-                  } catch (Exception e) {
-                    log.error("Error processing UserManager {}", um.getSource(), e);
-                    return null;
-                  }
-                })
-                .filter(source -> source != null)
-                .collect(Collectors.toList());
+            .map(um -> {
+              try {
+                return new ApiUserSource(um);
+              } catch (Exception e) {
+                log.error("Error processing UserManager {}", um.getSource(), e);
+                return null;
+              }
+            })
+            .filter(source -> source != null)
+            .collect(Collectors.toList());
       }
-
+      
+      // For multiple managers, use virtual threads for concurrent processing
       List<ApiUserSource> results = new ArrayList<>();
-
+      
+      // Use try-with-resources to ensure the executor is properly closed
       try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        // Submit tasks to process each UserManager concurrently
         List<Future<ApiUserSource>> futures = filteredManagers.stream()
-                .map(um -> executor.submit(() -> {
-                  try {
-                    Subject subject = currentSubject; // Maintain security context
-                    return new ApiUserSource(um);
-                  } catch (Exception e) {
-                    log.error("Error processing UserManager {}", um.getSource(), e);
-                    return null;
-                  }
-                }))
-                .toList();
-
+            .map(um -> executor.submit(() -> {
+              try {
+                // Associate the security context with this virtual thread
+                // This is critical for maintaining security in Shiro 1.13.0 with Virtual Threads
+                SecurityUtils.setSubject(currentSubject);
+                
+                // Create the ApiUserSource - this could involve I/O operations
+                // depending on the UserManager implementation
+                return new ApiUserSource(um);
+              } catch (Exception e) {
+                log.error("Error processing UserManager {}", um.getSource(), e);
+                return null;
+              }
+            }))
+            .toList();
+        
+        // Collect results, filtering out any null values from failed tasks
         for (Future<ApiUserSource> future : futures) {
           try {
             ApiUserSource source = future.get();
@@ -111,7 +134,7 @@ public class SecurityApiResource
           }
         }
       }
-
+      
       return results;
     } catch (Exception e) {
       log.error("Unexpected error retrieving user sources", e);

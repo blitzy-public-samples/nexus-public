@@ -12,13 +12,12 @@
  */
 package org.sonatype.nexus.security.anonymous.rest;
 
-import jakarta.inject.Inject;
+import javax.inject.Inject;
 import javax.validation.Valid;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Produces;
-
+import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Produces;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
@@ -32,8 +31,7 @@ import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.realm.Realm;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
-
+import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
 
 /**
  * @since 3.24

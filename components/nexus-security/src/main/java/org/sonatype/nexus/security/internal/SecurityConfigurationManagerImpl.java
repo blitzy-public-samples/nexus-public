@@ -22,16 +22,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.SequencedCollection;
 import java.util.SequencedSet;
-import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Singleton;
+import javax.inject.Inject;
+import javax.inject.Named;
+import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventAware;
@@ -419,39 +417,6 @@ public class SecurityConfigurationManagerImpl
     }
   }
 
-  @Override
-  public <T> T runVirtualThreadRead(Callable<T> action) {
-    return null;
-    //todo not overriden by module
-  }
-
-  @Override
-  public <T> T runVirtualThreadRead(Function<SecurityConfigurationManager, T> action) {
-    return null;
-    //todo not overriden by module
-  }
-
-  @Override
-  public <T> T runVirtualThreadWrite(Callable<T> action) {
-    return null;
-  }
-
-  @Override
-  public <T> T runVirtualThreadWrite(Function<SecurityConfigurationManager, T> action) {
-    return null;
-    //todo not overriden by module
-  }
-
-  @Override
-  public void runVirtualThreadReadAction(Runnable action) {
-//todo not overriden by module
-  }
-
-  @Override
-  public void runVirtualThreadWriteAction(Runnable action) {
-//todo not overriden by module
-  }
-
   public void addContributor(final SecurityContributor contributor) {
     synchronized (this) {
       securityContributors.add(contributor);
@@ -577,8 +542,7 @@ public class SecurityConfigurationManagerImpl
 
   private CRole mergeRolesContents(final CRole roleA, final CRole roleB) {
     // Using Java 21 Sequenced Collections for better performance with ordered collections
-    SequencedSet<String> roles1 = (SequencedSet<String>) new HashSet<String>();
-    SequencedSet<String> roles = roles1.reversed().reversed();
+    SequencedSet<String> roles = new HashSet<String>().reversed().reversed();
     // make sure they are not empty
     if (roleA.getRoles() != null) {
       roles.addAll(roleA.getRoles());
@@ -587,8 +551,7 @@ public class SecurityConfigurationManagerImpl
       roles.addAll(roleB.getRoles());
     }
 
-    SequencedSet<String> privs1 = (SequencedSet<String>) new HashSet<String>();
-    SequencedSet<String> privs=privs1.reversed().reversed();
+    SequencedSet<String> privs = new HashSet<String>().reversed().reversed();
     // make sure they are not empty
     if (roleA.getPrivileges() != null) {
       privs.addAll(roleA.getPrivileges());

@@ -21,7 +21,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 
 import javax.cache.CacheManager;
-import jakarta.inject.Inject;
+import javax.inject.Inject;
 import javax.servlet.ServletContext;
 
 import org.sonatype.goodies.testsupport.TestSupport;

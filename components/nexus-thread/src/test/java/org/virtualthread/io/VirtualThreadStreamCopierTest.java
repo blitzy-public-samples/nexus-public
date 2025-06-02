@@ -26,7 +26,10 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.hash.MultiHashingInputStreamFactory;
 import org.sonatype.nexus.thread.io.StreamCopier;
 
 import org.apache.commons.io.IOUtils;
@@ -52,6 +55,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 public class VirtualThreadStreamCopierTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(VirtualThreadStreamCopierTest.class);
   private static final String DEFAULT_READ_OUTPUT = "Test read";
   private static final int CONCURRENT_OPERATIONS = 1000;
   private static final int TIMEOUT_SECONDS = 30;

@@ -36,8 +36,6 @@ public class RollingStatsTest
     RollingStats underTest = new RollingStats(60_000, MILLISECONDS);
 
     ConcurrentRunner runner = new ConcurrentRunner(3, 60);
-    // Configure runner to use Virtual Threads when available
-    runner.setUseVirtualThreads(true);
     runner.addTask(100, () -> {
       // randomize where this will land inside the window
       Thread.sleep(ThreadLocalRandom.current().nextInt(1_000));

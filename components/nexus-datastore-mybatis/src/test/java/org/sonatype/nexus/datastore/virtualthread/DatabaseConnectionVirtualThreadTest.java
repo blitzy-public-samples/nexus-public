@@ -285,7 +285,7 @@ public class DatabaseConnectionVirtualThreadTest
                 }
                 catch (Exception e) {
                     failureCount.incrementAndGet();
-                    log.error("Error in virtual thread operation", e);
+                    logger.error("Error in virtual thread operation", e);
                 }
                 finally {
                     currentConcurrent.decrementAndGet();
@@ -309,7 +309,7 @@ public class DatabaseConnectionVirtualThreadTest
         
         // Verify we didn't exceed connection pool size by too much
         // Note: Some overhead is expected due to the nature of connection acquisition
-        log.info("Max concurrent connections used: {}", maxConcurrent.get());
+        logger.info("Max concurrent connections used: {}", maxConcurrent.get());
         assertThat("Max concurrent connections should not greatly exceed pool size",
                 maxConcurrent.get(), lessThanOrEqualTo(MAX_POOL_SIZE * 2));
     }
@@ -351,7 +351,7 @@ public class DatabaseConnectionVirtualThreadTest
                 }
                 catch (Exception e) {
                     failureCount.incrementAndGet();
-                    log.error("Failed to get or use connection", e);
+                    logger.error("Failed to get or use connection", e);
                 }
                 finally {
                     completionLatch.countDown();

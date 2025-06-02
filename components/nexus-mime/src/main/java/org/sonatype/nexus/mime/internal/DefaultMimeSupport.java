@@ -27,6 +27,7 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.apache.tika.metadata.TikaCoreProperties;
 import org.sonatype.nexus.mime.MimeRule;
 import org.sonatype.nexus.mime.MimeRulesSource;
 import org.sonatype.nexus.mime.MimeSupport;
@@ -111,7 +112,7 @@ public class DefaultMimeSupport
               }
               // ask Tika too
               final Metadata metadata = new Metadata();
-              metadata.set(Metadata.RESOURCE_NAME_KEY, STR."dummy.\{key}");
+              metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, STR."dummy.\{key}");
               MediaType mediaType = detector.detect(null, metadata);
               // unravel to least specific
               unravel(detected, mediaType);
@@ -178,7 +179,7 @@ public class DefaultMimeSupport
     List<String> detected = Lists.newArrayList();
     Metadata metadata = new Metadata();
     if (fileName != null) {
-      metadata.set(Metadata.RESOURCE_NAME_KEY, fileName);
+      metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, fileName);
     }
 
     MediaType mediaType;

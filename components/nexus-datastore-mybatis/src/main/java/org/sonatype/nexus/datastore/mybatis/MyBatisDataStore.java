@@ -40,6 +40,7 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.sql.DataSource;
 
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.app.FeatureFlags;
 import org.sonatype.nexus.common.app.ManagedLifecycleManager;
@@ -939,4 +940,11 @@ public class MyBatisDataStore
       log.warn("Problem applying MyBatis proxy workaround", e);
     }
   }
+
+  private SqlSessionFactory getSqlSessionFactoryViaReflection(MyBatisDataStore dataStore) throws Exception {
+    Field field = MyBatisDataStore.class.getDeclaredField("sqlSessionFactory");
+    field.setAccessible(true);
+    return (SqlSessionFactory) field.get(dataStore);
+  }
+
 }

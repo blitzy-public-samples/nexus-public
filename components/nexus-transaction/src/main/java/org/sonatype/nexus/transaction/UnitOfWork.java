@@ -75,12 +75,19 @@ public final class UnitOfWork
   private static final InheritableThreadLocal<UnitOfWork> CURRENT_WORK = new InheritableThreadLocal<>();
   
   // String template processor for structured logging
-  private static final Processor<String> LOG_PROCESSOR = StringTemplate.processor(tmpl -> {
-    return tmpl.fragments().get(0) + tmpl.values().stream()
-        .map(Object::toString)
-        .reduce((a, b) -> a + tmpl.fragments().get(tmpl.values().indexOf(b) + 1) + b)
-        .orElse("");
-  });
+  private static final Processor<String, RuntimeException> LOG_PROCESSOR = st -> {
+    StringBuilder result = new StringBuilder();
+
+    // Fragments are always one more than values
+    for (int i = 0; i < st.fragments().size(); i++) {
+      result.append(st.fragments().get(i));
+      if (i < st.values().size()) {
+        result.append(st.values().get(i));
+      }
+    }
+
+    return result.toString();
+  };
 
   enum Scope
   {
@@ -368,7 +375,7 @@ public final class UnitOfWork
       // Use virtual thread optimized session if available
       TransactionalStore<?> activeStore = localStore != null ? localStore : store;
       if (virtualThread) {
-        session = checkNotNull(activeStore.openSession(isolation, true));
+        session = checkNotNull(activeStore.openSession(isolation));
         if (log.isDebugEnabled()) {
           log.debug("Using virtual thread optimized session");
         }

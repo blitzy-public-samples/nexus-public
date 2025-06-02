@@ -18,54 +18,58 @@ import java.util.concurrent.Callable;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * Callable that properly sets MDC context before invoking the delegate. The delegate will execute in a
- * managed thread with properly set MDC context. To be used with managed threads.
+ * Callable that properly sets MDC context before invoking the delegate. The
+ * delegate will execute in a managed thread with properly set MDC context. To
+ * be used with managed threads.
  * <p>
- * This implementation supports both platform threads and Java 21 Virtual Threads. When used with Virtual Threads,
- * it ensures that MDC context is properly propagated across thread boundaries and cleaned up after execution
+ * This implementation supports both platform threads and Java 21 Virtual
+ * Threads. When used with Virtual Threads, it ensures that MDC context is
+ * properly propagated across thread boundaries and cleaned up after execution
  * to prevent memory leaks.
  * <p>
- * Note that Virtual Threads have different thread-local variable behavior compared to platform threads.
- * This implementation handles these differences to ensure consistent MDC context propagation regardless
- * of the thread type.
+ * Note that Virtual Threads have different thread-local variable behavior
+ * compared to platform threads. This implementation handles these differences
+ * to ensure consistent MDC context propagation regardless of the thread type.
  *
  * @since 2.6
  */
-public class MDCAwareCallable<T>
-    implements Callable<T>
-{
-  private final Callable<T> delegate;
+public class MDCAwareCallable<T> implements Callable<T> {
+	private final Callable<T> delegate;
 
-  private final Map<String, String> mdcContext;
+	private final Map<String, String> mdcContext;
 
-  /**
-   * Creates a new MDC-aware callable that will execute the given delegate with the current MDC context.
-   * <p>
-   * The MDC context is captured at construction time and will be applied when the callable is executed,
-   * regardless of whether it runs on a platform thread or a virtual thread.
-   *
-   * @param delegate the callable to execute with the captured MDC context
-   */
-  public MDCAwareCallable(final Callable<T> delegate) {
-    this.delegate = checkNotNull(delegate);
-    // TODOs: FIXME MDCUtils.applyContextMap(mdcContext);
-    //  this.mdcContext = MDCUtils.getContextMapForPropagation();
-    // Use getContextMapForPropagation which is optimized for both platform and virtual threads
-    this.mdcContext = MDCUtils.getCopyOfContextMap(); //getContextMapForPropagation();
-  }
+	/**
+	 * Creates a new MDC-aware callable that will execute the given delegate with
+	 * the current MDC context.
+	 * <p>
+	 * The MDC context is captured at construction time and will be applied when the
+	 * callable is executed, regardless of whether it runs on a platform thread or a
+	 * virtual thread.
+	 *
+	 * @param delegate the callable to execute with the captured MDC context
+	 */
+	public MDCAwareCallable(final Callable<T> delegate) {
+		this.delegate = checkNotNull(delegate);
+		// TODOs: FIXME MDCUtils.applyContextMap(mdcContext);
+		// this.mdcContext = MDCUtils.getContextMapForPropagation();
+		// Use getContextMapForPropagation which is optimized for both platform and
+		// virtual threads
+		this.mdcContext = MDCUtils.getCopyOfContextMap();
+	}
 
-  @Override
-  public T call() throws Exception {
-	  // TODOs: FIXME MDCUtils.applyContextMap(mdcContext);
-    // Apply the captured MDC context
-    MDCUtils.setContextMap(mdcContext); //applyContextMap(mdcContext);
-    try {
-      // Execute the delegate with the applied MDC context
-      return delegate.call();
-    }
-    finally {
-      // Clean up MDC context to prevent memory leaks, especially important for virtual threads
-      MDCUtils.clearContext();
-    }
-  }
+	@Override
+	public T call() throws Exception {
+		// TODOs: FIXME MDCUtils.applyContextMap(mdcContext);
+		// Apply the captured MDC context
+		MDCUtils.setContextMap(mdcContext);
+		MDCUtils.setContextMap(mdcContext);
+		try {
+			// Execute the delegate with the applied MDC context
+			return delegate.call();
+		} finally {
+			// Clean up MDC context to prevent memory leaks, especially important for
+			// virtual threads
+			MDCUtils.clearContext();
+		}
+	}
 }

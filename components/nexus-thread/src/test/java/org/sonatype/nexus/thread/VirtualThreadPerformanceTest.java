@@ -28,6 +28,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
@@ -38,6 +40,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
 import org.junit.experimental.categories.Category;
+import org.sonatype.nexus.thread.io.StreamCopierTest;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
@@ -54,6 +57,7 @@ import static org.hamcrest.Matchers.notNullValue;
 public class VirtualThreadPerformanceTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(VirtualThreadPerformanceTest.class);
   private static final String TEST_URL = "https://httpbin.org/delay/0.2";
   private static final int WARMUP_ITERATIONS = 3;
   private static final int MEASUREMENT_ITERATIONS = 5;

@@ -18,7 +18,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadLocal;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -183,7 +182,7 @@ public class ExampleMethods
     }
     return "success";
   }
-  
+
   /**
    * Tests transaction execution in a virtual thread context.
    * Virtual threads in Java 21 are lightweight threads that can be created in large numbers.
@@ -194,7 +193,7 @@ public class ExampleMethods
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("vt-transaction-", 0).factory();
     AtomicReference<String> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
-    
+
     Thread virtualThread = virtualThreadFactory.newThread(() -> {
       try {
         // Execute transactional operation in virtual thread
@@ -203,13 +202,13 @@ public class ExampleMethods
         latch.countDown();
       }
     });
-    
+
     virtualThread.start();
     latch.await(5, TimeUnit.SECONDS);
-    
+
     return result.get();
   }
-  
+
   /**
    * Tests that thread-local variables propagate correctly in virtual threads.
    * This is important for transaction context propagation in Java 21 virtual threads.
@@ -218,30 +217,30 @@ public class ExampleMethods
   public boolean testThreadLocalPropagationInVirtualThreads() throws Exception {
     ThreadLocal<String> threadLocal = new ThreadLocal<>();
     threadLocal.set("transaction-context");
-    
+
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().name("vt-threadlocal-", 0).factory();
     AtomicBoolean success = new AtomicBoolean(false);
     CountDownLatch latch = new CountDownLatch(1);
-    
+
     Thread virtualThread = virtualThreadFactory.newThread(() -> {
       try {
         // Thread-local should not be inherited by default in virtual threads
         success.set(threadLocal.get() == null);
-        
+
         // Set a new value in the virtual thread
         threadLocal.set("virtual-thread-context");
       } finally {
         latch.countDown();
       }
     });
-    
+
     virtualThread.start();
     latch.await(5, TimeUnit.SECONDS);
-    
+
     // Original thread should still have its own thread-local value
     return success.get() && "transaction-context".equals(threadLocal.get());
   }
-  
+
   /**
    * Tests concurrent execution of transactions using virtual threads.
    * This demonstrates how to leverage Java 21 virtual threads for high concurrency scenarios.
@@ -252,7 +251,7 @@ public class ExampleMethods
     int taskCount = 100;
     CountDownLatch latch = new CountDownLatch(taskCount);
     AtomicBoolean success = new AtomicBoolean(true);
-    
+
     try {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
@@ -261,7 +260,7 @@ public class ExampleMethods
           try {
             // Each virtual thread should have its own transaction context
             canSeeTransactionInsideTransactional();
-            
+
             // Verify nested transactions work in virtual threads
             String result = captureNestedStore();
             if (!"stored example".equals(result)) {
@@ -274,12 +273,13 @@ public class ExampleMethods
           }
         }, executor);
       }
-      
+
       // Wait for all tasks to complete
       latch.await(30, TimeUnit.SECONDS);
-      
+
       return success.get();
     } finally {
       executor.shutdown();
     }
   }
+}

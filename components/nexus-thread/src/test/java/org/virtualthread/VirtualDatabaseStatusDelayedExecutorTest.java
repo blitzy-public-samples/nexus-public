@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.app.NotWritableException;
@@ -40,6 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.virtualthread.io.VirtualThreadStreamCopierTest;
 
 import static org.awaitility.Awaitility.await;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -72,6 +75,8 @@ import static org.mockito.Mockito.verify;
 public class VirtualDatabaseStatusDelayedExecutorTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(VirtualDatabaseStatusDelayedExecutorTest.class);
+
   private static final int SLEEP_INTERVAL_MS = 25;
 
   private static final int MAX_RETRIES = 5;

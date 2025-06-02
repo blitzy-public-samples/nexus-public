@@ -12,39 +12,28 @@
  */
 package org.sonatype.nexus.transaction;
 
-import java.io.IOException;
-import java.util.ConcurrentModificationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadLocal;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-
-import org.sonatype.goodies.testsupport.TestSupport;
-
 import com.google.common.base.Suppliers;
 import com.google.inject.Guice;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.Assertions;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.Answer;
+import org.sonatype.goodies.testsupport.TestSupport;
+
+import java.io.IOException;
+import java.util.ConcurrentModificationException;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.transaction.Transactional.DEFAULT_REASON;
 
 /**
@@ -217,7 +206,7 @@ public class VirtualThreadTransactionalTest
         try {
           methods.rollbackOnUncheckedException();
         }
-        catch (IllegalStateException e) {
+        catch (IllegalStateException | IOException e) {
           exceptionThrown.set(true);
         }
         finally {

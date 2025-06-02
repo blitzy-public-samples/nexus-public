@@ -12,18 +12,6 @@
  */
 package virtualthread;
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import org.sonatype.nexus.logging.task.TaskLogger;
-import org.sonatype.nexus.logging.task.TaskLoggerHelper;
-import org.sonatype.nexus.logging.task.TaskLoggingEvent;
-import org.sonatype.nexus.pax.logging.TaskLogsFilter;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
-
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.LoggingEvent;
 import ch.qos.logback.core.spi.FilterReply;
@@ -37,6 +25,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
 import org.slf4j.Marker;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
+import org.sonatype.nexus.logging.task.TaskLogger;
+import org.sonatype.nexus.logging.task.TaskLoggerHelper;
+import org.sonatype.nexus.logging.task.TaskLoggingEvent;
+import org.sonatype.nexus.pax.logging.TaskLogsFilter;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static ch.qos.logback.core.spi.FilterReply.DENY;
 import static ch.qos.logback.core.spi.FilterReply.NEUTRAL;
@@ -45,9 +44,7 @@ import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.verify;
 import static org.sonatype.nexus.logging.task.TaskLogger.LOGBACK_TASK_DISCRIMINATOR_ID;
-import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.INTERNAL_PROGRESS;
-import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.NEXUS_LOG_ONLY;
-import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.PROGRESS;
+import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.*;
 
 /**
  * Tests {@link TaskLogsFilter#decide(ILoggingEvent)} functionality specifically in a Java 21 virtual thread environment

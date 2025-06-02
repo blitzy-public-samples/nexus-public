@@ -39,7 +39,7 @@ import static java.lang.String.format;
  *
  * @since 3.20
  */
-enum PlaceholderTypes
+public enum PlaceholderTypes
 {
   UUID_TYPE(of("H2", "UUID", "PostgreSQL", "UUID")),
 

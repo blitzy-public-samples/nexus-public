@@ -26,6 +26,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.thread.io.StreamCopier;
 
@@ -50,6 +52,7 @@ import static org.junit.Assert.fail;
 public class StreamCopierVirtualThreadTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(StreamCopierVirtualThreadTest.class);
   private static final String TEST_DATA = "Test data for virtual thread stream copying";
   private static final int CONCURRENT_OPERATIONS = 1000;
   private static final int TIMEOUT_SECONDS = 30;

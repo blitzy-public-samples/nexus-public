@@ -20,12 +20,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.sonatype.nexus.virtualthread.DatabaseStatusDelayedExecutorVirtualThreadTest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -34,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 public class StreamCopierTest
     extends VirtualThreadTestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(StreamCopierTest.class);
   private String DEFAULT_READ_OUTPUT = "Test read";
 
   private StreamCopier<String> underTest;

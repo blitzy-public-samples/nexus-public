@@ -33,9 +33,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnJre;
 import org.junit.jupiter.api.condition.JRE;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.testcommon.Java21TestGroup;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.nexus.thread.io.StreamCopierTest;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
@@ -60,6 +63,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class ThreadPinningDetectionTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(ThreadPinningDetectionTest.class);
   private static final int THREAD_COUNT = 100;
   private static final int BLOCKING_DURATION_MS = 50;
   

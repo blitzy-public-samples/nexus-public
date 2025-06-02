@@ -25,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.app.NotWritableException;
@@ -63,6 +65,7 @@ import static org.mockito.Mockito.verify;
 public class DatabaseStatusDelayedExecutorVirtualThreadTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(DatabaseStatusDelayedExecutorVirtualThreadTest.class);
   private static final int SLEEP_INTERVAL_MS = 25;
 
   private static final int MAX_RETRIES = 5;

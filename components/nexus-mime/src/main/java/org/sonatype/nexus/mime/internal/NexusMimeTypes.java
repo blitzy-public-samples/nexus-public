@@ -123,7 +123,7 @@ public class NexusMimeTypes
   }
 
   @VisibleForTesting
-  void initMimeTypes(final Properties properties) {
+  public void initMimeTypes(final Properties properties) {
     try {
       lock.writeLock().lock();
       final Set<String> keys = properties.stringPropertyNames();

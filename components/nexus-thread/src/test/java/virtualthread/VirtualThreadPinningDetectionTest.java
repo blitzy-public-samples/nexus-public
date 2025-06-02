@@ -41,7 +41,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnJre;
 import org.junit.jupiter.api.condition.JRE;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.hash.MultiHashingInputStreamFactory;
 import org.sonatype.nexus.thread.io.StreamCopier;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -71,6 +74,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @EnabledOnJre(JRE.JAVA_21)
 public class VirtualThreadPinningDetectionTest extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(VirtualThreadPinningDetectionTest.class);
   private static final int CONCURRENT_TASKS = 100;
   private static final int TASK_DURATION_MS = 50;
   private static final int PINNING_DETECTION_THRESHOLD_MS = 20; // Default JFR threshold

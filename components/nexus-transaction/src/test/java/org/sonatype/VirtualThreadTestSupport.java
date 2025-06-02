@@ -14,15 +14,7 @@ package org.sonatype.nexus.transaction;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -165,6 +157,8 @@ public class VirtualThreadTestSupport
         results.add(future.get(timeout, unit));
       }
       return results;
+    } catch (TimeoutException e) {
+        throw new RuntimeException(e);
     } finally {
       shutdownExecutor(executor);
     }
@@ -333,10 +327,15 @@ public class VirtualThreadTestSupport
     CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
       return threadLocal.get();
     }, newVirtualThreadExecutor("thread-local-test"));
-    
-    T result = future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    
-    // In virtual threads, thread-locals are not automatically inherited
+
+      T result = null;
+      try {
+          result = future.get(DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+      } catch (TimeoutException e) {
+          throw new RuntimeException(e);
+      }
+
+      // In virtual threads, thread-locals are not automatically inherited
     // So we expect the result to be null or the default value of the thread-local
     return result == null || !result.equals(initialValue);
   }

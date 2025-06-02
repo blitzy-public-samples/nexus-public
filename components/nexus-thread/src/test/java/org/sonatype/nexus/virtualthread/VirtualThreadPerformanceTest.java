@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.io.DirectoryHelper;
 
@@ -42,6 +44,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import virtualthread.VirtualThreadExecutorServiceTest;
 
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -63,6 +66,7 @@ import static org.hamcrest.Matchers.lessThanOrEqualTo;
 public class VirtualThreadPerformanceTest
     extends TestSupport
 {
+  public static final Logger log = LoggerFactory.getLogger(VirtualThreadPerformanceTest.class);
   private static final int[] CONCURRENCY_LEVELS = {100, 1_000, 10_000, 100_000};
   private static final int OPERATIONS_PER_THREAD = 10;
   private static final int WARMUP_ITERATIONS = 3;

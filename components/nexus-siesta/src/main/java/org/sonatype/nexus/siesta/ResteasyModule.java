@@ -12,8 +12,12 @@
  */
 package org.sonatype.nexus.siesta;
 
+import java.util.Map;
 import java.util.concurrent.Callable;
 
+import org.jboss.resteasy.spi.HttpRequest;
+import org.jboss.resteasy.spi.HttpRequestPreprocessor;
+import org.jboss.resteasy.spi.HttpResponse;
 import org.sonatype.nexus.common.thread.VirtualThreadHelper;
 import org.sonatype.nexus.siesta.internal.resteasy.ComponentContainerImpl;
 
@@ -21,6 +25,8 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
 import org.jboss.resteasy.core.Dispatcher;
+
+import javax.ws.rs.core.Response;
 
 /**
  * RESTEasy module for RESTEasy 6.2.7.Final with Java 21 Virtual Thread support.
@@ -79,10 +85,25 @@ public class ResteasyModule
     // Delegate all methods to the original dispatcher, ensuring context propagation
     // Only override methods that might be executed across virtual thread boundaries
     
+
+    // Delegate all other methods directly to the original dispatcher
+    // Add context propagation only to methods that might cross virtual thread boundaries
+    
+    // Standard delegation methods
     @Override
-    public Object invoke(Object request) {
+    public void addHttpPreprocessor(HttpRequestPreprocessor httpPreprocessor) {
+      delegate.addHttpPreprocessor(httpPreprocessor);
+    }
+    
+    @Override
+    public org.jboss.resteasy.spi.Registry getRegistry() {
+      return delegate.getRegistry();
+    }
+
+    @Override
+    public void invoke(HttpRequest request, HttpResponse response) {
       try {
-        return withVirtualThreadContext(() -> delegate.invoke(request));
+        delegate.invoke(request, response);
       }
       catch (Exception e) {
         if (e instanceof RuntimeException) {
@@ -91,29 +112,21 @@ public class ResteasyModule
         throw new RuntimeException("Error invoking dispatcher with virtual thread context", e);
       }
     }
-    
-    // Delegate all other methods directly to the original dispatcher
-    // Add context propagation only to methods that might cross virtual thread boundaries
-    
-    // Standard delegation methods
+
     @Override
-    public void addHttpPreprocessor(Object httpPreprocessor) {
-      delegate.addHttpPreprocessor(httpPreprocessor);
+    public Response internalInvocation(HttpRequest httpRequest, HttpResponse httpResponse, Object o) {
+      return null;
     }
-    
+
     @Override
-    public org.jboss.resteasy.spi.Registry getRegistry() {
-      return delegate.getRegistry();
+    public Map<Class, Object> getDefaultContextObjects() {
+      return Map.of();
     }
-    
+
     @Override
     public org.jboss.resteasy.spi.ResteasyProviderFactory getProviderFactory() {
       return delegate.getProviderFactory();
     }
     
-    @Override
-    public void removeHttpPreprocessor(Object httpPreprocessor) {
-      delegate.removeHttpPreprocessor(httpPreprocessor);
-    }
   }
 }

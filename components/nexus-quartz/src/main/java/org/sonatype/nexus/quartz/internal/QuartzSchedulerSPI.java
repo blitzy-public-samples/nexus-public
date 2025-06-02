@@ -27,10 +27,10 @@ import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventHelper;

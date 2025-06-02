@@ -22,6 +22,8 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.TestAnonymousConfiguration;
 import org.sonatype.nexus.security.anonymous.AnonymousConfiguration;
@@ -46,6 +48,8 @@ import static org.mockito.Mockito.when;
 public class HttpProtocolAnonymousAccessApiResourceTest
     extends TestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(HttpProtocolAnonymousAccessApiResourceTest.class);
+
   private static final String BASE_URL = "http://localhost:8081";
   private static final String API_PATH = "/service/rest/v1/security/anonymous";
   private static final String CONTENT_TYPE = "application/json";

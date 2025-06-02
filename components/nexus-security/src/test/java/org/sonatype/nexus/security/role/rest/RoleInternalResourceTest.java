@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.rest.WebApplicationMessageException;

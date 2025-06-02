@@ -166,7 +166,7 @@ public class FirstSuccessfulModularRealAuthenticatorTest
   }
 
   @Test
-  public void testAuthenticatorInVirtualThread() {
+  public void testAuthenticatorInVirtualThread() throws InterruptedException {
     // This test verifies that the authenticator works correctly in a Virtual Thread context
     Thread.startVirtualThread(() -> {
       UsernamePasswordToken usernamePasswordToken = new UsernamePasswordToken("username", "password");

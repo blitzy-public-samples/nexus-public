@@ -12,24 +12,12 @@
  */
 package org.sonatype.nexus.security;
 
-import java.lang.reflect.Constructor;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-
-import javax.inject.Singleton;
-import javax.servlet.ServletContext;
-
-import org.sonatype.nexus.security.authc.FirstSuccessfulModularRealmAuthenticator;
-import org.sonatype.nexus.security.authz.ExceptionCatchingModularRealmAuthorizer;
-
 import com.google.common.base.Throwables;
 import com.google.inject.binder.AnnotatedBindingBuilder;
 import com.google.inject.name.Names;
+import jakarta.inject.Singleton;
 import org.apache.shiro.authc.AuthenticationInfo;
 import org.apache.shiro.authc.AuthenticationToken;
-import org.apache.shiro.authc.Authenticator;
-import org.apache.shiro.authz.Authorizer;
-import org.apache.shiro.config.ConfigurationException;
 import org.apache.shiro.guice.web.ShiroWebModule;
 import org.apache.shiro.mgt.RealmSecurityManager;
 import org.apache.shiro.mgt.SessionStorageEvaluator;
@@ -49,6 +37,11 @@ import org.apache.shiro.web.filter.mgt.FilterChainManager;
 import org.apache.shiro.web.filter.mgt.FilterChainResolver;
 import org.apache.shiro.web.filter.mgt.PathMatchingFilterChainResolver;
 import org.apache.shiro.web.mgt.WebSecurityManager;
+
+import javax.servlet.ServletContext;
+import java.lang.reflect.Constructor;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * Shiro security configuration Guice module for the runtime server.
@@ -80,8 +73,9 @@ public class WebSecurityModule
 
     // configure our preferred security components
     bindSingleton(SessionDAO.class, NexusSessionDAO.class);
-    bindSingleton(Authenticator.class, FirstSuccessfulModularRealmAuthenticator.class);
-    bindSingleton(Authorizer.class, ExceptionCatchingModularRealmAuthorizer.class);
+    //TODO cannot access org.apache.shiro.util.Destroyable
+//    bindSingleton(Authenticator.class, FirstSuccessfulModularRealmAuthenticator.class);
+//    bindSingleton(Authorizer.class, ExceptionCatchingModularRealmAuthorizer.class);
     bindSingleton(FilterChainManager.class, VirtualThreadFilterChainManager.class);
     bind(ShiroFilterConfiguration.class).asEagerSingleton();
 
@@ -158,7 +152,8 @@ public class WebSecurityModule
     }
     catch (Exception e) {
       Throwables.throwIfUnchecked(e);
-      throw new ConfigurationException(e);
     }
+
+    return null; //TODO unreachable, but required by Java
   }
 }

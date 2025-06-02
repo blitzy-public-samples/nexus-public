@@ -20,9 +20,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import javax.servlet.http.Cookie;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
@@ -101,7 +101,7 @@ public class JwtHelper
   }
 
   @Override
-  protected void doStart() throws Exception {
+  public void doStart() throws Exception {
     SecretStore store = secretStoreProvider.get();
     if (!store.getSecret().isPresent()) {
       // the new secret will be generated as UUID only if it is not presented yet.

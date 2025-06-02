@@ -115,7 +115,7 @@ public class EmptyRoleManagementTest
         found = true;
       }
     }
-    assertTrue("user not found", found);
+    assertTrue(found, "user not found");
 
     found = false;
     for (CUserRoleMapping userRoleMapping : securityModel.getUserRoleMappings()) {
@@ -125,7 +125,7 @@ public class EmptyRoleManagementTest
       }
     }
 
-    assertTrue("userRoleMapping not found", found);
+    assertTrue(found, "userRoleMapping not found");
   }
 
   @Test

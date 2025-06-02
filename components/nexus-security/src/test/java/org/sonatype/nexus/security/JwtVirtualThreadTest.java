@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import javax.servlet.http.Cookie;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.jwt.JwtVerificationException;
 import org.sonatype.nexus.security.jwt.SecretStore;
@@ -43,6 +45,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.security.role.rest.RoleVirtualThreadTest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -63,6 +66,8 @@ import static org.sonatype.nexus.security.JwtHelper.USER_SESSION_ID;
 public class JwtVirtualThreadTest
     extends TestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(JwtVirtualThreadTest.class);
+
   private static final int CONCURRENT_THREADS = 1000;
   private static final int TOKEN_EXPIRY_MILLIS = 10000; // 10 seconds
   private static final int TOKEN_EXPIRED_MILLIS = -10000; // 10 seconds in the past

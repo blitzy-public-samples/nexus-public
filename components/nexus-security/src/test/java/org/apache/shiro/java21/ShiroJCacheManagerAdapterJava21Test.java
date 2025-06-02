@@ -71,7 +71,7 @@ public class ShiroJCacheManagerAdapterJava21Test
   @Test
   public void defaultCacheConfigurationTest() {
     when(cacheHelper.maybeCreateCache(anyString(), confCaptor.capture())).thenReturn(null);
-    underTest.maybeCreateCache("foo");
+    underTest.getCache("foo");
     
     // Using Java 21 pattern matching for instanceof to verify the expiry policy
     Factory<ExpiryPolicy> factory = confCaptor.getValue();
@@ -88,7 +88,7 @@ public class ShiroJCacheManagerAdapterJava21Test
   @Test
   public void defaultShiroActiveSessionCacheConfigurationTest() {
     when(cacheHelper.maybeCreateCache(anyString(), confCaptor.capture())).thenReturn(null);
-    underTest.maybeCreateCache(CachingSessionDAO.ACTIVE_SESSION_CACHE_NAME);
+    underTest.getCache(CachingSessionDAO.ACTIVE_SESSION_CACHE_NAME);
     
     // Using Java 21 pattern matching for instanceof to verify the expiry policy
     Factory<ExpiryPolicy> factory = confCaptor.getValue();
@@ -108,7 +108,7 @@ public class ShiroJCacheManagerAdapterJava21Test
     when(cacheHelper.maybeCreateCache(eq("virtualThreadTest"), confCaptor.capture())).thenReturn(mockCache);
     
     // Get the cache through the adapter
-    Cache<Object, Object> cache = underTest.getCache("virtualThreadTest");
+    org.apache.shiro.cache.Cache<Object, Object> cache = underTest.getCache("virtualThreadTest");
     
     // Number of virtual threads to use for testing
     int threadCount = 100;

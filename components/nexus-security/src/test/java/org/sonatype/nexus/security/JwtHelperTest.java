@@ -189,7 +189,7 @@ public class JwtHelperTest
       catch (Exception e) {
         throw new RuntimeException(e);
       }
-    }, CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS, Thread.ofVirtual().factory()));
+    }, CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS, Runnable::run));
     
     String jwt = future.get(); // Wait for the virtual thread to complete
     assertNotNull(jwt);
@@ -213,7 +213,7 @@ public class JwtHelperTest
       catch (Exception e) {
         throw new RuntimeException(e);
       }
-    }, CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS, Thread.ofVirtual().factory()));
+    }, CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS, Runnable::run));
     
     Cookie refreshed = future.get(); // Wait for the virtual thread to complete
     assertNotNull(refreshed);

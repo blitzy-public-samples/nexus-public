@@ -15,6 +15,7 @@ package org.sonatype.nexus.security;
 import com.google.common.base.Joiner;
 import com.google.inject.AbstractModule;
 import com.google.inject.name.Names;
+import org.sonatype.nexus.security.user.DefaultFilterChain;
 
 /**
  * Support module for configuring {@link FilterChain}s.
@@ -26,8 +27,8 @@ public abstract class FilterChainModule
 {
   protected void addFilterChain(final String pathPattern, final String filterExpression) {
     bind(FilterChain.class)
-        .annotatedWith(Names.named(pathPattern))
-        .toInstance(new FilterChain(pathPattern, filterExpression));
+            .annotatedWith(Names.named(pathPattern))
+            .toInstance((FilterChain) new DefaultFilterChain(pathPattern, filterExpression));
   }
 
   protected void addFilterChain(final String pathPattern, final String... filterExpression) {

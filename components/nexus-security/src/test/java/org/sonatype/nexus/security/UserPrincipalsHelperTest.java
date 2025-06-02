@@ -159,7 +159,7 @@ public class UserPrincipalsHelperTest
   public void testPrincipalPropagationAcrossVirtualThreads() throws ExecutionException, InterruptedException {
     // Setup user and principals
     when(user.getStatus()).thenReturn(UserStatus.active);
-    when(userManagerAlpha.getUser(PRIMARY_PRINCIPAL)).thenReturn(user);
+//    when(userManagerAlpha.getUser(PRIMARY_PRINCIPAL)).thenReturn(user);
     final PrincipalCollection principals = getPrincipals();
     
     // Create a virtual thread executor
@@ -189,7 +189,7 @@ public class UserPrincipalsHelperTest
   public void testMultipleConcurrentVirtualThreadsWithPrincipals() throws ExecutionException, InterruptedException {
     // Setup user and principals
     when(user.getStatus()).thenReturn(UserStatus.active);
-    when(userManagerAlpha.getUser(PRIMARY_PRINCIPAL)).thenReturn(user);
+//    when(userManagerAlpha.getUser(PRIMARY_PRINCIPAL)).thenReturn(user);
     final PrincipalCollection principals = getPrincipals();
     
     // Number of concurrent virtual threads to test with

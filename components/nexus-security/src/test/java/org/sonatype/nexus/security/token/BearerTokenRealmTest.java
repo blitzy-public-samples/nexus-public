@@ -16,7 +16,7 @@ import java.security.Principal;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 import javax.servlet.http.HttpServletRequest;
 
 import org.sonatype.nexus.security.UserPrincipalsHelper;

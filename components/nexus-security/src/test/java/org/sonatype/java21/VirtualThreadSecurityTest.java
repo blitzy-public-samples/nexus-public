@@ -33,6 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.servlet.http.Cookie;
 
+import org.junit.platform.commons.logging.Logger;
+import org.junit.platform.commons.logging.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.crypto.internal.CryptoHelperImpl;
 import org.sonatype.nexus.crypto.internal.MavenCipherImpl;
@@ -91,6 +93,7 @@ import static org.sonatype.nexus.security.JwtHelper.USER_SESSION_ID;
 @Tag("virtualthread")
 public class VirtualThreadSecurityTest extends TestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(VirtualThreadSecurityTest.class);
   private static final int CONCURRENT_OPERATIONS = 1000;
   private static final int WARMUP_OPERATIONS = 100;
   
@@ -376,14 +379,14 @@ public class VirtualThreadSecurityTest extends TestSupport
     Duration virtualDuration = Duration.between(virtualStart, Instant.now());
     
     // Log performance results
-    log.info("JWT operations with platform threads took {} ms", platformDuration.toMillis());
-    log.info("JWT operations with virtual threads took {} ms", virtualDuration.toMillis());
+    log.info(() -> "JWT operations with platform threads took " + platformDuration.toMillis() + " ms");
+    log.info(() -> "JWT operations with virtual threads took " + virtualDuration.toMillis() + " ms");
     
     // Assert that virtual threads are more efficient (or at least not significantly worse)
     // We're using a relaxed assertion here because the actual performance difference
     // can vary based on the test environment
     assertThat("Virtual threads should be more efficient for JWT operations",
-        virtualDuration.toMillis(), lessThan(platformDuration.toMillis() * 1.5));
+            (double) virtualDuration.toMillis(), lessThan(platformDuration.toMillis() * 1.5));
   }
   
   /**
@@ -409,14 +412,14 @@ public class VirtualThreadSecurityTest extends TestSupport
     Duration virtualDuration = Duration.between(virtualStart, Instant.now());
     
     // Log performance results
-    log.info("Password operations with platform threads took {} ms", platformDuration.toMillis());
-    log.info("Password operations with virtual threads took {} ms", virtualDuration.toMillis());
+ log.info(() -> "Password operations with platform threads took " + platformDuration.toMillis() + " ms");
+ log.info(() -> "Password operations with virtual threads took " + virtualDuration.toMillis() + " ms");
     
     // Assert that virtual threads are more efficient for concurrent operations
     // We're using a relaxed assertion here because the actual performance difference
     // can vary based on the test environment
     assertThat("Virtual threads should provide better throughput for concurrent password operations",
-        virtualDuration.toMillis(), lessThan(platformDuration.toMillis() * 1.5));
+        (double) virtualDuration.toMillis(), lessThan(platformDuration.toMillis() * 1.5));
   }
   
   /**
@@ -459,7 +462,7 @@ public class VirtualThreadSecurityTest extends TestSupport
             subject.logout();
           } 
           catch (Exception e) {
-            log.error("Authentication error", e);
+            log.error(e, () -> "Authentication error");
             failureCount.incrementAndGet();
           }
           finally {
@@ -556,7 +559,11 @@ public class VirtualThreadSecurityTest extends TestSupport
             
             Cookie jwtCookie = jwtHelper.createJwtCookie(subject, false);
             String jwt = jwtCookie.getValue();
-            jwtHelper.verifyJwt(jwt);
+            try {
+              jwtHelper.verifyJwt(jwt);
+            } catch (JwtVerificationException e) {
+              throw new RuntimeException(e);
+            }
           } 
           finally {
             latch.countDown();
@@ -592,7 +599,7 @@ public class VirtualThreadSecurityTest extends TestSupport
             }
           } 
           catch (Exception e) {
-            log.error("Shiro operation error", e);
+            log.error(e, () -> "Shiro operation error");
           } 
           finally {
             latch.countDown();
@@ -606,7 +613,7 @@ public class VirtualThreadSecurityTest extends TestSupport
     
     // Analyze operation counts to detect pinning
     // If operations are evenly distributed across threads, it suggests no pinning
-    log.info("Operation distribution across threads: {}", operationCounts);
+    log.info(() -> "Operation distribution across threads: " + operationCounts);
     
     // Count the number of threads used for each operation type
     int jwtThreadCount = 0;
@@ -618,10 +625,13 @@ public class VirtualThreadSecurityTest extends TestSupport
       else if (key.startsWith("password-")) passwordThreadCount++;
       else if (key.startsWith("shiro-")) shiroThreadCount++;
     }
-    
-    log.info("JWT operations used {} threads", jwtThreadCount);
-    log.info("Password operations used {} threads", passwordThreadCount);
-    log.info("Shiro operations used {} threads", shiroThreadCount);
+
+    final int jwtThreads = jwtThreadCount;
+    final int passwordThreads = passwordThreadCount;
+    final int shiroThreads = shiroThreadCount;
+    log.info(() -> "JWT operations used " + jwtThreads + " threads");
+    log.info(() -> "Password operations used " + passwordThreads + " threads");
+    log.info(() -> "Shiro operations used " + shiroThreads + " threads");
     
     // If operations are well-distributed, we should see multiple threads used for each type
     assertThat("JWT operations should use multiple threads", jwtThreadCount, greaterThan(1));

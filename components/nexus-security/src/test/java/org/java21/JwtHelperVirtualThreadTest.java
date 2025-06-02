@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.servlet.http.Cookie;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.JwtHelper;
 import org.sonatype.nexus.security.VirtualThreadTestGroup;
@@ -61,6 +63,7 @@ import static org.sonatype.nexus.security.JwtHelper.USER_SESSION_ID;
 public class JwtHelperVirtualThreadTest
     extends TestSupport
 {
+  private final Logger log = LoggerFactory.getLogger(getClass());
   private static final int CONCURRENT_OPERATIONS = 1000;
   private static final int TIMEOUT_SECONDS = 30;
   

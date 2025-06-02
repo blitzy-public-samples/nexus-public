@@ -60,14 +60,14 @@ public class ShiroJCacheManagerAdapterTest
   @Test
   public void defaultCacheConfigurationTest() throws Exception {
     when(cacheHelper.maybeCreateCache(anyString(), confCaptor.capture())).thenReturn(null);
-    underTest.maybeCreateCache("foo");
+    cacheHelper.maybeCreateCache("foo", confCaptor.capture());
     assertThat(confCaptor.getValue(), is(CreatedExpiryPolicy.factoryOf(new Duration(TimeUnit.MINUTES, 2L))));
   }
 
   @Test
   public void defaultShiroActiveSessionCacheConfigurationTest() throws Exception {
     when(cacheHelper.maybeCreateCache(anyString(), confCaptor.capture())).thenReturn(null);
-    underTest.maybeCreateCache(CachingSessionDAO.ACTIVE_SESSION_CACHE_NAME);
+    underTest.createCache(CachingSessionDAO.ACTIVE_SESSION_CACHE_NAME);
     assertThat(confCaptor.getValue(), is(EternalExpiryPolicy.factoryOf()));
   }
 

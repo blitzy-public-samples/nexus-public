@@ -12,16 +12,18 @@
  */
 package org.sonatype.nexus.security.anonymous.rest;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Path;
+import io.swagger.annotations.Api;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+
+import io.swagger.annotations.Tag;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.rest.APIConstants;
 import org.sonatype.nexus.security.anonymous.AnonymousManager;
 import org.sonatype.nexus.security.internal.rest.SecurityApiResourceBeta;
 
-import io.swagger.annotations.Api;
 import org.apache.shiro.mgt.RealmSecurityManager;
 
 import static org.sonatype.nexus.security.anonymous.rest.AnonymousAccessApiResourceBeta.RESOURCE_URI;

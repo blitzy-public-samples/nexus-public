@@ -36,6 +36,8 @@ import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import java.security.Security;
@@ -58,6 +60,8 @@ import static org.hamcrest.Matchers.notNullValue;
 public class ShiroSecurityCryptographyTest
     extends TestSupport
 {
+
+  private final Logger log = LoggerFactory.getLogger(getClass());
   private static final String TEST_PASSWORD = "MySecretPassword123";
   private static final String TEST_PLAINTEXT = "This is a test message for encryption and decryption";
   private static final String TEST_SALT = "randomSalt";

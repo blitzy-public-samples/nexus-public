@@ -14,6 +14,7 @@ package org.sonatype.nexus.security.authc;
 
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -64,7 +65,7 @@ public class FirstSuccessfulModularRealmAuthenticator
     // Create a thread pool using virtual threads
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Submit authentication tasks for each realm that supports the token
-      Collection<Future<?>> futures = realms.stream()
+      List<? extends Future<?>> futures = realms.stream()
           .filter(realm -> realm.supports(token))
           .map(realm -> executor.submit(() -> {
             try {

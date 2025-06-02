@@ -15,8 +15,9 @@ package org.sonatype.nexus.security.authc;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 
@@ -24,6 +25,8 @@ import com.google.common.collect.ImmutableList;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.web.filter.authc.AuthenticatingFilter;
 import org.apache.shiro.web.filter.authc.BasicHttpAuthenticationFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -45,6 +48,8 @@ public class NexusAuthenticationFilter
     extends NexusBasicHttpAuthenticationFilter
 {
   public static final String NAME = "nx-authc";
+
+  private final Logger log = LoggerFactory.getLogger(getClass());
 
   private List<AuthenticationTokenFactory> factories;
 
@@ -102,7 +107,7 @@ public class NexusAuthenticationFilter
             );
             return null;
           }
-        }, Thread.ofVirtual().factory()))
+        },  Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory())))
         .toList();
 
     // Return the first non-null token

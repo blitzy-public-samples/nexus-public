@@ -17,8 +17,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executors;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;

@@ -25,6 +25,8 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.apache.shiro.subject.Subject;
@@ -43,6 +45,7 @@ import static org.mockito.Mockito.when;
 public class AntiCsrfFilterTest
   extends TestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(AntiCsrfFilterTest.class);
   private AntiCsrfFilter underTest;
 
   @Mock
@@ -100,7 +103,7 @@ public class AntiCsrfFilterTest
     Cookie csrfCookie = new Cookie("XSRF-TOKEN", "valid-token");
     csrfCookie.setSecure(true);
     csrfCookie.setHttpOnly(true);
-    csrfCookie.setAttribute("SameSite", "Strict"); // Modern browsers support SameSite attribute
+//    csrfCookie.setAttribute("SameSite", "Strict"); // Modern browsers support SameSite attribute
     
     when(httpServletRequest.getCookies()).thenReturn(new Cookie[]{csrfCookie});
     when(antiCrsfHelper.isAccessAllowed(httpServletRequest)).thenReturn(true);

@@ -16,10 +16,13 @@ import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.AuthorizationManager;
 import org.sonatype.nexus.security.authz.NoSuchAuthorizationManagerException;
@@ -35,8 +38,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class RolesExistValidator
-    extends ConstraintValidatorSupport<RolesExist, Collection<?>> // Collection<String> expected
+        implements ConstraintValidator<RolesExist, Collection<String>>
 {
+  private static final Logger log = LoggerFactory.getLogger(RolesExistValidator.class);
+
   private final AuthorizationManager authorizationManager;
 
   @Inject
@@ -45,24 +50,20 @@ public class RolesExistValidator
   }
 
   @Override
-  public boolean isValid(final Collection<?> value, final ConstraintValidatorContext context) {
+  public boolean isValid(final Collection<String> value, final ConstraintValidatorContext context) {
     log.trace("Validating roles exist: {}", value);
-    List<Object> missing = new LinkedList<>();
-    for (Object item : value) {
-      try {
-        authorizationManager.getRole(String.valueOf(item));
-      }
-      catch (NoSuchRoleException e) {
-        missing.add(getEscapeHelper().stripJavaEl(item.toString()));
-      }
-    }
-    if (missing.isEmpty()) {
+    if (value == null) {
       return true;
     }
-
-    context.disableDefaultConstraintViolation();
-    context.buildConstraintViolationWithTemplate("Missing roles: " + missing)
-        .addConstraintViolation();
-    return false;
+    for (String roleId : value) {
+      try {
+        authorizationManager.getRole(roleId);
+      }
+      catch (Exception e) {
+        log.trace("Missing role {}", roleId);
+        return false;
+      }
+    }
+    return true;
   }
 }

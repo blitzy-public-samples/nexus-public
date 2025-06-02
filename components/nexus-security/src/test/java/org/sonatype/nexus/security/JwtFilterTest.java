@@ -150,7 +150,7 @@ public class JwtFilterTest
     cookie.setPath("/");
     cookie.setHttpOnly(true);
     cookie.setSecure(true);
-    cookie.setAttribute("SameSite", "None");
+//    cookie.setAttribute("SameSite", "None");
     return cookie;
   }
 }

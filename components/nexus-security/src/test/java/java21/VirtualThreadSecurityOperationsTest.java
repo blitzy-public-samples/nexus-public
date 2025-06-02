@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.Serializable;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -61,11 +64,13 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.JwtHelper;
 import org.sonatype.nexus.security.PasswordHelper;
 import org.sonatype.nexus.security.SecuritySystem;
-import org.sonatype.nexus.security.authc.AuthenticationFailureException;
+//import org.sonatype.nexus.security.authc.AuthenticationFailureException;
 import org.sonatype.nexus.security.jwt.JwtVerificationException;
 import org.sonatype.nexus.security.jwt.SecretStore;
 
@@ -84,6 +89,7 @@ import com.google.inject.Provider;
 public class VirtualThreadSecurityOperationsTest
     extends TestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(VirtualThreadSecurityOperationsTest.class);
   private static final int CONCURRENT_OPERATIONS = 1000;
   private static final int TIMEOUT_SECONDS = 30;
   
@@ -212,7 +218,7 @@ public class VirtualThreadSecurityOperationsTest
       for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
         final int index = i;
         futures.add(executor.submit(() -> {
-          SessionContext context = new SessionContext();
+          SessionContext context = mock(SessionContext.class);
           context.setHost("localhost");
           Session session = sessionManager.start(context);
           session.setAttribute("testAttribute", "value-" + index);
@@ -385,7 +391,11 @@ public class VirtualThreadSecurityOperationsTest
         }
         
         for (Future<Boolean> future : futures) {
-          assertTrue(future.get(), "JWT validation should succeed");
+          try {
+            assertTrue(future.get(), "JWT validation should succeed");
+          } catch (InterruptedException | ExecutionException e) {
+            fail("Exception during JWT validation: " + e.getMessage(), e);
+          }
         }
       }
     });
@@ -408,7 +418,11 @@ public class VirtualThreadSecurityOperationsTest
         }
         
         for (Future<Boolean> future : futures) {
-          assertTrue(future.get(), "JWT validation should succeed");
+          try {
+            assertTrue(future.get(), "JWT validation should succeed");
+          } catch (InterruptedException | ExecutionException e) {
+            fail("Exception during JWT validation: " + e.getMessage(), e);
+          }
         }
       }
     });
@@ -478,7 +492,7 @@ public class VirtualThreadSecurityOperationsTest
   @Timeout(value = TIMEOUT_SECONDS, unit = TimeUnit.SECONDS)
   public void testConcurrentSessionAccess() throws Exception {
     // Create a shared session
-    SessionContext context = new SessionContext();
+    SessionContext context = mock(SessionContext.class);
     context.setHost("localhost");
     Session sharedSession = sessionManager.start(context);
     sharedSession.setAttribute("counter", new AtomicInteger(0));

@@ -16,9 +16,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.Cookie;
@@ -26,7 +26,8 @@ import javax.servlet.http.HttpServletRequest;
 
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.jwt.JwtVerificationException;
-import org.sonatype.nexus.thread.NexusThreadFactory;
+//import org.sonatype.nexus.thread.NexusThreadFactory;
+
 
 import org.apache.shiro.web.servlet.AdviceFilter;
 import org.apache.shiro.web.util.WebUtils;
@@ -44,8 +45,7 @@ import static org.sonatype.nexus.security.JwtHelper.JWT_COOKIE_NAME;
 @Named
 @Singleton
 public class JwtFilter
-    extends AdviceFilter
-{
+    extends AdviceFilter {
   public static final String NAME = "nx-jwt";
 
   private final JwtHelper jwtHelper;
@@ -59,10 +59,9 @@ public class JwtFilter
                    final List<JwtRefreshExemption> jwtExemptPaths) {
     this.jwtHelper = checkNotNull(jwtHelper);
     this.jwtExemptPaths = jwtExemptPaths;
-    this.virtualThreadExecutor = newVirtualThreadPerTaskExecutor(
-        new NexusThreadFactory("jwt-filter", "JWT Filter Virtual Thread"));
+    this.virtualThreadExecutor = newVirtualThreadPerTaskExecutor();
   }
-  
+
   /**
    * Determines if the request is exempt from JWT processing based on its path.
    * Uses Java 21 String processing enhancements for more efficient path matching.
@@ -74,8 +73,8 @@ public class JwtFilter
     String requestPath = request.getServletPath();
     // Use enhanced String processing with method references for more efficient path matching
     return jwtExemptPaths.stream()
-        .map(JwtRefreshExemption::getPath)
-        .anyMatch(exemptPath -> requestPath.indexOf(exemptPath) >= 0);
+            .map(JwtRefreshExemption::getPath)
+            .anyMatch(exemptPath -> requestPath.indexOf(exemptPath) >= 0);
   }
 
   @Override
@@ -94,16 +93,16 @@ public class JwtFilter
    * Process JWT cookie verification and refresh using a Virtual Thread.
    * This method handles the extraction, verification, and refresh of JWT cookies.
    *
-   * @param cookies The cookies from the HTTP request
-   * @param request The servlet request
+   * @param cookies  The cookies from the HTTP request
+   * @param request  The servlet request
    * @param response The servlet response
    * @return true if processing should continue, false if the request should be stopped
    */
   private boolean processJwtCookie(Cookie[] cookies, ServletRequest request, ServletResponse response) {
     // Use pattern matching with enhanced switch expression to find and process JWT cookie
     Optional<Cookie> jwtCookie = stream(cookies)
-        .filter(cookie -> JWT_COOKIE_NAME.equals(cookie.getName()))
-        .findFirst();
+            .filter(cookie -> JWT_COOKIE_NAME.equals(cookie.getName()))
+            .findFirst();
 
     // Use pattern matching to handle the cookie presence
     return switch (jwtCookie.orElse(null)) {
@@ -113,8 +112,7 @@ public class JwtFilter
           Cookie refreshedToken = jwtHelper.verifyAndRefreshJwtCookie(cookie.getValue(), request.isSecure());
           WebUtils.toHttp(response).addCookie(refreshedToken);
           yield true;
-        } 
-        catch (JwtVerificationException e) {
+        } catch (JwtVerificationException e) {
           // Expire the cookie in case of any issues while JWT verification
           cookie.setValue("");
           cookie.setMaxAge(0);
@@ -125,3 +123,4 @@ public class JwtFilter
       default -> true; // No JWT cookie or empty value, continue processing
     };
   }
+}

@@ -34,7 +34,7 @@ public class WebApplicationMessageException
    * @param status the HTTP status code
    * @param message the error message
    */
-  public WebApplicationMessageException(final Status status, final String message) {
+  public WebApplicationMessageException(final jakarta.ws.rs.core.Response.Status status, final String message) {
     this(status, message, TEXT_PLAIN);
   }
 
@@ -45,7 +45,7 @@ public class WebApplicationMessageException
    * @param message the error message or object (will be converted to string)
    * @param mediaType the media type of the response
    */
-  public WebApplicationMessageException(final Status status, final Object message, final String mediaType) {
+  public WebApplicationMessageException(final jakarta.ws.rs.core.Response.Status status, final Object message, final String mediaType) {
     super(Response.status(checkNotNull(status))
         .entity(new GenericEntity<>(new ValidationErrorXO(checkNotNull(message).toString()), ValidationErrorXO.class))
         .type(mediaType)
@@ -60,7 +60,7 @@ public class WebApplicationMessageException
    * @param mediaType the media type of the response
    */
   public WebApplicationMessageException(int status, final Object message, final String mediaType) {
-    super(Response.status(status)
+    super(jakarta.ws.rs.core.Response.status(status)
         .entity(new GenericEntity<>(new ValidationErrorXO(checkNotNull(message).toString()), ValidationErrorXO.class))
         .type(mediaType)
         .build());

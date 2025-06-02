@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.security.TestAnonymousConfiguration;
 import org.sonatype.nexus.security.anonymous.AnonymousConfiguration;
@@ -55,6 +57,8 @@ public class VirtualThreadAnonymousAccessApiResourceTest
 {
   private static final int CONCURRENT_THREADS = 100;
   private static final int OPERATIONS_PER_THREAD = 10;
+
+  private static final Logger log = LoggerFactory.getLogger(VirtualThreadAnonymousAccessApiResourceTest.class);
   
   @Mock
   private AnonymousManager anonymousManager;

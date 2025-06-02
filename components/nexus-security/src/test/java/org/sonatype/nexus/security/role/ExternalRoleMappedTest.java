@@ -43,7 +43,7 @@ import org.apache.shiro.subject.SimplePrincipalCollection;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-class ExternalRoleMappedTest
+public class ExternalRoleMappedTest
     extends AbstractSecurityTest
 {
   @Override

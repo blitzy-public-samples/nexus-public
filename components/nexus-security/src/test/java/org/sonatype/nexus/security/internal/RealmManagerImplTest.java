@@ -133,7 +133,17 @@ class RealmManagerImplTest
         executor.submit(() -> {
           try {
             // Create a new event for each thread
-            RealmConfigurationEvent event = new RealmConfigurationEvent(config);
+            RealmConfigurationEvent event = new RealmConfigurationEvent() {
+              @Override
+              public boolean isLocal() {
+                return false;
+              }
+
+              @Override
+              public RealmConfiguration getConfiguration() {
+                return null;
+              }
+            };
             
             // Configure the mock to return non-local for this event
             when(event.isLocal()).thenReturn(false);

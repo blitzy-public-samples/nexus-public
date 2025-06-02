@@ -34,10 +34,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 public class ExceptionCatchingModularRealmAuthorizerTest
-  extends TestSupport
-{
-  private static final AuthorizingRealm BROKEN_REALM = new AuthorizingRealm()
-  {
+  extends TestSupport {
+  private static final AuthorizingRealm BROKEN_REALM = new AuthorizingRealm() {
     @Override
     protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
       throw new RuntimeException("This realm only throws exceptions");
@@ -52,7 +50,7 @@ public class ExceptionCatchingModularRealmAuthorizerTest
   @Test
   void shouldIgnoreRuntimeException() throws Exception {
     ExceptionCatchingModularRealmAuthorizer subject =
-        new ExceptionCatchingModularRealmAuthorizer(Collections.<Realm>singleton(BROKEN_REALM));
+            new ExceptionCatchingModularRealmAuthorizer(Collections.<Realm>singleton(BROKEN_REALM));
 
     Permission permission = new AllPermission();
 
@@ -61,52 +59,50 @@ public class ExceptionCatchingModularRealmAuthorizerTest
     Assertions.assertFalse(subject.isPermitted(null, new String[]{""})[0]);
     Assertions.assertFalse(subject.isPermitted(null, Collections.singletonList(permission))[0]);
   }
-  
+
   @Test
   void shouldHandleConcurrentExceptionsWithVirtualThreads() throws Exception {
     ExceptionCatchingModularRealmAuthorizer subject =
-        new ExceptionCatchingModularRealmAuthorizer(Collections.<Realm>singleton(BROKEN_REALM));
-    
+            new ExceptionCatchingModularRealmAuthorizer(Collections.<Realm>singleton(BROKEN_REALM));
+
     final int threadCount = 10;
     final CountDownLatch startLatch = new CountDownLatch(1);
     final CountDownLatch completionLatch = new CountDownLatch(threadCount);
     final AtomicBoolean anyFailures = new AtomicBoolean(false);
-    
+
     // Create multiple virtual threads to test concurrent exception handling
     for (int i = 0; i < threadCount; i++) {
       Thread.startVirtualThread(() -> {
         try {
           startLatch.await(); // Wait for all threads to be ready
-          
+
           // Test all permission check methods
           try {
             Assertions.assertFalse(subject.isPermitted(null, ""));
             Assertions.assertFalse(subject.isPermitted(null, new AllPermission()));
             Assertions.assertFalse(subject.isPermitted(null, new String[]{""})[0]);
-            Assertions.assertFalse(subject.isPermitted(null, 
-                Collections.singletonList(new AllPermission()))[0]);
-          } 
-          catch (Exception e) {
+            Assertions.assertFalse(subject.isPermitted(null,
+                    Collections.singletonList(new AllPermission()))[0]);
+          } catch (Exception e) {
             // If any assertion fails or an unexpected exception occurs, mark as failed
             anyFailures.set(true);
           }
-        } 
-        catch (InterruptedException e) {
+        } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
           anyFailures.set(true);
-        }
-        finally {
+        } finally {
           completionLatch.countDown();
         }
       });
     }
-    
+
     // Start all threads simultaneously
     startLatch.countDown();
-    
+
     // Wait for all threads to complete
     completionLatch.await();
-    
+
     // Verify no failures occurred
     Assertions.assertFalse(anyFailures.get(), "Concurrent permission checks with virtual threads failed");
   }
+}

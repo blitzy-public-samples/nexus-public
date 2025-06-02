@@ -131,7 +131,7 @@ public class ApiUser
       apiUser.setLastName(u.getLastName());
       apiUser.setEmailAddress(u.getEmailAddress());
       apiUser.setSource(u.getSource());
-      apiUser.setStatus(ApiUserStatus.fromStatus(u.getStatus()));
+      apiUser.setStatus(ApiUserStatus.convert(u.getStatus()));
       apiUser.setReadOnly(u.isReadOnly());
       
       // Extract roles using pattern matching
@@ -140,11 +140,11 @@ public class ApiUser
       
       if (u.getRoles() != null) {
         for (RoleIdentifier role : u.getRoles()) {
-          if (role instanceof RoleIdentifier(var source, var roleId)) {
-            if (UserManager.DEFAULT_SOURCE.equals(source)) {
-              defaultRoles.add(roleId);
-            } else if (u.getSource().equals(source)) {
-              extRoles.add(roleId);
+          if (role instanceof org.sonatype.nexus.security.role.RoleIdentifier) {
+            if (UserManager.DEFAULT_SOURCE.equals(role.getSource())) {
+              defaultRoles.add(role.getRoleId());
+            } else if (u.getSource().equals(role.getSource())) {
+              extRoles.add(role.getRoleId());
             }
           }
         }
@@ -239,14 +239,14 @@ public class ApiUser
    * @return true if all required fields are present and valid
    */
   public boolean isValid() {
-    return this instanceof ApiUser(var id, var first, var last, var email, var src, var stat, var ro, var r, var _) 
-        && id != null && !id.isBlank()
-        && first != null && !first.isEmpty()
-        && last != null && !last.isEmpty()
-        && email != null && !email.isEmpty()
-        && src != null && !src.isBlank()
-        && stat != null
-        && r != null && !r.isEmpty();
+    return this instanceof ApiUser
+        && this.userId != null && !this.userId.isBlank()
+        && this.firstName != null && !this.firstName.isEmpty()
+        && this.lastName != null && !this.lastName.isEmpty()
+        && this.emailAddress != null && !this.emailAddress.isEmpty()
+        && this.source != null && !this.source.isBlank()
+        && this.status != null
+        && this.roles != null && !this.roles.isEmpty();
   }
 
   /**
@@ -259,32 +259,32 @@ public class ApiUser
     User user = new User();
     
     // Using pattern matching to ensure this ApiUser has all required fields
-    if (this instanceof ApiUser(var id, var first, var last, var email, var src, var stat, var ro, var r, var extR)) {
-      user.setUserId(id);
-      user.setFirstName(first);
-      user.setLastName(last);
-      user.setEmailAddress(email);
-      user.setSource(src);
-      user.setStatus(stat.getStatus());
-      user.setReadOnly(ro);
+    if (this instanceof ApiUser) {
+      user.setUserId(this.userId);
+      user.setFirstName(this.firstName);
+      user.setLastName(this.lastName);
+      user.setEmailAddress(this.emailAddress);
+      user.setSource(this.source);
+      user.setStatus(this.status.getStatus());
+      user.setReadOnly(this.readOnly);
       user.setVersion(1);
       
       // Process roles using pattern matching for more robust handling
       Set<RoleIdentifier> roleIdentifiers = new HashSet<>();
       
       // Process regular roles
-      if (r != null) {
-        r.stream()
+      if (this.roles != null) {
+        this.roles.stream()
             .filter(Objects::nonNull)
             .map(role -> new RoleIdentifier(UserManager.DEFAULT_SOURCE, role))
             .forEach(roleIdentifiers::add);
       }
       
       // Process external roles if present
-      if (extR != null) {
-        extR.stream()
+      if (this.externalRoles != null) {
+        this.externalRoles.stream()
             .filter(Objects::nonNull)
-            .map(role -> new RoleIdentifier(src, role))
+            .map(role -> new RoleIdentifier(this.source, role))
             .forEach(roleIdentifiers::add);
       }
       

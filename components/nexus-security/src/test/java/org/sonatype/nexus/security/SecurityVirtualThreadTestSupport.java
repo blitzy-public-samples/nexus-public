@@ -20,11 +20,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.authc.AuthenticationException;
+import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.subject.Subject;
+import org.apache.shiro.util.ThreadContext;
 import org.junit.jupiter.api.Assertions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +41,7 @@ import org.slf4j.LoggerFactory;
  * @since 3.60
  */
 public abstract class SecurityVirtualThreadTestSupport
-    extends AbstractSecurityTest
+        extends AbstractSecurityTest
 {
   private static final Logger log = LoggerFactory.getLogger(SecurityVirtualThreadTestSupport.class);
 
@@ -53,8 +57,8 @@ public abstract class SecurityVirtualThreadTestSupport
   protected ThreadFactory createVirtualThreadFactory(final String namePrefix) {
     AtomicInteger counter = new AtomicInteger(0);
     return Thread.ofVirtual()
-        .name(namePrefix, counter::getAndIncrement)
-        .factory();
+            .name(namePrefix, counter.getAndIncrement())
+            .factory();
   }
 
   /**
@@ -84,8 +88,8 @@ public abstract class SecurityVirtualThreadTestSupport
    * @return an ExecutorService using platform threads
    */
   protected ExecutorService createPlatformThreadExecutor(final String namePrefix, final int threadCount) {
-    return Executors.newFixedThreadPool(threadCount, 
-        Thread.ofPlatform().name(namePrefix, 0).factory());
+    return Executors.newFixedThreadPool(threadCount,
+            Thread.ofPlatform().name(namePrefix, 0).factory());
   }
 
   /**
@@ -96,8 +100,10 @@ public abstract class SecurityVirtualThreadTestSupport
    * @return the result of the task
    * @throws ExecutionException if the task throws an exception
    * @throws InterruptedException if the current thread is interrupted
+   * @throws TimeoutException if the task times out
    */
-  protected <T> T runInVirtualThread(final Callable<T> task) throws ExecutionException, InterruptedException {
+  protected <T> T runInVirtualThread(final Callable<T> task)
+          throws ExecutionException, InterruptedException, TimeoutException {
     try (ExecutorService executor = createVirtualThreadExecutor()) {
       Future<T> future = executor.submit(task);
       return future.get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
@@ -110,8 +116,10 @@ public abstract class SecurityVirtualThreadTestSupport
    * @param task the task to execute
    * @throws ExecutionException if the task throws an exception
    * @throws InterruptedException if the current thread is interrupted
+   * @throws TimeoutException if the task times out
    */
-  protected void runInVirtualThread(final Runnable task) throws ExecutionException, InterruptedException {
+  protected void runInVirtualThread(final Runnable task)
+          throws ExecutionException, InterruptedException, TimeoutException {
     try (ExecutorService executor = createVirtualThreadExecutor()) {
       Future<?> future = executor.submit(task);
       future.get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
@@ -130,17 +138,17 @@ public abstract class SecurityVirtualThreadTestSupport
     try (ExecutorService executor = createVirtualThreadExecutor("pinning-detector-")) {
       // First run to warm up
       executor.submit(task).get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-      
+
       // Run multiple tasks concurrently to detect pinning
       // If pinning occurs, we'll see carrier thread exhaustion with enough concurrent tasks
       int availableProcessors = Runtime.getRuntime().availableProcessors();
       int taskCount = availableProcessors * 4; // More tasks than available processors
-      
+
       Future<?>[] futures = new Future<?>[taskCount];
       for (int i = 0; i < taskCount; i++) {
         futures[i] = executor.submit(task);
       }
-      
+
       // Wait for all tasks to complete
       try {
         for (Future<?> future : futures) {
@@ -168,14 +176,14 @@ public abstract class SecurityVirtualThreadTestSupport
    * @return a BenchmarkResult containing the performance metrics
    */
   protected <T> BenchmarkResult<T> benchmarkVirtualVsPlatformThreads(
-      final Supplier<T> task, final int iterations) {
-    
+          final Supplier<T> task, final int iterations) {
+
     BenchmarkResult<T> result = new BenchmarkResult<>();
-    
+
     // Benchmark platform threads
-    try (ExecutorService platformExecutor = 
-        createPlatformThreadExecutor("platform-benchmark-", DEFAULT_THREAD_COUNT)) {
-      
+    try (ExecutorService platformExecutor =
+                 createPlatformThreadExecutor("platform-benchmark-", DEFAULT_THREAD_COUNT)) {
+
       long platformStart = System.nanoTime();
       for (int i = 0; i < iterations; i++) {
         Future<T> future = platformExecutor.submit(task::get);
@@ -186,7 +194,7 @@ public abstract class SecurityVirtualThreadTestSupport
     catch (Exception e) {
       log.error("Error during platform thread benchmark", e);
     }
-    
+
     // Benchmark virtual threads
     try (ExecutorService virtualExecutor = createVirtualThreadExecutor("virtual-benchmark-")) {
       long virtualStart = System.nanoTime();
@@ -199,7 +207,7 @@ public abstract class SecurityVirtualThreadTestSupport
     catch (Exception e) {
       log.error("Error during virtual thread benchmark", e);
     }
-    
+
     return result;
   }
 
@@ -210,30 +218,31 @@ public abstract class SecurityVirtualThreadTestSupport
    * @param task the task to execute in a virtual thread
    * @throws ExecutionException if the task throws an exception
    * @throws InterruptedException if the current thread is interrupted
+   * @throws TimeoutException if the task times out
    */
-  protected void testSecurityContextPropagation(final Subject subject, final Runnable task) 
-      throws ExecutionException, InterruptedException {
-    
-    // Associate subject with the current thread
-    SecurityUtils.setSubject(subject);
-    
+  protected void testSecurityContextPropagation(final Subject subject, final Runnable task)
+          throws ExecutionException, InterruptedException, TimeoutException {
+
+    // Associate subject with the current thread using ThreadContext
+    ThreadContext.bind(subject);
+
     try (ExecutorService executor = createVirtualThreadExecutor("security-context-")) {
       Future<?> future = executor.submit(() -> {
         // Verify the subject is available in the virtual thread
         Subject currentSubject = SecurityUtils.getSubject();
         Assertions.assertNotNull(currentSubject, "Subject should be propagated to virtual thread");
-        Assertions.assertEquals(subject.getPrincipal(), currentSubject.getPrincipal(), 
-            "Subject principal should match in virtual thread");
-        
+        Assertions.assertEquals(subject.getPrincipal(), currentSubject.getPrincipal(),
+                "Subject principal should match in virtual thread");
+
         // Execute the task
         task.run();
       });
-      
+
       future.get(DEFAULT_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
     }
     finally {
       // Clean up
-      SecurityUtils.setSubject(null);
+      ThreadContext.unbindSubject();
     }
   }
 
@@ -248,7 +257,8 @@ public abstract class SecurityVirtualThreadTestSupport
     try {
       return runInVirtualThread(() -> {
         try {
-          getSecuritySystem().authenticate(new UsernamePasswordToken(username, password));
+          Subject subject = SecurityUtils.getSubject();
+          subject.login(new UsernamePasswordToken(username, password));
           return true;
         }
         catch (AuthenticationException e) {
@@ -273,12 +283,12 @@ public abstract class SecurityVirtualThreadTestSupport
   protected boolean testAuthorizationInVirtualThread(final Subject subject, final String permission) {
     try {
       return runInVirtualThread(() -> {
-        SecurityUtils.setSubject(subject);
+        ThreadContext.bind(subject);
         try {
-          return getSecuritySystem().hasPermission(subject.getPrincipal(), permission);
+          return subject.isPermitted(permission);
         }
         finally {
-          SecurityUtils.setSubject(null);
+          ThreadContext.unbindSubject();
         }
       });
     }
@@ -355,8 +365,8 @@ public abstract class SecurityVirtualThreadTestSupport
     @Override
     public String toString() {
       return String.format(
-          "BenchmarkResult{platformThreadTime=%s, virtualThreadTime=%s, speedupFactor=%.2f}",
-          platformThreadTime, virtualThreadTime, getSpeedupFactor());
+              "BenchmarkResult{platformThreadTime=%s, virtualThreadTime=%s, speedupFactor=%.2f}",
+              platformThreadTime, virtualThreadTime, getSpeedupFactor());
     }
   }
 }

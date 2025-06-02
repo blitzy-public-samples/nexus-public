@@ -16,6 +16,8 @@ import java.security.Provider;
 import java.security.Security;
 import java.util.Arrays;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.apache.shiro.crypto.hash.Hash;
@@ -38,6 +40,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class DefaultSecurityPasswordServiceTest
     extends TestSupport
 {
+
+  private static final Logger log = LoggerFactory.getLogger(DefaultSecurityPasswordServiceTest.class);
   private DefaultSecurityPasswordService underTest;
   private Provider bouncyCastleProvider;
   private boolean bcProviderAdded = false;
@@ -111,7 +115,7 @@ public class DefaultSecurityPasswordServiceTest
     String password = "admin123";
     String shiro1Hash = "$shiro1$SHA-512$1024$zjU1u+Zg9UNwuB+HEawvtA==$IzF/OWzjxrqvB5FCe/2+UcZhhZYM2pTu0TEz7Ybnk65AbbEdUk9ntdtBzkN8P3gZby2qz6MHKqAe8Cjai9c4Gg==";
 
-    assertThat(underTest.passwordsMatch(password, sha1Hash), is(false));
+    assertThat(underTest.passwordsMatch(password, shiro1Hash), is(false));
   }
 
   @Test

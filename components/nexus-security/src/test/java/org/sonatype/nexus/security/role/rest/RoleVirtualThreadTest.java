@@ -35,8 +35,10 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MediaType;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
@@ -78,6 +80,8 @@ import static org.mockito.Mockito.when;
 public class RoleVirtualThreadTest
     extends TestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(RoleVirtualThreadTest.class);
+
   private static final int SMALL_CONCURRENCY = 100;
   private static final int MEDIUM_CONCURRENCY = 1000;
   private static final int LARGE_CONCURRENCY = 5000;

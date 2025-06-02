@@ -16,9 +16,10 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
+import org.apache.shiro.authc.SimpleAuthenticationInfo;
 import org.sonatype.nexus.security.role.ExternalRoleMappedTest;
 import org.sonatype.nexus.security.role.RoleIdentifier;
 import org.sonatype.nexus.security.user.UserManager;

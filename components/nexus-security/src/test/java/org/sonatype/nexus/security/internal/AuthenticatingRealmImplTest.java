@@ -68,7 +68,7 @@ public class AuthenticatingRealmImplTest
   public void testLegacyPasswordIsReHashedOnOrient() {
     assertThat(testUser.getPassword(), is(LEGACY_PASSWORD_HASH));
     AuthenticatingRealmImpl underTestOrient = new AuthenticatingRealmImpl(configuration,
-        new DefaultSecurityPasswordService(new LegacyNexusPasswordService()), true);
+        new DefaultSecurityPasswordService(new LegacyNexusPasswordService()), true, null);
     underTestOrient.getAuthenticationInfo(new UsernamePasswordToken(TEST_USERNAME, TEST_PASSWORD));
     // Verify password is rehashed using SHA-512 with 1024 iterations (compatible with Java 21 and BouncyCastle 1.78.1)
     assertThat(testUser.getPassword(), startsWith("$shiro1$SHA-512$1024$"));
@@ -78,7 +78,7 @@ public class AuthenticatingRealmImplTest
   public void testLegacyPasswordIsReHashedOnNewDB() {
     assertThat(testUser.getPassword(), is(LEGACY_PASSWORD_HASH));
     AuthenticatingRealmImpl underTestOrient = new AuthenticatingRealmImpl(configuration,
-        new DefaultSecurityPasswordService(new LegacyNexusPasswordService()), false);
+        new DefaultSecurityPasswordService(new LegacyNexusPasswordService()), false, null);
     underTestOrient.getAuthenticationInfo(new UsernamePasswordToken(TEST_USERNAME, TEST_PASSWORD));
     // Verify password is rehashed using SHA-512 with 1024 iterations (compatible with Java 21 and BouncyCastle 1.78.1)
     assertThat(testUser.getPassword(), startsWith("$shiro1$SHA-512$1024$"));

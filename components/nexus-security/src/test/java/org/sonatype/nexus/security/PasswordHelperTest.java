@@ -323,17 +323,17 @@ public class PasswordHelperTest
           String[] parts = storedHash.split(":");
           int storedIterations = Integer.parseInt(parts[0]);
           byte[] salt = java.util.Base64.getDecoder().decode(parts[1]);
-          byte[] storedHash = java.util.Base64.getDecoder().decode(parts[2]);
+          byte[] storedHash1 = java.util.Base64.getDecoder().decode(parts[2]);
           
           // Hash the input password with the same parameters
           javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
-              password.toCharArray(), salt, storedIterations, storedHash.length * 8);
+              password.toCharArray(), salt, storedIterations, storedHash1.length * 8);
           javax.crypto.SecretKeyFactory factory = 
               javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
           byte[] hash = factory.generateSecret(spec).getEncoded();
           
           // Compare the generated hash with the stored hash
-          return java.util.Arrays.equals(hash, storedHash);
+          return java.util.Arrays.equals(hash, storedHash1);
         } catch (Exception e) {
           throw new RuntimeException("Error verifying password", e);
         }

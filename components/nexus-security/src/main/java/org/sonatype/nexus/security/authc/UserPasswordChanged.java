@@ -47,4 +47,12 @@ public record UserPasswordChanged(String userId, boolean clearCache) implements 
   public String toString() {
     return STR."UserPasswordChanged[userId=\{userId}, clearCache=\{clearCache}]";
   }
+
+  public boolean isClearCache() {
+    return clearCache;
+  }
+
+  public String getUserId() {
+    return userId;
+  }
 }

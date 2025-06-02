@@ -334,8 +334,9 @@ public class VirtualThreadAuthorizationTest
       ExecutorService executor = Executors.newFixedThreadPool(THREAD_COUNT);
       try {
         runConcurrentPermissionChecks(executor, securitySystem, principals, THREAD_COUNT * ITERATIONS);
-      } 
-      finally {
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      } finally {
         executor.shutdown();
       }
     });
@@ -345,7 +346,11 @@ public class VirtualThreadAuthorizationTest
       ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
       ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
       try {
-        runConcurrentPermissionChecks(executor, securitySystem, principals, THREAD_COUNT * ITERATIONS);
+          try {
+              runConcurrentPermissionChecks(executor, securitySystem, principals, THREAD_COUNT * ITERATIONS);
+          } catch (Exception e) {
+              throw new RuntimeException(e);
+          }
       } 
       finally {
         executor.shutdown();

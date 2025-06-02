@@ -74,7 +74,7 @@ public class WildcardPermission2
     subParts.forEach(subPart -> parts.add(toPart(subPart, caseSensitive)));
     // Add the actions as the last part
     parts.add(toPart(actions, caseSensitive));
-    setParts(parts);
+    setParts(parts.toString());
     // Cache the hashCode for improved performance
     this.cachedHash = super.hashCode();
   }

@@ -12,8 +12,8 @@
  */
 package org.apache.shiro.nexus;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.security.anonymous.AnonymousHelper;
 

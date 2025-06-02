@@ -12,8 +12,8 @@
  */
 package org.apache.shiro.nexus;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -126,7 +126,7 @@ public class NexusWebSessionManager
     
     // Set SameSite attribute to Lax for better CSRF protection with modern browsers
     if (cookie instanceof org.apache.shiro.web.servlet.SimpleCookie) {
-      ((org.apache.shiro.web.servlet.SimpleCookie) cookie).setSameSite("Lax");
+      ((org.apache.shiro.web.servlet.SimpleCookie) cookie).setSameSite(Cookie.SameSiteOptions.LAX);
     }
     
     log.info("Session-cookie prototype: name={}, secure={}, httpOnly={}", 

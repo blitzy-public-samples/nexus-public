@@ -15,8 +15,8 @@ package org.sonatype.nexus.security.internal;
 import static java.lang.StringTemplate.STR;
 import java.util.Map;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;

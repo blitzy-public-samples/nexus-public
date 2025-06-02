@@ -23,8 +23,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.commons.lang3.SerializationUtils;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.UsernamePasswordToken;
+import org.apache.shiro.authz.permission.WildcardPermission;
 import org.apache.shiro.mgt.DefaultSecurityManager;
 import org.apache.shiro.realm.SimpleAccountRealm;
 import org.apache.shiro.session.Session;
@@ -33,6 +35,8 @@ import org.apache.shiro.subject.support.SubjectThreadState;
 import org.apache.shiro.util.ThreadContext;
 import org.apache.shiro.util.ThreadState;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.After;
@@ -57,6 +61,8 @@ import static org.junit.Assert.assertTrue;
 public class ShiroVirtualThreadTest
     extends TestSupport
 {
+
+  private static final Logger log = LoggerFactory.getLogger(ShiroVirtualThreadTest.class);
   private static final String USERNAME = "testuser";
   private static final String PASSWORD = "password";
   private static final String ROLE = "testrole";
@@ -70,13 +76,13 @@ public class ShiroVirtualThreadTest
     // Set up a simple Shiro environment with a test user
     realm = new SimpleAccountRealm();
     realm.addAccount(USERNAME, PASSWORD, ROLE);
-    realm.setPermissionResolver((permissionString, account) -> {
-      if (PERMISSION.equals(permissionString)) {
-        return true;
-      }
-      return false;
-    });
-    
+  realm.setPermissionResolver(permissionString -> {
+    if (PERMISSION.equals(permissionString)) {
+      return new WildcardPermission(permissionString);
+    }
+    return null;
+  });
+
     securityManager = new DefaultSecurityManager(realm);
     SecurityUtils.setSecurityManager(securityManager);
   }
@@ -270,7 +276,7 @@ public class ShiroVirtualThreadTest
         
         // Serialize the session
         if (session instanceof Serializable) {
-          serializedSession.set(org.apache.shiro.util.SerializationUtils.serialize((Serializable) session));
+          serializedSession.set(SerializationUtils.serialize((Serializable) session));
         }
       }
       catch (Exception e) {
@@ -287,7 +293,7 @@ public class ShiroVirtualThreadTest
     Thread vtDeserialize = Thread.ofVirtual().name("deserialize-thread").start(() -> {
       try {
         // Deserialize the session
-        Session deserializedSession = org.apache.shiro.util.SerializationUtils.deserialize(serializedSession.get());
+        Session deserializedSession = SerializationUtils.deserialize(serializedSession.get());
         
         // Verify the session ID and stored object
         assertThat(deserializedSession.getId().toString(), is(equalTo(sessionId.get())));

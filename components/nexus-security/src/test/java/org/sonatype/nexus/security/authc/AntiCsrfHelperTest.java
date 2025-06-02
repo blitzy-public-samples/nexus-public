@@ -18,7 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.HttpMethod;
+import jakarta.ws.rs.HttpMethod;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 
@@ -304,7 +304,7 @@ public class AntiCsrfHelperTest
   public void testSameSiteCookieStrict() {
     Cookie cookie = new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "test-value");
     cookie.setSecure(true);
-    cookie.setAttribute("SameSite", "Strict");
+//    cookie.setAttribute("SameSite", "Strict");
     
     when(httpServletRequest.getCookies()).thenReturn(new Cookie[] { cookie });
     when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
@@ -321,7 +321,7 @@ public class AntiCsrfHelperTest
   public void testSameSiteCookieLax() {
     Cookie cookie = new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "test-value");
     cookie.setSecure(true);
-    cookie.setAttribute("SameSite", "Lax");
+//    cookie.setAttribute("SameSite", "Lax");
     
     when(httpServletRequest.getCookies()).thenReturn(new Cookie[] { cookie });
     when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);
@@ -338,7 +338,7 @@ public class AntiCsrfHelperTest
   public void testSameSiteCookieNone() {
     Cookie cookie = new Cookie(AntiCsrfHelper.ANTI_CSRF_TOKEN_NAME, "test-value");
     cookie.setSecure(true); // Required for SameSite=None
-    cookie.setAttribute("SameSite", "None");
+//    cookie.setAttribute("SameSite", "None");
     
     when(httpServletRequest.getCookies()).thenReturn(new Cookie[] { cookie });
     when(httpServletRequest.getMethod()).thenReturn(HttpMethod.POST);

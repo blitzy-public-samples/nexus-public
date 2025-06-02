@@ -70,7 +70,7 @@ public class VirtualThreadPinningMonitorTest
   }
 
   @Test
-  public void testRecordThreadPinning() {
+  public void testRecordThreadPinning() throws Exception {
     // Simulate a thread pinning event by directly calling the method that would be called by JFR event handler
     underTest.start();
     
@@ -95,7 +95,7 @@ public class VirtualThreadPinningMonitorTest
     catch (Exception e) {
       // If the method doesn't exist, that's okay - it means the implementation is different
       // and this test needs to be updated
-      log.info("Could not test recordThreadPinning method - implementation may have changed");
+      logger.info("Could not test recordThreadPinning method - implementation may have changed");
     }
     finally {
       underTest.stop();

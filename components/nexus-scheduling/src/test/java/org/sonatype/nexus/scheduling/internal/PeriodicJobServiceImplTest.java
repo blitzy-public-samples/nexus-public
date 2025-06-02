@@ -35,7 +35,9 @@ public class PeriodicJobServiceImplTest
 
   @Before
   public void setUp() {
-    service = new PeriodicJobServiceImpl();
+	// TODOs: FIXME: Added argument for compilation fixes.
+	// What is right value for pool size ?
+    service = new PeriodicJobServiceImpl(false, 1);
   }
 
   private boolean isRunning() {

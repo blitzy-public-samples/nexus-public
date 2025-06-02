@@ -183,12 +183,12 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Benchmark concurrent blob creation with platform threads")
   void testConcurrentBlobCreationWithPlatformThreads() throws Exception {
     int concurrency = MEDIUM_CONCURRENCY;
-    log.info(STR"Testing concurrent blob creation with \{concurrency} platform threads");
+    log.info(STR."Testing concurrent blob creation with \{concurrency} platform threads");
     
     // Create a fixed thread pool with the specified concurrency
     // Use a reasonable number of threads based on available processors
     int threadPoolSize = Math.min(concurrency, Runtime.getRuntime().availableProcessors() * 2);
-    log.info(STR"Creating platform thread pool with \{threadPoolSize} threads");
+    log.info(STR."Creating platform thread pool with \{threadPoolSize} threads");
     
     ExecutorService executor = Executors.newFixedThreadPool(threadPoolSize, new ThreadFactory() {
       private final AtomicInteger counter = new AtomicInteger();
@@ -233,7 +233,7 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Benchmark concurrent blob creation with virtual threads")
   void testConcurrentBlobCreationWithVirtualThreads() throws Exception {
     int concurrency = MEDIUM_CONCURRENCY;
-    log.info(STR"Testing concurrent blob creation with \{concurrency} virtual threads");
+    log.info(STR."Testing concurrent blob creation with \{concurrency} virtual threads");
     
     // Create a virtual thread per task executor
     // This is one of the key Java 21 features - creating a virtual thread for each task
@@ -278,7 +278,7 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Test scalability with large number of virtual threads")
   void testScalabilityWithLargeNumberOfVirtualThreads() throws Exception {
     int concurrency = LARGE_CONCURRENCY;
-    log.info(STR"Testing scalability with \{concurrency} virtual threads");
+    log.info(STR."Testing scalability with \{concurrency} virtual threads");
     
     // Create a virtual thread per task executor
     // With platform threads, this many concurrent threads would be impossible
@@ -288,7 +288,7 @@ public class ConcurrentBlobOperationsTest
     try {
       // Measure memory before test
       long memoryBefore = getUsedMemory();
-      log.info(STR"Memory before large scale test: \{memoryBefore} MB");
+      log.info(STR."Memory before large scale test: \{memoryBefore} MB");
       
       // Run the benchmark
       BenchmarkResult result = benchmarkBlobOperations(executor, concurrency, this::createBlobOperation);
@@ -296,7 +296,7 @@ public class ConcurrentBlobOperationsTest
       // Measure memory after test
       long memoryAfter = getUsedMemory();
       long memoryUsage = memoryAfter - memoryBefore;
-      log.info(STR"Memory after large scale test: \{memoryAfter} MB (\{memoryUsage} MB increase)");
+      log.info(STR."Memory after large scale test: \{memoryAfter} MB (\{memoryUsage} MB increase)");
       
       // Log results
       logBenchmarkResults("Virtual Threads (Large Scale)", concurrency, result, memoryUsage);
@@ -322,7 +322,7 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Benchmark mixed blob operations with virtual threads")
   void testMixedBlobOperationsWithVirtualThreads() throws Exception {
     int concurrency = MEDIUM_CONCURRENCY;
-    log.info(STR"Testing mixed blob operations with \{concurrency} virtual threads");
+    log.info(STR."Testing mixed blob operations with \{concurrency} virtual threads");
     
     // Create a virtual thread per task executor
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -350,7 +350,7 @@ public class ConcurrentBlobOperationsTest
       }
       
       createLatch.await();
-      log.info(STR"Created \{blobIds.size()} blobs for mixed operations test");
+      log.info(STR."Created \{blobIds.size()} blobs for mixed operations test");
       
       // Measure memory before test
       long memoryBefore = getUsedMemory();
@@ -410,7 +410,7 @@ public class ConcurrentBlobOperationsTest
         platformThreadMemoryUsage, virtualThreadMemoryUsage, true);
     
     // Log comparison results
-    log.info(STR"""
+    log.info(STR."""
         Performance Comparison (Platform vs Virtual Threads):
         - Throughput: \{throughputImprovement}% improvement with Virtual Threads
         - P95 Response Time: \{p95ResponseTimeImprovement}% improvement with Virtual Threads
@@ -721,7 +721,7 @@ public class ConcurrentBlobOperationsTest
    * @param memoryUsageMB The memory usage in MB
    */
   private void logBenchmarkResults(String testName, int concurrency, BenchmarkResult result, long memoryUsageMB) {
-    log.info(STR"""
+    log.info(STR."""
         Benchmark Results (\{testName} with \{concurrency} concurrent operations):
         - Operations/sec: \{result.operationsPerSecond}
         - Avg Response Time: \{result.avgResponseTimeMs} ms
@@ -788,7 +788,7 @@ public class ConcurrentBlobOperationsTest
         successRate, greaterThanOrEqualTo(90.0));
     
     // Log the scalability metrics
-    log.info(STR"""
+    log.info(STR."""
         Scalability Metrics:
         - Concurrent Connections: \{concurrency}
         - Thread Scaling Efficiency: \{successRate}%

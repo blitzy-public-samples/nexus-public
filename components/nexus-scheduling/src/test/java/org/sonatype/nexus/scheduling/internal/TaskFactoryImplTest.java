@@ -65,7 +65,8 @@ public class TaskFactoryImplTest
   public void setUp() {
     BeanEntry<Annotation, SimpleTask> simpleTaskBeanEntry = mock(BeanEntry.class);
     when(simpleTaskBeanEntry.getImplementationClass()).thenReturn(SimpleTask.class);
-    when(simpleTaskBeanEntry.getProvider()).thenReturn(Providers.of(new SimpleTask()));
+    // TODOs: FIXME: This sisu version usage javax internally. 
+    ///when(simpleTaskBeanEntry.getProvider()).thenReturn(Providers.of(new SimpleTask()));
     when(beanLocator.locate(any(Key.class))).thenReturn(Collections.singletonList(simpleTaskBeanEntry));
     when(databaseCheck.isAllowedByVersion(any())).thenReturn(true);
     underTest = new TaskFactoryImpl(beanLocator, databaseCheck);

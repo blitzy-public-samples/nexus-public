@@ -49,228 +49,215 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 @org.junit.experimental.categories.Category(Java21TestGroup.class)
-public class BlobStoreGroupDescriptorTest
-    extends TestSupport
-{
-  private static final String FILE = "File";
+public class BlobStoreGroupDescriptorTest extends TestSupport {
+	private static final String FILE = "File";
 
-  @Mock
-  private BlobStoreManager blobStoreManager;
+	@Mock
+	private BlobStoreManager blobStoreManager;
 
-  @Mock
-  private BlobStoreUtil blobStoreUtil;
+	@Mock
+	private BlobStoreUtil blobStoreUtil;
 
-  @Mock
-  private BlobStoreGroupService blobStoreGroupService;
+	@Mock
+	private BlobStoreGroupService blobStoreGroupService;
 
-  @Mock
-  private BlobStoreQuotaService quotaService;
+	@Mock
+	private BlobStoreQuotaService quotaService;
 
-  private BlobStoreGroupDescriptor blobStoreGroupDescriptor;
+	private BlobStoreGroupDescriptor blobStoreGroupDescriptor;
 
-  private Map<String, BlobStore> blobStores;
+	private Map<String, BlobStore> blobStores;
 
-  @Test
-  void validateWithValidMembers() {
-    BlobStoreConfiguration blobConfig =
-        buildBlobStoreConfiguration("group", Arrays.asList("store1", "store2"), WriteToFirstMemberFillPolicy.TYPE);
-    blobStoreGroupDescriptor.validateConfig(blobConfig);
-    verify(blobStoreManager, times(2)).hasConflictingTasks(any());
-  }
+	@Test
+	void validateWithValidMembers() {
+		BlobStoreConfiguration blobConfig = buildBlobStoreConfiguration("group", Arrays.asList("store1", "store2"),
+				WriteToFirstMemberFillPolicy.TYPE);
+		blobStoreGroupDescriptor.validateConfig(blobConfig);
+		verify(blobStoreManager, times(2)).hasConflictingTasks(any());
+	}
 
-  @Test
-  void validateInvalidMembers() {
-    // members cannot be empty
-    BlobStoreConfiguration config = buildBlobStoreConfiguration("self", emptyList(), WriteToFirstMemberFillPolicy.TYPE);
+	@Test
+	void validateInvalidMembers() {
+		// members cannot be empty
+		BlobStoreConfiguration config = buildBlobStoreConfiguration("self", emptyList(),
+				WriteToFirstMemberFillPolicy.TYPE);
 
-    blobStores.put("nested", mockBlobStore("nested", BlobStoreGroup.TYPE, config.getAttributes(), false));
+		blobStores.put("nested", mockBlobStore("nested", BlobStoreGroup.TYPE, config.getAttributes(), false));
 
-    ValidationErrorsException exception =
-        assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config));
-    assertThat(exception.getMessage(), is("Blob Store 'self' cannot be empty"));
+		ValidationErrorsException exception = assertThrows(ValidationErrorsException.class,
+				() -> blobStoreGroupDescriptor.validateConfig(config));
+		assertThat(exception.getMessage(), is("Blob Store 'self' cannot be empty"));
 
-    // members cannot contain itself
-    BlobStoreConfiguration config2 =
-        buildBlobStoreConfiguration("self", singletonList("self"), WriteToFirstMemberFillPolicy.TYPE);
+		// members cannot contain itself
+		BlobStoreConfiguration config2 = buildBlobStoreConfiguration("self", singletonList("self"),
+				WriteToFirstMemberFillPolicy.TYPE);
 
-    blobStores.put("nested", mockBlobStore("nested", BlobStoreGroup.TYPE, config2.getAttributes(), false));
+		blobStores.put("nested", mockBlobStore("nested", BlobStoreGroup.TYPE, config2.getAttributes(), false));
 
-    ValidationErrorsException exception2 =
-        assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config2));
-    assertThat(exception2.getMessage(), is("Blob Store 'self' cannot contain itself"));
+		ValidationErrorsException exception2 = assertThrows(ValidationErrorsException.class,
+				() -> blobStoreGroupDescriptor.validateConfig(config2));
+		assertThat(exception2.getMessage(), is("Blob Store 'self' cannot contain itself"));
 
-    // members cannot be of type nested - using pattern matching for instanceof
-    BlobStoreConfiguration config3 =
-        buildBlobStoreConfiguration("self", singletonList("nested"), WriteToFirstMemberFillPolicy.TYPE);
-    BlobStore nestedBlobStore = mockBlobStore("nested", BlobStoreGroup.TYPE, config3.getAttributes(), false);
-    blobStores.put("nested", nestedBlobStore);
+		// members cannot be of type nested - using pattern matching for instanceof
+		BlobStoreConfiguration config3 = buildBlobStoreConfiguration("self", singletonList("nested"),
+				WriteToFirstMemberFillPolicy.TYPE);
+		BlobStore nestedBlobStore = mockBlobStore("nested", BlobStoreGroup.TYPE, config3.getAttributes(), false);
+		blobStores.put("nested", nestedBlobStore);
 
-    // Verify that the validation logic uses pattern matching for instanceof
-    ValidationErrorsException exception3 =
-        assertThrows(ValidationErrorsException.class, () -> {
-          // This would be implemented in the BlobStoreGroupDescriptor class using pattern matching:
-          // if (blobStore instanceof BlobStoreGroup group) { ... }
-          blobStoreGroupDescriptor.validateConfig(config3);
-        });
-    assertThat(exception3.getMessage(),
-        is("Blob Store 'nested' is of type 'Group' and is not eligible to be a group member"));
-  }
+		// Verify that the validation logic uses pattern matching for instanceof
+		ValidationErrorsException exception3 = assertThrows(ValidationErrorsException.class, () -> {
+			// This would be implemented in the BlobStoreGroupDescriptor class using pattern
+			// matching:
+			// if (blobStore instanceof BlobStoreGroup group) { ... }
+			blobStoreGroupDescriptor.validateConfig(config3);
+		});
+		assertThat(exception3.getMessage(),
+				is("Blob Store 'nested' is of type 'Group' and is not eligible to be a group member"));
+	}
 
-  @Test
-  void validateBlobStoreWithConflictingTasksRunning() {
-    BlobStore hosted0 = mockBlobStore("hosted-0", FILE);
-    BlobStore hosted1 = mockBlobStore("hosted-1", FILE);
-    blobStores.put("hosted-0", hosted0);
-    blobStores.put("hosted-1", hosted1);
+	@Test
+	void validateBlobStoreWithConflictingTasksRunning() {
+		BlobStore hosted0 = mockBlobStore("hosted-0", FILE);
+		BlobStore hosted1 = mockBlobStore("hosted-1", FILE);
+		blobStores.put("hosted-0", hosted0);
+		blobStores.put("hosted-1", hosted1);
 
-    BlobStoreConfiguration config =
-        buildBlobStoreConfiguration("self", Arrays.asList("hosted-0", "hosted-1"), RoundRobinFillPolicy.TYPE);
+		BlobStoreConfiguration config = buildBlobStoreConfiguration("self", Arrays.asList("hosted-0", "hosted-1"),
+				RoundRobinFillPolicy.TYPE);
 
-    when(blobStoreManager.hasConflictingTasks("hosted-1")).thenReturn(true);
-    ValidationErrorsException exception =
-        assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config));
-    assertThat(exception.getMessage(),
-        is("Blob Store 'hosted-1' has conflicting tasks running and is not eligible to be a group member"));
-  }
+		when(blobStoreManager.hasConflictingTasks("hosted-1")).thenReturn(true);
+		ValidationErrorsException exception = assertThrows(ValidationErrorsException.class,
+				() -> blobStoreGroupDescriptor.validateConfig(config));
+		assertThat(exception.getMessage(),
+				is("Blob Store 'hosted-1' has conflicting tasks running and is not eligible to be a group member"));
+	}
 
-  @Test
-  void blobStoresCanOnlyBeMembersOfOneGroup() {
-    BlobStore store1 = mockBlobStore("store1", FILE);
-    BlobStore group1 = mockBlobStoreGroup(singletonList(store1));
-    blobStores.put("store1", store1);
-    blobStores.put("group1", group1);
+	@Test
+	void blobStoresCanOnlyBeMembersOfOneGroup() {
+		BlobStore store1 = mockBlobStore("store1", FILE);
+		BlobStore group1 = mockBlobStoreGroup(singletonList(store1));
+		blobStores.put("store1", store1);
+		blobStores.put("group1", group1);
 
-    BlobStoreConfiguration config =
-        buildBlobStoreConfiguration("invalidGroup", singletonList("store1"), WriteToFirstMemberFillPolicy.TYPE);
+		BlobStoreConfiguration config = buildBlobStoreConfiguration("invalidGroup", singletonList("store1"),
+				WriteToFirstMemberFillPolicy.TYPE);
 
-    when(blobStoreManager.getParent("store1")).thenReturn(Optional.of("group1"));
-    ValidationErrorsException exception =
-        assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config));
-    assertThat(exception.getMessage(), is("Blob Store 'store1' is already a member of Blob Store Group 'group1'"));
-  }
+		when(blobStoreManager.getParent("store1")).thenReturn(Optional.of("group1"));
+		ValidationErrorsException exception = assertThrows(ValidationErrorsException.class,
+				() -> blobStoreGroupDescriptor.validateConfig(config));
+		assertThat(exception.getMessage(), is("Blob Store 'store1' is already a member of Blob Store Group 'group1'"));
+	}
 
-  @Test
-  void blobStoresCantBeGroupMembersIfSetAsRepoStorage() {
-    BlobStoreConfiguration config =
-        buildBlobStoreConfiguration("invalidGroup", singletonList("store1"), WriteToFirstMemberFillPolicy.TYPE);
+	@Test
+	void blobStoresCantBeGroupMembersIfSetAsRepoStorage() {
+		BlobStoreConfiguration config = buildBlobStoreConfiguration("invalidGroup", singletonList("store1"),
+				WriteToFirstMemberFillPolicy.TYPE);
 
-    when(blobStoreUtil.usageCount("store1")).thenReturn(1);
-    ValidationErrorsException exception =
-        assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config));
-    assertThat(exception.getMessage(),
-        is("Blob Store 'store1' is set as storage for 1 repositories and is not eligible to be a group member"));
-  }
+		when(blobStoreUtil.usageCount("store1")).thenReturn(1);
+		ValidationErrorsException exception = assertThrows(ValidationErrorsException.class,
+				() -> blobStoreGroupDescriptor.validateConfig(config));
+		assertThat(exception.getMessage(), is(
+				"Blob Store 'store1' is set as storage for 1 repositories and is not eligible to be a group member"));
+	}
 
-  @Test
-  void membersCantBeRemovedDirectlyUnlessReadOnlyAndEmpty() {
-    BlobStore store1 = mockBlobStore("store1", FILE);
-    BlobStore nonEmptyStore = mockBlobStore("nonEmptyStore", FILE, new HashMap<>(), true);
-    when(nonEmptyStore.getBlobIdStream()).thenReturn(Stream.of(mock(BlobId.class)));
-    BlobStoreGroup group1 = mockBlobStoreGroup(Arrays.asList(store1, nonEmptyStore));
-    blobStores.put("store1", store1);
-    blobStores.put("nonEmptyStore", nonEmptyStore);
-    blobStores.put("group1", group1);
+	@Test
+	void membersCantBeRemovedDirectlyUnlessReadOnlyAndEmpty() {
+		BlobStore store1 = mockBlobStore("store1", FILE);
+		BlobStore nonEmptyStore = mockBlobStore("nonEmptyStore", FILE, new HashMap<>(), true);
+		when(nonEmptyStore.getBlobIdStream()).thenReturn(Stream.of(mock(BlobId.class)));
+		BlobStoreGroup group1 = mockBlobStoreGroup(Arrays.asList(store1, nonEmptyStore));
+		blobStores.put("store1", store1);
+		blobStores.put("nonEmptyStore", nonEmptyStore);
+		blobStores.put("group1", group1);
 
-    BlobStoreConfiguration config =
-        buildBlobStoreConfiguration("group1", singletonList("store1"), WriteToFirstMemberFillPolicy.TYPE);
+		BlobStoreConfiguration config = buildBlobStoreConfiguration("group1", singletonList("store1"),
+				WriteToFirstMemberFillPolicy.TYPE);
 
-    ValidationErrorsException exception =
-        assertThrows(ValidationErrorsException.class, () -> blobStoreGroupDescriptor.validateConfig(config));
-    assertThat(exception.getMessage(), is(
-        "Blob Store 'nonEmptyStore' cannot be removed from Blob Store Group 'group1', " +
-            "use 'Admin - Remove a member from a blob store group' task instead"));
-  }
+		ValidationErrorsException exception = assertThrows(ValidationErrorsException.class,
+				() -> blobStoreGroupDescriptor.validateConfig(config));
+		assertThat(exception.getMessage(),
+				is("Blob Store 'nonEmptyStore' cannot be removed from Blob Store Group 'group1', "
+						+ "use 'Admin - Remove a member from a blob store group' task instead"));
+	}
 
-  @Test
-  void aGroupBlobStoreValidatesItsQuota() {
-    BlobStoreConfiguration config =
-        buildBlobStoreConfiguration("group", singletonList("single"), WriteToFirstMemberFillPolicy.TYPE);
-    blobStoreGroupDescriptor.validateConfig(config);
+	@Test
+	void aGroupBlobStoreValidatesItsQuota() {
+		BlobStoreConfiguration config = buildBlobStoreConfiguration("group", singletonList("single"),
+				WriteToFirstMemberFillPolicy.TYPE);
+		blobStoreGroupDescriptor.validateConfig(config);
 
-    verify(quotaService).validateSoftQuotaConfig(any());
-  }
+		verify(quotaService).validateSoftQuotaConfig(any());
+	}
 
-  private BlobStoreConfiguration buildBlobStoreConfiguration(
-      String name,
-      List<String> memberNames,
-      String fillPolicyName)
-  {
-    MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
-    Map<String, Map<String, Object>> attributes = new HashMap<>();
-    Map<String, Object> group = new HashMap<>();
-    group.put("members", memberNames);
-    group.put("fillPolicy", fillPolicyName);
-    attributes.put("group", group);
-    config.setAttributes(attributes);
-    config.setName(name);
-    return config;
-  }
+	private BlobStoreConfiguration buildBlobStoreConfiguration(String name, List<String> memberNames,
+			String fillPolicyName) {
+		MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
+		Map<String, Map<String, Object>> attributes = new HashMap<>();
+		Map<String, Object> group = new HashMap<>();
+		group.put("members", memberNames);
+		group.put("fillPolicy", fillPolicyName);
+		attributes.put("group", group);
+		config.setAttributes(attributes);
+		config.setName(name);
+		return config;
+	}
 
-  private BlobStoreGroup mockBlobStoreGroup(final List<BlobStore> members) {
-    MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
-    config.setName("group1");
-    config.setType(BlobStoreGroup.TYPE);
+	private BlobStoreGroup mockBlobStoreGroup(final List<BlobStore> members) {
+		MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
+		config.setName("group1");
+		config.setType(BlobStoreGroup.TYPE);
 
-    Map<String, Object> groupAttributes = new HashMap<>();
-    groupAttributes.put("members", members.stream()
-        .map(m -> m.getBlobStoreConfiguration().getName())
-        .collect(
-            Collectors.toList()));
-    groupAttributes.put("fillPolicy", WriteToFirstMemberFillPolicy.TYPE);
-    Map<String, Map<String, Object>> attributes = new HashMap<>();
-    attributes.put("group", groupAttributes);
-    config.setAttributes(attributes);
+		Map<String, Object> groupAttributes = new HashMap<>();
+		groupAttributes.put("members",
+				members.stream().map(m -> m.getBlobStoreConfiguration().getName()).collect(Collectors.toList()));
+		groupAttributes.put("fillPolicy", WriteToFirstMemberFillPolicy.TYPE);
+		Map<String, Map<String, Object>> attributes = new HashMap<>();
+		attributes.put("group", groupAttributes);
+		config.setAttributes(attributes);
 
-    BlobStoreGroup group = mock(BlobStoreGroup.class);
-    when(group.isGroupable()).thenReturn(false);
-    when(group.getBlobStoreConfiguration()).thenReturn(config);
-    when(group.getMembers()).thenReturn(members);
+		BlobStoreGroup group = mock(BlobStoreGroup.class);
+		when(group.isGroupable()).thenReturn(false);
+		when(group.getBlobStoreConfiguration()).thenReturn(config);
+		when(group.getMembers()).thenReturn(members);
 
-    return group;
-  }
+		return group;
+	}
 
-  private BlobStore mockBlobStore(final String name, final String type) {
-    return mockBlobStore(name, type, new HashMap<>(), true);
-  }
+	private BlobStore mockBlobStore(final String name, final String type) {
+		return mockBlobStore(name, type, new HashMap<>(), true);
+	}
 
-  private BlobStore mockBlobStore(
-      final String name,
-      final String type,
-      Map<String, Map<String, Object>> attributes,
-      Boolean groupable)
-  {
-    BlobStore blobStore = mock(BlobStore.class);
-    MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
-    config.setName(name);
-    config.setType(type);
-    config.setAttributes(attributes);
-    when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
-    when(blobStore.isGroupable()).thenReturn(groupable);
-    return blobStore;
-  }
+	private BlobStore mockBlobStore(final String name, final String type, Map<String, Map<String, Object>> attributes,
+			Boolean groupable) {
+		BlobStore blobStore = mock(BlobStore.class);
+		MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
+		config.setName(name);
+		config.setType(type);
+		config.setAttributes(attributes);
+		when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
+		when(blobStore.isGroupable()).thenReturn(groupable);
+		return blobStore;
+	}
 
-  @BeforeEach
-  void setup() {
-    Map<String, FillPolicy> fillPolicies = new HashMap<>();
-    fillPolicies.put(RoundRobinFillPolicy.TYPE, new RoundRobinFillPolicy());
-    fillPolicies.put(WriteToFirstMemberFillPolicy.TYPE, new WriteToFirstMemberFillPolicy());
+	@BeforeEach
+	void setup() {
+		Map<String, FillPolicy> fillPolicies = new HashMap<>();
+		fillPolicies.put(RoundRobinFillPolicy.TYPE, new RoundRobinFillPolicy());
+		fillPolicies.put(WriteToFirstMemberFillPolicy.TYPE, new WriteToFirstMemberFillPolicy());
 
-    blobStoreGroupDescriptor = new BlobStoreGroupDescriptor(
-        blobStoreManager,
-        blobStoreUtil,
-        () -> blobStoreGroupService,
-        quotaService,
-        fillPolicies);
+		blobStoreGroupDescriptor = new BlobStoreGroupDescriptor(blobStoreManager, blobStoreUtil,
+				() -> blobStoreGroupService, quotaService, fillPolicies);
 
-    blobStores = new HashMap<>();
+		blobStores = new HashMap<>();
 
-    when(blobStoreManager.get(anyString())).thenAnswer(invocation -> {
-      String name = invocation.getArgument(0, String.class);
-      return blobStores.computeIfAbsent(name, k -> mockBlobStore(k, "mock"));
-    });
-    when(blobStoreManager.hasConflictingTasks(anyString())).thenReturn(false);
-    when(blobStoreManager.browse()).thenReturn(blobStores.values());
-    when(blobStoreManager.getParent(anyString())).thenReturn(Optional.empty());
-    when(blobStoreUtil.usageCount(anyString())).thenReturn(0);
-    when(blobStoreGroupService.isEnabled()).thenReturn(true);
-  }
+		when(blobStoreManager.get(anyString())).thenAnswer(invocation -> {
+			String name = invocation.getArgument(0, String.class);
+			return blobStores.computeIfAbsent(name, k -> mockBlobStore(k, "mock"));
+		});
+		when(blobStoreManager.hasConflictingTasks(anyString())).thenReturn(false);
+		when(blobStoreManager.browse()).thenReturn(blobStores.values());
+		when(blobStoreManager.getParent(anyString())).thenReturn(Optional.empty());
+		when(blobStoreUtil.usageCount(anyString())).thenReturn(0);
+		when(blobStoreGroupService.isEnabled()).thenReturn(true);
+	}
+}

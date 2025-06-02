@@ -21,8 +21,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.function.Function;
 
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.rest.Page;
@@ -40,9 +40,9 @@ import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.invocation.InvocationOnMock;
 
-import static javax.ws.rs.core.Response.Status.CONFLICT;
-import static javax.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.Response.Status.CONFLICT;
+import static jakarta.ws.rs.core.Response.Status.INTERNAL_SERVER_ERROR;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasSize;
@@ -97,11 +97,11 @@ public class TasksApiResourceTest
 
     Page<TaskXO> page = tasksResource.getTasks(null);
 
-    assertThat(page.getItems(), hasSize(3));
-    assertThat(extract(page.getItems(), TaskXO::getId), contains("task1", "task2", "task3"));
-    assertThat(extract(page.getItems(), TaskXO::getName), contains("Task 1", "Task 2", "Task 3"));
-    assertThat(extract(page.getItems(), TaskXO::getType), contains("anotherType", "aType", "anotherType"));
-    assertThat(extract(page.getItems(), TaskXO::getCurrentState), contains(WAITING.toString(), RUNNING.toString(), OK.toString()));
+    assertThat(page.items(), hasSize(3));
+    assertThat(extract(page.items(), TaskXO::getId), contains("task1", "task2", "task3"));
+    assertThat(extract(page.items(), TaskXO::getName), contains("Task 1", "Task 2", "Task 3"));
+    assertThat(extract(page.items(), TaskXO::getType), contains("anotherType", "aType", "anotherType"));
+    assertThat(extract(page.items(), TaskXO::getCurrentState), contains(WAITING.toString(), RUNNING.toString(), OK.toString()));
   }
 
   /*
@@ -114,8 +114,8 @@ public class TasksApiResourceTest
         new ExternalTaskState(testTasks[3]));
     Page<TaskXO> page = tasksResource.getTasks("anotherType");
 
-    assertThat(page.getItems(), hasSize(2));
-    assertThat(extract(page.getItems(), TaskXO::getId), contains("task1", "task3"));
+    assertThat(page.items(), hasSize(2));
+    assertThat(extract(page.items(), TaskXO::getId), contains("task1", "task3"));
   }
 
   /*

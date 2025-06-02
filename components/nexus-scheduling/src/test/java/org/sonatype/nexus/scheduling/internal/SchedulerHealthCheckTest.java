@@ -46,7 +46,7 @@ public class SchedulerHealthCheckTest
 
   @Before
   public void setup() {
-    underTest = new SchedulerHealthCheck(() -> scheduler, virtualThreadStats);
+    underTest = new SchedulerHealthCheck(() -> scheduler);
   }
 
   @Test

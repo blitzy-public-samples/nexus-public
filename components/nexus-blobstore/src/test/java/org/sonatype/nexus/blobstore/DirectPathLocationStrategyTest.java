@@ -39,7 +39,7 @@ public class DirectPathLocationStrategyTest
   private static final String PATH_WITH_PREFIX_INSIDE_TRAVERSAL =
       "/healthCheckSummary/maven-central/1/.path$./details/details.html";
 
-  private static final String EXPECTED_PATH = STR"#{DIRECT_PATH_ROOT}/#{CORRECT_PATH}";
+  private static final String EXPECTED_PATH = STR."#{DIRECT_PATH_ROOT}/#{CORRECT_PATH}";
 
   private LocationStrategy underTest;
 
@@ -50,21 +50,21 @@ public class DirectPathLocationStrategyTest
 
   @Test
   public void testLocation() {
-    String location = underTest.location(new BlobId(STR"#{DIRECT_PATH_PREFIX}#{CORRECT_PATH}"));
+    String location = underTest.location(new BlobId(STR."#{DIRECT_PATH_PREFIX}#{CORRECT_PATH}"));
     assertEquals(EXPECTED_PATH, location);
   }
 
   @Test
   public void testLocationWithTraversal() {
     assertThrows(IllegalArgumentException.class, () -> {
-      underTest.location(new BlobId(STR"#{DIRECT_PATH_PREFIX}#{PATH_WITH_TRAVERSAL}"));
+      underTest.location(new BlobId(STR."#{DIRECT_PATH_PREFIX}#{PATH_WITH_TRAVERSAL}"));
     });
   }
 
   @Test
   public void testLocationWithPrefixInsideTraversal() {
     assertThrows(IllegalArgumentException.class, () -> {
-      underTest.location(new BlobId(STR"#{DIRECT_PATH_PREFIX}#{PATH_WITH_PREFIX_INSIDE_TRAVERSAL}"));
+      underTest.location(new BlobId(STR."#{DIRECT_PATH_PREFIX}#{PATH_WITH_PREFIX_INSIDE_TRAVERSAL}"));
     });
   }
 

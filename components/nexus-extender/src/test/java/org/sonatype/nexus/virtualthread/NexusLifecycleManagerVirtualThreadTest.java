@@ -23,7 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.goodies.testsupport.TestSupport;

@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.extender.modules;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.servlet.DynamicGuiceFilter;

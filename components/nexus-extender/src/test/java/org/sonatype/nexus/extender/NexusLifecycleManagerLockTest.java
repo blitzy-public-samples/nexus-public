@@ -15,9 +15,9 @@ package org.sonatype.nexus.extender;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.goodies.lifecycle.LifecycleSupport;

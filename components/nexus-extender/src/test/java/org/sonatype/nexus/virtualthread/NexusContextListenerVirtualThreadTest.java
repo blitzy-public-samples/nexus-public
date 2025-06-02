@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.common.app.ManagedLifecycleManager;
@@ -174,7 +174,7 @@ public class NexusContextListenerVirtualThreadTest
       executor.submit(() -> {
         try {
           // Simulate context initialization from a virtual thread
-          javax.servlet.ServletContextEvent event = mock(javax.servlet.ServletContextEvent.class);
+          jakarta.servlet.ServletContextEvent event = mock(jakarta.servlet.ServletContextEvent.class);
           when(event.getServletContext()).thenReturn(servletContext);
           underTest.contextInitialized(event);
 

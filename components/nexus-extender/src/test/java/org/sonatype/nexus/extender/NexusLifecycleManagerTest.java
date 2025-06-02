@@ -17,7 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.goodies.lifecycle.Lifecycle;
 import org.sonatype.goodies.testsupport.TestSupport;

@@ -23,7 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 
@@ -63,7 +63,7 @@ public class FeatureFlaggedIndex
 
   private static final String PACKAGE_INFO = "package-info";
 
-  private static final String NAMED_INDEX = "META-INF/sisu/javax.inject.Named";
+  private static final String NAMED_INDEX = "META-INF/sisu/jakarta.inject.Named";
 
   private static final IndexedClassFinder GLOBAL_INDEX = new IndexedClassFinder(NAMED_INDEX, true);
 

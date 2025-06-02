@@ -18,10 +18,10 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Random;
 
-import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
+import jakarta.crypto.Cipher;
+import jakarta.crypto.SecretKey;
+import jakarta.crypto.spec.GCMParameterSpec;
+import jakarta.crypto.spec.SecretKeySpec;
 
 import org.apache.shiro.authc.credential.DefaultPasswordService;
 import org.apache.shiro.authc.credential.PasswordService;

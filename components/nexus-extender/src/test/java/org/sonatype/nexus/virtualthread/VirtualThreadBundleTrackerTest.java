@@ -63,7 +63,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 public class VirtualThreadBundleTrackerTest
 {
-  private static final String NAMED_RESOURCE = "META-INF/sisu/javax.inject.Named";
+  private static final String NAMED_RESOURCE = "META-INF/sisu/jakarta.inject.Named";
 
   @Mock
   private BundleContext bundleContext;

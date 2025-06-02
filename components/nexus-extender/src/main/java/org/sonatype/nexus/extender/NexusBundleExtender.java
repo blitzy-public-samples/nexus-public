@@ -15,7 +15,7 @@ package org.sonatype.nexus.extender;
 import java.util.Dictionary;
 import java.util.Hashtable;
 
-import javax.servlet.ServletContextListener;
+import jakarta.servlet.ServletContextListener;
 
 import org.eclipse.sisu.inject.MutableBeanLocator;
 import org.eclipse.sisu.launch.SisuExtender;

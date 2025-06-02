@@ -13,7 +13,7 @@
 package org.sonatype.nexus.extender;
 
 import java.util.Map;
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 import org.sonatype.nexus.blobstore.metrics.BlobStoreModule;
 import org.sonatype.nexus.common.app.ApplicationVersion;

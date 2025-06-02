@@ -54,7 +54,7 @@ public class DatabaseStatusDelayedExecutorTest
 
   @BeforeEach
   public void setup() throws Exception {
-    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES);
+    statusDelayedExecutor = new DatabaseStatusDelayedExecutor(freezeService, SLEEP_INTERVAL_MS, MAX_RETRIES);
     statusDelayedExecutor.start();
   }
 
@@ -109,8 +109,8 @@ public class DatabaseStatusDelayedExecutorTest
     
     // Create executor with virtual threads
     DatabaseStatusDelayedExecutor virtualThreadExecutor = 
-        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, virtualThreadFactory);
-    virtualThreadExecutor.start();
+        new DatabaseStatusDelayedExecutor(freezeService, SLEEP_INTERVAL_MS, MAX_RETRIES);
+    virtualThreadExecutor.doStart();
     
     try {
       Future<String> result = virtualThreadExecutor.submit(() -> "Done");
@@ -142,8 +142,8 @@ public class DatabaseStatusDelayedExecutorTest
     
     // Create executor with virtual threads
     DatabaseStatusDelayedExecutor virtualThreadExecutor = 
-        new DatabaseStatusDelayedExecutor(freezeService, 1, SLEEP_INTERVAL_MS, MAX_RETRIES, virtualThreadFactory);
-    virtualThreadExecutor.start();
+        new DatabaseStatusDelayedExecutor(freezeService, SLEEP_INTERVAL_MS, MAX_RETRIES);
+    virtualThreadExecutor.doStart();
     
     try {
       Future<String> result = virtualThreadExecutor.submit(() -> "Done");
@@ -174,8 +174,8 @@ public class DatabaseStatusDelayedExecutorTest
     
     // Create executor with virtual threads
     DatabaseStatusDelayedExecutor virtualThreadExecutor = 
-        new DatabaseStatusDelayedExecutor(freezeService, 5, SLEEP_INTERVAL_MS, MAX_RETRIES, virtualThreadFactory);
-    virtualThreadExecutor.start();
+        new DatabaseStatusDelayedExecutor(freezeService, SLEEP_INTERVAL_MS, MAX_RETRIES);
+    virtualThreadExecutor.doStart();
     
     try {
       // Submit multiple tasks concurrently

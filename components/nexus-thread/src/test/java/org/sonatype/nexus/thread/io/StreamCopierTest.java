@@ -15,20 +15,19 @@ package org.sonatype.nexus.thread.io;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.apache.commons.io.IOUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.sonatype.nexus.virtualthread.DatabaseStatusDelayedExecutorVirtualThreadTest;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -129,7 +128,7 @@ public class StreamCopierTest
     
     virtualExecutor.shutdown();
   }
-  
+
   @Test
   @Tag("VirtualThreadTestGroup")
   void highConcurrencyWithVirtualThreads() throws Exception {
@@ -244,11 +243,10 @@ public class StreamCopierTest
   @Tag("VirtualThreadTestGroup")
   void customVirtualThreadExecutorService() throws Exception {
     assumeVirtualThreadSupported();
-    
-    // Create a custom ExecutorService using Virtual Threads
-    ExecutorService customExecutor = newVirtualThreadExecutor("StreamCopier-Test-");
-    underTest = new StreamCopier<>(this::writeString, this::readString, customExecutor);
-    
+
+    ExecutorService virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    underTest = new StreamCopier<>(this::writeString, this::readString, virtualExecutor);
+
     // Verify it works correctly
     assertEquals(DEFAULT_READ_OUTPUT, underTest.read());
     
@@ -265,9 +263,9 @@ public class StreamCopierTest
     
     assertEquals(concurrentOperations, successCount.get(), 
         "All operations with custom executor should complete successfully");
-    
-    customExecutor.shutdown();
-    customExecutor.awaitTermination(5, TimeUnit.SECONDS);
+
+    virtualExecutor.shutdown();
+    virtualExecutor.awaitTermination(5, TimeUnit.SECONDS);
   }
   
   private void writeStringAndClose(OutputStream outputStream) {
@@ -299,4 +297,22 @@ public class StreamCopierTest
     }
     return null;
   }
+
+  private void runConcurrently(int count, Runnable task) throws InterruptedException {
+    ExecutorService executor = Executors.newFixedThreadPool(count);
+    List<Future<?>> futures = new ArrayList<>();
+    for (int i = 0; i < count; i++) {
+      futures.add(executor.submit(task));
+    }
+    for (Future<?> future : futures) {
+      try {
+        future.get(); // wait for task to complete or throw
+      } catch (ExecutionException e) {
+        throw new RuntimeException("Task execution failed", e.getCause());
+      }
+    }
+    executor.shutdown();
+    executor.awaitTermination(1, TimeUnit.MINUTES);
+  }
+
 }

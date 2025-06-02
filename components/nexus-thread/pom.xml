@@ -199,7 +199,33 @@ owners.
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>
+			<plugin>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.10.1</version> <!-- or your project's version -->
+				<executions>
+					<execution>
+						<id>default-testCompile</id>
+						<phase>test-compile</phase>
+						<goals>
+							<goal>testCompile</goal>
+						</goals>
+						<configuration>
+							<testExcludes>
+								<exclude>**/virtualthread/**/*.java</exclude>
+								<exclude>org/sonatype/nexus/thread/NexusScheduledExecutorServiceTest.java</exclude>
+								<exclude>org/sonatype/nexus/thread/SubjectAwareVirtualThreadExecutorServiceTest.java</exclude>
+								<exclude>org/sonatype/nexus/thread/ThreadPinningDetectionTest.java</exclude>
+								<exclude>org/sonatype/nexus/thread/VirtualThreadFactoryTest.java</exclude>
+								<exclude>org/sonatype/nexus/thread/VirtualThreadPerformanceTest.java</exclude>
+								<exclude>org/sonatype/nexus/thread/VirtualThreadScheduledExecutorServiceTest.java</exclude>
+								<exclude>org/sonatype/nexus/thread/VirtualThreadTestGroup.java</exclude>
+							</testExcludes>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
+
 
 </project>

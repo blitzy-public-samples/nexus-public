@@ -80,7 +80,7 @@ public class ExtDirectDispatcher
     try {
       response = asResponse(super.invokeMethod(method, actionInstance, parameters));
     }
-    catch (Exception e) when (e instanceof InvocationTargetException ite) {
+    catch (InvocationTargetException ite) {
       response = asResponse(exceptionHandler.handleException(method, ite.getTargetException()));
     }
     catch (Exception e) {

@@ -12,18 +12,21 @@
  */
 package org.sonatype.nexus.extdirect.internal;
 
-import java.util.concurrent.Callable;
+import static com.google.common.base.Preconditions.checkState;
 
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+import org.apache.shiro.SecurityUtils;
+import org.apache.shiro.subject.Subject;
+import org.apache.shiro.subject.support.SubjectThreadState;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.security.UserIdMdcHelper;
 
 import com.google.inject.servlet.ServletScopes;
 import com.softwarementors.extjs.djn.servlet.ssm.SsmJsonRequestProcessorThread;
-import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.subject.Subject;
-import org.apache.shiro.subject.support.SubjectThreadState;
-
-import static com.google.common.base.Preconditions.checkState;
 
 /**
  * An {@link SsmJsonRequestProcessorThread} that is binds the thread to Shiro subject as well as setting user id in
@@ -67,28 +70,30 @@ public class ExtDirectJsonRequestProcessorThread
     });
   }
 
-  @Override
-  public String processRequest() {
-    try {
-      // Execute the request using a Virtual Thread for improved scalability
-      return Thread.startVirtualThread(() -> {
-        try {
-          return processRequest.call();
-        } catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }).join();
-    }
-    // Using pattern matching for exception handling with Java 21
-    catch (Exception e) {
-      switch (e) {
-        case RuntimeException re -> throw re;
-        case InterruptedException ie -> {
-          Thread.currentThread().interrupt();
-          throw new RuntimeException("Virtual thread execution was interrupted", ie);
-        }
-        default -> throw new RuntimeException(e);
-      }
-    }
-  }
+	@Override
+	public String processRequest() {
+		try {
+			// Execute the request using a Virtual Thread for improved scalability
+			ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+			Future<?> future = executor.submit(() -> {
+				try {
+					processRequest.call();
+				} catch (Exception e) {
+					throw new RuntimeException(e);
+				}
+			});
+			return (String) future.get();
+		}
+		// Using pattern matching for exception handling with Java 21
+		catch (Exception e) {
+			switch (e) {
+			case RuntimeException re -> throw re;
+			case InterruptedException ie -> {
+				Thread.currentThread().interrupt();
+				throw new RuntimeException("Virtual thread execution was interrupted", ie);
+			}
+			default -> throw new RuntimeException(e);
+			}
+		}
+	}
 }

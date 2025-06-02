@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.siesta;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.Path;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.Path;
 
 import org.sonatype.nexus.siesta.internal.resteasy.ComponentContainerImpl;
 

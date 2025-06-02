@@ -17,11 +17,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventAware;
@@ -117,6 +117,26 @@ public class DatastoreQuartzSchedulerSPI
     }
 
     return false;
+  }
+
+  @Override
+  public boolean isVirtualThreadsEnabled() {
+    return false;
+  }
+
+  @Override
+  public void setVirtualThreadsEnabled(boolean enabled) {
+
+  }
+
+  @Override
+  public boolean isTaskVirtualThreadCompatible(TaskConfiguration config) {
+    return false;
+  }
+
+  @Override
+  public ThreadType getPreferredThreadType(TaskConfiguration config) {
+    return null;
   }
 
   private Optional<QuartzTaskJobListener> attachJobListener(final JobKey jobKey) {
@@ -295,13 +315,13 @@ public class DatastoreQuartzSchedulerSPI
 
         // simulate signals Quartz would have sent
         quartzScheduler.getSchedulerSignaler().signalSchedulingChange(getNextFireMillis(trigger));
-        quartzScheduler.notifySchedulerListenersSchduled(trigger);
+        quartzScheduler.notifySchedulerListenersScheduled(trigger);
       }
       else if (isLimitedToThisNode(trigger)) {
         // special "run-now" task which was created on a different node to where it will run
         // when this happens we ping the scheduler to make sure it runs as soon as possible
         quartzScheduler.getSchedulerSignaler().signalSchedulingChange(0L);
-        quartzScheduler.notifySchedulerListenersSchduled(trigger);
+        quartzScheduler.notifySchedulerListenersScheduled(trigger);
       }
     });
   }
@@ -316,7 +336,7 @@ public class DatastoreQuartzSchedulerSPI
         // simulate signals Quartz would have sent
         quartzScheduler.getSchedulerSignaler().signalSchedulingChange(getNextFireMillis(trigger));
         quartzScheduler.notifySchedulerListenersUnscheduled(trigger.getKey());
-        quartzScheduler.notifySchedulerListenersSchduled(trigger);
+        quartzScheduler.notifySchedulerListenersScheduled(trigger);
       }
     });
   }

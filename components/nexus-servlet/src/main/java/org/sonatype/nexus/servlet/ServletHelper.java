@@ -17,8 +17,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.concurrent.Executors;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.common.property.SystemPropertiesHelper;
 
@@ -101,12 +101,12 @@ public class ServletHelper
       // user override present, tell container what buffer size we'd like
       response.setBufferSize(bufferSize);
     }
-    final int computedBufferSize=bufferSize;
+    final int effectiveBufferSize = bufferSize;
     // Use a Virtual Thread to handle the I/O operation for improved performance
     try {
       Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         try (final InputStream from = input; final OutputStream to = response.getOutputStream()) {
-          final byte[] buf = new byte[computedBufferSize];
+          final byte[] buf = new byte[effectiveBufferSize];
           while (true) {
             int r = from.read(buf);
             if (r == -1) {

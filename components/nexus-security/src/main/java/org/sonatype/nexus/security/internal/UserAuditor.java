@@ -16,8 +16,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;
@@ -65,14 +65,15 @@ public class UserAuditor
       Map<String, Object> attributes = data.getAttributes();
       
       // Using record pattern to simplify user data handling
-      if (user instanceof User(var userId, var name, var email, var source, var status, var roles)) {
+      //if (user instanceof User(var userId, var name, var email, var source, var status, var roles))
+        if (user instanceof org.sonatype.nexus.security.user.User actualUser){
         // Using String Templates for improved readability in audit logging
-        attributes.put("id", userId);
-        attributes.put("name", name);
-        attributes.put("email", email);
-        attributes.put("source", source);
+        attributes.put("id", user.getUserId());
+        attributes.put("name", user.getName());
+        attributes.put("email", user.getEmailAddress());
+        attributes.put("source", user.getSource());
         attributes.put("status", STR."{status.name()}");
-        attributes.put("roles", roles(roles));
+        attributes.put("roles", roles((List<RoleIdentifier>) user.getRoles()));
       } else {
         // Fallback for non-record pattern support
         attributes.put("id", user.getUserId());
@@ -80,7 +81,7 @@ public class UserAuditor
         attributes.put("email", user.getEmailAddress());
         attributes.put("source", user.getSource());
         attributes.put("status", user.getStatus().name());
-        attributes.put("roles", roles(user.getRoles()));
+        attributes.put("roles", roles((List<RoleIdentifier>) user.getRoles()));
       }
 
       record(data);
@@ -92,9 +93,9 @@ public class UserAuditor
 
     for (RoleIdentifier role : roles) {
       // Using Record Patterns with String Templates for improved readability
-      if (role instanceof RoleIdentifier(var roleId, var source)) {
+      if (role instanceof org.sonatype.nexus.security.role.RoleIdentifier) {
         // Using String Templates with record pattern extracted variables
-        result.add(STR."\{roleId} (\{source})");
+        result.add(STR."\{role.getRoleId()} (\{role.getSource()})");
       } else {
         // Fallback for non-record pattern support
         result.add(STR."\{role.getRoleId()} (\{role.getSource()})");

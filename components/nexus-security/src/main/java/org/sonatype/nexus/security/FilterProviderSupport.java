@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.security;
 
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 import javax.servlet.Filter;
 
 import com.google.inject.Key;

@@ -15,8 +15,8 @@ package org.sonatype.nexus.security;
 import java.io.IOException;
 import java.security.Principal;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;

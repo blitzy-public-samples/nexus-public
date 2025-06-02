@@ -16,7 +16,7 @@ import java.lang.reflect.Constructor;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import javax.inject.Singleton;
+import jakarta.inject.Singleton;
 import javax.servlet.ServletContext;
 
 import org.sonatype.nexus.security.authc.FirstSuccessfulModularRealmAuthenticator;

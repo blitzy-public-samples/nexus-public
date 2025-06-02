@@ -14,7 +14,7 @@ package org.sonatype.nexus.security.internal;
 
 import java.util.Collection;
 import java.util.List;
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 
 import org.sonatype.nexus.security.AbstractSecurityTest;
 import org.sonatype.nexus.security.realm.RealmManager;

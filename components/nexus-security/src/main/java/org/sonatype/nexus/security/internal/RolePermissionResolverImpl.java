@@ -19,13 +19,14 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.event.EventHelper;
@@ -48,50 +49,29 @@ import org.apache.shiro.authz.permission.RolePermissionResolver;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-/**
- * Default {@link RolePermissionResolver}.
- * 
- * Updated for Java 21 with pattern matching for improved type checking and permission resolution,
- * optimized caching strategy, and enhanced thread-safety for distributed environments.
- */
 @Named("default")
 @Singleton
 public class RolePermissionResolverImpl
-    extends ComponentSupport
-    implements RolePermissionResolver
+        extends ComponentSupport
+        implements RolePermissionResolver
 {
   private final SecurityConfigurationManager configuration;
 
   private final List<PrivilegeDescriptor> privilegeDescriptors;
-  
-  /**
-   * Virtual thread executor for concurrent permission resolution operations.
-   */
-  private final Executor virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-  /**
-   * Privilege-id to permission cache.
-   * Optimized for Java 21 with improved memory management.
-   */
-  private final Cache<String,Permission> permissionsCache = CacheBuilder.newBuilder()
-      .softValues()
-      .recordStats()
-      .build();
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-  /**
-   * Role-id to role permissions cache.
-   * Optimized for Java 21 with improved memory management.
-   */
+  private final Cache<String, Permission> permissionsCache = CacheBuilder.newBuilder()
+          .softValues()
+          .recordStats()
+          .build();
+
   private final Cache<String, Collection<Permission>> rolePermissionsCache = CacheBuilder.newBuilder()
-      .softValues()
-      .recordStats()
-      .build();
+          .softValues()
+          .recordStats()
+          .build();
 
-  /**
-   * Role not found cache.
-   * Optimized for Java 21 with explicit sizing and statistics.
-   */
-  private final Cache<String,String> roleNotFoundCache;
+  private final Cache<String, String> roleNotFoundCache;
 
   @Inject
   public RolePermissionResolverImpl(final SecurityConfigurationManager configuration,
@@ -102,15 +82,12 @@ public class RolePermissionResolverImpl
     this.configuration = checkNotNull(configuration);
     this.privilegeDescriptors = checkNotNull(privilegeDescriptors);
     this.roleNotFoundCache = CacheBuilder.newBuilder()
-        .maximumSize(roleNotFoundCacheSize)
-        .recordStats()
-        .build();
+            .maximumSize(roleNotFoundCacheSize)
+            .recordStats()
+            .build();
     eventManager.register(this);
   }
 
-  /**
-   * Invalidate caches.
-   */
   private void invalidate() {
     permissionsCache.invalidateAll();
     rolePermissionsCache.invalidateAll();
@@ -142,70 +119,64 @@ public class RolePermissionResolverImpl
   public Collection<Permission> resolvePermissionsInRole(final String roleString) {
     checkNotNull(roleString);
 
-    // check memory-sensitive cache; use cached value as long as config is not dirty
     Collection<Permission> cachedPermissions = rolePermissionsCache.getIfPresent(roleString);
     if (cachedPermissions != null) {
       return cachedPermissions;
     }
 
-    // Use Virtual Threads for potentially I/O-bound permission resolution
-    // This allows for better scalability in distributed environments
-    return virtualThreadExecutor.submit(() -> {
-      final Set<Permission> permissions = new LinkedHashSet<>();
-      final Deque<String> rolesToProcess = new ArrayDeque<>();
-      final Set<String> processedRoleIds = new HashSet<>();
+      try {
+          return virtualThreadExecutor.submit(() -> {
+            final Set<Permission> permissions = new LinkedHashSet<>();
+            final Deque<String> rolesToProcess = new ArrayDeque<>();
+            final Set<String> processedRoleIds = new HashSet<>();
 
-      // initial role
-      rolesToProcess.add(roleString);
+            rolesToProcess.add(roleString);
 
-      while (!rolesToProcess.isEmpty()) {
-        final String roleId = rolesToProcess.removeFirst();
-        if (processedRoleIds.add(roleId)) {
+            while (!rolesToProcess.isEmpty()) {
+              final String roleId = rolesToProcess.removeFirst();
+              if (processedRoleIds.add(roleId)) {
 
-          if (roleNotFoundCache.getIfPresent(roleId) != null) {
-              log.trace(STR."Role \{roleId} found in NFC, role check skipped");
-              continue; // use cached results
-          }
+                if (roleNotFoundCache.getIfPresent(roleId) != null) {
+                  log.trace(String.format("Role %s found in NFC, role check skipped", roleId));
+                  continue;
+                }
 
-          try {
-            // try to re-use results when resolving the role tree
-            Collection<Permission> cachedRolePermissions = rolePermissionsCache.getIfPresent(roleId);
-            if (cachedRolePermissions != null) {
-              permissions.addAll(cachedRolePermissions);
-              continue; // use cached results
-            }
+                try {
+                  Collection<Permission> cachedRolePermissions = rolePermissionsCache.getIfPresent(roleId);
+                  if (cachedRolePermissions != null) {
+                    permissions.addAll(cachedRolePermissions);
+                    continue;
+                  }
 
-            final CRole role = configuration.readRole(roleId);
+                  final CRole role = configuration.readRole(roleId);
 
-            // process the roles this role has recursively
-            rolesToProcess.addAll(role.getRoles());
+                  rolesToProcess.addAll(role.getRoles());
 
-            // add the permissions this role has
-            for (String privilegeId : role.getPrivileges()) {
-              Permission permission = permission(privilegeId);
-              if (permission != null) {
-                permissions.add(permission);
+                  for (String privilegeId : role.getPrivileges()) {
+                    Permission permission = permission(privilegeId);
+                    if (permission != null) {
+                      permissions.add(permission);
+                    }
+                  }
+                }
+                catch (NoSuchRoleException e) {
+                  log.trace(String.format("Ignoring missing role: %s", roleId), e);
+                  roleNotFoundCache.put(roleId, "");
+                }
               }
             }
-          }
-          catch (NoSuchRoleException e) {
-            log.trace(STR."Ignoring missing role: \{roleId}", e);
-            roleNotFoundCache.put(roleId, "");
-          }
-        }
+
+            rolePermissionsCache.put(roleString, permissions);
+
+            return permissions;
+          }).get();
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+      } catch (ExecutionException e) {
+          throw new RuntimeException(e);
       }
-
-      // cache result of (non-trivial) computation
-      rolePermissionsCache.put(roleString, permissions);
-
-      return permissions;
-    }).join(); // Wait for the virtual thread to complete
   }
 
-  /**
-   * Returns the descriptor for the given privilege-type or {@code null}.
-   * Uses Java 21 pattern matching for improved type checking.
-   */
   @Nullable
   private PrivilegeDescriptor descriptor(final String privilegeType) {
     checkNotNull(privilegeType);
@@ -216,14 +187,10 @@ public class RolePermissionResolverImpl
       }
     }
 
-    log.warn(STR."Missing privilege-descriptor for type: \{privilegeType}");
+    log.warn(String.format("Missing privilege-descriptor for type: %s", privilegeType));
     return null;
   }
 
-  /**
-   * Returns the permission for the given privilege-id or {@code null}.
-   * Optimized for Java 21 with pattern matching for type checking.
-   */
   @Nullable
   private Permission permission(final String privilegeId) {
     checkNotNull(privilegeId);
@@ -234,13 +201,16 @@ public class RolePermissionResolverImpl
         CPrivilege privilege = configuration.readPrivilege(privilegeId);
         PrivilegeDescriptor descriptor = descriptor(privilege.getType());
         if (descriptor != null) {
-          // Use Virtual Thread for potentially I/O-bound permission creation
-          permission = virtualThreadExecutor.submit(() -> descriptor.createPermission(privilege)).join();
+          permission = virtualThreadExecutor.submit(() -> descriptor.createPermission(privilege)).get();
           permissionsCache.put(privilegeId, permission);
         }
       }
       catch (NoSuchPrivilegeException e) {
-        log.trace(STR."Ignoring missing privilege: \{privilegeId}", e);
+        log.trace(String.format("Ignoring missing privilege: %s", privilegeId), e);
+      } catch (ExecutionException e) {
+          throw new RuntimeException(e);
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
       }
     }
 

@@ -15,8 +15,8 @@ package org.sonatype.nexus.security.internal;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import static java.lang.StringTemplate.STR;
 
@@ -73,8 +73,11 @@ public class PrivilegeAuditor
       attributes.put("type", privilege.getType());
 
       // Using Java 21 Record Patterns for simplified property handling
-      for (Entry(String key, String value) : privilege.getProperties().entrySet()) {
-        attributes.put(STR."property.\{key}", value);
+//      for (Entry(String key, String value) : privilege.getProperties().entrySet()) {
+//        attributes.put(STR."property.\{key}", value);
+//      }
+      for (Map.Entry<String, String> entry : privilege.getProperties().entrySet()) {
+        attributes.put("property." + entry.getKey(), entry.getValue());
       }
 
       record(data);

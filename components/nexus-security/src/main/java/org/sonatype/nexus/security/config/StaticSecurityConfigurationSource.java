@@ -21,30 +21,23 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nullable;
 import javax.annotation.Priority;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.security.Roles;
 import org.sonatype.nexus.security.config.memory.MemoryCUser;
 import org.sonatype.nexus.security.config.memory.MemoryCUserRoleMapping;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.authc.credential.PasswordService;
 
-// FIXME: Perhaps this would be better in nexus-core internal.security?
-
-/**
- * Security model configuration defaults.
- *
- * @since 3.0
- */
 @Named("static")
 @Singleton
 @Priority(Integer.MIN_VALUE)
 public class StaticSecurityConfigurationSource
-    implements SecurityConfigurationSource
+        implements SecurityConfigurationSource
 {
   private static final String NEXUS_SECURITY_INITIAL_PASSWORD = "NEXUS_SECURITY_INITIAL_PASSWORD";
   private static final String NEXUS_SECURITY_RANDOMPASSWORD = "NEXUS_SECURITY_RANDOMPASSWORD";
@@ -61,18 +54,18 @@ public class StaticSecurityConfigurationSource
 
   @Inject
   public StaticSecurityConfigurationSource(
-      final PasswordService passwordService,
-      final AdminPasswordFileManager adminPasswordFileManager,
-      @Named("${nexus.security.randompassword:-true}") final boolean randomPassword)
+          final PasswordService passwordService,
+          final AdminPasswordFileManager adminPasswordFileManager,
+          @Named("${nexus.security.randompassword:-true}") final boolean randomPassword)
   {
     this(passwordService, adminPasswordFileManager, randomPassword, System.getenv(NEXUS_SECURITY_INITIAL_PASSWORD));
   }
 
   public StaticSecurityConfigurationSource(
-      final PasswordService passwordService,
-      final AdminPasswordFileManager adminPasswordFileManager,
-      final boolean randomPassword,
-      @Nullable final String password)
+          final PasswordService passwordService,
+          final AdminPasswordFileManager adminPasswordFileManager,
+          final boolean randomPassword,
+          @Nullable final String password)
   {
     this.passwordService = passwordService;
     this.adminPasswordFileManager = adminPasswordFileManager;
@@ -80,8 +73,8 @@ public class StaticSecurityConfigurationSource
 
     if (StringUtils.isBlank(password)) {
       boolean enabled = Optional.ofNullable(System.getenv(NEXUS_SECURITY_RANDOMPASSWORD))
-          .map(Boolean::valueOf)
-          .orElse(true);
+              .map(Boolean::valueOf)
+              .orElse(true);
       this.randomPassword = randomPassword && enabled;
     }
     else {
@@ -100,75 +93,64 @@ public class StaticSecurityConfigurationSource
 
   @Override
   public synchronized SecurityConfiguration loadConfiguration() {
-    // Check again in case another thread loaded the configuration while we were waiting
     SecurityConfiguration config = configurationCache.get();
     if (config != null) {
       return config;
     }
-    
+
     String encryptedPassword = passwordService.encryptPassword(getPassword());
 
     config = new MemorySecurityConfiguration().withUsers(
-        new MemoryCUser()
-            .withId("admin")
-            .withPassword(encryptedPassword)
-            .withFirstName("Administrator")
-            .withLastName("User")
-            .withStatus(randomPassword ? CUser.STATUS_CHANGE_PASSWORD : CUser.STATUS_ACTIVE)
-            .withEmail("admin@example.org"),
-        new MemoryCUser()
-            .withId("anonymous")
-            // password="anonymous"
-            .withPassword(
-                "$shiro1$SHA-512$1024$CPJm1XWdYNg5eCAYp4L4HA==$HIGwnJhC07ZpgeVblZcFRD1F6KH+xPG8t7mIcEMbfycC+n5Ljudyoj9dzdinrLmChTrmKMCw2/z29F7HeLbTbQ==")
-            .withFirstName("Anonymous")
-            .withLastName("User")
-            .withStatus(CUser.STATUS_ACTIVE)
-            .withEmail("anonymous@example.org"))
-        .withUserRoleMappings(
-            new MemoryCUserRoleMapping()
-                .withUserId("admin")
-                .withSource("default")
-                .withRoles(Roles.ADMIN_ROLE_ID),
-            new MemoryCUserRoleMapping()
-                .withUserId("anonymous")
-                .withSource("default")
-                .withRoles(Roles.ANONYMOUS_ROLE_ID));
-    
+                    new MemoryCUser()
+                            .withId("admin")
+                            .withPassword(encryptedPassword)
+                            .withFirstName("Administrator")
+                            .withLastName("User")
+                            .withStatus(randomPassword ? CUser.STATUS_CHANGE_PASSWORD : CUser.STATUS_ACTIVE)
+                            .withEmail("admin@example.org"),
+                    new MemoryCUser()
+                            .withId("anonymous")
+                            .withPassword(
+                                    "$shiro1$SHA-512$1024$CPJm1XWdYNg5eCAYp4L4HA==$HIGwnJhC07ZpgeVblZcFRD1F6KH+xPG8t7mIcEMbfycC+n5Ljudyoj9dzdinrLmChTrmKMCw2/z29F7HeLbTbQ==")
+                            .withFirstName("Anonymous")
+                            .withLastName("User")
+                            .withStatus(CUser.STATUS_ACTIVE)
+                            .withEmail("anonymous@example.org"))
+            .withUserRoleMappings(
+                    new MemoryCUserRoleMapping()
+                            .withUserId("admin")
+                            .withSource("default")
+                            .withRoles(Roles.ADMIN_ROLE_ID),
+                    new MemoryCUserRoleMapping()
+                            .withUserId("anonymous")
+                            .withSource("default")
+                            .withRoles(Roles.ANONYMOUS_ROLE_ID));
+
     configurationCache.set(config);
     return config;
   }
 
-  /**
-   * Execute I/O operation using Virtual Threads for better performance.
-   * 
-   * @param operation The I/O operation to execute
-   * @return The result of the operation
-   */
   private <T> T executeWithVirtualThread(IOOperation<T> operation) {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       Future<T> future = executor.submit(() -> {
         try {
           return operation.execute();
-        } 
+        }
         catch (IOException e) {
-          throw new RuntimeException(e);
+          throw new RuntimeException(String.format("Failed to execute I/O operation: %s", e.getMessage()), e);
         }
       });
-      
+
       return future.get();
-    } 
+    }
     catch (Exception e) {
       if (e instanceof RuntimeException rte && rte.getCause() instanceof IOException ioe) {
-        throw new RuntimeException(STR."Failed to execute I/O operation: \{ioe.getMessage()}", ioe);
+        throw new RuntimeException(String.format("Failed to execute I/O operation: %s", ioe.getMessage()), ioe);
       }
-      throw new RuntimeException(STR."Failed to execute operation: \{e.getMessage()}", e);
+      throw new RuntimeException(String.format("Failed to execute operation: %s", e.getMessage()), e);
     }
   }
-  
-  /**
-   * Functional interface for I/O operations that may throw IOException.
-   */
+
   @FunctionalInterface
   private interface IOOperation<T> {
     T execute() throws IOException;
@@ -180,7 +162,6 @@ public class StaticSecurityConfigurationSource
     }
 
     try {
-      // Use Virtual Thread for file I/O operations
       String savedPassword = executeWithVirtualThread(() -> adminPasswordFileManager.readFile());
 
       if (!Strings2.isBlank(savedPassword)) {
@@ -190,23 +171,20 @@ public class StaticSecurityConfigurationSource
         return "admin123";
       }
 
-      savedPassword = UUID.randomUUID().toString();
+      String newPassword = UUID.randomUUID().toString();
+      boolean writeSuccess = executeWithVirtualThread(() -> adminPasswordFileManager.writeFile(newPassword));
+      savedPassword = newPassword;
 
-      // Use Virtual Thread for file I/O operations
-      boolean writeSuccess = executeWithVirtualThread(() -> adminPasswordFileManager.writeFile(savedPassword));
-      
-      // failure writing file to disk, revert to using default
       if (!writeSuccess) {
         savedPassword = "admin123";
       }
       return savedPassword;
     }
     catch (Exception e) {
-      // Use pattern matching for exception handling
       if (e instanceof RuntimeException rte && rte.getCause() instanceof IOException ioe) {
-        throw new RuntimeException(STR."Failed to access admin password file: \{ioe.getMessage()}", ioe);
+        throw new RuntimeException(String.format("Failed to access admin password file: %s", ioe.getMessage()), ioe);
       }
-      throw new RuntimeException(STR."Unexpected error accessing admin password: \{e.getMessage()}", e);
+      throw new RuntimeException(String.format("Unexpected error accessing admin password: %s", e.getMessage()), e);
     }
   }
 }

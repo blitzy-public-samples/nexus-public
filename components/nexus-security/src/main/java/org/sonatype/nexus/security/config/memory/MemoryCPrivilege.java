@@ -17,8 +17,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.SequencedMap;
 
-import static java.lang.StringTemplate.STR;
-
 import org.sonatype.nexus.security.config.CPrivilege;
 
 /**
@@ -101,17 +99,31 @@ public class MemoryCPrivilege
    * @param key The property key to look up
    * @return The property value, or null if not found
    */
-  @Override
-  public String getProperty(final String key) {
-    // Use pattern matching to handle the Map.Entry safely
-    if (getProperties().entrySet().stream()
-        .filter(entry -> key.equals(entry.getKey()))
-        .findFirst()
-        .orElse(null) instanceof Map.Entry<String, String>(var k, var value)) {
-      return value;
+//  @Override
+//  public String getProperty(final String key) {
+//    // Use pattern matching to handle the Map.Entry safely
+//    if (getProperties().entrySet().stream()
+//        .filter(entry -> key.equals(entry.getKey()))
+//        .findFirst()
+//        .orElse(null) instanceof Map.Entry<String, String>(var k, var value)) {
+//      return value;
+//    }
+//    return null;
+//  }
+    @Override
+
+    public String getProperty(final String key) {
+      // Extract key and value manually instead of using deconstruction patterns
+      Map.Entry<String, String> entry = getProperties().entrySet().stream()
+              .filter(e -> key.equals(e.getKey()))
+              .findFirst()
+              .orElse(null);
+
+      if (entry != null) {
+        return entry.getValue();
+      }
+      return null;
     }
-    return null;
-  }
 
   @Override
   public String getType() {
@@ -180,16 +192,9 @@ public class MemoryCPrivilege
    */
   @Override
   public String toString() {
-    return STR."""
-        {getClass().getSimpleName()}{
-          id='{id}',
-          name='{name}',
-          description='{description}',
-          type='{type}',
-          properties={properties},
-          readOnly={readOnly},
-          version='{version}'
-        }""";
+    return String.format(
+            "%s{id='%s', name='%s', description='%s', type='%s', properties=%s, readOnly=%b, version='%d'}",
+            getClass().getSimpleName(), id, name, description, type, properties, readOnly, version);
   }
 
   /**

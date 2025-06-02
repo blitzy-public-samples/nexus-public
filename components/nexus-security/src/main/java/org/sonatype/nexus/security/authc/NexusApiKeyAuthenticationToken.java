@@ -101,6 +101,7 @@ public class NexusApiKeyAuthenticationToken
   public String toString() {
     // Using Java 21 String Templates for improved security logging
     // Intentionally not including credentials in the string representation
-    return STR."""{getClass().getName()} - {getPrincipal()}{host != null ? STR." ({host})" : ""}"""; 
+    //return STR."""{getClass().getName()} - {getPrincipal()}{host != null ? STR." ({host})" : ""}""";
+    return getClass().getName() + " - " + getPrincipal() + (host != null ? " (" + host + ")" : "");
   }
 }

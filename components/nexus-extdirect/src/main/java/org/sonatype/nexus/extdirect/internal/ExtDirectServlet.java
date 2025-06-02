@@ -24,10 +24,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletRequest;
 import javax.servlet.http.HttpServletRequest;
@@ -62,7 +62,7 @@ import org.apache.commons.fileupload.FileItemStream;
 import org.apache.commons.fileupload.disk.DiskFileItemFactory;
 import org.apache.commons.fileupload.servlet.ServletFileUpload;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.eclipse.sisu.BeanEntry;
 import org.eclipse.sisu.inject.BeanLocator;
 import org.slf4j.Logger;
@@ -74,7 +74,7 @@ import static com.softwarementors.extjs.djn.router.RequestType.FORM_UPLOAD_POST;
 import static java.lang.StringTemplate.STR;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
-import static org.apache.commons.lang.StringEscapeUtils.escapeHtml;
+import static org.apache.commons.lang3.StringEscapeUtils.escapeHtml4;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.SERVICES;
 import static org.sonatype.nexus.servlet.XFrameOptions.DENY;
 
@@ -140,14 +140,15 @@ public class ExtDirectServlet
     try {
       super.doPost(wrappedRequest, response);
     } catch (FileUploadException fileUploadException) {
-      try (ServletFileUpload upload = new ServletFileUpload(new DiskFileItemFactory())) {
+      try {
+    	  ServletFileUpload upload = new ServletFileUpload(new DiskFileItemFactory());
         FileItemIterator fileItems = upload.getItemIterator(request);
         String tid = getTransactionId(fileItems);
 
         // Send the error from the exception in a json object so we may capture it on the frontend.
         response.setContentType("text/html");
         response.setHeader(X_FRAME_OPTIONS, xFrameOptions.getValueForPath(request.getPathInfo()));
-        String errorJson = STR."{\"tid\":{tid},\"action\":\"coreui_Upload\",\"method\":\"doUpload\",\"result\":{\"success\": false,\"message\":\"{escapeHtml(fileUploadException.getMessage())}\"},\"type\":\"rpc\"}";
+        String errorJson = STR."{\"tid\":{tid},\"action\":\"coreui_Upload\",\"method\":\"doUpload\",\"result\":{\"success\": false,\"message\":\"{escapeHtml4(fileUploadException.getMessage())}\"},\"type\":\"rpc\"}";
         response.getWriter().append(STR."<html><body><textarea>{errorJson}</textarea></body></html>").flush();
       }
       catch (Exception e) {

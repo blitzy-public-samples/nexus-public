@@ -44,7 +44,7 @@ public class UiUtil
     // Use Virtual Threads for I/O-bound operations
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       Future<String> pathFuture = executor.submit(() -> {
-        try (var entries = space.findEntries("static", filename, true)) {
+          var entries = space.findEntries("static", filename, true);
           if (entries.hasMoreElements()) {
             URL url = entries.nextElement();
             String path = url.getPath();
@@ -53,7 +53,6 @@ public class UiUtil
           }
           log.log(Level.FINE, STR."File not found: \{filename}");
           return null;
-        }
       });
       
       return pathFuture.get();

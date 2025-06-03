@@ -18,7 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
@@ -149,16 +149,17 @@ public class VirtualThreadSearchExecutor
         client.search(searchRequest, new ActionListener<SearchResponse>() {
           @Override
           public void onResponse(SearchResponse response) {
-            log.debug("Search request completed successfully with {} hits", 
-                response.getHits().getTotalHits().value);
+            log.debug("Search request completed successfully with {} hits",
+                    response.getHits().getTotalHits());
             future.complete(response);
           }
 
           @Override
-          public void onFailure(Exception e) {
-            log.debug("Search request failed: {}", e.getMessage());
-            future.completeExceptionally(e);
+          public void onFailure(Throwable throwable) {
+            log.debug("Search request failed: {}", throwable.getMessage());
+            future.completeExceptionally(throwable);
           }
+
         });
       }
       catch (Exception e) {
@@ -169,7 +170,10 @@ public class VirtualThreadSearchExecutor
     
     return future;
   }
-  
+
+  private void ensureStarted() {
+  }
+
   /**
    * Executes a search operation supplier using Virtual Threads.
    * <p>

@@ -16,6 +16,7 @@ import java.util.Collection;
 
 import org.elasticsearch.Version;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.env.Environment;
 import org.elasticsearch.node.Node;
 import org.elasticsearch.node.internal.InternalSettingsPreparer;
 import org.elasticsearch.plugins.Plugin;
@@ -53,7 +54,7 @@ public class PluginUsingNode
    * @return The prepared environment settings
    * @throws IllegalStateException if there's an issue preparing the environment
    */
-  private static Settings createEnvironment(final Settings preparedSettings) {
+  private static Environment createEnvironment(final Settings preparedSettings) {
     try {
       // Use the InternalSettingsPreparer to create the environment settings
       // This approach ensures compatibility with Java 21's module system by handling

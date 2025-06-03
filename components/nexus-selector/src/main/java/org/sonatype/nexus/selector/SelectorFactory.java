@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.selector;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.validation.ConstraintViolationException;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.validation.ConstraintViolationException;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.validation.ConstraintViolationFactory;

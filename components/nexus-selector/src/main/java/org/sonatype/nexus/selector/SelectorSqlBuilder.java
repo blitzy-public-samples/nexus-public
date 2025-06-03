@@ -19,7 +19,7 @@ import java.util.Optional;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.StringTemplate.STR;
-import static org.apache.commons.lang.StringUtils.isAlphanumeric;
+import static org.apache.commons.lang3.StringUtils.isAlphanumeric;
 
 /**
  * Builder of SQL 'where' clauses for content selectors.

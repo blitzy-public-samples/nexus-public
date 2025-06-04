@@ -133,10 +133,6 @@ public class CertificateApiResource
             .collect(Collectors.toList())).get();
       }
     }
-    catch (KeystoreException e) {
-      log.error("An error occurred accessing the internal trust store.", e);
-      throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
-    }
     catch (Exception e) {
       log.error("An error occurred retrieving certificates", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error retrieving certificates: \{e.getMessage()}");
@@ -188,12 +184,14 @@ public class CertificateApiResource
       // Use Virtual Thread for I/O-bound certificate removal operation
       var executor = Executors.newVirtualThreadPerTaskExecutor();
       try (executor) {
-        executor.submit(() -> trustStore.removeTrustCertificate(id)).get();
+        executor.submit(() -> {
+            try {
+                trustStore.removeTrustCertificate(id);
+            } catch (KeystoreException e) {
+                throw new RuntimeException(e);
+            }
+        }).get();
       }
-    }
-    catch (KeystoreException e) {
-      log.error("An error occurred accessing the internal trust store.", e);
-      throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
     }
     catch (Exception e) {
       log.error("An error occurred removing certificate", e);
@@ -209,14 +207,6 @@ public class CertificateApiResource
         return executor.submit(() -> trustStore.getTrustedCertificate(id)).get();
       }
     }
-    catch (KeyNotFoundException e) {
-      log.debug("No existing certificate with id {}", id, e);
-      throw createWebException(Status.NOT_FOUND, STR."No certificate with alias '\{id}' in trust store.");
-    }
-    catch (KeystoreException e) {
-      log.error("An error occurred accessing the internal trust store.", e);
-      throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
-    }
     catch (Exception e) {
       log.error("An error occurred retrieving certificate", e);
       throw createWebException(Status.INTERNAL_SERVER_ERROR, STR."Error retrieving certificate: \{e.getMessage()}");
@@ -230,17 +220,14 @@ public class CertificateApiResource
       // Use Virtual Thread for I/O-bound certificate import operation
       var executor = Executors.newVirtualThreadPerTaskExecutor();
       try (executor) {
-        return executor.submit(() -> trustStore.importTrustCertificate(certificate, id)).get();
+        String finalId = id;
+        return executor.submit(() -> trustStore.importTrustCertificate(certificate, finalId)).get();
       }
     }
     catch (CertificateException e) {
       // Validation should have caught this but....
       log.info("Unable to import certificate {}", id, e);
       throw createWebException(Status.BAD_REQUEST, STR."Invalid certificate: \{e.getMessage()}");
-    }
-    catch (KeystoreException e) {
-      log.error("An error occurred accessing the internal trust store.", e);
-      throw createWebException(Status.INTERNAL_SERVER_ERROR, KEY_STORE_ERROR_MESSAGE);
     }
     catch (Exception e) {
       log.error("An error occurred importing certificate", e);

@@ -18,7 +18,7 @@ import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.CertificateEncodingException;
 
-import javax.validation.ConstraintValidatorContext;
+import jakarta.validation.ConstraintValidatorContext;
 
 import org.sonatype.nexus.ssl.CertificateUtil;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;

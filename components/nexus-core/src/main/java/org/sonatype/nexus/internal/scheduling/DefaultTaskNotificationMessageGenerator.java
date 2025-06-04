@@ -102,10 +102,13 @@ public class DefaultTaskNotificationMessageGenerator
     long millis = duration.toMillisPart();
     
     // Use String Templates for more readable duration formatting
-    return switch {
-      case hours > 0 -> STR."\{hours}h \{minutes}m \{seconds}.\{millis}s";
-      case minutes > 0 -> STR."\{minutes}m \{seconds}.\{millis}s";
-      default -> STR."\{seconds}.\{millis}s";
-    };
+    if (hours > 0) {
+      return STR."\{hours}h \{minutes}m \{seconds}.\{millis}s";
+    } else if (minutes > 0) {
+      return STR."\{minutes}m \{seconds}.\{millis}s";
+    } else {
+      return STR."\{seconds}.\{millis}s";
+    }
+
   }
 }

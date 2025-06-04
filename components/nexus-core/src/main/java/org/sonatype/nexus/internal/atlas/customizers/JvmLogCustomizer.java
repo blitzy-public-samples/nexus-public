@@ -103,16 +103,16 @@ public class JvmLogCustomizer
           
           // Process lines with sensitive data
           case String s -> {
-            String result = s;
+            final String[] result = {s};
             for (String fieldName : SENSITIVE_FIELD_NAMES) {
               // Check if the line contains the sensitive field
               switch (fieldName) {
-                case String field when result.contains(field + "=") -> 
-                  result = result.replaceAll(field + "=\\S*", field + "=" + MASK);
+                case String field when result[0].contains(field + "=") ->
+                  result[0] = result[0].replaceAll(field + "=\\S*", field + "=" + MASK);
                 default -> { /* No action needed */ }
               }
             }
-            yield result;
+            yield result[0];
           }
         };
       }

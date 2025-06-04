@@ -22,11 +22,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-
-import static org.sonatype.nexus.repository.http.HttpStatus.BAD_REQUEST;
-import static org.sonatype.nexus.repository.http.HttpStatus.FORBIDDEN;
-import static org.sonatype.nexus.repository.http.HttpStatus.NO_CONTENT;
-import static org.sonatype.nexus.repository.http.HttpStatus.OK;
+import javax.ws.rs.core.Response.Status;
 
 /**
  * Swagger documentation for {@link EmailConfigurationApiResource}
@@ -45,7 +41,7 @@ public interface EmailConfigurationApiResourceDoc
           description = "Email configuration retrieved successfully",
           content = @Content(schema = @Schema(implementation = ApiEmailConfiguration.class))),
       @ApiResponse(
-          responseCode = FORBIDDEN,
+          responseCode = "403",
           description = "Insufficient permissions to retrieve the email configuration")
   })
   ApiEmailConfiguration getEmailConfiguration();
@@ -55,13 +51,13 @@ public interface EmailConfigurationApiResourceDoc
       description = "Updates the email configuration using non-blocking I/O operations with Virtual Threads")
   @ApiResponses(value = {
       @ApiResponse(
-          responseCode = NO_CONTENT,
+          responseCode = "204",
           description = "Email configuration was successfully updated"),
       @ApiResponse(
-          responseCode = BAD_REQUEST,
+          responseCode = "400",
           description = "Invalid request"),
       @ApiResponse(
-          responseCode = FORBIDDEN,
+          responseCode = "403",
           description = "Insufficient permissions to update the email configuration")
   })
   void setEmailConfiguration(
@@ -73,11 +69,11 @@ public interface EmailConfigurationApiResourceDoc
       description = "Validates email configuration by sending a test email using Virtual Threads for non-blocking operations")
   @ApiResponses(value = {
       @ApiResponse(
-          responseCode = OK,
+          responseCode = "200",
           description = "Validation was complete, look at the body to determine success",
           content = @Content(schema = @Schema(implementation = ApiEmailValidation.class))),
       @ApiResponse(
-          responseCode = FORBIDDEN,
+          responseCode = "403",
           description = "Insufficient permissions to verify the email configuration")
   })
   ApiEmailValidation testEmailConfiguration(
@@ -90,7 +86,7 @@ public interface EmailConfigurationApiResourceDoc
       description = "Efficiently clears email configuration using Virtual Threads for improved performance")
   @ApiResponses(value = {
       @ApiResponse(
-          responseCode = NO_CONTENT,
+          responseCode = "204",
           description = "Email configuration was successfully cleared")
   })
   void deleteEmailConfiguration();

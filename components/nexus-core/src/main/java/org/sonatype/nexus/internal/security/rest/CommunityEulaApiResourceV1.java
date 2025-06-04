@@ -31,8 +31,7 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
 public class CommunityEulaApiResourceV1
     extends CommunityEulaApiResource
 {
-  // Using String Template for resource path construction
-  public static final String RESOURCE_URI = STR."\{V1_API_PREFIX}/system/eula";
+  public static final String RESOURCE_URI = V1_API_PREFIX + "/system/eula";
 
   @Inject
   public CommunityEulaApiResourceV1(final GlobalKeyValueStore globalKeyValueStore) {

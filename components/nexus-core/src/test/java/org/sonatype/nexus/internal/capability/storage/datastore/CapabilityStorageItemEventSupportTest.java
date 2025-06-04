@@ -22,6 +22,7 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.CapabilityIdentity;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.entity.EntityUUID;
+import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItem;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 
 import org.junit.Test;
@@ -67,7 +68,7 @@ public class CapabilityStorageItemEventSupportTest
     CountDownLatch latch = new CountDownLatch(1);
     
     // Process the event asynchronously using a Virtual Thread
-    CompletableFuture<Void> future = event.processAsync(() -> {
+    CompletableFuture<Void> future = event.processAsync(ev -> {
       // Simulate some processing
       try {
         Thread.sleep(100);
@@ -99,9 +100,15 @@ public class CapabilityStorageItemEventSupportTest
     Map<String, String> properties = new HashMap<>();
     properties.put("key1", "value1");
     properties.put("key2", "value2");
+    CapabilityStorageItemData capabilityStorageItemData = new CapabilityStorageItemData();
+    capabilityStorageItemData.setId(id);
+    capabilityStorageItemData.setEnabled(enabled);
+    capabilityStorageItemData.setNotes(notes);
+    capabilityStorageItemData.setType(type);
+    capabilityStorageItemData.setProperties(properties);
     
     // Use the factory method from CapabilityStorageItemData
-    return CapabilityStorageItemData.of(id, 1, type, enabled, notes, properties);
+    return new CapabilityStorageItemData(capabilityStorageItemData);
   }
   
   /**

@@ -20,6 +20,7 @@ import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemDelet
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemEvent;
 
 /**
  * Implementation of {@link CapabilityStorageItemDeletedEvent} that leverages Java 21 features
@@ -81,6 +82,6 @@ public class CapabilityStorageItemDeletedEventImpl
         log.error(STR."Error processing capability deletion event for ID: \{getCapabilityId()}", e);
         throw e;
       }
-    }, virtualThreadExecutor);
+    });
   }
 }

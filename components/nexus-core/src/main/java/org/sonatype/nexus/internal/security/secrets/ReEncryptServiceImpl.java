@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.security.secrets;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -147,18 +148,24 @@ public class ReEncryptServiceImpl
 
   private TaskInfo maybeScheduleReEncrypt(final String keyId, final String notifyEmail) {
     try {
-      // Use Virtual Threads for improved task scheduling performance
-      return Thread.startVirtualThread(() -> 
-          cooperation.on(() -> scheduleReEncryptTask(keyId, notifyEmail))
-              .checkFunction(this::getReEncryptTask)
-              .cooperate("schedule_re-encryption")
-      ).join();
-    }
-    catch (Exception e) {
+      final var future = new CompletableFuture<TaskInfo>();
+      Thread.startVirtualThread(() -> {
+        try {
+          TaskInfo taskInfo = cooperation.on(() -> scheduleReEncryptTask(keyId, notifyEmail))
+                  .checkFunction(this::getReEncryptTask)
+                  .cooperate("schedule_re-encryption");
+          future.complete(taskInfo);
+        } catch (Exception e) {
+          future.completeExceptionally(e);
+        }
+      });
+      return future.get();
+    } catch (Exception e) {
       log.error("Failed to schedule re-encryption task", e);
       return null;
     }
   }
+
 
   private TaskInfo scheduleReEncryptTask(final String keyId, final String notifyEmail) {
     // Run as a Virtual Thread to optimize resource usage

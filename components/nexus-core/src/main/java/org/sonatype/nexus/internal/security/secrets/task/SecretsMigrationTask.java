@@ -17,6 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -72,19 +73,12 @@ public class SecretsMigrationTask
                 migrator.migrate();
                 log.info(STR."Completed migration using \{migratorName}");
               }
-            } 
-            catch (InterruptedException e) {
-              // Preserve interruption status for proper cancellation
-              Thread.currentThread().interrupt();
-              log.warn(STR."Migration interrupted: \{e.getMessage()}");
-              throw e;
             }
             catch (Exception e) {
               log.error(STR."Migration failed: \{e.getMessage()}", e);
               throw e;
             }
-          }))
-          .toList();
+          })).collect(Collectors.toList());
       
       // Wait for all migrations to complete
       for (Future<?> future : futures) {
@@ -110,9 +104,8 @@ public class SecretsMigrationTask
   }
   
   @Override
-  public boolean cancel() {
+  public void cancel() {
     cancelMigrations();
-    return true;
   }
   
   private void cancelMigrations() {

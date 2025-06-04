@@ -67,14 +67,15 @@ public class BaseUrlCapabilityDescriptor
   private final List<FormField> formFields;
 
   public BaseUrlCapabilityDescriptor() {
-    this.formFields = of(
-        UrlFormField.withDefaultValidation(
-            BaseUrlCapabilityConfiguration.URL,
-            messages.urlLabel(),
-            messages.urlHelp(),
-            FormField.MANDATORY
-        )
+    this.formFields = List.of(
+            new UrlFormField(
+                    BaseUrlCapabilityConfiguration.URL,
+                    messages.urlLabel(),
+                    messages.urlHelp(),
+                    FormField.MANDATORY
+            )
     );
+
   }
 
   @Override

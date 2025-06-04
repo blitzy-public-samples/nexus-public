@@ -19,7 +19,6 @@ import javax.inject.Singleton;
 import org.sonatype.goodies.i18n.I18N;
 import org.sonatype.goodies.i18n.MessageBundle;
 import org.sonatype.nexus.common.log.LogManager;
-import org.sonatype.nexus.common.log.Logger;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.upgrade.AvailabilityVersion;
 import org.sonatype.nexus.formfields.FormField;
@@ -44,8 +43,6 @@ public class ScriptTaskDescriptor
 
   public static final String SOURCE = "source";
   
-  private final Logger log;
-
   private interface Messages
       extends MessageBundle
   {
@@ -98,8 +95,6 @@ public class ScriptTaskDescriptor
         ),
         nodeAccess.isClustered() ? newMultinodeFormField() : null);
     
-    this.log = logManager.getLogger(getClass());
-    log.debug(STR."Initialized \{TYPE_ID} task descriptor with allowCreation=\{allowCreation}");
   }
 
   /**

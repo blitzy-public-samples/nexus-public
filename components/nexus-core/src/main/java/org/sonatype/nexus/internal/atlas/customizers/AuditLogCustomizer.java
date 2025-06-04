@@ -61,33 +61,24 @@ public class AuditLogCustomizer
       protected void generate(final File file) {
         try {
           // Use Virtual Threads for I/O operations to improve performance
-          Future<?> task = Thread.ofVirtual().name("audit-log-reader").start(() -> {
+          Thread thread = Thread.ofVirtual().name("audit-log-reader").start(() -> {
             try {
               InputStream is = logManager.getLogFileStream("audit.log", 0, Long.MAX_VALUE);
               if (is != null) {
                 FileUtils.copyInputStreamToFile(is, file);
-              }
-              else {
+              } else {
                 log.debug(STR."Not including missing audit.log file");
               }
-            }
-            catch (IOException e) {
-              // Enhanced error handling with improved context
+            } catch (IOException e) {
               log.debug(STR."Unable to include audit.log file: \{e.getMessage()}", e);
             }
-            return null;
           });
-          
-          // Wait for the virtual thread to complete
+
           try {
-            task.get();
-          } 
-          catch (InterruptedException e) {
+            thread.join();  // Waits for thread to finish
+          } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.debug(STR."Interrupted while processing audit.log file", e);
-          }
-          catch (ExecutionException e) {
-            log.debug(STR."Error executing audit log processing: \{e.getCause().getMessage()}", e.getCause());
           }
         }
         catch (Exception e) {

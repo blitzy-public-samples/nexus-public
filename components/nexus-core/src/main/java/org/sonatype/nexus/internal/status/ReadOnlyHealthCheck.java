@@ -19,6 +19,8 @@ import javax.inject.Singleton;
 import org.sonatype.nexus.common.app.FreezeRequest;
 import org.sonatype.nexus.common.app.FreezeService;
 
+import java.util.Optional;
+
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.text.Strings2.isBlank;
 
@@ -62,6 +64,6 @@ public class ReadOnlyHealthCheck
   }
 
   private String describe(final FreezeRequest request) {
-    return STR."Made read-only by: \{request.frozenBy().orElse("SYSTEM")}\{!isBlank(request.reason()) ? ", reason: " + request.reason() : ""}";
+    return STR."Made read-only by: \{Optional.of(request.frozenBy()).orElse("SYSTEM")}\{!isBlank(request.reason()) ? ", reason: " + request.reason() : ""}";
   }
 }

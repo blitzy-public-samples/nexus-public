@@ -88,8 +88,11 @@ public class ApiKeyData
    * @since Java 21
    */
   public <T> T getPrincipalByType(Class<T> type) {
-    if (principals != null && principals.getPrimaryPrincipal() instanceof T principal && type.isInstance(principal)) {
-      return type.cast(principal);
+    if (principals != null) {
+      Object primary = principals.getPrimaryPrincipal();
+      if (type.isInstance(primary)) {
+        return type.cast(primary);
+      }
     }
     return null;
   }

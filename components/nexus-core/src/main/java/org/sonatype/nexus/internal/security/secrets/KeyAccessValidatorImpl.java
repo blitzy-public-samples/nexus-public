@@ -292,9 +292,10 @@ public class KeyAccessValidatorImpl
   private Map<String, Object> buildNodeKeyAccessMap(final String keyId) {
     Map<String, Object> nodeKeyAccessMap = new HashMap<>();
     nodeKeyAccessMap.put("keyId", keyId);
-    boolean hasAccess = hasKeyIdAccess(keyId);
+    OffsetDateTime initiatedAt = clock.clusterTime();
+    boolean hasAccess = hasKeyIdAccess(initiatedAt,keyId);
     nodeKeyAccessMap.put("hasAccess", hasAccess);
-    nodeKeyAccessMap.put("timestamp", clock.clusterTime().toString());
+    nodeKeyAccessMap.put("timestamp", initiatedAt.toString());
     log.debug(STR."Built node key access map for key \{keyId} with access: \{hasAccess}");
     return nodeKeyAccessMap;
   }
@@ -317,39 +318,31 @@ public class KeyAccessValidatorImpl
    * @param keyId the key ID to check access for
    * @return true if the current node has access to the key, false otherwise
    */
-  private boolean hasKeyIdAccess(final String keyId) {
-    try {
-      return encryptionKeyValidator.isValidKey(keyId);
-    } catch (Exception e) {
-      log.warn(STR."Error validating key \{keyId}: \{e.getMessage()}");
-      return false;
-    }
-  }
-}
+  private boolean hasKeyIdAccess(final OffsetDateTime initiatedAt, final String keyId) {
     long startTime = System.currentTimeMillis();
     long timeOutInMs = timeoutSeconds * SECOND_IN_MILLISECONDS;
 
     Set<String> activeNodeIds = getActiveNodeIds();
     Set<String> withAccess = ConcurrentHashMap.newKeySet();
-    
+
     try {
       // Create a virtual thread executor for concurrent node validation
       try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
         // Submit validation tasks for all active nodes
         CompletableFuture<?>[] futures = activeNodeIds.stream()
-            .map(nodeId -> CompletableFuture.supplyAsync(() -> {
-              try {
-                if (hasAccess(nodeId, initiatedAt)) {
-                  withAccess.add(nodeId);
-                  log.debug(STR."Node \{nodeId} has access to key \{keyId}");
-                  return true;
-                }
-              } catch (Exception e) {
-                log.debug(STR."Error checking access for node \{nodeId}: \{e.getMessage()}");
-              }
-              return false;
-            }, executor))
-            .toArray(CompletableFuture[]::new);
+                .map(nodeId -> CompletableFuture.supplyAsync(() -> {
+                  try {
+                    if (hasAccess(nodeId, initiatedAt)) {
+                      withAccess.add(nodeId);
+                      log.debug(STR."Node \{nodeId} has access to key \{keyId}");
+                      return true;
+                    }
+                  } catch (Exception e) {
+                    log.debug(STR."Error checking access for node \{nodeId}: \{e.getMessage()}");
+                  }
+                  return false;
+                }, executor))
+                .toArray(CompletableFuture[]::new);
 
         // Wait for all validations to complete or timeout
         long remainingTime;
@@ -358,7 +351,7 @@ public class KeyAccessValidatorImpl
           if (activeNodeIds.size() == withAccess.size()) {
             return true;
           }
-          
+
           // Wait for a short period using virtual thread-friendly approach
           try {
             CompletableFuture.allOf(futures).get(100, TimeUnit.MILLISECONDS);
@@ -371,13 +364,15 @@ public class KeyAccessValidatorImpl
             log.debug(STR."Error waiting for node validation: \{e.getMessage()}");
           }
         }
-        
+
         // Final check after all futures complete or timeout
         return activeNodeIds.size() == withAccess.size();
       }
     } catch (Exception e) {
       log.debug(STR."Exception during key validation: \{e.getMessage()}");
     }
-    
+
     return false;
+
   }
+}

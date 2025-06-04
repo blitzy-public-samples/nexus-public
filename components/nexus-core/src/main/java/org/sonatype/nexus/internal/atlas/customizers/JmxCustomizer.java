@@ -122,7 +122,7 @@ public class JmxCustomizer
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(writer, model);
           }
         }
-        catch (MalformedObjectNameException | InstanceNotFoundException | IntrospectionException | ReflectionException |
+        catch (MalformedObjectNameException |
                IOException | InterruptedException | java.util.concurrent.ExecutionException e) {
           throw new RuntimeException(e);
         }

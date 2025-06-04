@@ -19,6 +19,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
 import java.util.concurrent.Future;
@@ -107,8 +108,7 @@ public class H2TaskSupport extends ComponentSupport
     
     // Use StructuredTaskScope to manage the virtual thread lifecycle
     try (ShutdownOnFailure scope = new StructuredTaskScope.ShutdownOnFailure()) {
-      // Fork a virtual thread to handle the I/O-bound file writing operation
-      Future<Long> result = scope.fork(() -> {
+      StructuredTaskScope.Subtask<Long> result = scope.fork(() -> {
         try (FileWriter writer = new FileWriter(location);
              BufferedWriter buffer = new BufferedWriter(writer)) {
           long linesWritten = writeLines(resultSet, progressConsumer, PROGRESS_UPDATE_THRESHOLD, PROGRESS_LOG_THRESHOLD, buffer);
@@ -118,14 +118,20 @@ public class H2TaskSupport extends ComponentSupport
           throw new SqlScriptGenerationException("Script generation failed when writing data", ex);
         }
       });
-      
-      // Wait for the task to complete and handle any exceptions
+
       scope.join();
-      scope.throwIfFailed();
-      
-      // Return the result
-      return result.resultNow();
+      try {
+        scope.throwIfFailed();
+      } catch (ExecutionException e) {
+        // Handle or wrap it
+        throw new RuntimeException("Error in task execution", e);
+      }
+
+      // Change this line:
+      return result.get();  // instead of result.resultNow()
     }
+
+
   }
 
   /**
@@ -177,10 +183,16 @@ public class H2TaskSupport extends ComponentSupport
     }
     
     // Check for interruption after the loop
-    if (Thread.currentThread().isInterrupted()) {
-      throw new InterruptedException("Line writing was interrupted");
+    try {
+      if (Thread.currentThread().isInterrupted()) {
+        throw new InterruptedException("Line writing was interrupted");
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt(); // Preserve the interrupt status
+      log.warn("Thread interrupted while writing line", e);
     }
-    
+
+
     buffer.write(EXPORT_RECOVERY_SQL);
     buffer.newLine();
     buffer.flush();

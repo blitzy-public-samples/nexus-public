@@ -25,7 +25,10 @@ import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.sonatype.goodies.common.ComponentSupport;
+import org.sonatype.nexus.capability.CapabilityIdentity;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorage;
+import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItem;
+import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -55,14 +58,14 @@ public class CleanupCapabilityDuplicatesService
     }
 
     // Get all capability duplicates
-    Map<String, List<String>> duplicatesMap = capabilityStorage.browseCapabilityDuplicates();
+    Map<CapabilityStorageItemData, List<CapabilityIdentity>> duplicatesMap = capabilityStorage.browseCapabilityDuplicates();
     int totalDuplicates = 0;
     
     try (var scope = new ShutdownOnFailure()) {
       // Process each capability type with its duplicates using structured concurrency
       for (var entry : duplicatesMap.entrySet()) {
-        String typeId = entry.getKey();
-        List<String> duplicates = entry.getValue();
+        CapabilityStorageItem typeId = entry.getKey();
+        List<CapabilityIdentity> duplicates = entry.getValue();
         
         int duplicateCount = duplicates.size() - 1;
         if (duplicateCount > 0) {
@@ -71,12 +74,12 @@ public class CleanupCapabilityDuplicatesService
           
           // Get duplicates to remove (skip the first one to keep it)
           // Using enhanced Streams API in Java 21 for more efficient processing
-          List<String> duplicatesToRemove = duplicates.stream()
+          List<CapabilityIdentity> duplicatesToRemove = duplicates.stream()
               .skip(1) // left one capability in the storage
               .toList(); // Java 21 enhanced Streams API
           
           // Fork a virtual thread for each duplicate to remove
-          for (String identity : duplicatesToRemove) {
+          for (CapabilityIdentity identity : duplicatesToRemove) {
             // Each removal operation runs in its own virtual thread for optimal I/O performance
             scope.fork(() -> {
               try {

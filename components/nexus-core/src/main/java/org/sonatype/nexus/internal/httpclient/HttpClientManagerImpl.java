@@ -27,6 +27,7 @@ import javax.inject.Named;
 import javax.inject.Provider;
 import javax.inject.Singleton;
 
+import org.apache.http.impl.client.FutureRequestExecutionService;
 import org.sonatype.goodies.common.Mutex;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventAware;
@@ -267,7 +268,10 @@ public class HttpClientManagerImpl
     
     // Configure the client to use virtual threads for I/O operations
     // This significantly improves scalability for concurrent HTTP requests
-    plan.getClient().setExecutor(virtualThreadExecutor);
+    // Wrap the executor in a FutureRequestExecutionService instead
+    final FutureRequestExecutionService httpExecutor =
+            new FutureRequestExecutionService(plan.getClient().build(), virtualThreadExecutor);
+
 
     // apply defaults
     defaultsCustomizer.customize(plan);

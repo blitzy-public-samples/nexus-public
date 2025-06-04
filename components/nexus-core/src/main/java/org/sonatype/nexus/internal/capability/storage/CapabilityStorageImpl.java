@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.capability.storage;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -95,7 +96,11 @@ public class CapabilityStorageImpl
   public boolean update(final CapabilityIdentity id, final CapabilityStorageItem item) {
     postCommitEvent(() -> new CapabilityStorageItemUpdatedEventImpl((CapabilityStorageItemData) item));
     ((HasEntityId) item).setId(entityId(id));
-    return virtualThreadExecutor.submit(() -> dao().update((CapabilityStorageItemData) item)).join();
+      try {
+          return virtualThreadExecutor.submit(() -> dao().update((CapabilityStorageItemData) item)).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
@@ -107,35 +112,47 @@ public class CapabilityStorageImpl
         .findFirst()
         .map(CapabilityStorageItemData.class::cast)
         .ifPresent(item -> postCommitEvent(() -> new CapabilityStorageItemDeletedEventImpl(item)));
-    
-    return virtualThreadExecutor.submit(() -> dao().delete(entityId(id))).join();
+
+      try {
+          return virtualThreadExecutor.submit(() -> dao().delete(entityId(id))).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
-  public Map<CapabilityIdentity, CapabilityStorageItem> getAll() {
-    return virtualThreadExecutor.submit(() -> 
-        stream(dao().browse()).collect(toImmutableMap(CapabilityStorageImpl::capabilityIdentity, identity()))
-    ).join();
+  public Map<CapabilityIdentity, CapabilityStorageItemData> getAll() {
+      try {
+          return virtualThreadExecutor.submit(() ->
+              stream(dao().browse()).collect(toImmutableMap(CapabilityStorageImpl::capabilityIdentity, identity()))
+          ).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
-  public Map<CapabilityStorageItem, List<CapabilityIdentity>> browseCapabilityDuplicates() {
-    return virtualThreadExecutor.submit(() -> {
-      var entries = getAll().entrySet();
-      return entries.stream()
-          .collect(Collectors.groupingBy(Entry::getValue))
-          .entrySet()
-          .stream()
-          .filter(f -> f.getValue().size() > 1)
-          .collect(Collectors.toMap(
-              Entry::getKey,
-              entry -> entry.getValue()
-                  .stream()
-                  .map(Entry::getKey)
-                  .collect(Collectors.toList())));
-    }).join();
+  public Map<CapabilityStorageItemData, List<CapabilityIdentity>> browseCapabilityDuplicates() {
+      try {
+          return virtualThreadExecutor.submit(() -> {
+            var entries = getAll().entrySet();
+            return entries.stream()
+                .collect(Collectors.groupingBy(Entry::getValue))
+                .entrySet()
+                .stream()
+                .filter(f -> f.getValue().size() > 1)
+                .collect(Collectors.toMap(
+                    Entry::getKey,
+                    entry -> entry.getValue()
+                        .stream()
+                        .map(Entry::getKey)
+                        .collect(Collectors.toList())));
+          }).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Override
@@ -152,11 +169,11 @@ public class CapabilityStorageImpl
   private void handleCapabilityStorageEvent(Object event) {
     switch (event) {
       case CapabilityStorageItemCreatedEventImpl createdEvent -> 
-          log.debug(STR."Created capability storage item: \{createdEvent.getCapabilityStorageItem().getType()}");
+          log.debug(STR."Created capability storage item: \{createdEvent.getRemoteNodeId()}");
       case CapabilityStorageItemUpdatedEventImpl updatedEvent -> 
-          log.debug(STR."Updated capability storage item: \{updatedEvent.getCapabilityStorageItem().getType()}");
+          log.debug(STR."Updated capability storage item: \{updatedEvent.getRemoteNodeId()}");
       case CapabilityStorageItemDeletedEventImpl deletedEvent -> 
-          log.debug(STR."Deleted capability storage item: \{deletedEvent.getCapabilityStorageItem().getType()}");
+          log.debug(STR."Deleted capability storage item: \{deletedEvent.getRemoteNodeId()}");
       default -> log.debug(STR."Unknown capability storage event: \{event}");
     }
   }

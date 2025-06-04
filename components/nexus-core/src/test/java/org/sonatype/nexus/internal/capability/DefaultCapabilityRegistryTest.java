@@ -310,7 +310,7 @@ public class DefaultCapabilityRegistryTest
     oldProps.put("p1", "v1");
     oldProps.put("p2", "v2");
 
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
@@ -342,7 +342,7 @@ public class DefaultCapabilityRegistryTest
     oldProps.put("p1", "v1");
     oldProps.put("p2", "v2");
 
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
@@ -384,7 +384,7 @@ public class DefaultCapabilityRegistryTest
     oldProps.put("p1", "v1");
     oldProps.put("p2", "v2");
 
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
@@ -415,7 +415,7 @@ public class DefaultCapabilityRegistryTest
    */
   @Test
   public void loadWhenTypeIsUnknown() throws Exception {
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
@@ -456,7 +456,7 @@ public class DefaultCapabilityRegistryTest
     Map<String, String> properties = Maps.newHashMap();
     properties.put("foo", secretsService.encryptMaven("", "bar".toCharArray(), "").getId());
 
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
@@ -506,7 +506,7 @@ public class DefaultCapabilityRegistryTest
   public void loadWhenPropertiesAreInvalid() throws Exception {
     final Map<String, String> oldProps = Maps.newHashMap();
     oldProps.put("bad", "data");
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
@@ -543,13 +543,13 @@ public class DefaultCapabilityRegistryTest
     final Map<String, String> oldProps = Maps.newHashMap();
     oldProps.put("duplicate", "data");
 
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);
     item.setProperties(oldProps);
 
-    final CapabilityStorageItem duplicate = item;
+    final CapabilityStorageItemData duplicate = item;
 
     CapabilityIdentity fooId = capabilityIdentity("foo");
     CapabilityIdentity barId = capabilityIdentity("bar");
@@ -585,7 +585,7 @@ public class DefaultCapabilityRegistryTest
     oldProps.put("p2", "v2");
     oldProps.put("password", secretsService.encryptMaven("", "admin123".toCharArray(), "").getId());
 
-    final CapabilityStorageItem item = new CapabilityStorageItemData();
+    final CapabilityStorageItemData item = new CapabilityStorageItemData();
     item.setVersion(0);
     item.setType(CAPABILITY_TYPE.toString());
     item.setEnabled(true);

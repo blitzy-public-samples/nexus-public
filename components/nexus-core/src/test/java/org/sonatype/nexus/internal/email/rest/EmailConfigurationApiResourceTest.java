@@ -51,18 +51,18 @@ public class EmailConfigurationApiResourceTest
   public void getUnconfiguredEmailConfigurationHandlesNullDefaultConfiguration() {
     ApiEmailConfiguration response = underTest.getEmailConfiguration();
 
-    assertThat(response.getFromAddress(), is(nullValue()));
-    assertThat(response.getHost(), is(nullValue()));
-    assertThat(response.getPassword(), is(nullValue()));
-    assertThat(response.getPort(), is(nullValue()));
-    assertThat(response.getSubjectPrefix(), is(nullValue()));
-    assertThat(response.getUsername(), is(nullValue()));
-    assertThat(response.isEnabled(), is(false));
-    assertThat(response.isNexusTrustStoreEnabled(), is(false));
-    assertThat(response.isSslOnConnectEnabled(), is(false));
-    assertThat(response.isSslServerIdentityCheckEnabled(), is(false));
-    assertThat(response.isStartTlsEnabled(), is(false));
-    assertThat(response.isStartTlsRequired(), is(false));
+    assertThat(response.fromAddress(), is(nullValue()));
+    assertThat(response.host(), is(nullValue()));
+    assertThat(response.password(), is(nullValue()));
+    assertThat(response.port(), is(nullValue()));
+    assertThat(response.subjectPrefix(), is(nullValue()));
+    assertThat(response.username(), is(nullValue()));
+    assertThat(response.enabled(), is(false));
+    assertThat(response.nexusTrustStoreEnabled(), is(false));
+    assertThat(response.sslOnConnectEnabled(), is(false));
+    assertThat(response.sslServerIdentityCheckEnabled(), is(false));
+    assertThat(response.startTlsEnabled(), is(false));
+    assertThat(response.startTlsRequired(), is(false));
   }
 
   @Test
@@ -72,16 +72,27 @@ public class EmailConfigurationApiResourceTest
 
     ApiEmailConfiguration response = underTest.getEmailConfiguration();
 
-    assertThat(response.getPassword(), is(nullValue()));
+    assertThat(response.password(), is(nullValue()));
   }
 
   @Test
   public void setEmailConfigurationSetsTheNewConfiguration() {
     EmailConfiguration newConfiguration = mock(EmailConfiguration.class);
     String newPassword = "testPassword";
-    ApiEmailConfiguration request = new ApiEmailConfiguration();
-    request.setEnabled(true);
-    request.setPassword(newPassword);
+    ApiEmailConfiguration request = new ApiEmailConfiguration(
+            true,
+            newConfiguration.getHost(),
+            newConfiguration.getPort(),
+            newPassword,
+            newConfiguration.getUsername(),
+            newConfiguration.getFromAddress(),
+            newConfiguration.getSubjectPrefix(),
+            newConfiguration.isStartTlsEnabled(),
+            newConfiguration.isStartTlsRequired(),
+            newConfiguration.isSslOnConnectEnabled(),
+            newConfiguration.isSslCheckServerIdentityEnabled(),
+            newConfiguration.isNexusTrustStoreEnabled()
+    );
 
     when(emailManager.newConfiguration()).thenReturn(newConfiguration);
 
@@ -97,9 +108,20 @@ public class EmailConfigurationApiResourceTest
     when(emailManager.getConfiguration()).thenReturn(emailConfiguration);
     when(emailManager.newConfiguration()).thenReturn(newConfiguration);
 
-    ApiEmailConfiguration request = new ApiEmailConfiguration();
-    request.setEnabled(true);
-    request.setPassword(Strings2.EMPTY);
+    ApiEmailConfiguration request = new ApiEmailConfiguration(
+            true,
+            newConfiguration.getHost(),
+            newConfiguration.getPort(),
+            Strings2.EMPTY,
+            newConfiguration.getUsername(),
+            newConfiguration.getFromAddress(),
+            newConfiguration.getSubjectPrefix(),
+            newConfiguration.isStartTlsEnabled(),
+            newConfiguration.isStartTlsRequired(),
+            newConfiguration.isSslOnConnectEnabled(),
+            newConfiguration.isSslCheckServerIdentityEnabled(),
+            newConfiguration.isNexusTrustStoreEnabled()
+    );
 
     underTest.setEmailConfiguration(request);
 

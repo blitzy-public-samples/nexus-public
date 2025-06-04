@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.httpclient;
 import java.io.File;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
@@ -60,12 +61,14 @@ public class HttpClientConfigurationExport
           log.error(STR."Error exporting HttpClientConfiguration data to \{file}: \{e.getMessage()}", e);
           throw new RuntimeException(e);
         }
-      }).join(); // Wait for completion without checked exceptions
+      }).get(); // Wait for completion without checked exceptions
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
     }
   }
 
   @Override
-  public void restore(final File file) throws IOException {
+  public void restore(final File file) {
     log.debug(STR."Restoring HttpClientConfiguration data from \{file}");
     
     // Use virtual thread for I/O operation to improve performance
@@ -83,12 +86,9 @@ public class HttpClientConfigurationExport
           log.error(STR."Error restoring HttpClientConfiguration data from \{file}: \{e.getMessage()}", e);
           throw new RuntimeException(e);
         }
-      }).join(); // Wait for completion without checked exceptions
-    } catch (RuntimeException e) {
-      if (e.getCause() instanceof IOException) {
-        throw (IOException) e.getCause();
-      }
-      throw e;
+      }).get(); // Wait for completion without checked exceptions
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
     }
   }
 }

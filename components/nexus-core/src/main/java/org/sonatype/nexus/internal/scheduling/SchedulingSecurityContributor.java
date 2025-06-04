@@ -18,13 +18,13 @@ import java.util.SequencedCollection;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.apache.commons.lang3.StringUtils;
 import org.sonatype.nexus.security.config.MemorySecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityConfiguration;
 import org.sonatype.nexus.security.config.SecurityContributor;
 import org.sonatype.nexus.security.config.SecurityContributorSupport;
+import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 import org.sonatype.nexus.security.privilege.Privilege;
-import org.sonatype.nexus.security.privilege.application.ApplicationPrivilegeDescriptor;
-import org.sonatype.nexus.common.text.Strings;
 
 /**
  * Scheduling security configuration.
@@ -52,52 +52,35 @@ public class SchedulingSecurityContributor
    * 
    * Uses Java 21 pattern matching for privilege generation and optimized collections.
    */
-  @Override
   public SecurityConfiguration getContribution() {
     MemorySecurityConfiguration config = new MemorySecurityConfiguration();
 
-    // Use Java 21 SequencedCollection for optimized memory usage
-    SequencedCollection<Privilege> privileges = createCrudAndAllApplicationPrivileges(SCHEDULING_PRIV_ID_PREFIX, SCHEDULING_DOMAIN);
-    
-    // Use pattern matching for privilege processing with enhanced type patterns
+    List<MemoryCPrivilege> privileges = createCrudAndAllApplicationPrivileges(SCHEDULING_PRIV_ID_PREFIX, SCHEDULING_DOMAIN);
+
     for (var privilege : privileges) {
-      switch (privilege) {
-        // Pattern matching with guard conditions for different privilege types
-        case Privilege p when p.getId().contains("-read") -> {
-          // Read privileges get added directly
-          config.addPrivilege(p);
-          logPrivilegeAdded(p, "read");
-        }
-        case Privilege p when p.getId().contains("-create") -> {
-          // Create privileges get added with validation
-          config.addPrivilege(p);
-          logPrivilegeAdded(p, "create");
-        }
-        case Privilege p when p.getId().contains("-update") -> {
-          // Update privileges get added with validation
-          config.addPrivilege(p);
-          logPrivilegeAdded(p, "update");
-        }
-        case Privilege p when p.getId().contains("-delete") -> {
-          // Delete privileges get added with validation
-          config.addPrivilege(p);
-          logPrivilegeAdded(p, "delete");
-        }
-        case Privilege p when p.getId().equals(SCHEDULING_PRIV_ID_PREFIX + "-all") -> {
-          // All privilege gets added with special handling
-          config.addPrivilege(p);
-          logPrivilegeAdded(p, "all");
-        }
-        case Privilege p -> {
-          // Default case for any other privileges
-          config.addPrivilege(p);
-          logPrivilegeAdded(p, "other");
-        }
+      String id = privilege.getId();
+      if (id.contains("-read")) {
+        config.addPrivilege(privilege);
+        logPrivilegeAdded(privilege, "read");
+      } else if (id.contains("-create")) {
+        config.addPrivilege(privilege);
+        logPrivilegeAdded(privilege, "create");
+      } else if (id.contains("-update")) {
+        config.addPrivilege(privilege);
+        logPrivilegeAdded(privilege, "update");
+      } else if (id.contains("-delete")) {
+        config.addPrivilege(privilege);
+        logPrivilegeAdded(privilege, "delete");
+      } else if (id.equals(SCHEDULING_PRIV_ID_PREFIX + "-all")) {
+        config.addPrivilege(privilege);
+        logPrivilegeAdded(privilege, "all");
+      } else {
+        config.addPrivilege(privilege);
+        logPrivilegeAdded(privilege, "other");
       }
     }
 
-    // Add the run privilege using pattern matching for action string
-    Privilege runPrivilege = createRunPrivilege(SCHEDULING_RUN_PRIV_ACTIONS);
+    MemoryCPrivilege runPrivilege = createRunPrivilege(SCHEDULING_RUN_PRIV_ACTIONS);
     config.addPrivilege(runPrivilege);
 
     return config;
@@ -110,7 +93,7 @@ public class SchedulingSecurityContributor
    * @param actions The actions string to analyze
    * @return The created privilege
    */
-  private Privilege createRunPrivilege(String actions) {
+  private MemoryCPrivilege createRunPrivilege(String actions) {
     return switch (actions) {
       // Pattern matching with guard conditions for different action strings
       case String s when s.contains("start") && s.contains("stop") -> 
@@ -119,7 +102,7 @@ public class SchedulingSecurityContributor
           createApplicationPrivilege(SCHEDULING_RUN_PRIV_ID, SCHEDULING_RUN_PRIV_DESCRIPTION, SCHEDULING_DOMAIN, s + ",stop");
       case String s when s.contains("stop") -> 
           createApplicationPrivilege(SCHEDULING_RUN_PRIV_ID, SCHEDULING_RUN_PRIV_DESCRIPTION, SCHEDULING_DOMAIN, "start," + s);
-      case String s when Strings.isBlank(s) -> 
+      case String s when StringUtils.isBlank(s) ->
           createApplicationPrivilege(SCHEDULING_RUN_PRIV_ID, SCHEDULING_RUN_PRIV_DESCRIPTION, SCHEDULING_DOMAIN, "start,stop");
       default -> 
           createApplicationPrivilege(SCHEDULING_RUN_PRIV_ID, SCHEDULING_RUN_PRIV_DESCRIPTION, SCHEDULING_DOMAIN, actions);
@@ -133,7 +116,7 @@ public class SchedulingSecurityContributor
    * @param privilege The privilege being added
    * @param type The type of privilege for logging purposes
    */
-  private void logPrivilegeAdded(Privilege privilege, String type) {
+  private void logPrivilegeAdded(MemoryCPrivilege privilege, String type) {
     // This would use string templates in Java 21 preview, but we'll use concatenation for now
     // In Java 21 preview: System.out.println(STR."Added \{type} privilege: \{privilege.getId()}");
     // No-op in production code

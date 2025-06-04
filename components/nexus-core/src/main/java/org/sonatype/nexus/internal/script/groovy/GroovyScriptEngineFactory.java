@@ -26,6 +26,7 @@ import javax.inject.Singleton;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 
+import org.codehaus.groovy.syntax.Types;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.script.ScriptCleanupHandler;
 import org.sonatype.nexus.internal.script.ScriptTask;
@@ -107,9 +108,15 @@ public class GroovyScriptEngineFactory
         "java.lang.ProcessHandle",
         "java.lang.Runtime",
         "java.util.concurrent.StructuredTaskScope");
-    
+
+    List<Integer> disallowedTokens = List.of(
+            Types.KEYWORD_SYNCHRONIZED,
+            Types.KEYWORD_THROW,
+            Types.KEYWORD_THIS, // optional
+            Types.KEYWORD_SUPER // optional
+    );
     secureASTCustomizer.setIndirectImportCheckEnabled(true);
-    secureASTCustomizer.setDisallowedTokens(List.of("synchronized")); // Avoid pinning virtual threads
+    secureASTCustomizer.setDisallowedTokens(disallowedTokens); // Avoid pinning virtual threads
     
     return secureASTCustomizer;
   }
@@ -139,7 +146,7 @@ public class GroovyScriptEngineFactory
     return VIRTUAL_THREAD_EXECUTOR.submit(() -> {
       script.setBinding(binding);
       return script.run();
-    }).join();
+    });
   }
 
   @VisibleForTesting
@@ -161,13 +168,13 @@ public class GroovyScriptEngineFactory
   private static <T> Optional<T> getVariable(final Binding binding, final String name, final Class<T> type) {
     if (binding.hasVariable(name)) {
       Object instance = binding.getVariable(name);
-      // Use Pattern Matching for instanceof check and casting
-      if (instance instanceof T matchedInstance) {
-        return Optional.of(matchedInstance);
+      if (type.isInstance(instance)) {
+        return Optional.of(type.cast(instance));
       }
     }
     return Optional.empty();
   }
+
 
   /**
    * Script with cleanup support enhanced for Java 21 with improved resource management.

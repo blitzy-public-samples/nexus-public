@@ -49,13 +49,12 @@ public class FileDescriptorHealthCheck
   protected Result check() {
     long recommended = fileDescriptorService.getFileDescriptorRecommended();
     long current = fileDescriptorService.getFileDescriptorCount();
-    
-    return switch (current) {
-      case long count when count >= recommended -> Result.healthy();
-      case long count when count < recommended -> {
-        String message = STR."Recommended file descriptor limit is \{recommended} but count is \{count}";
-        yield Result.unhealthy(message);
-      }
-    };
+
+    if (current >= recommended) {
+      return Result.healthy();
+    } else {
+      String message = STR."Recommended file descriptor limit is \{recommended} but count is \{current}";
+      return Result.unhealthy(message);
+    }
   }
 }

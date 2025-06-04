@@ -68,12 +68,12 @@ public class FreezeAction
   public Object execute() throws Exception {
     // Using Java 21 pattern matching for switch with enhanced readability
     switch (mode) {
-      case Mode enable -> {
+      case enable -> {
         String reason = "console request";
         log.info(STR."Freezing Nexus Repository Manager: \{reason}");
         freezeService.requestFreeze(reason);
       }
-      case Mode release -> {
+      case release -> {
         log.info(STR."Releasing freeze on Nexus Repository Manager");
         freezeService.cancelFreeze();
       }

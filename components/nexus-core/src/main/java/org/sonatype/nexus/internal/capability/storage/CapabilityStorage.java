@@ -54,7 +54,7 @@ public interface CapabilityStorage
    *
    * @return capabilities (never null)
    */
-  Map<CapabilityIdentity, CapabilityStorageItem> getAll();
+  Map<CapabilityIdentity, CapabilityStorageItemData> getAll();
 
   /**
    * @since 3.20
@@ -71,7 +71,7 @@ public interface CapabilityStorage
    *
    * @return duplicates capability identities grouped by capability
    */
-  Map<CapabilityStorageItem, List<CapabilityIdentity>> browseCapabilityDuplicates();
+  Map<CapabilityStorageItemData, List<CapabilityIdentity>> browseCapabilityDuplicates();
 
   /**
    * Check capability duplicate records exists in the storage.

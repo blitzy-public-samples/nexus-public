@@ -64,10 +64,12 @@ public interface StatusResourceDoc
    */
   @GET
   @Operation(summary = "Health check endpoint that returns the results of the system status checks",
-      description = "Executes using Java 21 Virtual Threads for improved concurrency and performance")
+          description = "Executes using Java 21 Virtual Threads for improved concurrency and performance")
   @ApiResponses({
-      @ApiResponse(responseCode = "200", description = "The system status check results", 
-          content = @Content(schema = @Schema(implementation = Result.class, type = "object", additionalProperties = @Schema(implementation = Result.class))))
+          @ApiResponse(responseCode = "200", description = "The system status check results",
+                  content = @Content(schema = @Schema(
+                          type = "object"
+                  )))
   })
   SortedMap<String, Result> getSystemStatusChecks();
 

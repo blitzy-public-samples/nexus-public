@@ -131,15 +131,15 @@ public class MetricsCustomizer
             
             // Use record patterns to process results for logging
             results.forEach((name, result) -> {
-              if (result instanceof Result(boolean healthy, String message, Throwable error)) {
-                if (!healthy) {
-                  if (error != null) {
-                    log.warn(STR."Health check '\{name}' failed: \{message}", error);
+              if (result instanceof Result r) {
+                if (!r.isHealthy()) {
+                  if (r.getError() != null) {
+                    log.warn(STR."Health check '\{name}' failed: \{r.getMessage()}", r.getError());
                   } else {
-                    log.warn(STR."Health check '\{name}' failed: \{message}");
+                    log.warn(STR."Health check '\{name}' failed: \{r.getMessage()}");
                   }
                 } else {
-                  log.debug(STR."Health check '\{name}' passed: \{message}");
+                  log.debug(STR."Health check '\{name}' passed: \{r.getMessage()}");
                 }
               }
             });

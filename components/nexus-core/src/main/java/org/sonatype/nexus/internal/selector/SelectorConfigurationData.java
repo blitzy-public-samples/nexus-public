@@ -80,8 +80,8 @@ public class SelectorConfigurationData
         .collect(toMap(
             Entry::getKey,
             entry -> {
-              if (entry instanceof Entry(String key, var value)) {
-                return value != null ? value.toString() : null;
+              if (entry instanceof Entry e) {
+                return e.getValue() != null ? e.getValue().toString() : null;
               }
               return entry.getValue() != null ? entry.getValue().toString() : null;
             }

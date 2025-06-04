@@ -23,7 +23,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.URL;
 import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
+import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -110,7 +112,10 @@ public class ScriptAction
              ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
           
           // Use NIO for more efficient transfer
-          java.nio.channels.Channels.newChannel(outputStream).transferFrom(channel, 0, Integer.MAX_VALUE);
+          ReadableByteChannel inChannel = channel;
+          WritableByteChannel outChannel = Channels.newChannel(outputStream);
+          ((FileChannel) outChannel).transferFrom(inChannel, 0, Long.MAX_VALUE);
+
           yield outputStream.toString(StandardCharsets.UTF_8);
         }
       }

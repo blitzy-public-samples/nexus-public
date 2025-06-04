@@ -112,7 +112,7 @@ public class SelectorFilterBuilderImpl
         filterBuilder.append('(').append(sqlBuilder.getQueryString()).append(')');
         
         // Efficiently merge SQL parameters into the filter parameters map
-        Map<String, Object> queryParams = sqlBuilder.getQueryParameters();
+        Map<String, String> queryParams = sqlBuilder.getQueryParameters();
         filterParameters.putAll(queryParams);
 
         selectorCount++;

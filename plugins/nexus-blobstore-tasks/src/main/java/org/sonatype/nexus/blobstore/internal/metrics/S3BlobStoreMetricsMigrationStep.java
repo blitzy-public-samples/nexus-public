@@ -84,20 +84,24 @@ public class S3BlobStoreMetricsMigrationStep
     // Use Virtual Thread for startup operations
     try (var executor = newVirtualThreadPerTaskExecutor()) {
       CompletableFuture<Set<String>> startupTask = CompletableFuture.supplyAsync(() -> {
-        return cooperation.on(() -> {
-            namesToMigrate = load();
+        try {
+			return cooperation.on(() -> {
+			    namesToMigrate = load();
 
-            if (namesToMigrate == null) {
-              Collection<String> s3BlobStores = compute();
+			    if (namesToMigrate == null) {
+			      Collection<String> s3BlobStores = compute();
 
-              kv.setKey(new NexusKeyValue(NAME, ValueType.OBJECT, s3BlobStores));
-            }
+			      kv.setKey(new NexusKeyValue(NAME, ValueType.OBJECT, s3BlobStores));
+			    }
 
-            return namesToMigrate;
-          })
-          // Always check when the remote did the work just in case
-          .checkFunction(() -> Optional.ofNullable(load()))
-          .cooperate(NAME);
+			    return namesToMigrate;
+			  })
+			  // Always check when the remote did the work just in case
+			  .checkFunction(() -> Optional.ofNullable(load()))
+			  .cooperate(NAME);
+		} catch (IOException e) {
+			throw new RuntimeException("Error in " + this.getClass().getName(), e);
+		}
       }, executor);
       
       // Wait for the startup task to complete

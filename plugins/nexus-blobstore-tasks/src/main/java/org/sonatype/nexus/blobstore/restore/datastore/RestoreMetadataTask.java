@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -152,7 +153,7 @@ public class RestoreMetadataTask
         .orElseGet(Collections::emptyList);
 
     if (!existingMoves.isEmpty()) {
-      log.info(TASK_LOG_ONLY, STR."found \{existingMoves.size()} unfinished move tasks using blobstore '\{blobStoreName}', unable to run task '\{getName()}'";
+      log.info(TASK_LOG_ONLY, STR."found \{existingMoves.size()} unfinished move tasks using blobstore '\{blobStoreName}', unable to run task '\{getName()}'");
 
       throw new IllegalStateException(
           format("found unfinished move task using blobstore '%s', task can't be executed", blobStoreName));
@@ -192,8 +193,8 @@ public class RestoreMetadataTask
     }
 
     String logPrefix = dryRun ? dryRunPrefix.get() : "";
-    long processed = 0;
-    long undeleted = 0;
+    final AtomicLong processed = new AtomicLong(0);
+    final AtomicLong undeleted = new AtomicLong(0);
     boolean updateAssets = !dryRun && restore;
     Set<Repository> touchedRepositories = new HashSet<>();
 
@@ -228,9 +229,8 @@ public class RestoreMetadataTask
                   }
                   if (undelete &&
                       blobStore.undelete(blobStoreUsageChecker, context.blobId, context.blobAttributes, dryRun)) {
-                    synchronized (RestoreMetadataTask.this) {
-                      undeleted++;
-                    }
+                	  undeleted.incrementAndGet();
+                	  
                   }
 
                   if (updateAssets) {
@@ -239,14 +239,12 @@ public class RestoreMetadataTask
                     }
                   }
                 }
-
-                synchronized (RestoreMetadataTask.this) {
-                  processed++;
-                  if (processed % 100 == 0) {
+                long currentProcessed = processed.incrementAndGet();
+                if (currentProcessed % 100 == 0) {
                     progressLogger
                         .info(STR."\{logPrefix}Elapsed time: \{progressLogger.getElapsed()}, processed: \{processed}, un-deleted: \{undeleted}");
                   }
-                }
+                
               }
               catch (Exception e) {
                 log.error(STR."Error restoring blob \{blobId}", e);

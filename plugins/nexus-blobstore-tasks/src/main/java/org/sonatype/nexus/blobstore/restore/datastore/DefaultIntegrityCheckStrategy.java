@@ -45,7 +45,7 @@ import org.sonatype.nexus.repository.content.facet.ContentFacet;
 import org.sonatype.nexus.repository.content.fluent.FluentAsset;
 import org.sonatype.nexus.repository.content.fluent.FluentAssets;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.StringTemplate.STR;
@@ -124,7 +124,7 @@ public class DefaultIntegrityCheckStrategy
       final int sinceDays,
       @Nullable final Consumer<Asset> integrityCheckFailedHandler)
   {
-    log.info(STR."Checking integrity of assets in repository '\{repository.getName()}' with blob store '\{blobStore.getBlobStoreConfiguration().getName()}'")
+    log.info(STR."Checking integrity of assets in repository '\{repository.getName()}' with blob store '\{blobStore.getBlobStoreConfiguration().getName()}'");
 
     long processed = 0;
     long failures = 0;
@@ -207,7 +207,7 @@ public class DefaultIntegrityCheckStrategy
           .map(BlobRef::getBlobId);
 
       if (!blobId.isPresent()) {
-        log.error(STR."Error accessing blob for asset '\{asset.path()}'")
+        log.error(STR."Error accessing blob for asset '\{asset.path()}'");
         return true;
       }
 
@@ -216,19 +216,19 @@ public class DefaultIntegrityCheckStrategy
       BlobAttributes blobAttributes = blobStore.getBlobAttributes(blobId.get());
 
       if (blobAttributes == null) {
-        log.error(STR."Blob properties missing for asset '\{asset.path()}'")
+        log.error(STR."Blob properties missing for asset '\{asset.path()}'");
         return true;
       }
       else if (blobAttributes.isDeleted()) {
-        log.warn(STR."Blob properties marked as deleted for asset '\{asset.path()}'. Will be removed on next compact.")
+        log.warn(STR."Blob properties marked as deleted for asset '\{asset.path()}'. Will be removed on next compact.");
         return true;
       }
       else if (!blobDataExists(blobStore.get(blobId.get()))) {
-        log.error(STR."Blob data missing for asset '\{asset.path()}'")
+        log.error(STR."Blob data missing for asset '\{asset.path()}'");
         return true;
       }
       else if (!checkAssetIntegrity(blobAttributes, asset)) {
-        log.error(STR."Asset integrity check failed for \{asset.path()}")
+        log.error(STR."Asset integrity check failed for \{asset.path()}");
         return true;
       }
       else {
@@ -271,7 +271,7 @@ public class DefaultIntegrityCheckStrategy
     String blobSha1 = getBlobSha1(blobAttributes);
 
     if (!Objects.equals(assetSha1, blobSha1)) {
-      log.error(STR."SHA1 does not match on asset '\{asset.path()}'! Metadata SHA1: '\{assetSha1}', Blob SHA1: '\{blobSha1}'")
+      log.error(STR."SHA1 does not match on asset '\{asset.path()}'! Metadata SHA1: '\{assetSha1}', Blob SHA1: '\{blobSha1}'");
       return false;
     }
 
@@ -313,7 +313,7 @@ public class DefaultIntegrityCheckStrategy
     }
 
     if (!StringUtils.equals(assetName, blobName)) {
-      log.error(STR."Name does not match on asset! Metadata name: '\{blobName}', Blob name: '\{assetName}'")
+      log.error(STR."Name does not match on asset! Metadata name: '\{blobName}', Blob name: '\{assetName}'");
       return false;
     }
 
@@ -353,4 +353,10 @@ public class DefaultIntegrityCheckStrategy
   protected String getBlobName(final BlobAttributes blobAttributes, final Asset asset) {
     return blobAttributes.getProperties().getProperty(HEADER_PREFIX + BLOB_NAME_HEADER);
   }
+
+@Override
+public boolean doVerifyAssetIntegrity(Asset asset, BlobStore blobStore) {
+	// TODO FIXME: Agent added method.
+	return false;
+}
 }

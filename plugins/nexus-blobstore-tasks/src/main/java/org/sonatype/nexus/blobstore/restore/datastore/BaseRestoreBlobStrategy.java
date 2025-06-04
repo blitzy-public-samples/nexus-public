@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import javax.annotation.Nonnull;
 import javax.inject.Inject;
 
+import org.joda.time.DateTime;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
@@ -69,7 +70,7 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
   {
     // Use virtual threads for I/O-bound operations
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> restoreInternal(properties, blob, blobStore, isDryRun)).join();
+      executor.submit(() -> restoreInternal(properties, blob, blobStore, isDryRun));
     }
   }
   
@@ -179,8 +180,9 @@ public abstract class BaseRestoreBlobStrategy<T extends DataStoreRestoreBlobData
         .map(AssetBlob::blobCreated)
         .map(blobCreated -> {
           // Convert blob creation time to OffsetDateTime for comparison
-          Instant blobInstant = restoreData.getBlob().getMetrics().getCreationTime();
-          OffsetDateTime restoredBlob = OffsetDateTime.ofInstant(blobInstant, ZoneId.systemDefault());
+          DateTime dateTime = restoreData.getBlob().getMetrics().getCreationTime();
+          Instant instant = Instant.ofEpochMilli(dateTime.getMillis());
+          OffsetDateTime restoredBlob = OffsetDateTime.ofInstant(instant, ZoneId.of(dateTime.getZone().getID()));
           return blobCreated.isBefore(restoredBlob);
         }).orElse(false);
   }

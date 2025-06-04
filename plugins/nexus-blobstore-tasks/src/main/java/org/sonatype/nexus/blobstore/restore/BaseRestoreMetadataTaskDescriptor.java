@@ -124,8 +124,7 @@ public abstract class BaseRestoreMetadataTaskDescriptor
     @DefaultMessage("Only blobs created since X days ago")
     String sinceDaysLabel();
 
-    @DefaultMessage(STR."Attempt to reconcile blobs only created within specified last number of days (inclusive). "
-        + "Leave empty to reconcile all blobs (this may take a very long time to finish)")
+    @DefaultMessage("Attempt to reconcile blobs only created within specified last number of days (inclusive). Leave empty to reconcile all blobs (this may take a very long time to finish)")
     String sinceDaysHelpText();
   }
 }

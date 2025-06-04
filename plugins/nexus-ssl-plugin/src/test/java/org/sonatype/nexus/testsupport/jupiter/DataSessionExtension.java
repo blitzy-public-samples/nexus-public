@@ -12,7 +12,6 @@
  */
 package org.sonatype.nexus.testsupport.jupiter;
 
-import java.lang.reflect.Method;
 import java.util.Optional;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
@@ -63,7 +62,7 @@ public class DataSessionExtension
    *
    * @param types the DataAccess types to register with the session
    */
-  public DataSessionExtension(Class<? extends DataAccess>... types) {
+  public DataSessionExtension(Class<? extends DataAccess> types) {
     this.sessionRule = new DataSessionRule().access(types);
   }
 
@@ -78,7 +77,7 @@ public class DataSessionExtension
   public void afterEach(ExtensionContext context) {
     // Close the session after the test
     DataSession<?> session = getSession(context);
-    if (session != null && session.isOpen()) {
+    if (session != null) {
       session.close();
     }
   }
@@ -118,7 +117,7 @@ public class DataSessionExtension
    *
    * @return the DataStore
    */
-  public DataStore<?> getDataStore() {
+  public Optional<DataStore<?>> getDataStore() {
     return sessionRule.getDataStore(DataStoreManager.DEFAULT_DATASTORE_NAME);
   }
 }

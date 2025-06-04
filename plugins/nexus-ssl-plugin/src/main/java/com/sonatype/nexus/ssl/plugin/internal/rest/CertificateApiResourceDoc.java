@@ -17,7 +17,7 @@ import java.util.List;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.ssl.ApiCertificate;
 import com.sonatype.nexus.ssl.plugin.validator.HostnameOrIpAddress;

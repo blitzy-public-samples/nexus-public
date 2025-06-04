@@ -102,7 +102,11 @@ public class KeyStoreStorageManagerImpl
     }
     catch (Exception e) {
       log.error(STR."Error loading keystore \{keyStoreName}: \{e.getMessage()}", e);
-      throw e;
+        try {
+            throw e;
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
     }
   }
 
@@ -118,9 +122,7 @@ public class KeyStoreStorageManagerImpl
   public void save(final String keyStoreName, final ByteArrayOutputStream out) {
     try {
       log.debug(STR."Saving keystore: \{keyStoreName}");
-      KeyStoreData data = new KeyStoreData();
-      data.setName(keyStoreName);
-      data.setBytes(out.toByteArray());
+      KeyStoreData data = new KeyStoreData(keyStoreName, out.toByteArray());
       runOnVirtualThread(() -> {
         doSaveTransactional(data);
         return null; // Callable requires a return value

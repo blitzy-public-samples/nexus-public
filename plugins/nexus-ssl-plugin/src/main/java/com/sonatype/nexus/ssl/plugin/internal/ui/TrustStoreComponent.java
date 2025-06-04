@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -120,7 +121,9 @@ class TrustStoreComponent
   @Validate
   CertificateXO create(final @NotBlank @PemCertificate String pem) throws Exception {
     log.debug(STR."Creating certificate from PEM format");
-    
+
+    Executor executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+
     CompletableFuture<CertificateXO> future = CompletableFuture.supplyAsync(() -> {
       try {
         Certificate certificate = CertificateUtil.decodePEMFormattedCertificate(pem);
@@ -132,8 +135,7 @@ class TrustStoreComponent
         log.error(STR."Error creating certificate: \{e.getMessage()}", e);
         throw new RuntimeException(e);
       }
-    }, Thread.ofVirtual().factory());
-    
+    }, executor);
     return future.join();
   }
 
@@ -150,7 +152,9 @@ class TrustStoreComponent
   @Validate
   void remove(final @NotEmpty String id) throws KeystoreException {
     log.debug(STR."Removing certificate with id: \{id}");
-    
+
+    Executor executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
         trustStore.removeTrustCertificate(id);
@@ -159,7 +163,7 @@ class TrustStoreComponent
         log.error(STR."Error removing certificate with id \{id}: \{e.getMessage()}", e);
         throw new RuntimeException(e);
       }
-    }, Thread.ofVirtual().factory());
+    }, executor);
     
     try {
       future.join();

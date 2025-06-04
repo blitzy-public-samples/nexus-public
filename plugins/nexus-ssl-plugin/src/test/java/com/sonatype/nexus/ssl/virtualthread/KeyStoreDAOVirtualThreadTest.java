@@ -74,10 +74,8 @@ public class KeyStoreDAOVirtualThreadTest
       assertTrue("Should be running in a virtual thread", Thread.currentThread().isVirtual());
       
       // Create a KeyStoreData entity
-      KeyStoreData entity = new KeyStoreData();
-      entity.setName("virtual-keystore");
-      entity.setBytes(new byte[]{1, 2, 3});
-      
+      KeyStoreData entity = new KeyStoreData("virtual-keystore",new byte[]{1, 2, 3});
+
       // Save the KeyStoreData
       boolean saveResult = dao.save(entity);
       assertThat(saveResult, is(true));
@@ -89,22 +87,22 @@ public class KeyStoreDAOVirtualThreadTest
       assertThat(readBack.get().getBytes(), is(entity.getBytes()));
 
       // Update the KeyStoreData
-      entity.setBytes(new byte[]{4, 5, 6});
-      boolean updateResult = dao.save(entity);
+      KeyStoreData entity2 = new KeyStoreData("virtual-keystore", new byte[]{4, 5, 6});
+      boolean updateResult = dao.save(entity2);
       assertThat(updateResult, is(true));
 
       // Read back the updated KeyStoreData
-      Optional<KeyStoreData> updated = dao.load(entity.getName());
+      Optional<KeyStoreData> updated = dao.load(entity2.getName());
       assertThat(updated.isPresent(), is(true));
-      assertThat(updated.get().getName(), is(entity.getName()));
+      assertThat(updated.get().getName(), is(entity2.getName()));
       assertThat(updated.get().getBytes(), is(new byte[]{4, 5, 6}));
 
       // Delete the KeyStoreData
-      boolean deleteResult = dao.delete(entity.getName());
+      boolean deleteResult = dao.delete(entity2.getName());
       assertThat(deleteResult, is(true));
 
       // Verify the KeyStoreData does not exist anymore
-      Optional<KeyStoreData> deleted = dao.load(entity.getName());
+      Optional<KeyStoreData> deleted = dao.load(entity2.getName());
       assertThat(deleted.isPresent(), is(false));
     });
     
@@ -142,10 +140,8 @@ public class KeyStoreDAOVirtualThreadTest
             String keystoreName = "concurrent-keystore-" + index;
             
             // Create a KeyStoreData entity
-            KeyStoreData entity = new KeyStoreData();
-            entity.setName(keystoreName);
-            entity.setBytes(new byte[]{(byte) index, (byte) (index + 1), (byte) (index + 2)});
-            
+            KeyStoreData entity = new KeyStoreData(keystoreName, new byte[]{(byte) index, (byte) (index + 1), (byte) (index + 2)});
+
             // Save the KeyStoreData
             boolean saveResult = dao.save(entity);
             assertThat(saveResult, is(true));
@@ -156,21 +152,21 @@ public class KeyStoreDAOVirtualThreadTest
             assertThat(readBack.get().getName(), is(entity.getName()));
 
             // Update the KeyStoreData
-            entity.setBytes(new byte[]{(byte) (index + 3), (byte) (index + 4), (byte) (index + 5)});
-            boolean updateResult = dao.save(entity);
+            KeyStoreData entity2 = new KeyStoreData(keystoreName, new byte[]{(byte) (index + 3), (byte) (index + 4), (byte) (index + 5)});
+            boolean updateResult = dao.save(entity2);
             assertThat(updateResult, is(true));
 
             // Read back the updated KeyStoreData
-            Optional<KeyStoreData> updated = dao.load(entity.getName());
+            Optional<KeyStoreData> updated = dao.load(entity2.getName());
             assertThat(updated.isPresent(), is(true));
-            assertThat(updated.get().getName(), is(entity.getName()));
+            assertThat(updated.get().getName(), is(entity2.getName()));
 
             // Delete the KeyStoreData
-            boolean deleteResult = dao.delete(entity.getName());
+            boolean deleteResult = dao.delete(entity2.getName());
             assertThat(deleteResult, is(true));
 
             // Verify the KeyStoreData does not exist anymore
-            Optional<KeyStoreData> deleted = dao.load(entity.getName());
+            Optional<KeyStoreData> deleted = dao.load(entity2.getName());
             assertThat(deleted.isPresent(), is(false));
           }
           catch (Exception e) {
@@ -207,9 +203,7 @@ public class KeyStoreDAOVirtualThreadTest
   @Test
   public void testConcurrentReadOperationsWithVirtualThreads() throws Exception {
     // First create a test keystore in the main thread
-    KeyStoreData entity = new KeyStoreData();
-    entity.setName("shared-keystore");
-    entity.setBytes(new byte[]{10, 20, 30});
+    KeyStoreData entity = new KeyStoreData("shared-keystore", new byte[]{10, 20, 30});
     boolean saveResult = dao.save(entity);
     assertThat(saveResult, is(true));
     

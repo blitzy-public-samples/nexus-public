@@ -131,10 +131,6 @@ public class DefaultSearchDocumentProducer
     try {
       return WRITER.writeValueAsString(componentDoc);
     }
-    catch (IOException e when e.getMessage() != null) {
-      // Enhanced type pattern in catch block
-      throw new UncheckedIOException(STR."Error serializing document: \{e.getMessage()}", e);
-    }
     catch (IOException e) {
       throw new UncheckedIOException("Error serializing document", e);
     }

@@ -113,7 +113,7 @@ public class AssetXOBuilder
     // Using pattern matching with Optional for more concise code
     Set<String> exposedAttributeKeys = switch (assetDescriptors) {
       case null -> Collections.emptySet();
-      case var descriptors -> {
+      case Map<String, AssetXODescriptor> descriptors -> {
         AssetXODescriptor descriptor = descriptors.get(format);
         yield descriptor != null ? descriptor.listExposedAttributeKeys() : Collections.emptySet();
       }

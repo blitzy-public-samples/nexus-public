@@ -51,12 +51,9 @@ public class BrowseNodeMigrationStep_2_3
 
   private static final String CONTENT_REPOSITORY_TABLE = "conan_content_repository";
 
-  private static final String SELECT_REPOSITORY_NAMES = STR."""
-      SELECT R.name 
-      FROM repository R, 
-      """+CONTENT_REPOSITORY_TABLE+""" C 
-      WHERE R.id = C.config_repository_id
-      """;
+  private static final String SELECT_REPOSITORY_NAMES = "SELECT R.name " +
+	      "FROM repository R, " + CONTENT_REPOSITORY_TABLE + " C " +
+	      "WHERE R.id = C.config_repository_id";
 
   @Inject
   public BrowseNodeMigrationStep_2_3(

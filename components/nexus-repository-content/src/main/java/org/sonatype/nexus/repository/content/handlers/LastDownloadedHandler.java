@@ -103,7 +103,7 @@ public class LastDownloadedHandler
 
   private boolean isSuccessfulRequestWithContent(final Context context, final Response response) {
     return switch (context.getRequest().getAction()) {
-      case GET, HEAD when isSuccessfulOrNotModified(response.getStatus()) && response.getPayload() instanceof Content -> true;
+      case String action when GET.equals(action) || HEAD.equals(action) && isSuccessfulOrNotModified(response.getStatus()) && response.getPayload() instanceof Content -> true;
       default -> false;
     };
   }

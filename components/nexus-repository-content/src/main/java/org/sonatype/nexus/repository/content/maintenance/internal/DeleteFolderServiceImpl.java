@@ -347,3 +347,4 @@ public class DeleteFolderServiceImpl
       checkDeleteAsset(repository, timestamp, contentFacet, contentMaintenance, node);
     }
   }
+}

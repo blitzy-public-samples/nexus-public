@@ -84,7 +84,7 @@ public class FormatSearchViewsMigrationStep_1_20
    */
   private void dropFormatSearchView(final Connection connection, final Format format) {
     // Use Java 21 String Templates for improved readability and performance
-    String sql = STR"DROP VIEW IF EXISTS \{format.getValue()}_component_search CASCADE";
+    String sql = STR."DROP VIEW IF EXISTS \{format.getValue()}_component_search CASCADE";
     
     log.debug("Executing SQL: {}", sql);
     
@@ -93,8 +93,8 @@ public class FormatSearchViewsMigrationStep_1_20
       log.debug("Successfully dropped search view for format: {}", format.getValue());
     }
     catch (SQLException e) {
-      log.error(STR"Failed to drop search view for format: \{format.getValue()}", e);
-      throw new RuntimeException(STR"Error dropping search view for format: \{format.getValue()}", e);
+      log.error(STR."Failed to drop search view for format: \{format.getValue()}", e);
+      throw new RuntimeException(STR."Error dropping search view for format: \{format.getValue()}", e);
     }
   }
 }

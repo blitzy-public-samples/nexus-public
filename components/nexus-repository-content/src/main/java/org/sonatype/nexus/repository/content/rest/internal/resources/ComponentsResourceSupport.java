@@ -73,7 +73,7 @@ abstract class ComponentsResourceSupport
 
   List<FluentComponent> browse(final Repository browsedRepository, final String continuationToken)
   {
-    log.debug(STR."Browsing components in repository \{browsedRepository.getName()\} with token \{continuationToken\}");
+    log.debug(STR."Browsing components in repository \{browsedRepository.getName()} with token \{continuationToken}");
     
     List<FluentComponent> permittedComponents = new ArrayList<>();
     String internalToken = toInternalToken(continuationToken);
@@ -102,7 +102,7 @@ abstract class ComponentsResourceSupport
     }
     
     List<FluentComponent> result = trim(permittedComponents, PAGE_SIZE_LIMIT);
-    log.debug(STR."Found \{result.size()\} permitted components in repository \{browsedRepository.getName()\}");
+    log.debug(STR."Found \{result.size()} permitted components in repository \{browsedRepository.getName()}");
     return result;
   }
 
@@ -122,7 +122,7 @@ abstract class ComponentsResourceSupport
     String format = repository.getFormat().getValue();
     String repositoryName = repository.getName();
     
-    log.trace(STR."Filtering components for permissions in repository \{repositoryName\} with format \{format\}");
+    log.trace(STR."Filtering components for permissions in repository \{repositoryName} with format \{format}");
     
     return assets.stream()
         .filter(componentPermitted(format, repositoryName))

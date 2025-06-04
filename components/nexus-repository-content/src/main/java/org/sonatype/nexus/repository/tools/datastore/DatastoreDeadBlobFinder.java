@@ -108,8 +108,11 @@ public class DatastoreDeadBlobFinder
       }
       assets = fluentAssets.browse(batchSize, assets.nextContinuationToken());
     }
-    log.info(STR."Inspection of repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for " + 
-        "\{deadBlobCandidateCount} assets and identified \{deadBlobCount} incorrect Assets");
+    log.info("Inspection of repository "+ repository.getName() + " took " + sw.elapsed(TimeUnit.MILLISECONDS) + "ms for " + 
+            deadBlobCandidateCount + " assets and identified " + deadBlobCount + " incorrect Assets");
+    
+    //log.info(STR."Inspection of repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for " + 
+    //    "\{deadBlobCandidateCount} assets and identified \{deadBlobCount} incorrect Assets");
   }
 
   /**
@@ -195,16 +198,20 @@ public class DatastoreDeadBlobFinder
               deadBlobs.add(deadBlobResult);
             }
             else {
-              log.debug(
-                  STR."Asset \{candidateResult.getAsset().path()} corrected from error state \{candidateResult.getResultState()} during inspection");
+            	log.debug(
+                        "Asset {} corrected from error state {} during inspection", candidateResult.getAsset().path(), candidateResult.getResultState());
+              //log.debug(
+               //   STR."Asset \{candidateResult.getAsset().path()} corrected from error state \{candidateResult.getResultState()} during inspection");
             }
           });
         });
       }
 
       if (!batchMode) {
-        log.info(STR."Followup inspection of repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for " + 
-            "\{deadBlobCandidates.size()} assets and identified \{deadBlobs.size()} incorrect Assets");
+    	  log.info("Followup inspection of repository {} took {}ms for " + "{} assets and identified {} incorrect Assets",
+    	            repository.getName(), sw.elapsed(TimeUnit.MILLISECONDS), deadBlobCandidates.size(), deadBlobs.size());
+    	  //log.info(STR."Followup inspection of repository \{repository.getName()} took \{sw.elapsed(TimeUnit.MILLISECONDS)}ms for " + 
+          //  "\{deadBlobCandidates.size()} assets and identified \{deadBlobs.size()} incorrect Assets");
       }
 
       return deadBlobs;

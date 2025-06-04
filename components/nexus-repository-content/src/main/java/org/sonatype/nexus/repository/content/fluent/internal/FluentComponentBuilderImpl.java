@@ -156,14 +156,9 @@ public class FluentComponentBuilderImpl
     component.setVersion(version);
     component.setNormalizedVersion(normalizedVersion);
 
-    // Using pattern matching to handle component attributes with Java 21 collection APIs
-    switch (attributes) {
-      case Map<String, Object> attrs when !attrs.isEmpty() -> 
-          component.attributes().backing().putAll(attrs);
-      case null, Map<String, Object> emptyAttrs -> 
-          // No attributes to add
-          break;
-    }
+    if (attributes != null && !attributes.isEmpty()) {
+        component.attributes().backing().putAll(attributes);
+      }
 
     // Create the component in the store
     componentStore.createComponent(component);

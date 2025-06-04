@@ -17,7 +17,7 @@ import java.util.Map;
 import org.sonatype.nexus.cleanup.storage.CleanupPolicy;
 import org.sonatype.nexus.common.entity.HasName;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * {@link CleanupPolicy} data.

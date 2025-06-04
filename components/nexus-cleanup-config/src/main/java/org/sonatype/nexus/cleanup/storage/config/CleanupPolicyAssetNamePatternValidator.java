@@ -13,7 +13,7 @@
 package org.sonatype.nexus.cleanup.storage.config;
 
 import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.validation.ConstraintValidatorContext;
 
 import org.sonatype.nexus.cleanup.storage.config.RegexCriteriaValidator.InvalidExpressionException;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;

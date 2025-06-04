@@ -14,7 +14,7 @@ package org.sonatype.nexus.cleanup.storage.config;
 
 import javax.inject.Inject;
 import javax.inject.Named;
-import javax.validation.ConstraintValidatorContext;
+import jakarta.validation.ConstraintValidatorContext;
 
 import org.sonatype.nexus.cleanup.storage.CleanupPolicyStorage;
 import org.sonatype.nexus.validation.ConstraintValidatorSupport;

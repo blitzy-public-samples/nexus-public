@@ -199,8 +199,12 @@ class CleanupPolicyEventHandlerTest
       when(repositoryManager.browseForCleanupPolicy(policy.getName())).thenReturn(Stream.of(repository1));
       
       underTest.on(deletedEvent1);
-      
-      verify(repositoryManager).update(any(Configuration.class));
+
+        try {
+            verify(repositoryManager).update(any(Configuration.class));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
   }
   
@@ -235,11 +239,19 @@ class CleanupPolicyEventHandlerTest
   }
   
   private void verifyConfigurationUpdatedWithoutCleanupPolicyAttribute(final int count) {
-    verify(repositoryManager, times(count)).update(configCaptor.capture());
+      try {
+          verify(repositoryManager, times(count)).update(configCaptor.capture());
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
   }
   
   private void verifyConfigurationUpdated(final int count) {
-    verify(repositoryManager, times(count)).update(configCaptor.capture());
+      try {
+          verify(repositoryManager, times(count)).update(configCaptor.capture());
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
   }
   
   @SuppressWarnings("unchecked")
@@ -252,7 +264,11 @@ class CleanupPolicyEventHandlerTest
   }
   
   private void verifyConfigurationNeverUpdated() {
-    verify(repositoryManager, times(0)).update(any());
+      try {
+          verify(repositoryManager, times(0)).update(any());
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
   }
   
   private String generateValidName() {

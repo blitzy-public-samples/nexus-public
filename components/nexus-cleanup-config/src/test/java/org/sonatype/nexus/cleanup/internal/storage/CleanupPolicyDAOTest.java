@@ -26,7 +26,6 @@ import java.util.stream.StreamSupport;
 
 import org.sonatype.nexus.cleanup.storage.CleanupPolicy;
 import org.sonatype.nexus.datastore.api.DataSession;
-import org.sonatype.nexus.testdb.DataSessionExtension;
 
 import com.google.common.collect.Iterables;
 import org.junit.jupiter.api.AfterEach;
@@ -34,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.sonatype.nexus.testdb.DataSessionRule;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasEntry;
@@ -48,7 +48,7 @@ import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTOR
 public class CleanupPolicyDAOTest
 {
   @RegisterExtension
-  public DataSessionExtension sessionRule = new DataSessionExtension().access(CleanupPolicyDAO.class);
+  public DataSessionRule sessionRule = new DataSessionRule().access(CleanupPolicyDAO.class);
 
   private DataSession<?> session;
 
@@ -72,7 +72,7 @@ public class CleanupPolicyDAOTest
     dao.create(policy);
 
     // it is read
-    Optional<CleanupPolicy> readOptional = dao.read(policy.getName());
+    Optional<CleanupPolicyData> readOptional = dao.read(policy.getName());
     assertTrue(readOptional.isPresent(), "Policy should be present after creation");
     
     // Using pattern matching with instanceof for cleaner optional value handling
@@ -95,7 +95,7 @@ public class CleanupPolicyDAOTest
     dao.update(policy);
     
     // it is read
-    Optional<CleanupPolicy> updateOptional = dao.read(policy.getName());
+    Optional<CleanupPolicyData> updateOptional = dao.read(policy.getName());
     assertTrue(updateOptional.isPresent(), "Policy should be present after update");
     
     // Using pattern matching with instanceof for cleaner optional value handling
@@ -165,14 +165,14 @@ public class CleanupPolicyDAOTest
             dao.create(policy);
             
             // Read the policy
-            Optional<CleanupPolicy> readOptional = dao.read(name);
+            Optional<CleanupPolicyData> readOptional = dao.read(name);
             if (readOptional.isPresent() && readOptional.get().getName().equals(name)) {
               // Update the policy
               policy.setNotes("Updated VT test " + index);
               dao.update(policy);
               
               // Verify update
-              Optional<CleanupPolicy> updatedOptional = dao.read(name);
+              Optional<CleanupPolicyData> updatedOptional = dao.read(name);
               if (updatedOptional.isPresent() && 
                   updatedOptional.get().getNotes().equals("Updated VT test " + index)) {
                 // Delete the policy
@@ -229,7 +229,7 @@ public class CleanupPolicyDAOTest
             if (allPolicies.size() == 10) {
               // Read a specific policy
               int policyNum = (int)(Math.random() * 10) + 1;
-              Optional<CleanupPolicy> policy = dao.read("concurrent-" + policyNum);
+              Optional<CleanupPolicyData> policy = dao.read("concurrent-" + policyNum);
               if (policy.isPresent()) {
                 successCount.incrementAndGet();
               }

@@ -52,10 +52,10 @@ public class EmailAuditor
       EmailConfiguration configuration = event.getConfiguration();
 
       // Create audit data using modern Java patterns
-      AuditData data = new AuditData()
-          .setDomain(DOMAIN)
-          .setType(CHANGED_TYPE)
-          .setContext(SYSTEM_CONTEXT);
+      AuditData data = new AuditData();
+      data.setDomain(DOMAIN);
+      data.setType(CHANGED_TYPE);
+      data.setContext(SYSTEM_CONTEXT);
 
       // Populate attributes using String Templates for better readability
       Map<String, Object> attributes = data.getAttributes();

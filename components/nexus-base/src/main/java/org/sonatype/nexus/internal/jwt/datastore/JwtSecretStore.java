@@ -14,10 +14,11 @@ package org.sonatype.nexus.internal.jwt.datastore;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.datastore.ConfigStoreSupport;
@@ -90,5 +91,21 @@ public class JwtSecretStore
     String secret = UUID.randomUUID().toString();
     postCommitEvent(JwtSecretChanged::new);
     dao().setIfEmpty(secret);
+  }
+
+  @Override
+  public CompletableFuture<Optional<String>> getSecretAsync() {
+    // Run the blocking getSecret() call inside a virtual thread asynchronously
+    //return CompletableFuture.startVirtualThread(() -> getSecret());
+    CompletableFuture<Optional<String>> future = new CompletableFuture<>();
+    Thread.startVirtualThread(() -> {
+      try {
+        Optional<String> result = getSecret();
+        future.complete(result);
+      } catch (Exception e) {
+        future.completeExceptionally(e);
+      }
+    });
+    return future;
   }
 }

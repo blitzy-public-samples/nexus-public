@@ -46,10 +46,10 @@ public class SchedulerCapabilityConfiguration
     // that would be used for property extraction in more complex configurations
     for (Entry<String, String> entry : map.entrySet()) {
       // Using record pattern to destructure the Map.Entry in a type-safe way
-      if (entry instanceof Entry<String, String>(var key, var value)) {
+      if (entry instanceof Entry<String, String> e) {
         // In a real implementation, specific properties would be processed here
         // For example: if ("someKey".equals(key)) { processValue(value); }
-        log.debug("Scheduler capability configuration property: {}={}", key, value);
+        log.debug("Scheduler capability configuration property: {}={}", e.getKey(), e.getValue());
       }
     }
     

@@ -34,11 +34,12 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.app.ManagedLifecycle;
 import org.sonatype.nexus.common.event.EventManager;
@@ -759,10 +760,10 @@ public class LogbackLogManager
           return gcLogs
               .filter(this::isValidLogFile)
               .map(Path::toFile)
-              .collect(toSet());
+              .collect(Collectors.toSet());
         } catch (IOException e) {
           log.error(STR."Unable to list files in the GC logs directory: \{e.getMessage()}", e);
-          return Collections.emptySet();
+          return Collections.<File>emptySet();
         }
       }).get();
     } catch (Exception e) {
@@ -787,10 +788,10 @@ public class LogbackLogManager
           return jfrLogs
               .filter(this::isValidLogFile)
               .map(Path::toFile)
-              .collect(toSet());
+              .collect(Collectors.toSet());
         } catch (IOException e) {
           log.error(STR."Unable to list files in the JFR logs directory: \{e.getMessage()}", e);
-          return Collections.emptySet();
+          return Collections.<File>emptySet();
         }
       }).get();
     } catch (Exception e) {

@@ -94,10 +94,15 @@ public class NexusUberClassloader
       // Use pattern matching to handle different exception types
       switch (cause) {
         case ClassNotFoundException cnf -> throw cnf;
-        case IllegalAccessException | InaccessibleObjectException accessException -> {
+        case IllegalAccessException accessException -> {
           // Handle Java 21's enhanced encapsulation restrictions
           throw new ClassNotFoundException("Access denied to class: " + name + 
               " due to Java 21 module restrictions", accessException);
+        }
+        case InaccessibleObjectException accessException -> {
+          // Handle Java 21's enhanced encapsulation restrictions
+          throw new ClassNotFoundException("Access denied to class: " + name +
+                  " due to Java 21 module restrictions", accessException);
         }
         case SecurityException securityException -> {
           throw new ClassNotFoundException("Security violation accessing class: " + name, securityException);
@@ -193,7 +198,12 @@ public class NexusUberClassloader
           case TypeNotPresentException ignored -> {
             // Ignore and continue to next space
           }
-          case IllegalAccessException | InaccessibleObjectException accessException -> {
+          case IllegalAccessException accessException -> {
+            // Cache access exceptions to avoid repeated failures
+            accessExceptions.put(name, accessException);
+            throw new ClassNotFoundException("Access denied to class: " + name, accessException);
+          }
+          case InaccessibleObjectException accessException -> {
             // Cache access exceptions to avoid repeated failures
             accessExceptions.put(name, accessException);
             throw new ClassNotFoundException("Access denied to class: " + name, accessException);

@@ -35,7 +35,7 @@ public interface CUserRoleMappingDAO
    * 
    * @return Iterable of all user role mappings
    */
-  @Options(useVirtualThreads = true)
+  //@Options(useVirtualThreads = true)
   Iterable<CUserRoleMappingData> browse();
 
   /**
@@ -43,7 +43,7 @@ public interface CUserRoleMappingDAO
    * 
    * @param mapping the user role mapping to create
    */
-  @Options(useVirtualThreads = true)
+ // @Options(useVirtualThreads = true)
   void create(CUserRoleMappingData mapping);
 
   /**
@@ -54,7 +54,7 @@ public interface CUserRoleMappingDAO
    * @param source the authentication source
    * @return the user role mapping if found
    */
-  @Options(useVirtualThreads = true)
+ // @Options(useVirtualThreads = true)
   Optional<CUserRoleMappingData> read(
       @Param("userId") String userId, 
       @Param("userLo") String userIdLowerCase,
@@ -82,7 +82,7 @@ public interface CUserRoleMappingDAO
    * @param mapping the user role mapping to update
    * @return true if the mapping was updated, false otherwise
    */
-  @Options(useVirtualThreads = true)
+ // @Options(useVirtualThreads = true)
   boolean update(CUserRoleMappingData mapping);
 
   /**
@@ -93,7 +93,7 @@ public interface CUserRoleMappingDAO
    * @param source the authentication source
    * @return true if the mapping was deleted, false otherwise
    */
-  @Options(useVirtualThreads = true)
+  //@Options(useVirtualThreads = true)
   boolean delete(
       @Param("userId") String userId,
       @Param("userLo") String userIdLowerCase,

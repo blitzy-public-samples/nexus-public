@@ -183,21 +183,20 @@ public class HeaderPatternFilter
       String header = headers.nextElement();
       
       // Using pattern matching for switch to handle different header cases
-      switch (header) {
-        case null, "" -> {
-          // Skip null or empty headers
-          continue;
-        }
-        case String validHeader when expression.matcher(validHeader).matches() -> {
-          // Valid header that matches the pattern, continue checking
-          continue;
-        }
-        default -> {
-          // Invalid header found
-          return true;
-        }
+
+      if (header == null || header.isEmpty()) {
+        // Skip null or empty headers
+        continue;
       }
-    }
+
+      if (expression.matcher(header).matches()) {
+        // Valid header, continue checking
+        continue;
+      }
+
+// Invalid header found
+      return true;
+        }
     return false;
   }
 

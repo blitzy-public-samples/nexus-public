@@ -241,11 +241,14 @@ public class NexusKeyValue
         .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
     
     // Use pattern matching to handle different types more elegantly
-    return switch (rawValue) {
-      case null -> null;
-      case T t when typeClass.isInstance(rawValue) -> t;
-      default -> optimizedMapper.convertValue(rawValue, typeClass);
-    };
+    if (rawValue == null) {
+      return null;
+    } else if (typeClass.isInstance(rawValue)) {
+      return typeClass.cast(rawValue);
+    } else {
+      return optimizedMapper.convertValue(rawValue, typeClass);
+    }
+
   }
 
   /**
@@ -305,34 +308,31 @@ public class NexusKeyValue
    */
   public <T> Optional<T> getValueAs(Class<T> typeClass) {
     Object rawValue = getValue();
-    return switch (rawValue) {
-      case null -> Optional.empty();
-      case T t when typeClass.isInstance(rawValue) -> Optional.of(t);
-      case String s when typeClass == Integer.class -> {
-        try {
-          yield Optional.of(typeClass.cast(Integer.parseInt(s)));
-        } catch (NumberFormatException e) {
-          yield Optional.empty();
+    if (rawValue == null) {
+      return Optional.empty();
+    }
+
+    if (typeClass.isInstance(rawValue)) {
+      return Optional.of(typeClass.cast(rawValue));
+    }
+
+    if (rawValue instanceof String s) {
+      try {
+        if (typeClass == Integer.class) {
+          return Optional.of(typeClass.cast(Integer.parseInt(s)));
+        } else if (typeClass == Long.class) {
+          return Optional.of(typeClass.cast(Long.parseLong(s)));
+        } else if (typeClass == Double.class) {
+          return Optional.of(typeClass.cast(Double.parseDouble(s)));
+        } else if (typeClass == Boolean.class) {
+          return Optional.of(typeClass.cast(Boolean.parseBoolean(s)));
         }
-      };
-      case String s when typeClass == Long.class -> {
-        try {
-          yield Optional.of(typeClass.cast(Long.parseLong(s)));
-        } catch (NumberFormatException e) {
-          yield Optional.empty();
-        }
-      };
-      case String s when typeClass == Double.class -> {
-        try {
-          yield Optional.of(typeClass.cast(Double.parseDouble(s)));
-        } catch (NumberFormatException e) {
-          yield Optional.empty();
-        }
-      };
-      case String s when typeClass == Boolean.class -> 
-          Optional.of(typeClass.cast(Boolean.parseBoolean(s)));
-      default -> Optional.empty();
-    };
+      } catch (NumberFormatException e) {
+        return Optional.empty();
+      }
+    }
+
+    return Optional.empty();
   }
 
   /**

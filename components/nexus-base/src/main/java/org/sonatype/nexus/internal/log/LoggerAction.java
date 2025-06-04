@@ -25,6 +25,7 @@ import org.apache.karaf.shell.api.action.Completion;
 import org.apache.karaf.shell.api.action.Option;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.lang.Boolean.*;
 import static java.lang.Boolean.TRUE;
 import static java.lang.StringTemplate.STR;
 
@@ -74,9 +75,9 @@ public class LoggerAction
     
     // Use pattern matching for switch to handle different cases
     switch (state) {
-      case LoggerState(TRUE, _, _) -> logManager.unsetLoggerLevel(name);
+      case LoggerState(Boolean del, _, _) when Boolean.TRUE.equals(del)-> logManager.unsetLoggerLevel(name);
       case LoggerState(_, var lvl, _) when lvl != null -> logManager.setLoggerLevel(name, lvl);
-      case LoggerState(_, _, TRUE) -> {
+      case LoggerState(_, _, Boolean eff) when Boolean.TRUE.equals(eff) -> {
         level = logManager.getLoggerEffectiveLevel(name);
         printLoggerLevel();
       }

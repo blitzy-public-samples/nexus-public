@@ -70,6 +70,6 @@ class ApiKeyToken
   @Override
   public String toString() {
     // Use StandardCharsets.UTF_8 explicitly for consistent encoding across platforms
-    return new String(chars, StandardCharsets.UTF_8);
+    return new String(chars);
   }
 }

@@ -34,8 +34,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  * @since capabilities 2.0
  */
 public class ActivationConditionHandler
-    extends ComponentSupport
-{
+    extends ComponentSupport {
 
   private final EventManager eventManager;
 
@@ -48,8 +47,7 @@ public class ActivationConditionHandler
   @Inject
   ActivationConditionHandler(final EventManager eventManager,
                              final Conditions conditions,
-                             @Assisted final DefaultCapabilityReference reference)
-  {
+                             @Assisted final DefaultCapabilityReference reference) {
     this.eventManager = checkNotNull(eventManager);
     this.conditions = checkNotNull(conditions);
     this.reference = checkNotNull(reference);
@@ -78,7 +76,7 @@ public class ActivationConditionHandler
       });
     }
   }
-  
+
   /**
    * Binds this handler to the activation condition of the capability it references.
    * Uses Virtual Threads for parallel condition activation when possible.
@@ -86,30 +84,33 @@ public class ActivationConditionHandler
    * @return this handler instance for method chaining
    */
   ActivationConditionHandler bind() {
-    if (activationCondition == null) {
-      Thread.startVirtualThread(() -> {
-        try {
-          Condition capabilityActivationCondition = reference.capability().activationCondition();
-          if (capabilityActivationCondition == null) {
-            capabilityActivationCondition = conditions.always("Capability has no activation condition");
+    try {
+      if (activationCondition == null) {
+        Thread.startVirtualThread(() -> {
+          try {
+            Condition capabilityActivationCondition = reference.capability().activationCondition();
+            if (capabilityActivationCondition == null) {
+              capabilityActivationCondition = conditions.always("Capability has no activation condition");
+            }
+            activationCondition = conditions.logical().and(
+                    capabilityActivationCondition,
+                    conditions.nexus().active(),
+                    conditions.capabilities().capabilityHasNoFailures(),
+                    conditions.capabilities().capabilityHasNoDuplicates()
+            );
+            if (activationCondition instanceof CapabilityContextAware) {
+              ((CapabilityContextAware) activationCondition).setContext(reference.context());
+            }
+          } catch (Exception e) {
+            activationCondition = conditions.never("Failed to determine activation condition");
+            log.error(STR."Could not get activation condition from capability \{reference.capability()} (\{reference.context().id()}). Considering it as non activatable", e);
           }
-          activationCondition = conditions.logical().and(
-              capabilityActivationCondition,
-              conditions.nexus().active(),
-              conditions.capabilities().capabilityHasNoFailures(),
-              conditions.capabilities().capabilityHasNoDuplicates()
-          );
-          if (activationCondition instanceof CapabilityContextAware) {
-            ((CapabilityContextAware) activationCondition).setContext(reference.context());
-          }
-        }
-        catch (Exception e) {
-          activationCondition = conditions.never("Failed to determine activation condition");
-          log.error(STR."Could not get activation condition from capability \{reference.capability()} (\{reference.context().id()}). Considering it as non activatable", e);
-        }
-        activationCondition.bind();
-        eventManager.register(ActivationConditionHandler.this);
-      }).join(); // Wait for the virtual thread to complete
+          activationCondition.bind();
+          eventManager.register(ActivationConditionHandler.this);
+        }).join(); // Wait for the virtual thread to complete
+      }
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
     }
     return this;
   }
@@ -122,11 +123,15 @@ public class ActivationConditionHandler
    */
   ActivationConditionHandler release() {
     if (activationCondition != null) {
-      Thread.startVirtualThread(() -> {
-        eventManager.unregister(this);
-        activationCondition.release();
-        activationCondition = null;
-      }).join(); // Wait for the virtual thread to complete
+        try {
+            Thread.startVirtualThread(() -> {
+              eventManager.unregister(this);
+              activationCondition.release();
+              activationCondition = null;
+            }).join(); // Wait for the virtual thread to complete
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
     return this;
   }
@@ -140,3 +145,4 @@ public class ActivationConditionHandler
   public String explainWhyNotSatisfied() {
     return isConditionSatisfied() ? null : activationCondition.explainUnsatisfied();
   }
+}

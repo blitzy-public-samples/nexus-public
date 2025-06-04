@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.metrics;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.inject.Named;
 
@@ -28,8 +29,10 @@ import org.sonatype.nexus.security.authz.PermissionsFilter;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.AbstractModule;
-import io.dropwizard.metrics.Clock;
-import io.dropwizard.metrics.MetricRegistry;
+//import io.dropwizard.metrics.Clock;
+//import io.dropwizard.metrics.MetricRegistry;
+import com.codahale.metrics.Clock;
+import com.codahale.metrics.MetricRegistry;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.dropwizard.DropwizardExports;
 import org.slf4j.Logger;
@@ -62,6 +65,7 @@ public class MetricsModule
   private static final Logger log = LoggerFactory.getLogger(MetricsModule.class);
 
   protected static final String MOUNT_POINT = "/service/metrics";
+  private ExecutorService executorService;
 
   @Override
   protected void configure() {
@@ -82,7 +86,8 @@ public class MetricsModule
     bind(MetricRegistry.class).toInstance(metricRegistry);
     
     // Register Java 21 specific metrics registry
-    final MetricRegistry java21Registry = new MetricRegistry().register("jvm.21", new VirtualThreadMetrics());
+    final MetricRegistry java21Registry = new MetricRegistry();
+    java21Registry.register("jvm.21", new VirtualThreadMetrics());
     bind(MetricRegistry.class).annotatedWith(Names.named("java21Registry")).toInstance(java21Registry);
     
     // Configure Prometheus integration
@@ -113,5 +118,10 @@ public class MetricsModule
     });
 
     log.info("Metrics support configured with Java 21 virtual thread capabilities");
+  }
+
+  public void setExecutorService(ExecutorService executorService) {
+    //todo , was not made by AI, func added manually
+    this.executorService = executorService;
   }
 }

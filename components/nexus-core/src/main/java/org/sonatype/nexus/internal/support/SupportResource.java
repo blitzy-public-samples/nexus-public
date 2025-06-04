@@ -100,8 +100,7 @@ public class SupportResource
               log.debug("Starting support ZIP generation using virtual thread: {}", Thread.currentThread());
               supportZipGenerator.generate(request, "support", output);
               log.debug("Completed support ZIP generation");
-            } 
-            catch (IOException e) {
+            } catch (Exception e) {
               log.error("Error generating support ZIP: {}", e.getMessage(), e);
               throw new RuntimeException(STR."Failed to generate support ZIP: \{e.getMessage()}", e);
             }

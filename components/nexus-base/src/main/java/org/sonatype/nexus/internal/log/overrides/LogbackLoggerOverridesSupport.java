@@ -14,13 +14,14 @@ package org.sonatype.nexus.internal.log.overrides;
 
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.concurrent.*;
 import javax.xml.XMLConstants;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
@@ -67,31 +68,44 @@ public abstract class LogbackLoggerOverridesSupport
    * Read logger levels from logback.xml formatted include file.
    */
   protected Map<String, LoggerLevel> readFromFile() throws Exception {
-    final Map<String, LoggerLevel> result = Maps.newHashMap();
-
-    Future<Map<String, LoggerLevel>> future = Thread.ofVirtual().name("logback-read-thread").start(() -> {
-      SAXParserFactory parserFactory = SafeXml.newSaxParserFactory();
-      parserFactory.setValidating(false);
+    Executor executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+    CompletableFuture<Map<String, LoggerLevel>> future = CompletableFuture.supplyAsync(() -> {
+        SAXParserFactory parserFactory = null;
+        try {
+            parserFactory = SafeXml.newSaxParserFactory();
+        } catch (SAXException e) {
+            throw new RuntimeException(e);
+        } catch (ParserConfigurationException e) {
+            throw new RuntimeException(e);
+        }
+        parserFactory.setValidating(false);
       parserFactory.setNamespaceAware(true);
-      parserFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-      
-      SAXParser parser = parserFactory.newSAXParser();
-      parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-      parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-      parser.setProperty(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
-      
       try {
-        parser.parse(logbackFile, new DefaultHandler()
-        {
+        parserFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+
+      SAXParser parser;
+      try {
+        parser = parserFactory.newSAXParser();
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+        parser.setProperty(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+
+      final Map<String, LoggerLevel> result = Maps.newHashMap();
+
+      try {
+        parser.parse(logbackFile, new DefaultHandler() {
           @Override
           public void startElement(
-              final String uri,
-              final String localName,
-              final String qName,
-              final Attributes attributes) throws SAXException
-          {
-            // NOTE: ATM we are ignoring 'property' elements, this is needed for root, but is only needed
-            // NOTE: to persist as a property for use in top-level logback.xml file
+                  String uri,
+                  String localName,
+                  String qName,
+                  Attributes attributes) throws SAXException {
 
             if ("logger".equals(localName)) {
               String name = attributes.getValue("name");
@@ -101,19 +115,21 @@ public abstract class LogbackLoggerOverridesSupport
           }
         });
       } catch (Exception e) {
-        log.error(STR."Error parsing logback file: \{logbackFile}", e);
-        throw e;
+        log.error("Error parsing logback file: {}", logbackFile, e);
+        throw new RuntimeException(e);
       }
+
       return result;
-    });
-    
+    }, executor); // Run the supplier on virtual threads
+
     try {
       return future.get();
     } catch (InterruptedException | ExecutionException e) {
-      log.error(STR."Failed to read logback overrides from file: \{logbackFile}", e);
-      throw new Exception(STR."Failed to read logback overrides: \{e.getMessage()}", e);
+      log.error("Failed to read logback overrides from file: {}", logbackFile, e);
+      throw new Exception("Failed to read logback overrides: " + e.getMessage(), e);
     }
   }
+
 
   /**
    * Write logger levels and root property to logback.xml formatted include file.
@@ -121,8 +137,12 @@ public abstract class LogbackLoggerOverridesSupport
   protected void writeToFile(final Map<String, LoggerLevel> overrides) throws Exception {
     final FileReplacer fileReplacer = new FileReplacer(logbackFile);
     fileReplacer.setDeleteBackupFile(true);
-    
-    Future<?> future = Thread.ofVirtual().name("logback-write-thread").start(() -> {
+
+    ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+    //Future<?> future = Thread.ofVirtual().name("logback-write-thread").start
+    Future<?> future = executor.submit
+            (() -> {
       try {
         fileReplacer.replace(output -> {
           try (final BufferedWriter out = new BufferedWriter(new OutputStreamWriter(output, StandardCharsets.UTF_8))) {
@@ -154,7 +174,11 @@ public abstract class LogbackLoggerOverridesSupport
         });
       } catch (Exception e) {
         log.error(STR."Error writing to logback file: \{logbackFile}", e);
-        throw e;
+          try {
+              throw e;
+          } catch (IOException ex) {
+              throw new RuntimeException(ex);
+          }
       }
     });
     

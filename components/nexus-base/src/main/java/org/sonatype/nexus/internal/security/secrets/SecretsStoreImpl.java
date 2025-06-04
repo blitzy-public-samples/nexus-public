@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.security.secrets;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 
@@ -56,53 +57,77 @@ public class SecretsStoreImpl
       @Nullable final String userId)
   {
     // Using Virtual Thread for I/O-bound database operation
-    return virtualThreadExecutor.submit(() -> {
-      SecretData secretData = new SecretData();
-      secretData.setPurpose(purpose);
-      secretData.setKeyId(keyId);
-      secretData.setSecret(secret);
-      secretData.setUserId(userId);
-      dao().create(secretData);
-      return secretData.getId();
-    }).join();
+      try {
+          return virtualThreadExecutor.submit(() -> {
+            SecretData secretData = new SecretData();
+            secretData.setPurpose(purpose);
+            secretData.setKeyId(keyId);
+            secretData.setSecret(secret);
+            secretData.setUserId(userId);
+            dao().create(secretData);
+            return secretData.getId();
+          }).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
   public boolean delete(final int id) {
     // Using Virtual Thread for I/O-bound database operation
-    return virtualThreadExecutor.submit(() -> dao().delete(id) > 0).join();
+      try {
+          return virtualThreadExecutor.submit(() -> dao().delete(id) > 0).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
   public boolean update(final int id, final String oldSecret, final String keyId, final String secret) {
     // Using Virtual Thread for I/O-bound database operation
-    return virtualThreadExecutor.submit(() -> dao().update(id, oldSecret, keyId, secret) > 0).join();
+      try {
+          return virtualThreadExecutor.submit(() -> dao().update(id, oldSecret, keyId, secret) > 0).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
   public Optional<SecretData> read(final int id) {
     // Using Virtual Thread for I/O-bound database operation and Java 21 Pattern Matching for Optional
-    return virtualThreadExecutor.submit(() -> {
-      // The actual pattern matching will be used by consumers of this API
-      // For example, clients can now use: if (secretsStore.read(id) instanceof Optional.Present(var secretData)) {...}
-      return dao().read(id);
-    }).join();
+      try {
+          return virtualThreadExecutor.submit(() -> {
+            // The actual pattern matching will be used by consumers of this API
+            // For example, clients can now use: if (secretsStore.read(id) instanceof Optional.Present(var secretData)) {...}
+            return dao().read(id);
+          }).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
   public boolean existWithDifferentKeyId(final String keyId) {
     // Using Virtual Thread for I/O-bound database operation
-    return virtualThreadExecutor.submit(() -> dao().existWithDifferentKeyId(keyId)).join();
+      try {
+          return virtualThreadExecutor.submit(() -> dao().existWithDifferentKeyId(keyId)).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Transactional
   @Override
   public List<SecretData> fetchWithDifferentKeyId(final String keyId, final int limit) {
     // Using Virtual Thread for I/O-bound database operation
-    return virtualThreadExecutor.submit(() -> dao().fetchWithDifferentKeyId(keyId, limit)).join();
+      try {
+          return virtualThreadExecutor.submit(() -> dao().fetchWithDifferentKeyId(keyId, limit)).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 }

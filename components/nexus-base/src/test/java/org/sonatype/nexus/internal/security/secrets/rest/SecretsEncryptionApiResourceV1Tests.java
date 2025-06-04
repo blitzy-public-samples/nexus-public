@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.internal.security.secrets.rest;
 
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -59,6 +59,6 @@ public class SecretsEncryptionApiResourceV1Tests
 
     assertThat(exception.getResponse().getStatus()).isEqualTo(Status.BAD_REQUEST.getStatusCode());
     ValidationErrorXO error = (ValidationErrorXO) exception.getResponse().getEntity();
-    assertThat(error.getMessage()).isEqualTo("key invalid");
+    assertThat(error.message()).isEqualTo("key invalid");
   }
 }

@@ -56,7 +56,7 @@ public class NodeIdStoreImplTest
   }
 
   @Test
-  public void testGetOrCreate_existing() {
+  public void testGetOrCreate_existing() throws InterruptedException {
     underTest.set("foo");
 
     String result = underTest.getOrCreate();

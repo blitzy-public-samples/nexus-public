@@ -106,21 +106,21 @@ class CleanupPolicyDataPatternMatchingTest
     
     // Using pattern matching to extract and validate fields
     for (Object policy : policies) {
-      if (policy instanceof CleanupPolicyData(var name, var notes, var format, var mode, var criteria)) {
+      if (policy instanceof CleanupPolicyData cp) {
         // Validate based on extracted fields using pattern matching
-        if (name.equals(TEST_NAME_1)) {
+        if (cp.getName().equals(TEST_NAME_1)) {
           assertAll(
-              () -> assertEquals(TEST_FORMAT_1, format),
-              () -> assertEquals(TEST_MODE_1, mode),
-              () -> assertEquals(TEST_NOTES_1, notes),
-              () -> assertEquals(TEST_CRITERIA_1, criteria)
+              () -> assertEquals(TEST_FORMAT_1, cp.getFormat()),
+              () -> assertEquals(TEST_MODE_1, cp.getMode()),
+              () -> assertEquals(TEST_NOTES_1, cp.getNotes()),
+              () -> assertEquals(TEST_CRITERIA_1, cp.getCriteria())
           );
-        } else if (name.equals(TEST_NAME_2)) {
+        } else if (cp.getName().equals(TEST_NAME_2)) {
           assertAll(
-              () -> assertEquals(TEST_FORMAT_2, format),
-              () -> assertEquals(TEST_MODE_2, mode),
-              () -> assertEquals(TEST_NOTES_2, notes),
-              () -> assertEquals(TEST_CRITERIA_2, criteria)
+              () -> assertEquals(TEST_FORMAT_2, cp.getFormat()),
+              () -> assertEquals(TEST_MODE_2, cp.getMode()),
+              () -> assertEquals(TEST_NOTES_2, cp.getNotes()),
+              () -> assertEquals(TEST_CRITERIA_2, cp.getCriteria())
           );
         }
       }
@@ -135,21 +135,21 @@ class CleanupPolicyDataPatternMatchingTest
     List<CleanupPolicy> policies = cleanupPolicyStorage.getAll();
     
     for (Object policy : policies) {
-      if (policy instanceof CleanupPolicyData(var name, var notes, var format, var mode, var criteria)) {
+      if (policy instanceof CleanupPolicyData cp) {
         // Using nested pattern matching to extract regex criteria
-        if (criteria instanceof Map<String, String> map && map.containsKey("regex")) {
+        if (cp.getCriteria() instanceof Map<String, String> map && map.containsKey("regex")) {
           String regexPattern = map.get("regex");
           assertNotNull(regexPattern);
           
           // Validate regex pattern based on policy name
-          if (name.equals(TEST_NAME_1)) {
+          if (cp.getName().equals(TEST_NAME_1)) {
             assertEquals(".*-SNAPSHOT.*", regexPattern);
             
             // Test the regex pattern against sample strings
             Pattern pattern = Pattern.compile(regexPattern);
             assertTrue(pattern.matcher("artifact-SNAPSHOT-1.0.jar").matches());
             assertFalse(pattern.matcher("artifact-1.0.jar").matches());
-          } else if (name.equals(TEST_NAME_2)) {
+          } else if (cp.getName().equals(TEST_NAME_2)) {
             assertEquals(".*\\.temp", regexPattern);
             
             // Test the regex pattern against sample strings
@@ -170,15 +170,15 @@ class CleanupPolicyDataPatternMatchingTest
     List<CleanupPolicy> policies = cleanupPolicyStorage.getAll();
     
     for (Object policy : policies) {
-      if (policy instanceof CleanupPolicyData(var name, var format, var mode, var notes, var criteria)) {
+      if (policy instanceof CleanupPolicyData cp) {
         // Using String Templates for error message formatting
-        String errorMessage = STR."Invalid cleanup policy configuration: \{name} for format \{format} with mode \{mode}";
+        String errorMessage = STR."Invalid cleanup policy configuration: \{cp.getName()} for format \{cp.getFormat()} with mode \{cp.getMode()}";
         
         // Validate the formatted error message
-        if (name.equals(TEST_NAME_1)) {
+        if (cp.getName().equals(TEST_NAME_1)) {
           assertEquals("Invalid cleanup policy configuration: test_policy_1 for format maven2 with mode delete", 
               errorMessage);
-        } else if (name.equals(TEST_NAME_2)) {
+        } else if (cp.getName().equals(TEST_NAME_2)) {
           assertEquals("Invalid cleanup policy configuration: test_policy_2 for format raw with mode clean", 
               errorMessage);
         }
@@ -210,19 +210,19 @@ class CleanupPolicyDataPatternMatchingTest
       
       // Insert test data
       for (CleanupPolicy policy : testPolicies) {
-        if (policy instanceof CleanupPolicyData(var name, var notes, var format, var mode, var criteria)) {
+        if (policy instanceof CleanupPolicyData cp) {
           try (PreparedStatement stmt = conn.prepareStatement(
               "INSERT INTO cleanup_policy (name, format, mode, notes, regex, last_downloaded, last_blob_updated) " +
               "VALUES (?, ?, ?, ?, ?, ?, ?)")) {
-            stmt.setString(1, name);
-            stmt.setString(2, format);
-            stmt.setString(3, mode);
-            stmt.setString(4, notes);
-            stmt.setString(5, criteria.getOrDefault("regex", null));
-            stmt.setObject(6, criteria.containsKey("lastDownloaded") ? 
-                Integer.parseInt(criteria.get("lastDownloaded")) : null);
-            stmt.setObject(7, criteria.containsKey("lastBlobUpdated") ? 
-                Integer.parseInt(criteria.get("lastBlobUpdated")) : null);
+            stmt.setString(1, cp.getName());
+            stmt.setString(2, cp.getFormat());
+            stmt.setString(3, cp.getMode());
+            stmt.setString(4, cp.getNotes());
+            stmt.setString(5, cp.getCriteria().getOrDefault("regex", null));
+            stmt.setObject(6, cp.getCriteria().containsKey("lastDownloaded") ?
+                Integer.parseInt(cp.getCriteria().get("lastDownloaded")) : null);
+            stmt.setObject(7, cp.getCriteria().containsKey("lastBlobUpdated") ?
+                Integer.parseInt(cp.getCriteria().get("lastBlobUpdated")) : null);
             stmt.executeUpdate();
           }
         }
@@ -295,17 +295,17 @@ class CleanupPolicyDataPatternMatchingTest
             CleanupPolicy policy = testPolicies.get(taskId % testPolicies.size());
             
             // Validate policy using pattern matching
-            if (policy instanceof CleanupPolicyData(var name, var notes, var format, var mode, var criteria)) {
+            if (policy instanceof CleanupPolicyData cp) {
               // Simulate some processing work
               Thread.sleep(10); // Small delay to simulate work
               
               // Validate regex pattern if present
-              if (criteria.containsKey("regex")) {
-                String regexPattern = criteria.get("regex");
+              if (cp.getCriteria().containsKey("regex")) {
+                String regexPattern = cp.getCriteria().get("regex");
                 Pattern pattern = Pattern.compile(regexPattern);
                 
                 // Test pattern against a sample string
-                String testString = name.equals(TEST_NAME_1) ? 
+                String testString = cp.getName().equals(TEST_NAME_1) ?
                     "artifact-SNAPSHOT-1.0.jar" : "file.temp";
                 
                 if (pattern.matcher(testString).matches()) {

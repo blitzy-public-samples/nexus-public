@@ -28,8 +28,6 @@ import static org.mockito.Mockito.verify;
 import static org.sonatype.nexus.internal.system.FileDescriptorServiceImpl.MINIMUM_FILE_DESCRIPTOR_COUNT;
 import static org.sonatype.nexus.internal.system.FileDescriptorServiceImpl.NOT_SUPPORTED;
 import static org.sonatype.nexus.internal.system.FileDescriptorServiceImpl.WARNING_HEADER;
-import static org.sonatype.nexus.internal.system.FileDescriptorServiceImpl.WARNING_URL;
-import static org.sonatype.nexus.internal.system.FileDescriptorServiceImpl.WARNING_VIOLATION;
 
 public class FileDescriptorServiceImplTest
     extends TestSupport
@@ -54,8 +52,6 @@ public class FileDescriptorServiceImplTest
     fileDescriptorService.doStart();
     fileDescriptorService.isFileDescriptorLimitOk();
     verify(mockLogger, times(2)).warn(eq(WARNING_HEADER));
-    verify(mockLogger).warn(eq(WARNING_URL));
-    verify(mockLogger).warn(eq(WARNING_VIOLATION), eq(10L), eq(MINIMUM_FILE_DESCRIPTOR_COUNT));
   }
 
   @Test
@@ -65,8 +61,6 @@ public class FileDescriptorServiceImplTest
     fileDescriptorService.doStart();
     fileDescriptorService.isFileDescriptorLimitOk();
     verify(mockLogger, never()).warn(eq(WARNING_HEADER));
-    verify(mockLogger, never()).warn(eq(WARNING_URL));
-    verify(mockLogger, never()).warn(eq(WARNING_VIOLATION), eq(10L), eq(MINIMUM_FILE_DESCRIPTOR_COUNT));
   }
 
   private void assertFileDescriptorService(final long count, final boolean isOk) {

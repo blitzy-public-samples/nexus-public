@@ -237,7 +237,7 @@ public class SelectorManagerImpl
   public void on(final SelectorConfigurationEvent event) {
     // Use virtual threads for event handling to improve concurrency
     virtualThreadExecutor.execute(() -> {
-      log.debug(STR."Processing selector configuration event: \{event.getEventType()}");
+      log.debug(STR."Processing selector configuration event: \{event.getSelectorConfiguration().getType()}");
       cachedBrowseResult = EMPTY_CACHE;
       rolesCache = Collections.emptyMap();
       selectorCache.invalidateAll();
@@ -249,7 +249,7 @@ public class SelectorManagerImpl
   public void on(final RoleEvent event) {
     // Use virtual threads for event handling to improve concurrency
     virtualThreadExecutor.execute(() -> {
-      log.debug(STR."Processing role event: \{event.getEventType()}");
+      log.debug(STR."Processing role event: \{event.getRole().getName()}");
       rolesCache = Collections.emptyMap();
     });
   }

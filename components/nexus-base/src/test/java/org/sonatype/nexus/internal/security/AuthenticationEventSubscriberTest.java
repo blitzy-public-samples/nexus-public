@@ -86,7 +86,7 @@ public class AuthenticationEventSubscriberTest
     NexusAuthenticationEvent nexusAuthenticationEvent = (NexusAuthenticationEvent) eventArgumentCaptor.getValue();
     assertThat(nexusAuthenticationEvent.getAuthenticationFailureReasons().isEmpty(), is(true));
     assertThat(nexusAuthenticationEvent.isSuccessful(), is(true));
-    assertThat(nexusAuthenticationEvent.getClientInfo().getUserid(), is(authenticationEvent.getUserId()));
+    assertThat(nexusAuthenticationEvent.getClientInfo().getUserid(), is(authenticationEvent.userId()));
   }
 
   @Test

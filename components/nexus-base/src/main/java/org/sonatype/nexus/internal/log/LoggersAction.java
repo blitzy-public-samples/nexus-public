@@ -46,16 +46,23 @@ public class LoggersAction
 
   @Override
   public Object execute() throws Exception {
-    return switch (reset) {
-      case TRUE -> {
-        logManager.resetLoggers();
-        yield null;
-      }
-      case null, default -> {
-        printLoggers();
-        yield null;
-      }
-    };
+//    return switch (reset) {
+//      case TRUE -> {
+//        logManager.resetLoggers();
+//        yield null;
+//      }
+//      case null, default -> {
+//        printLoggers();
+//        yield null;
+//      }
+//    };
+
+    if (Boolean.TRUE.equals(reset)) {
+      logManager.resetLoggers();
+    } else {
+      printLoggers();
+    }
+    return null;
   }
   
   /**
@@ -70,10 +77,11 @@ public class LoggersAction
     
     // Ensure minimum column width
     maxNameLength = Math.max(maxNameLength, 4); // "Name" header length
+    final int maxNameLen = maxNameLength;
     
     // Print header with proper alignment
-    System.out.println(STR."\{String.format("%-" + maxNameLength + "s", "Name")} Level");
-    System.out.println(STR."\{"-".repeat(maxNameLength)} -----");
+    System.out.println(STR."\{String.format("%-" + maxNameLen + "s", "Name")} Level");
+    System.out.println(STR."\{"-".repeat(maxNameLen)} -----");
     
     // Print each logger with proper alignment
     logManager.getLoggers()
@@ -81,8 +89,8 @@ public class LoggersAction
         .stream()
         .sorted()
         .forEach(key -> {
-          String level = logManager.getLoggers().get(key);
-          System.out.println(STR."\{String.format("%-" + maxNameLength + "s", key)} \{level}");
+          String level = logManager.getLoggers().get(key).toString();
+          System.out.println(STR."\{String.format("%-" + maxNameLen + "s", key)} \{level}");
         });
   }
 }

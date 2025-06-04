@@ -20,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.vividsolutions.jts.util.Assert;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
 import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskScheduler;
@@ -35,7 +36,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Collections.emptyList;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -98,7 +98,7 @@ public class CleanupBootServiceTest
   public void setTaskName() throws Exception {
     underTest.doStart();
 
-    assertThat(taskConfig.getName()).isEqualTo(TASK_NAME);
+    Assert.equals(taskConfig.getName(), TASK_NAME);
   }
 
   @Test
@@ -167,7 +167,7 @@ public class CleanupBootServiceTest
     underTest.doStart();
     
     // Verify that all duplicates except one were removed
-    assertThat(removedCount.get()).isEqualTo(DUPLICATE_COUNT - 1);
+    Assert.equals(removedCount.get(),DUPLICATE_COUNT - 1);
     verify(nonMatchingTask, never()).remove();
   }
 
@@ -231,10 +231,10 @@ public class CleanupBootServiceTest
       
       // Wait for all threads to complete
       boolean completed = completionLatch.await(10, TimeUnit.SECONDS);
-      assertThat(completed).isTrue();
+      Assert.isTrue(completed);
       
       // Verify that exactly TASK_COUNT-1 tasks were removed (keeping only one)
-      assertThat(removedCount.get()).isEqualTo(TASK_COUNT - 1);
+      Assert.equals(removedCount.get(),TASK_COUNT - 1);
     }
   }
 }

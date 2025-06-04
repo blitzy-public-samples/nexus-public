@@ -300,3 +300,4 @@ public class GroovyScriptEngine
     // Delegate to our optimized eval method
     return eval(scriptContent.toString(), context);
   }
+}

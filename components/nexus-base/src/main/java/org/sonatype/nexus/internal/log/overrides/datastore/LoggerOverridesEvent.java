@@ -108,13 +108,23 @@ public class LoggerOverridesEvent
   public String processEvent() {
     // Using Java 21 Pattern Matching for switch with guarded patterns
     return switch (action) {
-      case CHANGE when name != null && level != null -> 
-          "Changing logger '" + name + "' to level '" + level + "'";
-      case RESET when name != null -> 
-          "Resetting logger '" + name + "' to default level";
-      case RESET_ALL -> 
+      case CHANGE -> {
+        if (name != null && level != null) {
+          yield "Changing logger '" + name + "' to level '" + level + "'";
+        } else {
+          yield "Invalid CHANGE action";
+        }
+      }
+      case RESET -> {
+        if (name != null) {
+          yield "Resetting logger '" + name + "' to default level";
+        } else {
+          yield "Invalid RESET action";
+        }
+      }
+      case RESET_ALL ->
           "Resetting all loggers to default levels";
-      default -> 
+      default ->
           "Unknown action";
     };
   }

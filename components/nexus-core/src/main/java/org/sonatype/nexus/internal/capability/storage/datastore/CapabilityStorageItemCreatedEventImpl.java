@@ -68,7 +68,7 @@ public class CapabilityStorageItemCreatedEventImpl
    * @return a CompletableFuture representing the pending completion of the processing
    */
   @Override
-  public CompletableFuture<Void> processAsync(Consumer<CapabilityStorageItemCreatedEvent> processor) {
+  public CompletableFuture<Void> processAsync(Consumer<org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemEvent> processor) {
     log.debug("Processing capability creation event asynchronously for capability: {}", getCapabilityId());
     return CompletableFuture.runAsync(() -> {
       try {
@@ -78,6 +78,6 @@ public class CapabilityStorageItemCreatedEventImpl
         log.error("Error processing capability creation event for capability: {}", getCapabilityId(), e);
         throw e;
       }
-    }, virtualThreadExecutor);
+    });
   }
 }

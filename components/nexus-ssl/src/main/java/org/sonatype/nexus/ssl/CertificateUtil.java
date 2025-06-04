@@ -49,6 +49,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import java.security.MessageDigest;
+import java.util.Base64;
 
 /**
  * Simple utility methods when dealing with certificates.
@@ -197,6 +199,13 @@ public final class CertificateUtil
   public static String calculateSha1(final Certificate certificate) throws CertificateEncodingException {
     checkNotNull(certificate);
     return Hashing.sha1().hashBytes(certificate.getEncoded()).toString().toUpperCase(Locale.US);
+  }
+
+  public static String calculateSha256(final Certificate certificate) throws Exception {
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    byte[] encodedCert = certificate.getEncoded(); // DER-encoded certificate
+    byte[] hash = digest.digest(encodedCert);
+    return Base64.getEncoder().encodeToString(hash); // Or use hex if preferred
   }
 
   /**

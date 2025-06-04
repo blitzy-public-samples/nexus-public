@@ -13,9 +13,8 @@
 package org.sonatype.nexus.internal.security.apikey;
 
 import java.time.OffsetDateTime;
-import java.util.Collection;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -112,79 +111,130 @@ public class ApiKeyServiceImpl
   }
 
   @Override
-  public Collection<ApiKey> browse(final String domain) {
-    return virtualThreadExecutor.submit(() -> callBrowse(store -> store.browse(domain)
-        .stream()
-        .map(ApiKey.class::cast)
-        .collect(Collectors.toList()))).join();
+  public SequencedCollection<ApiKey> browse(final String domain) {
+    try {
+      return virtualThreadExecutor.submit(() ->
+              (SequencedCollection<ApiKey>) callBrowse(store -> store.browse(domain)
+                      .stream()
+                      .map(ApiKey.class::cast)
+                      .collect(Collectors.toList()))
+      ).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException("Failed to browse ApiKeys", e);
+    }
+  }
+
+
+  @Override
+  public SequencedCollection<ApiKey> browseByCreatedDate(final String domain, final OffsetDateTime date) {
+      try {
+          return virtualThreadExecutor.submit(() -> (SequencedCollection<ApiKey>) callBrowse(store -> store.browseByCreatedDate(domain, date)
+              .stream()
+              .map(ApiKey.class::cast)
+              .collect(Collectors.toList()))).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Override
-  public Collection<ApiKey> browseByCreatedDate(final String domain, final OffsetDateTime date) {
-    return virtualThreadExecutor.submit(() -> callBrowse(store -> store.browseByCreatedDate(domain, date)
-        .stream()
-        .map(ApiKey.class::cast)
-        .collect(Collectors.toList()))).join();
-  }
-
-  @Override
-  public Collection<ApiKey> browsePaginated(final String domain, final int page, final int pageSize) {
-    return virtualThreadExecutor.submit(() -> callBrowse(store -> store.browsePaginated(domain, page, pageSize)
-        .stream()
-        .map(ApiKey.class::cast)
-        .collect(Collectors.toList()))).join();
+  public SequencedCollection<ApiKey> browsePaginated(final String domain, final int page, final int pageSize) {
+    try {
+      return virtualThreadExecutor.submit(() -> (SequencedCollection<ApiKey>) callBrowse(store -> store.browsePaginated(domain, page, pageSize)
+          .stream()
+          .map(ApiKey.class::cast)
+          .collect(Collectors.toList()))).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public int count(final String domain) {
-    return virtualThreadExecutor.submit(() -> callModify(store -> store.count(domain))).join();
+      try {
+          return virtualThreadExecutor.submit(() -> callModify(store -> store.count(domain))).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Override
   public char[] createApiKey(final String domain, final PrincipalCollection principals) {
-    return virtualThreadExecutor.submit(() -> {
-      char[] apiKey = makeApiKey(domain, principals);
-      modify(store -> store.persistApiKey(domain, principals, apiKey));
-      return apiKey;
-    }).join();
+      try {
+          return virtualThreadExecutor.submit(() -> {
+            char[] apiKey = makeApiKey(domain, principals);
+            modify(store -> store.persistApiKey(domain, principals, apiKey));
+            return apiKey;
+          }).get();
+      } catch (InterruptedException | ExecutionException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @Override
   public int deleteApiKey(final String domain, final PrincipalCollection principals) {
-    return virtualThreadExecutor.submit(() -> callModify(store -> store.deleteApiKey(domain, principals))).join();
+    try{
+      return virtualThreadExecutor.submit(() -> callModify(store -> store.deleteApiKey(domain, principals))).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public int deleteApiKeys(final OffsetDateTime expiration) {
-    return virtualThreadExecutor.submit(() -> callModify(store -> store.deleteApiKeys(expiration))).join();
+    try{
+      return virtualThreadExecutor.submit(() -> callModify(store -> store.deleteApiKeys(expiration))).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public int deleteApiKeys(final PrincipalCollection principals) {
+    try {
     return virtualThreadExecutor.submit(() -> {
-      checkCancellation();
-      if (principals instanceof SimplePrincipalCollection(var userId, var source)) {
-        log.debug(STR."Deleting API keys for user: \{userId} from source: \{source}");
-      }
-      return callModify(store -> store.deleteApiKeys(principals));
-    }).join();
+        checkCancellation();
+        if (principals instanceof SimplePrincipalCollection spc) {
+          // manually get userId and source from spc:
+          Object userId = spc.getPrimaryPrincipal(); // or whatever method provides it
+          String source = spc.getRealmNames().stream().findFirst().orElse(null); // example, depends on API
+
+          log.debug("Deleting API keys for user: {} from source: {}", userId, source);
+        }
+        return callModify(store -> store.deleteApiKeys(principals));
+      }).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public int deleteApiKeys(final String domain) {
-    return virtualThreadExecutor.submit(() -> callModify(store -> store.deleteApiKeys(domain))).join();
+    try {
+    return virtualThreadExecutor.submit(() -> callModify(store -> store.deleteApiKeys(domain))).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public Optional<ApiKey> getApiKey(final String domain, final PrincipalCollection principals) {
+    try {
     return virtualThreadExecutor.submit(() -> find(store -> store.getApiKey(domain, principals)
-        .map(ApiKey.class::cast))).join();
+        .map(ApiKey.class::cast))).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public Optional<ApiKey> getApiKeyByToken(final String domain, final char[] apiKey) {
+    try {
     return virtualThreadExecutor.submit(() -> find(store -> store.getApiKeyByToken(domain, apiKey)
-        .map(ApiKey.class::cast))).join();
+        .map(ApiKey.class::cast))).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
@@ -194,30 +244,42 @@ public class ApiKeyServiceImpl
       final char[] apiKey,
       final OffsetDateTime created)
   {
-    virtualThreadExecutor.submit(() -> {
-      modify(store -> store.persistApiKey(domain, principals, apiKey, created));
-      return null;
-    }).join();
+    try {
+      virtualThreadExecutor.submit(() -> {
+        modify(store -> store.persistApiKey(domain, principals, apiKey, created));
+        return null;
+      }).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public int purgeApiKeys() {
-    return virtualThreadExecutor.submit(() -> {
-      checkCancellation();
-      // Note: we rely on deleteApiKeys to delete from both stores if appropriate
-      return StreamSupport.stream(find(ApiKeyStore::browsePrincipals).spliterator(), false)
-          .filter(principal -> !userExists(principal))
-          .mapToInt(this::deleteApiKeys)
-          .sum();
-    }).join();
+    try {
+      return virtualThreadExecutor.submit(() -> {
+        checkCancellation();
+        // Note: we rely on deleteApiKeys to delete from both stores if appropriate
+        return StreamSupport.stream(find(ApiKeyStore::browsePrincipals).spliterator(), false)
+            .filter(principal -> !userExists(principal))
+            .mapToInt(this::deleteApiKeys)
+            .sum();
+      }).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public void updateApiKeyRealm(final ApiKey from, final PrincipalCollection newPrincipal) {
-    virtualThreadExecutor.submit(() -> {
-      modify(store -> store.updateApiKey((ApiKeyInternal) from, newPrincipal));
-      return null;
-    }).join();
+    try {
+      virtualThreadExecutor.submit(() -> {
+        modify(store -> store.updateApiKey((ApiKeyInternal) from, newPrincipal));
+        return null;
+      }).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
   
   /**
@@ -256,7 +318,9 @@ public class ApiKeyServiceImpl
       principalsHelper.getUserStatus(principals);
     }
     catch (UserNotFoundException e) {
-      if (principals instanceof SimplePrincipalCollection(var userId, var source)) {
+      if (principals instanceof SimplePrincipalCollection spc) {
+        Object userId = spc.getPrimaryPrincipal(); // or whatever method provides it
+        String source = spc.getRealmNames().stream().findFirst().orElse(null);
         log.debug(STR."Stale user found: \{userId} from source: \{source}", e);
       } else {
         log.debug(STR."Stale user found: \{principals}", e);

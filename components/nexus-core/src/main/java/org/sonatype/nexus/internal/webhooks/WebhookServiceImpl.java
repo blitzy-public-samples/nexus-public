@@ -181,7 +181,7 @@ public class WebhookServiceImpl
 
     // Build the HTTP request with appropriate headers
     HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-        .uri(URI.create(request.getUrl()))
+        .uri(request.getUrl())
         .header("Content-Type", "application/json")
         .header(WEBHOOK_ID_HEADER, webhook.getId())
         .header(WEBHOOK_DELIVERY_HEADER, request.getId())

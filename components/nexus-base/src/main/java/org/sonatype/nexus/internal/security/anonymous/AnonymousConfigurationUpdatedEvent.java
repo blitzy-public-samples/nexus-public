@@ -50,7 +50,7 @@ public class AnonymousConfigurationUpdatedEvent
    * 
    * @param anonymousConfiguration the anonymous configuration data (should not be null)
    */
-  public AnonymousConfigurationUpdatedEvent(final AnonymousConfigurationData anonymousConfiguration) {
+  public AnonymousConfigurationUpdatedEvent( AnonymousConfigurationData anonymousConfiguration) {
     this.anonymousConfiguration = anonymousConfiguration;
     log.trace(STR."Created \{getClass().getSimpleName()} with configuration: \{anonymousConfiguration}");
   }
@@ -62,7 +62,7 @@ public class AnonymousConfigurationUpdatedEvent
    * @return the anonymous configuration (may be null if created via default constructor)
    */
   @Override
-  public AnonymousConfiguration getAnonymousConfiguration() {
+  public AnonymousConfigurationData getAnonymousConfiguration() {
     return anonymousConfiguration;
   }
 
@@ -73,11 +73,11 @@ public class AnonymousConfigurationUpdatedEvent
    * @param anonymousConfiguration the anonymous configuration data to set
    * @deprecated Only for use by deserializers - events should be immutable after construction
    */
-  @Deprecated
-  public void setAnonymousConfiguration(final AnonymousConfigurationData anonymousConfiguration) {
-    // This cast is safe because this method is only called during deserialization
-    // where the field is initialized as null
-    ((AnonymousConfigurationUpdatedEvent)this).anonymousConfiguration = anonymousConfiguration;
-    log.trace(STR."Set configuration on \{getClass().getSimpleName()}: \{anonymousConfiguration}");
-  }
+//  @Deprecated
+//  public void setAnonymousConfiguration(final AnonymousConfigurationData anonymousConfiguration) {
+//    // This cast is safe because this method is only called during deserialization
+//    // where the field is initialized as null
+//    ((AnonymousConfigurationUpdatedEvent)this).anonymousConfiguration = anonymousConfiguration;
+//    log.trace(STR."Set configuration on \{getClass().getSimpleName()}: \{anonymousConfiguration}");
+//  }
 }

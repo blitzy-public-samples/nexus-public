@@ -17,6 +17,7 @@ import java.io.PrintWriter;
 import java.lang.management.ManagementFactory;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -26,6 +27,7 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import com.codahale.metrics.MetricFilter;
 import org.sonatype.nexus.common.app.ApplicationVersion;
 
 import com.codahale.metrics.json.MetricsModule;
@@ -52,7 +54,12 @@ public class VirtualThreadMetricsServlet
   public VirtualThreadMetricsServlet(final ApplicationVersion applicationVersion) {
     this.applicationVersion = applicationVersion;
     
-    ObjectMapper mapper = new ObjectMapper().registerModule(new MetricsModule(applicationVersion.getVersion()));
+    ObjectMapper mapper = new ObjectMapper().registerModule(new MetricsModule(
+            TimeUnit.SECONDS,
+            TimeUnit.MILLISECONDS,
+            true,
+            MetricFilter.ALL
+    ));
     this.writer = mapper.writerWithDefaultPrettyPrinter();
   }
 

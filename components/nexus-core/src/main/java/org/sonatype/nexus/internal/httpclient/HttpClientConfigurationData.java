@@ -184,11 +184,11 @@ public class HttpClientConfigurationData
   @SuppressWarnings("unchecked")
   public <T> T getConfigComponent(Class<T> componentClass) {
     return switch(componentClass.getSimpleName()) {
-      case "ConnectionConfiguration" when connection != null -> (T) connection;
-      case "ProxyConfiguration" when proxy != null -> (T) proxy;
-      case "AuthenticationConfiguration" when authentication != null -> (T) authentication;
-      case "RedirectStrategy" when redirectStrategy != null -> (T) redirectStrategy;
-      case "AuthenticationStrategy" when authenticationStrategy != null -> (T) authenticationStrategy;
+      case "ConnectionConfiguration" -> connection != null ? (T) connection : null;
+      case "ProxyConfiguration" -> proxy != null ? (T) proxy : null;
+      case "AuthenticationConfiguration" -> authentication != null ? (T) authentication : null;
+      case "RedirectStrategy" -> redirectStrategy != null ? (T) redirectStrategy : null;
+      case "AuthenticationStrategy" -> authenticationStrategy != null ? (T) authenticationStrategy : null;
       default -> null;
     };
   }

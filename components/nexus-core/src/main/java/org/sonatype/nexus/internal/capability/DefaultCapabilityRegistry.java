@@ -52,11 +52,7 @@ import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.formfields.Encrypted;
 import org.sonatype.nexus.formfields.FormField;
-import org.sonatype.nexus.internal.capability.storage.CapabilityStorage;
-import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItem;
-import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemCreatedEvent;
-import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemDeletedEvent;
-import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemUpdatedEvent;
+import org.sonatype.nexus.internal.capability.storage.*;
 import org.sonatype.nexus.security.UserIdHelper;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -483,7 +479,7 @@ public class DefaultCapabilityRegistry
    * This method processes capabilities in parallel to improve performance.
    */
   public void load() {
-    final Map<CapabilityIdentity, CapabilityStorageItem> items = capabilityStorage.getAll();
+    final Map<CapabilityIdentity, CapabilityStorageItemData> items = capabilityStorage.getAll();
     
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Submit tasks for each capability and collect futures
@@ -581,7 +577,7 @@ public class DefaultCapabilityRegistry
 
   @Override
   public void pullAndRefreshReferencesFromDB() {
-    Map<CapabilityIdentity, CapabilityStorageItem> refreshedCapabilities = capabilityStorage.getAll();
+    Map<CapabilityIdentity, CapabilityStorageItemData> refreshedCapabilities = capabilityStorage.getAll();
     references.forEach((capabilityIdentity, capabilityReference) ->
         Optional.ofNullable(refreshedCapabilities.get(capabilityIdentity)) // When working in HA mode it could be null
             .ifPresent(value -> {

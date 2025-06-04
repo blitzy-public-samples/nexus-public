@@ -658,7 +658,11 @@ public class DefaultCapabilityReference
         try {
           // Use Virtual Thread for potentially blocking activation operations
           Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-            capability.onActivate();
+              try {
+                  capability.onActivate();
+              } catch (Exception e) {
+                  throw new RuntimeException(e);
+              }
           }).get(); // Wait for completion
           
           resetFailure();
@@ -725,7 +729,11 @@ public class DefaultCapabilityReference
         
         // Use Virtual Thread for potentially blocking passivation operations
         Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-          capability.onPassivate();
+            try {
+                capability.onPassivate();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }).get(); // Wait for completion
         
         log.debug(STR."Passivated capability \{capability} (\{id})");

@@ -31,7 +31,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -201,23 +203,23 @@ public class SystemInformationGeneratorImpl
 
   private Map<String, Object> reportFileStores() {
     Map<String, Object> fileStores = new HashMap<>();
-    int counter = 1;
+    AtomicInteger counter = new AtomicInteger(1);
     
     // Use virtual threads to scan file stores in parallel
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<Future<Map.Entry<String, Map<String, Object>>>> futures = Collections.list(FileSystems.getDefault().getFileStores().iterator())
-          .stream()
-          .map(store -> executor.submit(() -> {
+      List<Future<Map.Entry<String, Map<String, Object>>>> futures = StreamSupport
+              .stream(FileSystems.getDefault().getFileStores().spliterator(), false)
+              .map(store -> executor.submit(() -> {
             String key = store.name();
             // Ensure unique keys
             synchronized (fileStores) {
               while (fileStores.containsKey(key)) {
-                key = store.name() + "-" + counter++;
+                key = store.name() + "-" + counter.getAndIncrement();
               }
             }
             return Map.entry(key, reportFileStore(store));
           }))
-          .collect(Collectors.toList());
+          .toList();
       
       // Collect results
       for (Future<Map.Entry<String, Map<String, Object>>> future : futures) {
@@ -437,19 +439,27 @@ public class SystemInformationGeneratorImpl
               String value = entry.getValue();
               
               // Use pattern matching for switch to handle sensitive field detection
-              return switch (key.toLowerCase(Locale.US)) {
-                case String k when SENSITIVE_FIELD_NAMES.stream().anyMatch(k::contains) -> Strings2.mask(value);
-                case String k when SENSITIVE_CREDENTIALS_KEYS.contains(key) -> {
-                  // Check if value contains any sensitive field names
-                  for (String sensitiveName : SENSITIVE_FIELD_NAMES) {
-                    if (value.contains(sensitiveName)) {
-                      value = value.replaceAll(sensitiveName + "=\\S*", sensitiveName + "=" + MASK);
-                    }
+              String lowerKey = key.toLowerCase(Locale.US);
+              return switch (lowerKey) {
+                default -> {
+                  if (SENSITIVE_FIELD_NAMES.stream().anyMatch(lowerKey::contains)) {
+                    yield Strings2.mask(value);
                   }
-                  value;
+                  else if (SENSITIVE_CREDENTIALS_KEYS.contains(key)) {
+                    String maskedValue = value;
+                    for (String sensitiveName : SENSITIVE_FIELD_NAMES) {
+                      if (maskedValue.contains(sensitiveName)) {
+                        maskedValue = maskedValue.replaceAll(sensitiveName + "=\\S*", sensitiveName + "=" + MASK);
+                      }
+                    }
+                    yield maskedValue;
+                  }
+                  else {
+                    yield value;
+                  }
                 }
-                default -> value;
               };
+
             }));
   }
 }

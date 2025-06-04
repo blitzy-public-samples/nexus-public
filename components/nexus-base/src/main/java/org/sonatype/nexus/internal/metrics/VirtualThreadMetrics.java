@@ -174,7 +174,7 @@ public class VirtualThreadMetrics
    */
   private long getActiveThreadCount() {
     try {
-      return Thread.activeCount(Thread.ofVirtual().factory());
+      return Thread.activeCount();
     }
     catch (Exception e) {
       log.warn("Error counting active virtual threads", e);

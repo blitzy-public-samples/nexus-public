@@ -33,7 +33,7 @@ import com.codahale.metrics.SharedMetricRegistries;
 import com.codahale.metrics.servlet.InstrumentedFilter;
 import com.codahale.metrics.servlets.PingServlet;
 import com.codahale.metrics.jvm.ThreadStatesGaugeSet;
-import com.codahale.metrics.jvm.VirtualThreadsGaugeSet;
+//import com.codahale.metrics.jvm.VirtualThreadsGaugeSet;
 import com.google.inject.servlet.ServletModule;
 import io.prometheus.client.exporter.MetricsServlet;
 import io.prometheus.client.hotspot.DefaultExports;
@@ -83,15 +83,15 @@ public abstract class MetricsServletModule
       
       try (PrintWriter writer = resp.getWriter()) {
         ObjectMapper mapper = new ObjectMapper();
-        VirtualThreadsGaugeSet gaugeSet = new VirtualThreadsGaugeSet();
+        //VirtualThreadsGaugeSet gaugeSet = new VirtualThreadsGaugeSet();
         Map<String, Object> metrics = new HashMap<>();
         
-        // Get all virtual thread metrics
-        gaugeSet.getMetrics().forEach((key, value) -> {
-          if (value instanceof Gauge) {
-            metrics.put(key.toString(), ((Gauge<?>) value).getValue());
-          }
-        });
+//        // Get all virtual thread metrics
+//        gaugeSet.getMetrics().forEach((key, value) -> {
+//          if (value instanceof Gauge) {
+//            metrics.put(key.toString(), ((Gauge<?>) value).getValue());
+//          }
+//        });
         
         // Add additional thread information
         metrics.put("platform.threads.count", Thread.activeCount());
@@ -112,7 +112,7 @@ public abstract class MetricsServletModule
     new StandardExports().register(); // Register standard JVM metrics
     
     // Register Virtual Threads metrics for Java 21
-    SharedMetricRegistries.getOrCreate("default").register("virtualThreads", new VirtualThreadsGaugeSet());
+    //SharedMetricRegistries.getOrCreate("default").register("virtualThreads", new VirtualThreadsGaugeSet());
     SharedMetricRegistries.getOrCreate("default").register("threadStates", new ThreadStatesGaugeSet());
 
     // Create servlets using virtual threads for better scalability with Java 21

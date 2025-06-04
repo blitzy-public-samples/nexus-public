@@ -213,13 +213,12 @@ public class InstallConfigurationCustomizer
     public SanitizedJettyFileSource(final Type type, final String path, final File file, final Priority priority)
         throws IOException
     {
-      // Use String Templates for resource path construction
-      String stylesheetPath = "jetty-stylesheet.xml";
-      String stylesheet = IOUtils.toString(
-          checkNotNull(SanitizedJettyFileSource.class.getResourceAsStream(stylesheetPath), 
-              STR."Resource not found: \{stylesheetPath}"),
-          UTF_8);
-      super(type, path, file, priority, stylesheet);
+      super(type,path,file,priority,IOUtils.toString(
+                      checkNotNull(SanitizedJettyFileSource.class.getResourceAsStream("jetty-stylesheet.xml"),
+                              STR."Resource not found: \{"jetty-stylesheet.xml"}"),
+                      UTF_8)
+      );
+
     }
   }
 
@@ -240,11 +239,11 @@ public class InstallConfigurationCustomizer
       
       // Process properties with pattern matching for improved sanitization logic
       dataStoreConfiguration.forEach((k, v) -> {
-        switch (k) {
-          case String key when SENSITIVE_FIELD_NAMES.contains(key) -> 
-              dataStoreConfiguration.replace(key, REPLACEMENT);
-          case "jdbcUrl" -> 
-              dataStoreConfiguration.put(k, redactPassword((String) v));
+        switch (String.valueOf(k)) {
+          case String key when SENSITIVE_FIELD_NAMES.contains(key) ->
+                  dataStoreConfiguration.replace(key, REPLACEMENT);
+          case "jdbcUrl" ->
+                  dataStoreConfiguration.put(k, redactPassword((String) v));
           default -> { /* No sanitization needed */ }
         }
       });
@@ -269,7 +268,7 @@ public class InstallConfigurationCustomizer
           
           // Process properties with pattern matching for improved sanitization logic
           dataStoreConfiguration.forEach((k, v) -> {
-            switch (k) {
+            switch (String.valueOf(k)) {
               case String key when SENSITIVE_FIELD_NAMES.contains(key) -> 
                   dataStoreConfiguration.replace(key, REPLACEMENT);
               case "nexus.datastore.nexus.jdbcUrl" -> 

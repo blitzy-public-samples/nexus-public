@@ -98,7 +98,7 @@ public class WebhookServiceImplTest
   public void setup() throws IOException {
     List<Webhook> webhooks = emptyList();
 
-    underTest = new WebhookServiceImpl(httpClientProvider, webhooks, 1);
+    underTest = new WebhookServiceImpl(webhooks);
 
     when(httpClientProvider.get()).thenReturn(httpClient);
 

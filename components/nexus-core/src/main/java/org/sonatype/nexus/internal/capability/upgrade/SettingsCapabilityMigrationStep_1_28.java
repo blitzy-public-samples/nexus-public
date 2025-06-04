@@ -24,8 +24,10 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.sonatype.nexus.capability.CapabilityIdentity;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorage;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItem;
+import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
 import org.slf4j.Logger;
@@ -74,14 +76,14 @@ public class SettingsCapabilityMigrationStep_1_28
         
         try {
           // Find the rapture.settings capability
-          Optional<Map.Entry<String, CapabilityStorageItem>> raptureSettingsCapability = capabilityStorage.getAll().entrySet().stream()
+          Optional<Map.Entry<CapabilityIdentity, CapabilityStorageItemData>> raptureSettingsCapability = capabilityStorage.getAll().entrySet().stream()
               .filter(entry -> CAPABILITY_TYPE_RAPTURE_SETTINGS.equals(entry.getValue().getType()))
               .findFirst();
           
           // Update the capability if found
           if (raptureSettingsCapability.isPresent()) {
-            Map.Entry<String, CapabilityStorageItem> entry = raptureSettingsCapability.get();
-            String capabilityId = entry.getKey();
+            Map.Entry<CapabilityIdentity, CapabilityStorageItemData> entry = raptureSettingsCapability.get();
+            CapabilityIdentity capabilityId = entry.getKey();
             CapabilityStorageItem capabilityItem = entry.getValue();
             Map<String, String> properties = capabilityItem.getProperties();
             
@@ -126,7 +128,11 @@ public class SettingsCapabilityMigrationStep_1_28
         log.info(STR."Migration step \{version().orElse("unknown")} completed successfully. Changes applied: \{result}");
       } catch (ExecutionException e) {
         log.error(STR."Migration step \{version().orElse("unknown")} failed: \{e.getCause().getMessage()}");
-        throw e.getCause();
+          try {
+              throw e.getCause();
+          } catch (Throwable ex) {
+              throw new RuntimeException(ex);
+          }
       }
     }
   }

@@ -33,5 +33,5 @@ public interface NodeIdApiResourceDoc
 
   @ApiOperation("Reset the ID for this node. Takes effect after restart and should only be used when cloning an instance")
   @ApiResponses(value = {@ApiResponse(code = 403, message = "Insufficient permissions to update settings")})
-  void clear();
+  void clear() throws InterruptedException;
 }

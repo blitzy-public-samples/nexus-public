@@ -23,15 +23,25 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
-import io.dropwizard.metrics.MetricRegistry;
-import io.dropwizard.metrics.jvm.BufferPoolMetricSet;
-import io.dropwizard.metrics.jvm.FileDescriptorRatioGauge;
-import io.dropwizard.metrics.jvm.GarbageCollectorMetricSet;
-import io.dropwizard.metrics.jvm.JvmAttributeGaugeSet;
-import io.dropwizard.metrics.jvm.MemoryUsageGaugeSet;
-import io.dropwizard.metrics.jvm.ThreadStatesGaugeSet;
+//import io.dropwizard.metrics.MetricRegistry;
+//import io.dropwizard.metrics.jvm.BufferPoolMetricSet;
+//import io.dropwizard.metrics.jvm.FileDescriptorRatioGauge;
+//import io.dropwizard.metrics.jvm.GarbageCollectorMetricSet;
+//import io.dropwizard.metrics.jvm.JvmAttributeGaugeSet;
+//import io.dropwizard.metrics.jvm.MemoryUsageGaugeSet;
+//import io.dropwizard.metrics.jvm.ThreadStatesGaugeSet;
 
-import static io.dropwizard.metrics.MetricRegistry.name;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.jvm.BufferPoolMetricSet;
+import com.codahale.metrics.jvm.FileDescriptorRatioGauge;
+import com.codahale.metrics.jvm.GarbageCollectorMetricSet;
+import com.codahale.metrics.jvm.JvmAttributeGaugeSet;
+import com.codahale.metrics.jvm.ThreadStatesGaugeSet;
+import com.codahale.metrics.jvm.MemoryUsageGaugeSet;
+
+
+//import static io.dropwizard.metrics.MetricRegistry.name;
+import static com.codahale.metrics.MetricRegistry.name;
 import static com.google.common.net.HttpHeaders.CONTENT_DISPOSITION;
 
 /**
@@ -42,7 +52,8 @@ import static com.google.common.net.HttpHeaders.CONTENT_DISPOSITION;
  */
 @Singleton
 public class MetricsServlet
-    extends io.dropwizard.metrics.servlets.MetricsServlet
+    //extends io.dropwizard.metrics.servlets.MetricsServlet
+  extends com.codahale.metrics.servlets.MetricsServlet
 {
   @Inject
   public MetricsServlet(final MetricRegistry registry, 

@@ -61,7 +61,7 @@ public class HttpClientConfigurationStoreImpl
   @Override
   public HttpClientConfiguration load() {
     try {
-      Optional<HttpClientConfiguration> config = dao().get();
+      Optional<HttpClientConfigurationData> config = dao().get();
       if (config.isPresent()) {
         log.debug(STR."Loaded HTTP client configuration: \{config.get().getClass().getSimpleName()}");
       } else {

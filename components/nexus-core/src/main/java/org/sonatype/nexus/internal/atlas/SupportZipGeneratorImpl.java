@@ -230,6 +230,7 @@ public class SupportZipGeneratorImpl
       case SupportZipGeneratorRequest r when r.isAuditLog() -> types.add(AUDITLOG);
       case SupportZipGeneratorRequest r when r.isJmx() -> types.add(JMX);
       case SupportZipGeneratorRequest r when r.isReplication() -> types.add(REPLICATIONLOG);
+        default -> throw new IllegalStateException("Unexpected value: " + request);
     }
     
     // included by default, if not selected it will default to 0 days of archived logs which means it includes nothing
@@ -330,56 +331,47 @@ public class SupportZipGeneratorImpl
         
         // Process sources in parallel using virtual threads
         List<Future<Void>> futures = sources.stream()
-            .map(source -> executor.submit(() -> {
-              // skipping over archived files that cause the zip to be too large or are past the file size limit
-              // TODO: figure out how to handle .gz file truncation gracefully
-              if (source.getType() == ARCHIVEDLOG
-                  && (limitFileSizes && source.getSize() > maxContentSize || limitZipSize && source.getSize() +
-                      stream.getCount() > maxZipSize)) {
-                log.warn(STR."Skipping \{source.getPath()} due to size limit");
-                return null;
-              }
-
-              log.debug(STR."Adding content entry: \{source} \{source.getSize()} bytes");
-              ZipEntry entry = addEntry(zip, source.getPath());
-
-              try (InputStream input = source.getContent()) {
-                // determine if the current file is a log file
-                boolean isLogFile = switch (source.getType()) {
-                  case LOG, TASKLOG, AUDITLOG, ARCHIVEDLOG -> true;
-                  default -> false;
-                };
-                
-                // only apply truncation logic to log files
-                byte[] buff = new byte[chunkSize];
-                int len;
-                long writtenBytes = 0;
-                while ((len = input.read(buff)) != -1) {
-                  // truncate content if max file size or max ZIP size reached
-                  if ((isLogFile && limitFileSizes && writtenBytes + len > maxContentSize) ||
-                      (limitZipSize && stream.getCount() + len > maxZipSize)) {
-                    log.warn(STR."Truncating source contents; limit reached: \{source.getPath()}");
-                    zip.write(TRUNCATED_TOKEN.getBytes());
-                    truncated.set(true);
-                    break;
+                .map(source -> executor.<Void>submit(() -> {
+                  if (source.getType() == ARCHIVEDLOG
+                          && (limitFileSizes && source.getSize() > maxContentSize
+                          || limitZipSize && source.getSize() + stream.getCount() > maxZipSize)) {
+                    log.warn(STR."Skipping \{source.getPath()} due to size limit");
+                    return null;
                   }
 
-                  zip.write(buff, 0, len);
-                  writtenBytes += len;
+                  log.debug(STR."Adding content entry: \{source} \{source.getSize()} bytes");
+                  ZipEntry entry = addEntry(zip, source.getPath());
 
-                  // flush so we can detect compressed size for partially written files
-                  zip.flush();
-                }
-              }
-              catch (Exception e) { // NOSONAR - catching all exceptions so that a bad file of any sort won't cause us to
-                // stop
-                log.warn(STR."Unable to include \{source.getPath()} in bundle, moving onto next file.", e);
-              }
+                  try (InputStream input = source.getContent()) {
+                    boolean isLogFile = switch (source.getType()) {
+                      case LOG, TASKLOG, AUDITLOG, ARCHIVEDLOG -> true;
+                      default -> false;
+                    };
 
-              closeEntry(zip, entry);
-              return null;
-            }))
-            .collect(Collectors.toList());
+                    byte[] buff = new byte[chunkSize];
+                    int len;
+                    long writtenBytes = 0;
+                    while ((len = input.read(buff)) != -1) {
+                      if ((isLogFile && limitFileSizes && writtenBytes + len > maxContentSize) ||
+                              (limitZipSize && stream.getCount() + len > maxZipSize)) {
+                        log.warn(STR."Truncating source contents; limit reached: \{source.getPath()}");
+                        zip.write(TRUNCATED_TOKEN.getBytes());
+                        truncated.set(true);
+                        break;
+                      }
+
+                      zip.write(buff, 0, len);
+                      writtenBytes += len;
+                      zip.flush();
+                    }
+                  } catch (Exception e) {
+                    log.warn(STR."Unable to include \{source.getPath()} in bundle, moving onto next file.", e);
+                  }
+
+                  closeEntry(zip, entry);
+                  return null;
+                })).toList();
+
 
         // Wait for all tasks to complete
         for (Future<Void> future : futures) {

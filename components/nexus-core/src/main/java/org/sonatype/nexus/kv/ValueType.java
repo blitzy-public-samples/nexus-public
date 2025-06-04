@@ -55,7 +55,7 @@ public enum ValueType
           } catch (NumberFormatException e) {
             yield false;
           }
-        };
+        }
         default -> false;
       };
       case BOOLEAN -> switch (value) {
@@ -104,7 +104,7 @@ public enum ValueType
           } catch (NumberFormatException e) {
             yield 0;
           }
-        };
+        }
         default -> 0;
       };
       case BOOLEAN -> switch (value) {

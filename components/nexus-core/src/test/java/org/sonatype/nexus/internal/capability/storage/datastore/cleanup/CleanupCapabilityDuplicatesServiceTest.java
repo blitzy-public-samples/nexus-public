@@ -25,7 +25,7 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.datastore.api.DataSessionSupplier;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorage;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageImpl;
-import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItem;
+import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemDAO;
 import org.sonatype.nexus.testdb.DataSessionRule;
 import org.sonatype.nexus.transaction.TransactionModule;
@@ -84,7 +84,7 @@ public class CleanupCapabilityDuplicatesServiceTest
 
     assertTrue(capabilityStorage.isDuplicatesFound());
 
-    Map<CapabilityStorageItem, List<CapabilityIdentity>> duplicates = capabilityStorage.browseCapabilityDuplicates();
+    Map<CapabilityStorageItemData, List<CapabilityIdentity>> duplicates = capabilityStorage.browseCapabilityDuplicates();
     assertThat(duplicates.keySet(), hasSize(5));
     assertCapabilitiesCount(duplicates, 22);
 
@@ -112,12 +112,12 @@ public class CleanupCapabilityDuplicatesServiceTest
   public void testCleanupNotNeeded() throws Exception {
     underTest.doCleanup();
 
-    Map<CapabilityStorageItem, List<CapabilityIdentity>> duplicates = capabilityStorage.browseCapabilityDuplicates();
+    Map<CapabilityStorageItemData, List<CapabilityIdentity>> duplicates = capabilityStorage.browseCapabilityDuplicates();
     assertCapabilitiesCount(duplicates, 0);
   }
 
   private void assertCapabilitiesCount(
-      final Map<CapabilityStorageItem, List<CapabilityIdentity>> capabilities,
+      final Map<CapabilityStorageItemData, List<CapabilityIdentity>> capabilities,
       final int expectedCount)
   {
     AtomicInteger count = new AtomicInteger();

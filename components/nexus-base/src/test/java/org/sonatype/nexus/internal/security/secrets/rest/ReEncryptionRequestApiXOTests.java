@@ -57,7 +57,7 @@ public class ReEncryptionRequestApiXOTests
     ReEncryptionRequestApiXO xo = new ReEncryptionRequestApiXO("test-key", "mail@test.com");
     Set<ConstraintViolation<ReEncryptionRequestApiXO>> violations = validator.validate(xo);
     assertThat(violations).isEmpty();
-    assertThat(xo.getSecretKeyId()).isEqualTo("test-key");
-    assertThat(xo.getNotifyEmail()).isEqualTo("mail@test.com");
+    assertThat(xo.secretKeyId()).isEqualTo("test-key");
+    assertThat(xo.notifyEmail()).isEqualTo("mail@test.com");
   }
 }

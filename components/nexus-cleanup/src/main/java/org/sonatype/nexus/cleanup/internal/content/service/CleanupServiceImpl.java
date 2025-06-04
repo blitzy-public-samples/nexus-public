@@ -42,7 +42,7 @@ import org.sonatype.nexus.repository.task.DeletionProgress;
 import org.sonatype.nexus.repository.types.GroupType;
 
 import com.google.common.base.Predicates;
-import org.apache.commons.lang.exception.ExceptionUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.elasticsearch.search.SearchContextMissingException;
 
 import static com.google.common.base.Preconditions.checkNotNull;

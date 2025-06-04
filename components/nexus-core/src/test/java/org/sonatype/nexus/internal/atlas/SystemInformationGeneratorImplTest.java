@@ -26,7 +26,7 @@ import org.sonatype.nexus.common.app.ApplicationVersion;
 import org.sonatype.nexus.common.app.SystemInformationHelper;
 import org.sonatype.nexus.common.node.DeploymentAccess;
 import org.sonatype.nexus.common.node.NodeAccess;
-import org.apache.commons.lang.SystemUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.apache.karaf.bundle.core.BundleService;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;

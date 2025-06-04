@@ -15,7 +15,9 @@ package org.sonatype.nexus.internal.metrics;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
-import io.dropwizard.metrics.health.HealthCheckRegistry;
+//import io.dropwizard.metrics.health.HealthCheckRegistry;
+import com.codahale.metrics.health.HealthCheckRegistry;
+
 
 /**
  * Customized {@link io.dropwizard.metrics.servlets.HealthCheckServlet} to support injection.
@@ -27,7 +29,8 @@ import io.dropwizard.metrics.health.HealthCheckRegistry;
 @Deprecated
 @Singleton
 public class HealthCheckServlet
-    extends io.dropwizard.metrics.servlets.HealthCheckServlet
+    //extends io.dropwizard.metrics.servlets.HealthCheckServlet
+ extends com.codahale.metrics.servlets.HealthCheckServlet
 {
   @Inject
   public HealthCheckServlet(final HealthCheckRegistry registry) {

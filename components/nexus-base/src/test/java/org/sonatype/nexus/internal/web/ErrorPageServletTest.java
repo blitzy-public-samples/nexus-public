@@ -43,11 +43,13 @@ import org.junit.Test;
 
 import static com.google.common.net.HttpHeaders.X_FRAME_OPTIONS;
 import static java.util.Arrays.asList;
-import static org.eclipse.jetty.servlet.ErrorPageErrorHandler.GLOBAL_ERROR_PAGE;
+//import static org.eclipse.jetty.servlet.ErrorPageErrorHandler.GLOBAL_ERROR_PAGE;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.stringContainsInOrder;
+
+
 
 /**
  * Tests for {@link ErrorPageServlet}
@@ -77,7 +79,7 @@ public class ErrorPageServletTest
     context.addServlet(new ServletHolder(new BadServlet()), "/bad/*");
 
     ErrorPageErrorHandler errorHandler = new ErrorPageErrorHandler();
-    errorHandler.addErrorPage(GLOBAL_ERROR_PAGE, "/error.html");
+    errorHandler.addErrorPage("default", "/error.html");
     context.setErrorHandler(errorHandler);
 
     BaseUrlHolder.set("http://127.0.0.1", "");

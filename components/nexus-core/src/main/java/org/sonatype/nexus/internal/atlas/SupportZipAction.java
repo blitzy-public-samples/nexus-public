@@ -96,10 +96,9 @@ public class SupportZipAction
     log.info(STR."Generating support ZIP...");
 
     // Use try-with-resources to ensure proper context propagation with Virtual Threads
-    try (var currentThread = Thread.currentThread()) {
-      Result result = supportZipGenerator.generate(request);
-      log.info(STR."Generated support ZIP: \{result.getFilename()}");
-    }
+    Thread currentThread = Thread.currentThread();
+    Result result = supportZipGenerator.generate(request);
+    log.info(STR."Generated support ZIP: \{result.getFilename()}");
 
     return null;
   }

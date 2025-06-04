@@ -76,7 +76,7 @@ public class EmailConfigurationExport
     
     try (var scope = new ShutdownOnFailure()) {
       var importTask = scope.fork(() -> {
-        Optional<Object> importedConfig = importObjectFromJson(file, EmailConfigurationData.class);
+        Optional<Object> importedConfig = Optional.ofNullable(importObjectFromJson(file, EmailConfigurationData.class));
         
         // Use pattern matching to handle the imported configuration
         if (importedConfig.isPresent()) {

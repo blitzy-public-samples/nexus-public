@@ -122,6 +122,15 @@
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-selector</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-config</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-repository-view</artifactId>
+      <scope>test</scope>
+    </dependency>
 
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
@@ -131,6 +140,10 @@
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-webhooks</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.sonatype.nexus</groupId>
+      <artifactId>nexus-blobstore-api</artifactId>
     </dependency>
 
     <dependency>
@@ -187,7 +200,12 @@
       <artifactId>assertj-db</artifactId>
       <scope>test</scope>
     </dependency>
-
+    <!-- https://mvnrepository.com/artifact/javax.cache/cache-api -->
+    <dependency>
+      <groupId>javax.cache</groupId>
+      <artifactId>cache-api</artifactId>
+      <version>1.1.1</version>
+    </dependency>
     <!-- JUnit 5 dependencies for Java 21 compatibility -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -214,6 +232,12 @@
       <artifactId>mockito-core</artifactId>
       <version>5.8.0</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.elasticsearch</groupId>
+      <artifactId>elasticsearch</artifactId>
+      <version>2.4.3</version>
+      <scope>compile</scope>
     </dependency>
   </dependencies>
 

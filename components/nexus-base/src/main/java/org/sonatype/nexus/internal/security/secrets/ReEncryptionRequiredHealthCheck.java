@@ -16,6 +16,8 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import org.sonatype.nexus.crypto.secrets.SecretsService;
 import org.sonatype.nexus.internal.security.secrets.tasks.ReEncryptTaskDescriptor;
@@ -48,15 +50,19 @@ public class ReEncryptionRequiredHealthCheck
   @Override
   protected Result check() throws Exception {
     // Use CompletableFuture with Virtual Threads to check task status asynchronously
-    CompletableFuture<Boolean> taskRunningFuture = supplyAsync(this::isReEncryptTaskRunning, Thread.ofVirtual().factory());
-    
+    Executor executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+    //CompletableFuture<Boolean> taskRunningFuture = supplyAsync(this::isReEncryptTaskRunning, Thread.ofVirtual().factory());
+    CompletableFuture<Boolean> taskRunningFuture = CompletableFuture.supplyAsync(this::isReEncryptTaskRunning, executor);
+
     // Use pattern matching to determine the health status
-    return switch (taskRunningFuture.get()) {
-      case true -> Result.healthy(STR."Re-encryption in progress. Check task logs for more information.");
-      case false when secretsService.isReEncryptRequired() -> 
-          Result.unhealthy(STR."Detected more than one encryption key in use. Re-encryption is required. See help documentation for information on how to start re-encryption.");
-      default -> Result.healthy(STR."All secrets using same encryption key. Re-encryption is not required.");
-    };
+
+    if (Boolean.TRUE.equals(taskRunningFuture.get())) {
+      return Result.healthy("Re-encryption in progress. Check task logs for more information.");
+    } else if (secretsService.isReEncryptRequired()) {
+      return Result.unhealthy("Detected more than one encryption key in use. Re-encryption is required. See help documentation for information on how to start re-encryption.");
+    } else {
+      return Result.healthy("All secrets use the same encryption key. Re-encryption is not required.");
+    }
   }
 
   private boolean isReEncryptTaskRunning() {

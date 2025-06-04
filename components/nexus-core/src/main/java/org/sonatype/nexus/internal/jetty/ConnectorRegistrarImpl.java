@@ -62,15 +62,6 @@ public class ConnectorRegistrarImpl
     this.executorService = Executors.newVirtualThreadPerTaskExecutor();
   }
   
-  /**
-   * Shutdown the executor service when the component is stopped.
-   */
-  @Override
-  protected void doStop() throws Exception {
-    executorService.shutdown();
-    super.doStop();
-  }
-
   @Override
   public List<HttpScheme> availableSchemes() {
     final List<HttpScheme> result = new ArrayList<>();
@@ -140,30 +131,39 @@ public class ConnectorRegistrarImpl
     // Use pattern matching to validate the connector configuration
     switch (connectorConfiguration) {
       case null -> throw new NullPointerException("Connector configuration cannot be null");
-      case var config when managedConfigurations.containsKey(config) -> 
+      default -> {
+        if (managedConfigurations.containsKey(connectorConfiguration)) {
           throw new IllegalArgumentException("Connector is already added");
-      case var config -> {
+        }
+
         // Validate HTTP scheme
-        HttpScheme httpScheme = config.getScheme();
+        HttpScheme httpScheme = connectorConfiguration.getScheme();
         switch (httpScheme) {
           case null -> throw new NullPointerException("HTTP scheme cannot be null");
-          case var scheme when !availableSchemes().contains(scheme) -> 
-              throw new UnsupportedHttpSchemeException(scheme);
-          default -> { /* Valid scheme */ }
+          default -> {
+            if (!availableSchemes().contains(httpScheme)) {
+              throw new UnsupportedHttpSchemeException(httpScheme);
+            }
+          }
         }
-        
+
         // Validate port
-        int port = config.getPort();
+        int port = connectorConfiguration.getPort();
         switch (port) {
-          case var p when p <= 0 -> 
-              throw new IllegalArgumentException(STR."Port must be positive, got \{p}");
-          case var p when p >= 65536 -> 
-              throw new IllegalArgumentException(STR."Port must be less than 65536, got \{p}");
-          case var p when unavailablePorts().contains(p) -> 
-              throw new IllegalArgumentException(STR."Port \{p} is already in use");
-          default -> { /* Valid port */ }
+          default -> {
+            if (port <= 0) {
+              throw new IllegalArgumentException("Port must be positive, got " + port);
+            }
+            if (port >= 65536) {
+              throw new IllegalArgumentException("Port must be less than 65536, got " + port);
+            }
+            if (unavailablePorts().contains(port)) {
+              throw new IllegalArgumentException("Port " + port + " is already in use");
+            }
+          }
         }
       }
     }
+
   }
 }

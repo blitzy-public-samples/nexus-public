@@ -154,16 +154,17 @@ public class EmailManagerImpl
     try {
       Secret oldPass = getConfiguration().getPassword();
       Secret newPass = null;
-      
-      switch (password) {
-        case null, "" -> { /* No password provided, do nothing */ }
-        case PASSWORD_PLACEHOLDER -> model.setPassword(oldPass);
-        case String pwd -> {
-          newPass = secretsService.encrypt(EMAIL_CONFIGURATION_SOURCE, pwd.toCharArray(), UserIdHelper.get());
-          model.setPassword(newPass);
-        }
+
+      if (password == null || password.isEmpty()) {
+        // No password provided, do nothing
+      } else if (PASSWORD_PLACEHOLDER.equals(password)) {
+        model.setPassword(oldPass);
+      } else {
+        newPass = secretsService.encrypt(EMAIL_CONFIGURATION_SOURCE, password.toCharArray(), UserIdHelper.get());
+        model.setPassword(newPass);
       }
-      
+
+
       try {
         store.save(model);
       }

@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.status;
 
 import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +28,7 @@ import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Response;
 
+import com.codahale.metrics.health.HealthCheck;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.log.ExceptionSummarizer;
@@ -102,12 +104,12 @@ public class StatusResource
       freezeService.checkWritable("Write check failed");
       return ok().build();
     }
-    catch (Exception e when e instanceof IllegalStateException) {
-      exceptionSummarizer.log(STR."Status health check failed due to illegal state: \{e.getMessage()}", e);
-      return status(SERVICE_UNAVAILABLE).build();
-    }
     catch (Exception e) {
-      exceptionSummarizer.log(STR."Status health check failed, responding server is unavailable: \{e.getMessage()}", e);
+      if (e instanceof IllegalStateException) {
+        exceptionSummarizer.log(STR."Status health check failed due to illegal state: \{e.getMessage()}", e);
+      } else {
+        exceptionSummarizer.log(STR."Status health check failed, responding server is unavailable: \{e.getMessage()}", e);
+      }
       return status(SERVICE_UNAVAILABLE).build();
     }
   }
@@ -125,17 +127,18 @@ public class StatusResource
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Create a concurrent map to store results
       ConcurrentHashMap<String, Result> results = new ConcurrentHashMap<>();
-      
+
+      SortedSet<String> sortedNameSet = registry.getNames();
+
       // Get all registered health checks
-      SortedMap<String, com.codahale.metrics.health.HealthCheck> healthChecks = registry.getHealthChecks();
-      
       // Submit each health check to be executed by a virtual thread
-      healthChecks.forEach((name, healthCheck) -> {
+      sortedNameSet.forEach((name) -> {
+        HealthCheck healthCheck = registry.getHealthCheck(name);
         executor.submit(() -> {
           try {
             Result result = healthCheck.execute();
             results.put(name, result);
-          } 
+          }
           catch (Exception e) {
             log.warn(STR."Health check \{name} failed with exception: \{e.getMessage()}", e);
             results.put(name, Result.unhealthy(STR."Exception during health check: \{e.getMessage()}"));

@@ -19,6 +19,9 @@ import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Supplier;
 import java.lang.Thread.Builder.OfVirtual;
 import static java.lang.StringTemplate.STR;
@@ -67,28 +70,16 @@ public abstract class HealthCheckComponentSupport
    * @throws Exception If an error occurs during the health check
    */
   protected Result executeWithVirtualThread(Supplier<Result> operation) throws Exception {
-    // Create a virtual thread that inherits the current thread's context
-    Thread virtualThread = Thread.ofVirtual().name(STR."health-check-\{this.getClass().getSimpleName()}").start(() -> {
-      try {
-        // Log the execution in the virtual thread using String Templates
+    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      Future<Result> future = executor.submit(() -> {
         if (log.isDebugEnabled()) {
           log.debug(STR."Executing health check \{this.getClass().getSimpleName()} in virtual thread \{Thread.currentThread().getName()}");
         }
         return operation.get();
-      } catch (Exception e) {
-        log.error(STR."Error executing health check in virtual thread: \{e.getMessage()}", e);
-        throw new RuntimeException(e);
-      }
-    });
-    
-    try {
-      // Join the virtual thread and wait for the result
-      virtualThread.join();
-      // The result is not directly accessible, so we need to use another approach
-      // In a real implementation, you would use a CompletableFuture or similar mechanism
-      // This is a simplified version for demonstration purposes
-      return operation.get();
+      });
+      return future.get();
     } catch (Exception e) {
+      log.error(STR."Error executing health check in virtual thread: \{e.getMessage()}", e);
       return Result.unhealthy(STR."Failed to execute health check: \{e.getMessage()}");
     }
   }

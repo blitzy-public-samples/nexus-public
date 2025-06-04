@@ -12,12 +12,12 @@
  */
 package org.sonatype.nexus.internal.capability.storage.datastore;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
-
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemData;
 import org.sonatype.nexus.internal.capability.storage.CapabilityStorageItemUpdatedEvent;
 import org.sonatype.nexus.thread.internal.MDCUtils;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 import static java.lang.StringTemplate.STR;
 
@@ -61,13 +61,11 @@ public class CapabilityStorageItemUpdatedEventImpl
    * @return a CompletableFuture representing the pending completion of the event processing
    */
   public CompletableFuture<Void> processUpdateAsync(Consumer<CapabilityStorageItemUpdatedEvent> consumer) {
-    return processAsync(() -> {
+    return processAsync((event) -> {
       // Ensure MDC context is properly set for Virtual Thread execution
       try {
-        MDCUtils.withMdcContext(() -> {
-          consumer.accept(this);
-          return null;
-        }).run();
+        Runnable contextRunnable = MDCUtils.withMdcContext(() -> consumer.accept((CapabilityStorageItemUpdatedEvent) event));
+        contextRunnable.run();
       } catch (Exception e) {
         // Log the exception with proper context using String Templates
         throw new RuntimeException(STR."Error processing capability update event: \{e.getMessage()}", e);

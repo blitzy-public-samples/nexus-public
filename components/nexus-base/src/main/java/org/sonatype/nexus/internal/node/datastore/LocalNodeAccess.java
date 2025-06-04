@@ -100,6 +100,6 @@ public class LocalNodeAccess
 
   @Override
   public String toString() {
-    return STR."\{getClass().getSimpleName()}\{id='\{id}'\}";
+    return STR."\{getClass().getSimpleName()}{id='\{id}'}";
   }
 }

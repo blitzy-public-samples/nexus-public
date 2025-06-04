@@ -235,7 +235,7 @@ public class AuditJava21CompatibilityTest
             // Record the audit event
             underTest.record(data);
           } catch (Exception e) {
-            log.error("Error in virtual thread {}", index, e);
+            logger.error("Error in virtual thread {}", index, e);
             anyFailure.set(true);
           } finally {
             latch.countDown();

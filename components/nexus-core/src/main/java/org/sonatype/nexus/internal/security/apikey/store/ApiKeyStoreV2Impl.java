@@ -16,6 +16,7 @@ import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Predicate;
@@ -91,18 +92,22 @@ public class ApiKeyStoreV2Impl
   @Override
   public int deleteApiKey(final String domain, final PrincipalCollection principals) {
     return findApiKey(domain, principals)
-        .map(this::deleteApiKey)
+        .map(apiKeyInternal -> deleteApiKeys(domain))
         .orElse(0);
   }
+
 
   @Override
   public int deleteApiKeys(final OffsetDateTime expiration) {
     return findCreatedBefore(expiration).stream()
-        .mapToInt(apiKeyData -> switch(apiKeyData) {
-          case ApiKeyV2Data data -> deleteApiKey(data);
-          default -> 0;
-        })
-        .sum();
+        .mapToInt(apiKeyData -> {
+          if (apiKeyData instanceof ApiKeyV2Data data) {
+            return deleteApiKey(data);
+          } else {
+            return 0;
+          }
+        }).sum();
+
   }
 
   @Override
@@ -241,12 +246,16 @@ public class ApiKeyStoreV2Impl
     checkNotNull(domain);
     checkNotNull(principals);
 
-    return virtualThreadExecutor.submit(() -> 
-        dao().findApiKey(domain, principals.getPrimaryPrincipal().toString()).stream()
-            .filter(principalMatcher(principals))
-            .findFirst()
-            .map(ApiKeyInternal.class::cast)
-    ).join();
+    try{
+      return virtualThreadExecutor.submit(() ->
+          dao().findApiKey(domain, principals.getPrimaryPrincipal().toString()).stream()
+              .filter(principalMatcher(principals))
+              .findFirst()
+              .map(ApiKeyInternal.class::cast)
+      ).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   /**
@@ -255,11 +264,14 @@ public class ApiKeyStoreV2Impl
   @Transactional
   protected Stream<ApiKeyV2Data> findApiKeysForUser(final PrincipalCollection principals) {
     checkNotNull(principals);
-
-    return virtualThreadExecutor.submit(() -> 
-        dao().findApiKeysForUser(principals.getPrimaryPrincipal().toString()).stream()
-            .filter(principalMatcher(principals))
-    ).join();
+    try{
+      return virtualThreadExecutor.submit(() ->
+          dao().findApiKeysForUser(principals.getPrimaryPrincipal().toString()).stream()
+              .filter(principalMatcher(principals))
+      ).get();
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Transactional

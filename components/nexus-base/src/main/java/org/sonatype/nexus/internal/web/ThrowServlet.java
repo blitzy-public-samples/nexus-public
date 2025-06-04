@@ -17,7 +17,7 @@ import java.io.IOException;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -50,7 +50,7 @@ public class ThrowServlet
     }
   }
 
-  @Override
+  //@Override
   protected void service(
       final HttpServletRequest request,
       final HttpServletResponse response) throws ServletException, IOException

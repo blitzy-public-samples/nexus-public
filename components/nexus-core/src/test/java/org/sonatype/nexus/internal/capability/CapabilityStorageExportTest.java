@@ -60,7 +60,7 @@ public class CapabilityStorageExportTest
 
   @Test
   public void testExportImportToJson() throws Exception {
-    Map<CapabilityIdentity, CapabilityStorageItem> capabilities = new HashMap<>(2);
+    Map<CapabilityIdentity, CapabilityStorageItemData> capabilities = new HashMap<>(2);
     capabilities.put(new CapabilityIdentity("one"), createCapabilityWithSensitiveData());
     capabilities.put(new CapabilityIdentity("two"), createCapabilityWithoutSensitiveData());
 

@@ -127,7 +127,7 @@ public class AuditCapability
       extends CapabilityConfigurationSupport
   {
     public Configuration(final Map<String, String> properties) {
-      super(properties);
+      super();
       // No additional configuration needed for audit capability
     }
   }

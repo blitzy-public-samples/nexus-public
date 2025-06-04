@@ -54,7 +54,7 @@ public class ReEncryptTask
   {
     this.secretsService = checkNotNull(secretsService);
     this.secretsStore = checkNotNull(secretsStore);
-    this.delayTime = Duration.ofSeconds(pollInterval).multiply(2);
+    this.delayTime = Duration.ofSeconds(pollInterval).multipliedBy(2);;
   }
 
   @Override

@@ -50,14 +50,17 @@ public class SqlAdapter {
         // Use pattern matching to handle different types of generators and parameters
         return switch (generator) {
             // Handle case when we have a specific type of generator that might benefit from concurrent execution
-            case ComplexSqlGenerator complex when isComplexQuery(params) -> 
-                executeWithVirtualThread(complex, params);
-            
-            // Default case for standard generators
-            case SqlGenerator<?> gen -> {
-                String sql = gen.generateSelectStatement(params);
-                logSqlStatement(sql, params);
-                yield sql;
+            case ComplexSqlGenerator complex when isComplexQuery(params) -> { yield executeWithVirtualThread(complex, params); }
+            default -> {
+            	// Default case for standard generators
+            	try {
+            		SqlGenerator gen = (SqlGenerator) generator;
+            		String sql = gen.generateSelectStatement(params);
+                    logSqlStatement(sql, params);
+                    yield sql;
+            	} catch(Exception e) {
+            		throw new IllegalArgumentException("Unsupported SqlGenerator type or type mismatch for generator: " + generator.getClass().getName(), e);
+            	}
             }
         };
     }

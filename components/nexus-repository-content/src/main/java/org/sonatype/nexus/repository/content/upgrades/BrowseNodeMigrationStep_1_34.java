@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 import java.util.concurrent.ExecutionException;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -66,7 +67,7 @@ public class BrowseNodeMigrationStep_1_34
                   throw new RuntimeException(e);
               }
           }))
-          .toList();
+          .collect(Collectors.toList());
       
       // Wait for all migrations to complete and handle any exceptions
       for (Future<?> future : futures) {

@@ -24,6 +24,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 
@@ -232,7 +234,7 @@ public class BrowseFacetImpl
             List<Future<?>> futures = page.stream()
                 .map(fluentAsset -> executor.submit(() -> 
                     createBrowseNodes(fluentAsset, processedComponents)))
-                .toList();
+                .collect(Collectors.toList());
             
             // Wait for all tasks in this batch to complete
             for (Future<?> future : futures) {

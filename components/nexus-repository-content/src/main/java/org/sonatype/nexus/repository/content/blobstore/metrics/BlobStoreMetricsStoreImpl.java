@@ -77,12 +77,13 @@ public class BlobStoreMetricsStoreImpl
    */
   public CompletableFuture<Void> updateMetricsAsync(final BlobStoreMetricsEntity blobStoreMetricsEntity) {
     return CompletableFuture.runAsync(() -> {
-      UnitOfWork.begin(sessionSupplier);
+      // TODOs: FIXME: What is correct value to pass in begin method
+      //UnitOfWork.begin(sessionSupplier);
       try {
         dao().updateMetrics(blobStoreMetricsEntity);
       }
       finally {
-        UnitOfWork.end();
+        //UnitOfWork.end();
       }
     }, virtualThreadExecutor);
   }
@@ -101,12 +102,13 @@ public class BlobStoreMetricsStoreImpl
    */
   public CompletableFuture<BlobStoreMetricsEntity> getAsync(final String blobStoreName) {
     return CompletableFuture.supplyAsync(() -> {
-      UnitOfWork.begin(sessionSupplier);
+      // TODOs: FIXME: What is correct value to pass in begin method
+      //UnitOfWork.begin(sessionSupplier);
       try {
         return dao().get(blobStoreName);
       }
       finally {
-        UnitOfWork.end();
+    	  // UnitOfWork.end();
       }
     }, virtualThreadExecutor);
   }
@@ -125,12 +127,13 @@ public class BlobStoreMetricsStoreImpl
    */
   public CompletableFuture<Void> removeAsync(final String blobStoreName) {
     return CompletableFuture.runAsync(() -> {
-      UnitOfWork.begin(sessionSupplier);
+    	// TODOs: FIXME: What is correct value to pass in begin method
+      //UnitOfWork.begin(sessionSupplier);
       try {
         dao().remove(blobStoreName);
       }
       finally {
-        UnitOfWork.end();
+        //UnitOfWork.end();
       }
     }, virtualThreadExecutor);
   }
@@ -149,12 +152,13 @@ public class BlobStoreMetricsStoreImpl
    */
   public CompletableFuture<Void> clearOperationMetricsAsync(final String blobStoreName) {
     return CompletableFuture.runAsync(() -> {
-      UnitOfWork.begin(sessionSupplier);
+    	// TODOs: FIXME: What is correct value to pass in begin method
+     // UnitOfWork.begin(sessionSupplier);
       try {
         dao().clearOperationMetrics(blobStoreName);
       }
       finally {
-        UnitOfWork.end();
+       // UnitOfWork.end();
       }
     }, virtualThreadExecutor);
   }
@@ -173,12 +177,13 @@ public class BlobStoreMetricsStoreImpl
    */
   public CompletableFuture<Void> clearCountMetricsAsync(final String blobStoreName) {
     return CompletableFuture.runAsync(() -> {
-      UnitOfWork.begin(sessionSupplier);
+    	// TODOs: FIXME: What is correct value to pass in begin method
+      //UnitOfWork.begin(sessionSupplier);
       try {
         dao().clearCountMetrics(blobStoreName);
       }
       finally {
-        UnitOfWork.end();
+        // UnitOfWork.end();
       }
     }, virtualThreadExecutor);
   }
@@ -209,7 +214,8 @@ public class BlobStoreMetricsStoreImpl
    */
   public CompletableFuture<Void> initializeMetricsAsync(final String blobStoreName) {
     return CompletableFuture.runAsync(() -> {
-      UnitOfWork.begin(sessionSupplier);
+    	// TODOs: FIXME: What is correct value to pass to begin ?
+      //UnitOfWork.begin(sessionSupplier);
       try {
         // Use AtomicReference to ensure thread-safety when checking and initializing metrics
         AtomicReference<BlobStoreMetricsEntity> metricsRef = new AtomicReference<>();
@@ -226,7 +232,7 @@ public class BlobStoreMetricsStoreImpl
         }
       }
       finally {
-        UnitOfWork.end();
+      //  UnitOfWork.end();
       }
     }, virtualThreadExecutor);
   }

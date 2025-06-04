@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.concurrent.Callable;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.subject.Subject;
@@ -132,23 +133,27 @@ public class AssetPermissionChecker
             // Propagate thread context to Virtual Thread
             if (currentSubject != null) {
               // Create a callable that will execute with the propagated subject
-              Supplier<Entry<Asset, String>> securityContextPropagator = () -> {
-                // Restore MDC context
-                if (mdcContext != null) {
-                  MDC.setContextMap(mdcContext);
-                }
-                
-                try {
-                  // Perform permission check with propagated context
-                  VariableSource source = variableResolverAdapter.fromPath(asset.path(), format);
-                  return findPermittingRepository(containingRepositoryNames, format, action, source)
-                      .map(r -> createAssetEntry(asset, r))
-                      .orElse(null);
-                } finally {
-                  // Clean up MDC context
-                  MDC.clear();
-                }
-              };
+            	Callable<Entry<Asset, String>> securityContextPropagator = new Callable<Entry<Asset, String>>() {
+
+    				public Entry<Asset, String> call() throws Exception {
+    					// Restore MDC context
+    	                if (mdcContext != null) {
+    	                  MDC.setContextMap(mdcContext);
+    	                }
+    	                
+    	                try {
+    	                  // Perform permission check with propagated context
+    	                  VariableSource source = variableResolverAdapter.fromPath(asset.path(), format);
+    	                  return findPermittingRepository(containingRepositoryNames, format, action, source)
+    	                      .map(r -> createAssetEntry(asset, r))
+    	                      .orElse(null);
+    	                } finally {
+    	                  // Clean up MDC context
+    	                  MDC.clear();
+    	                }
+    				}
+                	  
+                  };
               
               // Execute with the propagated subject
               return currentSubject.execute(securityContextPropagator);

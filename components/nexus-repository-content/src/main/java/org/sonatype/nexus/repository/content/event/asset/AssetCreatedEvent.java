@@ -43,8 +43,8 @@ public class AssetCreatedEvent
    * @return a description of the asset path and blob status
    */
   public static String describeAssetWithPatterns(final Object asset) {
-    if (asset instanceof Asset(var path, var kind, var component, var blob, var hasBlob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      return STR."Asset path: \{path}, kind: \{kind}, has blob: \{hasBlob}, blob store: \{blobStoreName}, size: \{blobSize}";
+    if (asset instanceof Asset ast) {
+      return STR."Asset path: \{ast.path()}, kind: \{ast.kind()}, has blob: \{ast.hasBlob()}, blob store: \{ast.blobStoreName()}, size: \{ast.assetBlobSize()}";
     }
     return "Not a valid Asset";
   }

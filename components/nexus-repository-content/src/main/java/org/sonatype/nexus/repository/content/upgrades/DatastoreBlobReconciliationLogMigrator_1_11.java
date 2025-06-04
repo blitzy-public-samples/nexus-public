@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -46,7 +47,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Collections.emptyList;
 import static java.util.Optional.empty;
 import static java.util.Optional.ofNullable;
-import static org.apache.commons.lang.exception.ExceptionUtils.getFullStackTrace;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.BASEDIR;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.CONFIG_KEY;
 import static org.sonatype.nexus.blobstore.file.FileBlobStore.PATH_KEY;
@@ -172,7 +172,7 @@ public class DatastoreBlobReconciliationLogMigrator_1_11
             throw new RuntimeException(STR."Failed to process blob store \{blobStoreName}", e);
           }
         }))
-        .toList();
+        .collect(Collectors.toList());
     
     // Wait for all tasks to complete to ensure proper error propagation
     tasks.forEach(task -> {
@@ -224,7 +224,7 @@ public class DatastoreBlobReconciliationLogMigrator_1_11
               throw new UncheckedIOException(e);
             }
           }))
-          .toList();
+          .collect(Collectors.toList());
       
       // Wait for all copy tasks to complete
       for (Future<?> task : copyTasks) {
@@ -238,7 +238,7 @@ public class DatastoreBlobReconciliationLogMigrator_1_11
     }
     catch (Exception e) {
       log.warn("Skipping copy of reconciliation logs contained in {} because of error {}", sourceDir,
-          getFullStackTrace(e));
+          e.getStackTrace());
     }
   }
 
@@ -325,28 +325,5 @@ public class DatastoreBlobReconciliationLogMigrator_1_11
     }
   }
   
-  /**
-   * Checks if a table exists in the database.
-   * Uses JDBC metadata which is compatible with Virtual Threads.
-   * 
-   * @param connection database connection
-   * @param tableName name of the table to check
-   * @return true if the table exists, false otherwise
-   */
-  private boolean tableExists(final Connection connection, final String tableName) {
-    try {
-      // Use database metadata to check if table exists - compatible with Virtual Threads
-      ResultSet tables = connection.getMetaData().getTables(
-          null, null, tableName, new String[] {"TABLE"});
-      boolean exists = tables.next();
-      tables.close();
-      
-      log.debug("Table {} {} in the database", tableName, exists ? "exists" : "does not exist");
-      return exists;
-    }
-    catch (SQLException e) {
-      log.error(STR."Error checking if table \{tableName} exists", e);
-      return false;
-    }
-  }
+  
 }

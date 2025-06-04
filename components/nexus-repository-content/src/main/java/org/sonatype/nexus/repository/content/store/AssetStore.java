@@ -216,56 +216,30 @@ public class AssetStore<T extends AssetDAO>
     if (addedToRepository != null) {
       addedToRepositoryNormalized = addedToRepository.plus(1, ChronoUnit.MILLIS).truncatedTo(ChronoUnit.MILLIS);
     }
-
+    final OffsetDateTime effAddedToRepositoryNormalized = addedToRepositoryNormalized;
     // Use virtual threads for I/O-bound database operations to improve concurrency
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Fetch one extra record to check if there are more results with the same addedToRepository value. Most of the time
       // this won't be the case, and we will not need a query to find them all.
       CompletableFuture<List<AssetInfo>> assetsFuture = CompletableFuture.supplyAsync(() ->
-          dao().findGreaterThanOrEqualToAddedToRepository(repositoryId, addedToRepositoryNormalized, regexList,
+          dao().findGreaterThanOrEqualToAddedToRepository(repositoryId, effAddedToRepositoryNormalized, regexList,
               filter, filterParams, batchSize + 1), executor);
 
       List<AssetInfo> assets = assetsFuture.join();
 
       if (assets.size() == batchSize + 1) {
         if (hasMoreResultsWithSameBlobCreated(assets)) {
-          // Using record pattern to extract components directly
-          if (assets.get(assets.size() - 1) instanceof AssetInfo(var path, var kind, var lastUpdated, var lastDownloaded, var addedToRepo)) {
-            Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
-
-            OffsetDateTime startAddedToRepository = addedToRepo.truncatedTo(ChronoUnit.MILLIS);
-            OffsetDateTime endAddedToRepository = addedToRepo.plus(1, ChronoUnit.MILLIS);
-
-            // Use virtual thread for the additional query to find matching assets
-            CompletableFuture<List<AssetInfo>> matchingAssetsFuture = CompletableFuture.supplyAsync(() ->
-                dao().findAddedToRepositoryWithinRange(repositoryId, startAddedToRepository, endAddedToRepository,
-                    regexList, filter, filterParams, LAST_UPDATED_LIMIT), executor);
-
-            List<AssetInfo> matchAddedToRepository = matchingAssetsFuture.join();
-
-            if (matchAddedToRepository.size() == LAST_UPDATED_LIMIT) {
-              log.error(
-                  "Found {} assets with identical last_updated value. Replication is skipping over additional assets with last_updated = {}",
-                  LAST_UPDATED_LIMIT, addedToRepo);
-            }
-
-            // Process the results in parallel using virtual threads
-            List<AssetInfo> filteredAssets = matchAddedToRepository.stream()
-                .filter(asset -> !knownPaths.contains(asset.path()))
-                .collect(Collectors.toList());
-
-            assets.addAll(filteredAssets);
-          } else {
-            // Fallback to traditional approach if pattern matching fails
-            Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
+        	Set<String> knownPaths = assets.stream().map(AssetInfo::path).collect(Collectors.toSet());
             AssetInfo lastAsset = assets.get(assets.size() - 1);
 
             OffsetDateTime startAddedToRepository = lastAsset.addedToRepository().truncatedTo(ChronoUnit.MILLIS);
             OffsetDateTime endAddedToRepository = lastAsset.addedToRepository().plus(1, ChronoUnit.MILLIS);
 
-            List<AssetInfo> matchAddedToRepository = dao().findAddedToRepositoryWithinRange(
-                repositoryId, startAddedToRepository, endAddedToRepository,
-                regexList, filter, filterParams, LAST_UPDATED_LIMIT);
+            // Add all records that match the timestamp (truncating to millisecond) of the last record. Then we can continue
+            // paging with a greater than query.
+            List<AssetInfo> matchAddedToRepository =
+                dao().findAddedToRepositoryWithinRange(repositoryId, startAddedToRepository, endAddedToRepository,
+                    regexList, filter, filterParams, LAST_UPDATED_LIMIT);
 
             if (matchAddedToRepository.size() == LAST_UPDATED_LIMIT) {
               log.error(
@@ -277,7 +251,6 @@ public class AssetStore<T extends AssetDAO>
                 matchAddedToRepository.stream()
                     .filter(asset -> !knownPaths.contains(asset.path()))
                     .collect(Collectors.toList()));
-          }
         }
         else {
           // It's not safe to leave the extra record in. There may be more assets with same addedToRepository value as it.
@@ -289,34 +262,13 @@ public class AssetStore<T extends AssetDAO>
     }
   }
 
-  private boolean hasMoreResultsWithSameBlobCreated(final List<AssetInfo> assets) {
-    // Using record patterns to extract the addedToRepository values directly
-    if (assets.size() < 2) {
-      return false;
-    }
-    
-    // Get the last two assets using record patterns for cleaner data extraction
-    var lastAsset = assets.get(assets.size() - 1);
-    var secondToLastAsset = assets.get(assets.size() - 2);
-    
-    if (lastAsset instanceof AssetInfo(var path1, var kind1, var lastUpdated1, var lastDownloaded1, var addedToRepo1) && 
-        secondToLastAsset instanceof AssetInfo(var path2, var kind2, var lastUpdated2, var lastDownloaded2, var addedToRepo2)) {
-      
-      OffsetDateTime lastAddedToRepository = addedToRepo1.truncatedTo(ChronoUnit.MILLIS);
-      OffsetDateTime secondToLastAddedToRepository = addedToRepo2.truncatedTo(ChronoUnit.MILLIS);
-      
-      return lastAddedToRepository.equals(secondToLastAddedToRepository);
-    } else {
-      // Fallback to traditional approach if pattern matching fails
-      OffsetDateTime lastAddedToRepository =
-          assets.get(assets.size() - 1).addedToRepository().truncatedTo(ChronoUnit.MILLIS);
-      
-      OffsetDateTime secondToLastAddedToRepository =
-          assets.get(assets.size() - 2).addedToRepository().truncatedTo(ChronoUnit.MILLIS);
-      
-      return lastAddedToRepository.equals(secondToLastAddedToRepository);
-    }
-  }
+	private boolean hasMoreResultsWithSameBlobCreated(final List<AssetInfo> assets) {
+		OffsetDateTime lastAddedToRepository = assets.get(assets.size() - 1).addedToRepository()
+				.truncatedTo(ChronoUnit.MILLIS);
+		OffsetDateTime secondToLastAddedToRepository = assets.get(assets.size() - 2).addedToRepository()
+				.truncatedTo(ChronoUnit.MILLIS);
+		return lastAddedToRepository.equals(secondToLastAddedToRepository);
+	}
 
   /**
    * Creates the given asset in the content data store.
@@ -377,13 +329,13 @@ public class AssetStore<T extends AssetDAO>
    * @return sequenced collection of {@link AssetInfo} with defined encounter order
    */
   @Transactional
-  public SequencedCollection<AssetInfo> findByComponentIds(
+  public Collection<AssetInfo> findByComponentIds(
       final Set<Integer> componentIds,
       final String assetFilter,
       final Map<String, String> assetFilterParams)
   {
     if (CollectionUtils.isEmpty(componentIds)) {
-      return (SequencedCollection<AssetInfo>) Collections.emptyList();
+      return Collections.emptyList();
     }
 
     // Use virtual threads for improved I/O performance during database query
@@ -392,7 +344,7 @@ public class AssetStore<T extends AssetDAO>
           dao().findByComponentIds(componentIds, assetFilter, assetFilterParams), executor);
       
       // Convert the result to a SequencedCollection to leverage Java 21's Sequenced Collections API
-      return (SequencedCollection<AssetInfo>) assetsFuture.join();
+      return (Collection<AssetInfo>) assetsFuture.join();
     }
   }
 
@@ -485,33 +437,17 @@ public class AssetStore<T extends AssetDAO>
    * @return {@code true} if the asset was deleted
    */
   @Transactional
-  public boolean deleteAsset(final Asset asset) {
-    preCommitEvent(() -> new AssetPreDeleteEvent(asset));
-    
-    // Use virtual threads for improved I/O performance during database delete
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      CompletableFuture<Boolean> deleteFuture = CompletableFuture.supplyAsync(() -> 
-          dao().deleteAsset(asset), executor);
-      
-      boolean deleted = deleteFuture.join();
+	public boolean deleteAsset(final Asset asset) {
+		preCommitEvent(() -> new AssetPreDeleteEvent(asset));
+		boolean deleted = dao().deleteAsset(asset);
 
-      if (deleted) {
-        // Using record pattern for cleaner component handling if available
-        if (asset instanceof Asset(var path, var kind, var component, var blob)) {
-          if (component.isPresent()) {
-            CompletableFuture.runAsync(() -> 
-                dao().updateEntityVersion(internalComponentId(component.get()), clustered), executor).join();
-          }
-        } else {
-          // Fallback to traditional approach if pattern matching fails
-          asset.component()
-              .ifPresent(component -> dao().updateEntityVersion(internalComponentId(component), clustered));
-        }
-        postCommitEvent(() -> new AssetDeletedEvent(asset));
-      }
-      return deleted;
-    }
-  }
+		if (deleted) {
+			asset.component()
+					.ifPresent(component -> dao().updateEntityVersion(internalComponentId(component), clustered));
+			postCommitEvent(() -> new AssetDeletedEvent(asset));
+		}
+		return deleted;
+	}
 
   /**
    * Deletes the asset located at the given path in the content data store.
@@ -577,8 +513,9 @@ public class AssetStore<T extends AssetDAO>
       
       if (clustered && componentIds.length > 0) {
         // Update entity versions in parallel using virtual threads
+    	final int[] effComponentIds = componentIds;
         CompletableFuture.runAsync(() -> 
-            dao().updateEntityVersions(componentIds, clustered), executor).join();
+            dao().updateEntityVersions(effComponentIds, clustered), executor).join();
       }
       return count;
     }

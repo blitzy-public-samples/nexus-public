@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.content.search.elasticsearch;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -161,7 +162,7 @@ public class SearchFacetImpl
               try {
                 scope.join().throwIfFailed();
               } 
-              catch (InterruptedException e) {
+              catch (InterruptedException | ExecutionException e) {
                 Thread.currentThread().interrupt();
                 log.warn("Indexing interrupted for repository {}", repository.getName(), e);
               }
@@ -205,7 +206,7 @@ public class SearchFacetImpl
               try {
                 scope.join().throwIfFailed();
               } 
-              catch (InterruptedException e) {
+              catch (InterruptedException | ExecutionException e) {
                 Thread.currentThread().interrupt();
                 log.warn("Purge operation interrupted for repository {}", repository.getName(), e);
               }

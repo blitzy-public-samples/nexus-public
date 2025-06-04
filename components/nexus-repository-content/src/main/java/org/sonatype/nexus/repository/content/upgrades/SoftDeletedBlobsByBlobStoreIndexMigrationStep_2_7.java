@@ -59,11 +59,15 @@ public class SoftDeletedBlobsByBlobStoreIndexMigrationStep_2_7
 
     // Using Virtual Threads for I/O-bound SQL operation
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Submit the SQL execution task to a virtual thread
-      Future<?> future = executor.submit(() -> executeIndexCreation(connection));
-      
-      // Wait for the task to complete
       try {
+    	// Submit the SQL execution task to a virtual thread
+        Future<?> future = executor.submit(() -> {
+        	try {
+        		executeIndexCreation(connection); 
+        	} catch(SQLException sqle) {
+        		throw new RuntimeException("Index creation for " + INDEX_NAME + " failed.", sqle);
+        	}
+        });
         future.get();
         log.info(STR."Index \{INDEX_NAME} created successfully in \{(System.currentTimeMillis() - startTime) * 0.001d} seconds.");
       } catch (ExecutionException e) {
@@ -93,7 +97,7 @@ public class SoftDeletedBlobsByBlobStoreIndexMigrationStep_2_7
       statement.execute(ADD_INDEX_STATEMENT);
     } catch (SQLException e) {
       log.error(STR."Error creating index \{INDEX_NAME}: \{e.getMessage()}", e);
-      throw e;
+      throw new RuntimeException("Error creating index " + INDEX_NAME, e);
     }
   }
 }

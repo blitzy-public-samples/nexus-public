@@ -35,26 +35,26 @@ import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.sonatype.nexus.repository.content.store.InternalIds.toInternalId;
 
 /**
- * Support class for {@link AssetsResource} which fetches and returns only assets that the user is permitted
- * to view according to {@link ContentAuthHelper#checkPathPermissions(String, String, String...)}
+ * Support class for {@link AssetsResource} which fetches and returns only
+ * assets that the user is permitted to view according to
+ * {@link ContentAuthHelper#checkPathPermissions(String, String, String...)}
  *
  * @since 3.27
  */
-abstract class AssetsResourceSupport
-    extends ComponentSupport
-{
-  /**
-   * Limit the number of assets returned per page. This value is aligned with ComponentsResourceSupport.PAGE_SIZE_LIMIT.
-   */
-  protected static final int PAGE_SIZE_LIMIT = 100;
+abstract class AssetsResourceSupport extends ComponentSupport {
+	/**
+	 * Limit the number of assets returned per page. This value is aligned with
+	 * ComponentsResourceSupport.PAGE_SIZE_LIMIT.
+	 */
+	protected static final int PAGE_SIZE_LIMIT = 100;
 
-  private final ContentAuthHelper contentAuthHelper;
+	private final ContentAuthHelper contentAuthHelper;
 
-  AssetsResourceSupport(final ContentAuthHelper contentAuthHelper) {
-    this.contentAuthHelper = checkNotNull(contentAuthHelper);
-  }
+	AssetsResourceSupport(final ContentAuthHelper contentAuthHelper) {
+		this.contentAuthHelper = checkNotNull(contentAuthHelper);
+	}
 
-  /**
+	/**
    * Browse assets in the repository with optimized concurrent retrieval using Virtual Threads.
    * 
    * @param repository the repository to browse
@@ -99,7 +99,7 @@ abstract class AssetsResourceSupport
     return trim(permittedAssets, PAGE_SIZE_LIMIT);
   }
 
-  private Continuation<FluentAsset> getAssets(Repository repository, final String continuationToken) {
+	private Continuation<FluentAsset> getAssets(Repository repository, final String continuationToken) {
     // Using pattern matching for switch to check repository type
     String repoType = repository.getType().getValue();
     return switch (repoType) {
@@ -115,7 +115,7 @@ abstract class AssetsResourceSupport
     };
   }
 
-  /**
+	/**
    * Filter assets to only include those the user is permitted to view.
    * 
    * @param repository the repository containing the assets
@@ -136,7 +136,7 @@ abstract class AssetsResourceSupport
         .collect(toList());
   }
 
-  /**
+	/**
    * Creates a predicate to check if an asset is permitted to be viewed by the current user.
    * 
    * @param format the repository format
@@ -154,36 +154,31 @@ abstract class AssetsResourceSupport
     };
   }
 
-  /**
-   * Converts an external continuation token to an internal token format.
-   * 
-   * @param continuationToken the external continuation token
-   * @return the internal token format, or null if the input is null
-   */
-  static String toInternalToken(final String continuationToken) {
-    if (continuationToken != null) {
-      String internalId = toInternalId(EntityHelper.id(continuationToken));
-      return STR."\{internalId}\{EMPTY}";
-    }
-    return null;
-  }
+	/**
+	 * Converts an external continuation token to an internal token format.
+	 * 
+	 * @param continuationToken the external continuation token
+	 * @return the internal token format, or null if the input is null
+	 */
+	static String toInternalToken(final String continuationToken) {
+		if (continuationToken != null) {
+			return toInternalId(EntityHelper.id(continuationToken)) + EMPTY;
+		}
+		return null;
+	}
 
-  /**
-   * Trims a list to the specified limit using Sequenced Collections approach.
-   * 
-   * @param <T> the type of elements in the list
-   * @param items the list to trim
-   * @param limit the maximum number of items to keep
-   * @return the trimmed list
-   */
-  static <T> List<T> trim(List<T> items, final int limit) {
-    // Using pattern matching with Sequenced Collections approach for trimming
-    if (items instanceof List<?> sequencedList) {
-      int size = sequencedList.size();
-      if (size > limit) {
-        return sequencedList.subList(0, limit);
-      }
-    }
-    return items;
-  }
+	/**
+	 * Trims a list to the specified limit using Sequenced Collections approach.
+	 * 
+	 * @param <T>   the type of elements in the list
+	 * @param items the list to trim
+	 * @param limit the maximum number of items to keep
+	 * @return the trimmed list
+	 */
+	static <T> List<T> trim(List<T> items, final int limit) {
+		if (items.size() > limit) {
+			items = items.subList(0, limit);
+		}
+		return items;
+	}
 }

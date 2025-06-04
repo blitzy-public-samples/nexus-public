@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import javax.inject.Inject;
-import javax.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolation;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.validation.groups.Default;
@@ -212,48 +212,11 @@ public abstract class ContentFacetSupport
   @Override
   @Transactional
   protected void doDelete() throws Exception {
-    if (configRepositoryId != null) {
-      // Use virtual threads for I/O-bound deletion operations
-      var executor = Executors.newVirtualThreadPerTaskExecutor();
-      try {
-        // Capture thread context for propagation
-        final ClientInfo clientInfo = dependencies.getClientInfoProvider().getCurrentThreadClientInfo();
-        final String nodeName = dependencies.getNodeAccess().getId();
-        
-        // Execute deletion operations in parallel using virtual threads
-        var assetDeletion = supplyAsync(() -> {
-          // Propagate client and node context
-          if (clientInfo != null) {
-            dependencies.getClientInfoProvider().setCurrentThreadClientInfo(clientInfo);
-          }
-          dependencies.getNodeAccess().setNodeId(nodeName);
-          
-          stores.assetStore.deleteAssets(contentRepositoryId);
-          return true;
-        }, executor);
-        
-        var componentDeletion = supplyAsync(() -> {
-          // Propagate client and node context
-          if (clientInfo != null) {
-            dependencies.getClientInfoProvider().setCurrentThreadClientInfo(clientInfo);
-          }
-          dependencies.getNodeAccess().setNodeId(nodeName);
-          
-          stores.componentStore.deleteComponents(contentRepositoryId);
-          return true;
-        }, executor);
-        
-        // Wait for both operations to complete
-        assetDeletion.join();
-        componentDeletion.join();
-        
-        // Delete content repository after assets and components are deleted
-        stores.contentRepositoryStore.deleteContentRepository(configRepositoryId);
-      }
-      finally {
-        executor.close();
-      }
-    }
+	  if (configRepositoryId != null) {
+	      stores.assetStore.deleteAssets(contentRepositoryId);
+	      stores.componentStore.deleteComponents(contentRepositoryId);
+	      stores.contentRepositoryStore.deleteContentRepository(configRepositoryId);
+	    }
   }
 
   @Override
@@ -311,7 +274,9 @@ public abstract class ContentFacetSupport
     // Use a virtual thread for database interactions to improve concurrency
     // This allows the database operation to be suspended when waiting for I/O
     // without blocking the carrier thread
-    return withThreadContext(() -> dependencies.getDataSessionSupplier().openSession(config.dataStoreName));
+	return dependencies.getDataSessionSupplier().openSession(config.dataStoreName);
+	// TODOs: FIXME : Commenting out as withThreadContext has call to unknown methods.
+    //return withThreadContext(() -> dependencies.getDataSessionSupplier().openSession(config.dataStoreName));
   }
 
   /**
@@ -334,9 +299,10 @@ public abstract class ContentFacetSupport
     finally {
       // Restore context in case it was lost during virtual thread handoff
       if (clientInfo != null) {
-        dependencies.getClientInfoProvider().setCurrentThreadClientInfo(clientInfo);
+        dependencies.getClientInfoProvider().setClientInfo(clientInfo.getRemoteIP(), clientInfo.getUserid());
       }
-      dependencies.getNodeAccess().setNodeId(nodeName);
+      // TODOs: FIXME: Should setNodeID method be added
+      //dependencies.getNodeAccess().setNodeId(nodeName);
     }
   }
 

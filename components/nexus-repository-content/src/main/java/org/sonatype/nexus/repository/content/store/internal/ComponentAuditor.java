@@ -80,7 +80,7 @@ public class ComponentAuditor
 
       Map<String, Object> attributes = data.getAttributes();
       attributes.put("repository.name", repositoryName);
-      attributes.put("componentIds", Arrays.toString(event.getComponentIds()));
+      attributes.put("componentIds", Arrays.toString(event.getComponentIds().toArray()));
 
       record(data);
     }

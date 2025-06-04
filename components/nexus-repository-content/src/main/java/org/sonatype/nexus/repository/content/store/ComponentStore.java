@@ -538,20 +538,6 @@ public class ComponentStore<T extends ComponentDAO>
       final @Nullable Object value)
   {
     try {
-      // Using record pattern matching for ComponentData when available
-      if (component instanceof ComponentData(var componentId, var repositoryId, var namespace, var name, var version, var normalizedVersion, var kind, var attributes)) {
-        supplyAsync(() -> {
-          dao().readComponentAttributes(component).ifPresent(attrs -> {
-            ((ComponentData) component).setAttributes(attrs);
-
-            if (applyAttributeChange(attrs, change, key, value)) {
-              dao().updateComponentAttributes(component, clustered);
-              postCommitEvent(() -> new ComponentAttributesEvent(component, change, key, value));
-            }
-          });
-          return null;
-        }, virtualThreadExecutor).get();
-      } else {
         // Fallback for non-record pattern case
         supplyAsync(() -> {
           dao().readComponentAttributes(component).ifPresent(attributes -> {
@@ -564,7 +550,7 @@ public class ComponentStore<T extends ComponentDAO>
           });
           return null;
         }, virtualThreadExecutor).get();
-      }
+      
     } catch (InterruptedException | ExecutionException e) {
       log.error("Error updating component attributes with virtual threads", e);
       Thread.currentThread().interrupt();

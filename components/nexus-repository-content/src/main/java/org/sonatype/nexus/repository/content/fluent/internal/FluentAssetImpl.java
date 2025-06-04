@@ -185,14 +185,11 @@ public class FluentAssetImpl
 
     BlobRef blobRef = assetBlob.blobRef();
     
-    // Use virtual threads for I/O operations to improve throughput
-    Blob blob = Thread.startVirtualThread(() -> {
-      return Optional.ofNullable(facet.stores().blobStoreProvider.get().get(blobRef.getBlobId()))
-          .orElseGet(() -> facet.dependencies()
-              .getMoveService()
-              .flatMap(service -> service.getIfBeingMoved(blobRef, repository().getName()))
-              .orElseThrow(() -> new MissingBlobException(blobRef)));
-    }).join();
+    Blob blob = Optional.ofNullable(facet.stores().blobStoreProvider.get().get(blobRef.getBlobId()))
+            .orElseGet(() -> facet.dependencies()
+                .getMoveService()
+                .map(service -> service.getIfBeingMoved(blobRef, repository().getName()))
+                .orElseThrow(() -> new MissingBlobException(blobRef)));
 
     Content content = new Content(new BlobPayload(blob, assetBlob.contentType()));
     AttributesMap contentAttributes = content.getAttributes();

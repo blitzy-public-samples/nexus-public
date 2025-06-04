@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.SequencedCollection;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.logging.Logger;
 
@@ -103,16 +104,25 @@ public class FluentAssetQueryImpl
     log.fine(STR."Browsing assets with limit: \{limit}, continuationToken: \{continuationToken}");
     
     // Use virtual thread for pagination operations to improve concurrent query performance
-    var result = Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        assets.doBrowse(limit, continuationToken, kind, filter, filterParams, constraints)
-    ).join();
-    
-    // Log the number of results found
-    if (result != null) {
-      log.fine(STR."Found \{result.size()} assets in browse operation");
+    try {
+	    Continuation<FluentAsset> result = Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+	       try {
+	    	   return assets.doBrowse(limit, continuationToken, kind, filter, filterParams, constraints);
+	       } catch(Exception e) {
+	    	   throw new RuntimeException("Error in assets in browse operation", e);
+	       }
+	    }    
+	    ).get();
+	    
+	 // Log the number of results found
+	    if (result != null) {
+	      log.fine(STR."Found \{result.size()} assets in browse operation");
+	    }
+	    
+	    return result;
+    } catch (InterruptedException | ExecutionException e) {
+  	  throw new RuntimeException("Error in assets in browse opeartion. ", e);
     }
-    
-    return result;
   }
 
   @Override
@@ -156,9 +166,18 @@ public class FluentAssetQueryImpl
     log.fine(STR."Performing enhanced browse operation with query type: \{queryType}");
     
     // Use virtual threads for better concurrency
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        assets.doBrowse(limit, continuationToken, kind, filter, filterParams, constraints)
-    ).join();
+    try {
+    	return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+            try {
+            	return assets.doBrowse(limit, continuationToken, kind, filter, filterParams, constraints);
+            } catch (Exception e) {
+            	throw new RuntimeException("Error in assets in browse opeartion. ", e);
+            }
+        }).get();
+      } catch (InterruptedException | ExecutionException e) {
+    	  throw new RuntimeException("Error in assets in browse opeartion. ", e);
+      }
+    
     
     // In the future, when Continuation implements SequencedCollection:
     // return continuation.reversed(); // For reverse order browsing

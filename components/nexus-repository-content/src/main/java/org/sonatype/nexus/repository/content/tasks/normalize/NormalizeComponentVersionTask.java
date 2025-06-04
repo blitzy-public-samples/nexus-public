@@ -92,17 +92,14 @@ public class NormalizeComponentVersionTask
     return "populate normalized_version column on {format}_component tables using Virtual Threads";
   }
   
-  @Override
-  public boolean cancel() {
-    boolean result = super.cancel();
+  public void cancel() {
+    super.cancel();
     
     // Attempt to interrupt the virtual thread executor if it's running
     if (virtualThreadExecutor != null && !virtualThreadExecutor.isShutdown()) {
       log.info("Shutting down virtual thread executor due to task cancellation");
       virtualThreadExecutor.shutdownNow();
     }
-    
-    return result;
   }
 
   @Override

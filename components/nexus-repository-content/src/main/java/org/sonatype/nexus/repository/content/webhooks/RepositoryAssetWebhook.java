@@ -21,10 +21,11 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.audit.InitiatorProvider;
 import org.sonatype.nexus.common.entity.EntityId;
 import org.sonatype.nexus.common.log.LogManager;
-import org.sonatype.nexus.common.log.Logger;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.Asset;
@@ -61,7 +62,7 @@ public class RepositoryAssetWebhook
 
   private final InitiatorProvider initiatorProvider;
   
-  private final Logger log;
+  private final Logger log = LoggerFactory.getLogger(RepositoryAssetWebhook.class);
 
   @Inject
   public RepositoryAssetWebhook(
@@ -71,7 +72,6 @@ public class RepositoryAssetWebhook
   {
     this.nodeAccess = checkNotNull(nodeAccess);
     this.initiatorProvider = checkNotNull(initiatorProvider);
-    this.log = checkNotNull(logManager).getLogger(getClass());
   }
 
   @Override

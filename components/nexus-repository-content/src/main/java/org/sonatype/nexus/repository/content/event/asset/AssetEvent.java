@@ -50,21 +50,10 @@ public class AssetEvent
     return asset;
   }
 
-  /**
-   * Extracts and formats asset information using Java 21 Record Patterns.
-   * This method demonstrates how to safely extract and process asset data.
-   * 
-   * @return formatted asset information
-   */
-  protected String getAssetInfo() {
-    if (asset instanceof Asset(var path, var kind, var component, var blob, var hasBlob, var lastDownloaded, var blobStoreName, var blobSize)) {
-      return STR."path=\{path}, kind=\{kind}, hasBlob=\{hasBlob}, size=\{blobSize}";
-    }
-    return asset.toString();
-  }
-
   @Override
   public String toString() {
-    return STR."AssetEvent{asset=\{getAssetInfo()}} \{super.toString()}";
+	  return "AssetEvent{" +
+		        "asset=" + asset +
+		        "} " + super.toString();
   }
 }

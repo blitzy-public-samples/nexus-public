@@ -48,49 +48,19 @@ public class DefaultMaintenanceFacet
 {
   @Override
   public Set<String> deleteComponent(final Component component) {
-    ImmutableSet.Builder<String> deletedPaths = ImmutableSet.builder();
+		ImmutableSet.Builder<String> deletedPaths = ImmutableSet.builder();
 
-    FluentComponent componentToDelete = contentFacet().components().with(component);
-    
-    // Collect all assets to process
-    List<FluentAsset> assets = componentToDelete.assets().collect(Collectors.toList());
-    
-    // Use Virtual Threads for concurrent asset deletion (I/O-bound operations)
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      List<CompletableFuture<String>> futures = new ArrayList<>();
-      
-      // Submit each asset deletion as a separate Virtual Thread task
-      for (FluentAsset assetToDelete : assets) {
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
-          if (assetToDelete.delete()) {
-            return assetToDelete.path(); // only return paths which were deleted by us
-          }
-          return null;
-        }, executor);
-        futures.add(future);
-      }
-      
-      // Collect results from all completed futures
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-      
-      // Add all deleted paths to the result set
-      for (CompletableFuture<String> future : futures) {
-        try {
-          String path = future.get();
-          if (path != null) {
-            deletedPaths.add(path);
-          }
-        }
-        catch (InterruptedException | ExecutionException e) {
-          log.error("Error during asset deletion", e);
-          Thread.currentThread().interrupt();
-        }
-      }
-    }
+		FluentComponent componentToDelete = contentFacet().components().with(component);
 
-    componentToDelete.delete(); // the component itself has no path
+		componentToDelete.assets().forEach(assetToDelete -> {
+			if (assetToDelete.delete()) {
+				deletedPaths.add(assetToDelete.path()); // only add paths which were deleted by us
+			}
+		});
 
-    return deletedPaths.build();
+		componentToDelete.delete(); // the component itself has no path
+
+		return deletedPaths.build();
   }
 
   @Override

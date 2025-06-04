@@ -96,22 +96,17 @@ public class DefaultSearchDocumentProducer
       
       // Using pattern matching for asset blob handling
       asset.blob().ifPresent(blob -> {
-        // Apply record pattern for blob data extraction
-        var (contentType, createdBy, createdByIp, blobSize, blobCreated) = 
-            new BlobData(blob.contentType(), blob.createdBy().orElse(null), 
-                         blob.createdByIp().orElse(null), blob.blobSize(), 
-                         blob.blobCreated());
                          
-        assetDoc.put(CONTENT_TYPE, contentType);
-        assetDoc.put(UPLOADER, createdBy);
-        assetDoc.put(UPLOADER_IP, createdByIp);
-        assetDoc.put(FILE_SIZE, blobSize);
+        assetDoc.put(CONTENT_TYPE, blob.contentType());
+        assetDoc.put(UPLOADER, blob.createdBy());
+        assetDoc.put(UPLOADER_IP, blob.createdByIp());
+        assetDoc.put(FILE_SIZE, blob.blobSize());
         asset.lastDownloaded().ifPresent(dateTime -> assetDoc.put(LAST_DOWNLOADED_KEY, format(dateTime)));
         attributes.put("checksum", blob.checksums());
 
         // Not ideal, but demonstrates why strongly typed objects would be better than Maps of attributes.
         Map<String, Object> content = new HashMap<>();
-        content.put("last_modified", blobCreated.toInstant().toEpochMilli());
+        content.put("last_modified", blob.blobCreated().toInstant().toEpochMilli());
         attributes.put("content", content);
       });
       assetDoc.put(ATTRIBUTES, attributes);

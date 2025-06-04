@@ -28,7 +28,7 @@ import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.kv.GlobalKeyValueStore;
 import org.sonatype.nexus.kv.NexusKeyValue;
 import org.sonatype.nexus.repository.content.tasks.normalize.NormalizeComponentVersionTask;
-import static org.sonatype.nexus.repository.content.tasks.normalize.NormalizeComponentVersionTask.KEY_FORMAT_PREFIX;
+import static org.sonatype.nexus.repository.content.tasks.normalize.NormalizeComponentVersionTask.KEY_FORMAT;
 import org.sonatype.nexus.repository.content.tasks.normalize.NormalizeComponentVersionTaskDescriptor;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 import org.sonatype.nexus.scheduling.UpgradeTaskScheduler;
@@ -149,7 +149,7 @@ public class ComponentNormalizedVersionMigrationStep
 
   private boolean isFormatNormalized(final Format format) {
     // Using String Templates for storage keys
-    String key = STR."\{KEY_FORMAT_PREFIX}\{format.getValue()}";
+    String key = STR."\{KEY_FORMAT}\{format.getValue()}";
     return globalKeyValueStore
         .getKey(key)
         .map(NexusKeyValue::getAsBoolean)

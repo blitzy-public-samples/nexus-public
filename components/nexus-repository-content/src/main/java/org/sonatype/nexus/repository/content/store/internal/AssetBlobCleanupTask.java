@@ -268,10 +268,11 @@ public class AssetBlobCleanupTask
    * @return {@code true} if the asset blob was deleted; otherwise {@code false}
    */
   private boolean deleteBlobContent(BlobStore blobStore, final BlobRef blobRef) {
-    return switch (HARD_DELETE) {
-      case true -> blobStore.deleteHard(blobRef.getBlobId());
-      case false -> blobStore.delete(blobRef.getBlobId(), "Removing unused asset blob");
-    };
+		if (HARD_DELETE) {
+			return blobStore.deleteHard(blobRef.getBlobId());
+		} else {
+			return blobStore.delete(blobRef.getBlobId(), "Removing unused asset blob");
+		}
   }
 
   private List<BlobRef> extractBlobRefsFromAssetBlobs(final Continuation<AssetBlob> assetBlobs) {

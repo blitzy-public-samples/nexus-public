@@ -32,7 +32,7 @@ import static com.google.common.base.Preconditions.checkState;
 public class ContentStoreEvent
     implements Event
 {
-  final int contentRepositoryId;
+  protected final int contentRepositoryId;
 
   private Supplier<Optional<Repository>> repositorySupplier;
 

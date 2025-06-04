@@ -97,10 +97,6 @@ public class RepositoryComponentWebhook
         LOG.fine(STR."Processing component deleted event for component: \{e.getComponent().name()}");
         maybeQueue(e, EventAction.DELETED);
       }
-      case ComponentPurgedEvent e -> {
-        LOG.fine(STR."Processing component purged event for repository: \{e.getRepository().map(Repository::getName).orElse("unknown")}");
-        maybeQueue(getPayload(e, EventAction.PURGED));
-      }
       default -> LOG.warning(STR."Unhandled component event type: \{event.getClass().getName()}");
     }
   }
@@ -169,9 +165,10 @@ public class RepositoryComponentWebhook
     Optional<Repository> repository = event.getRepository();
     String repositoryName = repository.map(Repository::getName).orElse(null);
     RepositoryComponentWebhookPayload payload = getPayload(repositoryName, eventAction);
-    payload.setComponents(Arrays.stream(event.getComponentIds())
-        .mapToObj(id -> InternalIds.toExternalId(id).getValue())
-        .toArray(String[]::new));
+    payload.setComponents( event.getComponentIds().stream()
+        .map(id -> InternalIds.toExternalId(id).getValue())
+        .toArray(String[]::new)
+    );
     return payload;
   }
 

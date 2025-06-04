@@ -31,7 +31,7 @@ public class ComponentsPurgedAuditEvent
     extends ContentStoreEvent
 {
   private final List<Component> components;
-
+  private Integer repositoryId;
   /**
    * Contains a {@link List} of purged components
    *
@@ -41,6 +41,7 @@ public class ComponentsPurgedAuditEvent
    */
   public ComponentsPurgedAuditEvent(Integer repositoryId, final List<Component> components) {
     super(checkNotNull(repositoryId));
+    this.repositoryId = repositoryId;
     this.components = checkNotNull(components);
   }
 
@@ -59,7 +60,7 @@ public class ComponentsPurgedAuditEvent
    * @return formatted string for audit logging
    */
   public String toAuditLog() {
-    return STR."Components purged from repository ID: \{getRepositoryId()}, count: \{components.size()}, " +
+    return STR."Components purged from repository ID: \{contentRepositoryId}, count: \{components.size()}, " +
            STR."first component: \{components.isEmpty() ? "none" : formatComponent(components.get(0))}";
   }
   
@@ -72,6 +73,6 @@ public class ComponentsPurgedAuditEvent
   private String formatComponent(Component component) {
     return STR."[namespace=\{component.namespace() != null ? component.namespace() : "<none>"}, " +
            STR."name=\{component.name()}, version=\{component.version() != null ? component.version() : "<none>"}, " +
-           STR."kind=\{component.kind() != null ? component.kind() : "<none>"}, id=\{component.componentId()}]";
+           STR."kind=\{component.kind() != null ? component.kind() : "<none>"}]";
   }
 }

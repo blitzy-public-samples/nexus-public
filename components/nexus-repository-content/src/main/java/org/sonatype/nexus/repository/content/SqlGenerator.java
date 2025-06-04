@@ -43,11 +43,20 @@ public interface SqlGenerator<P extends SqlQueryParameters>
      */
     default String generateStatement(SqlQueryParameters params) {
         return switch (params) {
-            case P p -> generateSelectStatement(p);
+        	//case P p -> generateSelectStatement(p);
             case FilterParameters fp -> generateFilteredStatement(fp);
             case SortParameters sp -> generateSortedStatement(sp);
             case PagingParameters pp -> generatePagingStatement(pp);
-            default -> throw new IllegalArgumentException("Unsupported parameter type: " + params.getClass().getName());
+            //default -> throw new IllegalArgumentException("Unsupported parameter type: " + params.getClass().getName());
+            default -> {
+                try {
+                    yield generateSelectStatement((P) params);
+                } catch (ClassCastException e) {
+                    throw new IllegalArgumentException(
+                        "Parameter type not supported by this generator instance: " + params.getClass().getName() +
+                        ". Expected one of FilterParameters, SortParameters, PagingParameters, or the concrete type of P for this generator.", e);
+                }
+            }
         };
     }
     
@@ -61,8 +70,8 @@ public interface SqlGenerator<P extends SqlQueryParameters>
      * @return the generated SQL statement with filtering
      */
     default String generateFilteredStatement(FilterParameters params) {
-        if (params instanceof P p) {
-            return generateSelectStatement(p) + " WHERE " + params.getFilterClause();
+        if (params instanceof FilterParameters p) {
+            return generateFilteredStatement(p) + " WHERE " + params.getFilterClause();
         }
         throw new IllegalArgumentException("Unsupported filter parameter type");
     }
@@ -77,8 +86,8 @@ public interface SqlGenerator<P extends SqlQueryParameters>
      * @return the generated SQL statement with sorting
      */
     default String generateSortedStatement(SortParameters params) {
-        if (params instanceof P p) {
-            return generateSelectStatement(p) + " ORDER BY " + params.getSortClause();
+        if (params instanceof SortParameters p) {
+            return generateSortedStatement(p) + " ORDER BY " + params.getSortClause();
         }
         throw new IllegalArgumentException("Unsupported sort parameter type");
     }
@@ -93,8 +102,8 @@ public interface SqlGenerator<P extends SqlQueryParameters>
      * @return the generated SQL statement with paging
      */
     default String generatePagingStatement(PagingParameters params) {
-        if (params instanceof P p) {
-            return generateSelectStatement(p) + " LIMIT " + params.getLimit() + " OFFSET " + params.getOffset();
+        if (params instanceof PagingParameters p) {
+            return generatePagingStatement(p) + " LIMIT " + params.getLimit() + " OFFSET " + params.getOffset();
         }
         throw new IllegalArgumentException("Unsupported paging parameter type");
     }

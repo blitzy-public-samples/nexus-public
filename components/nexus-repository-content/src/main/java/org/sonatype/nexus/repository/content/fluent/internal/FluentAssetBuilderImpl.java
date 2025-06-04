@@ -255,7 +255,7 @@ public class FluentAssetBuilderImpl
 
     Blob permanentBlob = facet.stores().blobStoreProvider.get().makeBlobPermanent(blob.getId(), headerBuilder.build());
     
-    if (assetData.component() instanceof Component component) {
+    if (assetData.component().get() instanceof Component component) {
       facet.blobMetadataStorage().attach(
           facet.stores().blobStoreProvider.get(), 
           permanentBlob.getId(), 

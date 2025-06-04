@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.content.upload.internal;
 
 import java.io.InputStream;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.StructuredTaskScope.ShutdownOnFailure;
 
@@ -53,7 +54,7 @@ public class TempBlobFactoryImpl
       var future = scope.fork(() -> repository.facet(ContentFacet.class).blobs().ingest(inputStream, null, hashAlgorithms));
       scope.join();
       scope.throwIfFailed();
-      return future.resultNow();
+      return future.get();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new RuntimeException(STR."Thread interrupted while creating temp blob for repository \{repository.getName()}", e);
@@ -67,18 +68,18 @@ public class TempBlobFactoryImpl
                          final Payload payload,
                          final Iterable<HashAlgorithm> hashAlgorithms)
   {
-    log.debug(STR."Creating temp blob from Payload \{payload.getName()} for repository \{repository.getName()} with hash algorithms \{hashAlgorithms}");
+    log.debug(STR."Creating temp blob from Payload \{payload.getSize()} for repository \{repository.getName()} with hash algorithms \{hashAlgorithms}");
     
     try (var scope = new ShutdownOnFailure()) {
       var future = scope.fork(() -> repository.facet(ContentFacet.class).blobs().ingest(payload, hashAlgorithms));
       scope.join();
       scope.throwIfFailed();
-      return future.resultNow();
+      return future.get();
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new RuntimeException(STR."Thread interrupted while creating temp blob from payload \{payload.getName()} for repository \{repository.getName()}", e);
+      throw new RuntimeException(STR."Thread interrupted while creating temp blob from payload \{payload.getSize()} for repository \{repository.getName()}", e);
     } catch (ExecutionException e) {
-      throw new RuntimeException(STR."Failed to create temp blob from payload \{payload.getName()} for repository \{repository.getName()}", e.getCause());
+      throw new RuntimeException(STR."Failed to create temp blob from payload \{payload.getSize()} for repository \{repository.getName()}", e.getCause());
     }
   }
 }

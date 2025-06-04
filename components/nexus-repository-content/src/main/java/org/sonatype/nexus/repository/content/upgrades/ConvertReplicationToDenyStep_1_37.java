@@ -35,9 +35,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.common.db.DatabaseCheck;
 import org.sonatype.nexus.common.log.LogManager;
-import org.sonatype.nexus.common.log.Logger;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -53,7 +54,7 @@ public class ConvertReplicationToDenyStep_1_37
 {
   private final DatabaseCheck databaseCheck;
   private final ObjectMapper mapper;
-  private final Logger log;
+  private final Logger log =LoggerFactory.getLogger(ConvertReplicationToDenyStep_1_37.class);
 
   private static final int PAGE_SIZE = 1000;
   private static final String UPDATE_ATTRIBUTES_BY_ID = "UPDATE repository SET attributes = ? WHERE id = ?";
@@ -65,7 +66,6 @@ public class ConvertReplicationToDenyStep_1_37
   {
     this.mapper = new ObjectMapper();
     this.databaseCheck = databaseCheck;
-    this.log = logManager.getLogger(this.getClass());
   }
 
   @Override

@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -61,7 +62,7 @@ public class FormatSearchViewsMigrationStep_1_20
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       List<Future<?>> futures = formats.stream()
           .map(format -> executor.submit(() -> dropFormatSearchView(connection, format)))
-          .toList();
+          .collect(Collectors.toList());
       
       // Wait for all tasks to complete
       for (Future<?> future : futures) {

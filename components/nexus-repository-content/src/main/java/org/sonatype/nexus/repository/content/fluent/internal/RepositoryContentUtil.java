@@ -65,7 +65,7 @@ final class RepositoryContentUtil
    * @return a set of repository IDs
    */
   static Set<Integer> getRepositoryIds(
-      @Nullable final List<FluentQueryConstraint> constraints,
+      @Nullable final Collection<FluentQueryConstraint> constraints,
       final ContentFacet contentFacet,
       final Repository repository)
   {

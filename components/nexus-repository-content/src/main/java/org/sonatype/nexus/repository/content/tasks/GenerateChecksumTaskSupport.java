@@ -127,7 +127,7 @@ public abstract class GenerateChecksumTaskSupport
         catch (InterruptedException e) {
           log.warn("Task interrupted while waiting for asset processing");
           Thread.currentThread().interrupt();
-          throw new TaskInterruptedException("Task interrupted", e);
+          throw new TaskInterruptedException("Task interrupted", true);
         }
         
         // Get the next batch of assets
@@ -188,32 +188,30 @@ public abstract class GenerateChecksumTaskSupport
   }
 
   private String calculateBlobChecksum(final Blob blob, final String assetPath) {
-    log.debug("Calculating SHA256 checksum for {}", assetPath);
-    try {
-      // Use a virtual thread for I/O-bound checksum calculation
-      return Thread.ofVirtual().name("checksum-" + assetPath).call(() -> {
-        try (InputStream inputStream = blob.getInputStream()) {
-          int bytesRead;
-          byte[] buffer = new byte[bufferSize];
-          MessageDigest localDigest = (MessageDigest) messageDigest.clone();
-          
-          while ((bytesRead = inputStream.read(buffer)) != -1) {
-            // Check for cancellation during long-running operations
-            CancelableHelper.checkCancellation();
-            if (bytesRead > 0) {
-              localDigest.update(buffer, 0, bytesRead);
-            }
-          }
-          return HashCode.fromBytes(localDigest.digest()).toString();
-        }
-      });
-    }
-    catch (Exception e) {
-      log.warn(String.format("Exception whilst calculating SHA256 checksum for %s: %s", assetPath,
-              e.getLocalizedMessage()),
-          log.isDebugEnabled() ? e : null);
-      return null;
-    }
+		log.debug("Calculating SHA256 checksum for {}", assetPath);
+		try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+			// Use a virtual thread for I/O-bound checksum calculation
+			return executor.submit(() -> {
+				try (InputStream inputStream = blob.getInputStream()) {
+					int bytesRead;
+					byte[] buffer = new byte[bufferSize];
+					MessageDigest localDigest = (MessageDigest) messageDigest.clone();
+
+					while ((bytesRead = inputStream.read(buffer)) != -1) {
+						// Check for cancellation during long-running operations
+						CancelableHelper.checkCancellation();
+						if (bytesRead > 0) {
+							localDigest.update(buffer, 0, bytesRead);
+						}
+					}
+					return HashCode.fromBytes(localDigest.digest()).toString();
+				}
+			}).get();
+		} catch (Exception e) {
+			log.warn(String.format("Exception whilst calculating SHA256 checksum for %s: %s", assetPath,
+					e.getLocalizedMessage()), log.isDebugEnabled() ? e : null);
+			return null;
+		}
   }
 
   @Override

@@ -239,41 +239,15 @@ public class FluentComponentsImpl
       @Nullable final Map<String, Object> filterParams,
       @Nullable final Collection<FluentQueryConstraint> constraints)
   {
-    try {
-      // Use Virtual Thread to perform the browse operation asynchronously
-      Future<Continuation<FluentComponent>> browseFuture = virtualThreadExecutor.submit(() -> {
-        Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
-        
-        // Log the operation using String Templates for better readability
-        String logMessage = STR."Browsing \{repositoryIds.size()} repositories with limit \{limit}";
-        // System.out.println(logMessage); // Uncomment if logging is needed
-        
-        // Using pattern matching for repository count check
-        return switch (repositoryIds.size()) {
-          case 0 -> new FluentContinuation<>(Continuation.empty(), this::with);
-          case 1 -> new FluentContinuation<>(
-              componentStore.browseComponents(
-                  repositoryIds.iterator().next(), limit, continuationToken, kind, filter, filterParams),
-              this::with);
-          default -> new FluentContinuation<>(
-              componentStore.browseComponents(repositoryIds, limit, continuationToken),
-              this::with);
-        };
-      });
-      
-      return browseFuture.get(); // Wait for the result
-    } catch (Exception e) {
-      // If there's an error with the Virtual Thread execution, fall back to synchronous execution
-      Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
-      
-      if (repositoryIds.size() > 1) {
-        // with more than 1 repository, the kind/filter/filterParams all get ignored
-        return new FluentContinuation<>(componentStore.browseComponents(repositoryIds, limit, continuationToken),
-            this::with);
-      }
-      return new FluentContinuation<>(componentStore.browseComponents(repositoryIds.iterator().next(),
-          limit, continuationToken, kind, filter, filterParams), this::with);
-    }
+	  Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
+
+	    if (repositoryIds.size() > 1) {
+	      // with more than 1 repository, the kind/filter/filterParams all get ignored
+	      return new FluentContinuation<>(componentStore.browseComponents(repositoryIds, limit, continuationToken),
+	          this::with);
+	    }
+	    return new FluentContinuation<>(componentStore.browseComponents(repositoryIds.iterator().next(),
+	        limit, continuationToken, kind, filter, filterParams), this::with);
   }
 
   @Override

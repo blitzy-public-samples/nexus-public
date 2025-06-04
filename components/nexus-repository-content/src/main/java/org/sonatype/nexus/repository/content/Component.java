@@ -131,9 +131,6 @@ public interface Component
    * @since 3.41
    */
   default boolean hasSameNamespaceAndName(Component other) {
-    if (other instanceof Component(var ns, var n, var k, var v, var nv)) {
-      return namespace().equals(ns) && name().equals(n);
-    }
-    return false;
+	return other != null && namespace().equals(other.namespace()) && name().equals(other.name());
   }
 }

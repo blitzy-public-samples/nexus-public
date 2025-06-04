@@ -100,17 +100,12 @@ public class AttributesHelper
    */
   @SuppressWarnings("unchecked")
   private static Object append(final Object list, final Object value) {
-    if (list == null) {
-      return newArrayList(value);
-    }
-    
-    // Using pattern matching for instanceof
-    if (list instanceof List<?> listObj) {
-      listObj.add(value);
-      return list;
-    }
-    
-    throw new IllegalArgumentException(STR."Cannot append to non-list attribute: \{list}");
+	  if (list == null) {
+	      return newArrayList(value);
+	    }
+	    checkArgument(list instanceof List<?>, "Cannot append to non-list attribute");
+	    ((List<Object>) list).add(value);
+	    return list;
   }
 
   /**
@@ -120,17 +115,12 @@ public class AttributesHelper
    */
   @SuppressWarnings("unchecked")
   private static Object prepend(final Object list, final Object value) {
-    if (list == null) {
-      return newArrayList(value);
-    }
-    
-    // Using pattern matching for instanceof
-    if (list instanceof List<?> listObj) {
-      listObj.add(0, value);
-      return list;
-    }
-    
-    throw new IllegalArgumentException(STR."Cannot prepend to non-list attribute: \{list}");
+	  if (list == null) {
+	      return newArrayList(value);
+	    }
+	    checkArgument(list instanceof List<?>, "Cannot prepend to non-list attribute");
+	    ((List<Object>) list).add(0, value);
+	    return list;
   }
 
   /**

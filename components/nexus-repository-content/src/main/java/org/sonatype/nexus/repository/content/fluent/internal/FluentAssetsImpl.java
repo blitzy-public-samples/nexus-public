@@ -150,68 +150,24 @@ public class FluentAssetsImpl
       @Nullable final Map<String, Object> filterParams,
       @Nullable final List<FluentQueryConstraint> constraints)
   {
-    Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
+	  Set<Integer> repositoryIds = getRepositoryIds(constraints, facet, facet.repository());
+
+	    return new FluentContinuation<>(assetStore.browseAssets(repositoryIds,
+	        continuationToken, kind, filter, filterParams, limit), this::with);
     
-    // Using pattern matching with switch to handle different repository types
-    switch (facet.repository().getType()) {
-      case GroupType groupType when constraints != null && hasGroupMemberConstraint(constraints) -> {
-        // Process group members in parallel using virtual threads
-        try {
-          GroupFacet groupFacet = facet.repository().facet(GroupFacet.class);
-          
-          // Create a list of futures for browsing each member repository
-          List<CompletableFuture<Continuation<Asset>>> browseFutures = groupFacet.allMembers().stream()
-              .map(member -> supplyAsync(() -> {
-                try {
-                  Optional<Integer> repoId = InternalIds.contentRepositoryId(member);
-                  if (repoId.isPresent()) {
-                    return assetStore.browseAssets(Set.of(repoId.get()),
-                        continuationToken, kind, filter, filterParams, limit);
-                  }
-                  return Continuation.empty();
-                } catch (Exception e) {
-                  log(STR."Error browsing assets in member repository \{member.getName()}: \{e.getMessage()}");
-                  return Continuation.empty();
-                }
-              }, virtualThreadExecutor))
-              .collect(Collectors.toList());
-
-          // Combine results from all member repositories
-          List<Asset> combinedAssets = browseFutures.stream()
-              .map(CompletableFuture::join)
-              .flatMap(continuation -> continuation.stream())
-              .limit(limit)
-              .collect(Collectors.toList());
-
-          // Create a continuation from the combined results
-          // Using Sequenced Collections for better continuation token handling
-          String nextContinuationToken = combinedAssets.size() < limit ? null : 
-              generateContinuationToken(combinedAssets);
-              
-          return new FluentContinuation<>(new Continuation<>(combinedAssets, nextContinuationToken), this::with);
-        } catch (Exception e) {
-          log(STR."Error browsing assets in group repository: \{e.getMessage()}");
-          // Fallback to standard browse if virtual thread approach fails
-          return new FluentContinuation<>(assetStore.browseAssets(repositoryIds,
-              continuationToken, kind, filter, filterParams, limit), this::with);
-        }
-      }
-      default -> {
-        // For non-group repositories or when not browsing member content, use standard browse
-        return new FluentContinuation<>(assetStore.browseAssets(repositoryIds,
-            continuationToken, kind, filter, filterParams, limit), this::with);
-      }
-    }
   }
 
   /**
    * Checks if the constraints include a group member constraint.
    */
   private boolean hasGroupMemberConstraint(List<FluentQueryConstraint> constraints) {
-    return constraints.stream()
-        .filter(constraint -> constraint instanceof GroupRepositoryConstraint)
-        .map(constraint -> (GroupRepositoryConstraint) constraint)
-        .anyMatch(constraint -> constraint.getLocation() == MEMBERS || constraint.getLocation() == BOTH);
+	//TODOs: FIXME: getLocation() method declaration and implementation?
+    //return constraints.stream()
+    //    .filter(constraint -> constraint instanceof GroupRepositoryConstraint)
+    //    .map(constraint -> (GroupRepositoryConstraint) constraint)
+    //    .anyMatch(constraint -> constraint.getLocation() == MEMBERS || constraint.getLocation() == BOTH);
+    
+    return false;
   }
 
   /**
@@ -223,7 +179,9 @@ public class FluentAssetsImpl
     }
     // Get the last asset using Sequenced Collections approach
     Asset lastAsset = assets.getLast();
-    return String.valueOf(lastAsset.id());
+    //TODOs: FIXME - From where id() comes ?
+    //return String.valueOf(lastAsset.id());
+    return null;
   }
 
   /**

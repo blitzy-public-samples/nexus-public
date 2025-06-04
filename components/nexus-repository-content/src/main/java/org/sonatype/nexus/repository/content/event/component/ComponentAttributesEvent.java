@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.content.event.component;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 
@@ -70,11 +71,7 @@ public class ComponentAttributesEvent
    */
   @SuppressWarnings("unchecked")
   public <T> Optional<T> getValue() {
-    return switch (value) {
-      case T t -> Optional.of(t);
-      case null -> Optional.empty();
-      default -> Optional.empty();
-    };
+	  return ofNullable((T) value);
   }
   
   /**
@@ -117,7 +114,7 @@ public class ComponentAttributesEvent
    * @since 3.60
    */
   public <R> CompletableFuture<R> processAttributeAsync(java.util.function.Function<Object, R> processor) {
-    return CompletableFuture.supplyAsync(() -> processor.apply(value), Thread.ofVirtual().name("attribute-processor-" + key).factory());
+    return CompletableFuture.supplyAsync(() -> processor.apply(value), Executors.newVirtualThreadPerTaskExecutor());
   }
 
   @Override

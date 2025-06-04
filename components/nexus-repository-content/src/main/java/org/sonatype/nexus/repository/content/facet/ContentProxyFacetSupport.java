@@ -78,23 +78,24 @@ public abstract class ContentProxyFacetSupport
    * @throws IOException if an error occurs during the fetch operation
    */
   protected Payload getPayload(final Repository proxy, final URI uri) throws IOException {
-    try {
-      // Use virtual thread to execute the HTTP request
-      return NexusThreadFactory.copy(() -> {
-        try {
-          return executeHttpRequest(proxy, uri);
-        }
-        catch (IOException e) {
-          throw new RuntimeException("Error fetching content from " + uri, e);
-        }
-      }, VIRTUAL_THREAD_EXECUTOR).get();
-    }
-    catch (Exception e) {
-      if (e.getCause() instanceof IOException) {
-        throw (IOException) e.getCause();
-      }
-      throw new IOException("Error fetching content from " + uri, e);
-    }
+	  final HttpClient client = proxy.facet(HttpClientFacet.class).getHttpClient();
+
+	    HttpGet request = new HttpGet(uri);
+	    log.debug("Fetching: {}", request);
+
+	    HttpResponse response = client.execute(request);
+	    StatusLine status = response.getStatusLine();
+	    log.debug("Response: {}, status: {}", response, status);
+
+	    if (status.getStatusCode() == HttpStatus.SC_OK) {
+	      HttpEntity entity = response.getEntity();
+	      checkState(entity != null, "No http entity received from remote registry");
+
+	      return new HttpEntityPayload(response, entity);
+	    }
+	    log.warn("Status code {} contacting {}", status.getStatusCode(), uri);
+	    HttpClientUtils.closeQuietly(response);
+	    return null;
   }
 
   /**

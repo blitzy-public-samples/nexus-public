@@ -112,7 +112,8 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
    */
   protected void commitChangesSoFar() {
     // Capture MDC context before committing to preserve it across Virtual Thread handoffs
-    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+	  // TODOs: FIXME - Why MDCUtils calls were added ? Does it impact test cases ?
+    //Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
     
     try {
       Transaction tx = UnitOfWork.currentTx();
@@ -120,12 +121,12 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
       tx.begin();
       
       // Restore MDC context after transaction boundary
-      MDCUtils.applyContextMap(mdcContext);
+      //MDCUtils.applyContextMap(mdcContext);
       
       checkCancellation();
     } catch (Exception e) {
       // Ensure MDC context is restored even on exception
-      MDCUtils.applyContextMap(mdcContext);
+      //MDCUtils.applyContextMap(mdcContext);
       throw e;
     }
   }
@@ -144,17 +145,17 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
   @Transactional(retryOn = DuplicateKeyException.class)
   public <D> D getOrCreate(final Supplier<Optional<D>> find, final Supplier<D> create) {
     // Capture MDC context to preserve it across Virtual Thread handoffs
-    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
+    //Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
     
     try {
       return find.get().orElseGet(() -> {
         // Restore MDC context before creating
-        MDCUtils.applyContextMap(mdcContext);
+        //MDCUtils.applyContextMap(mdcContext);
         return create.get();
       });
     } finally {
       // Ensure MDC context is restored
-      MDCUtils.applyContextMap(mdcContext);
+      //MDCUtils.applyContextMap(mdcContext);
     }
   }
 
@@ -179,25 +180,9 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
       final UnaryOperator<D> update,
       final Consumer<D> postTransaction)
   {
-    // Capture MDC context to preserve it across Virtual Thread handoffs
-    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
-    
-    try {
-      D result = transactionalSave(find, create, update);
-      
-      // Execute post-transaction work in a Virtual Thread for better concurrency
-      VIRTUAL_THREAD_EXECUTOR.submit(() -> {
-        // Apply the captured MDC context in the Virtual Thread
-        MDCUtils.withContext(mdcContext, () -> {
-          postTransaction.accept(result);
-        });
-      });
-      
-      return result;
-    } finally {
-      // Ensure MDC context is restored
-      MDCUtils.applyContextMap(mdcContext);
-    }
+	  D result = transactionalSave(find, create, update);
+	    postTransaction.accept(result);
+	    return result;
   }
 
   /**
@@ -216,22 +201,6 @@ public abstract class ContentStoreSupport<T extends ContentDataAccess>
    */
   @Transactional(retryOn = DuplicateKeyException.class)
   protected <D> D transactionalSave(final Supplier<Optional<D>> find, final Supplier<D> create, final UnaryOperator<D> update) {
-    // Capture MDC context to preserve it across Virtual Thread handoffs
-    Map<String, String> mdcContext = MDCUtils.getContextMapForPropagation();
-    
-    try {
-      return find.get().map(found -> {
-        // Restore MDC context before updating
-        MDCUtils.applyContextMap(mdcContext);
-        return update.apply(found);
-      }).orElseGet(() -> {
-        // Restore MDC context before creating
-        MDCUtils.applyContextMap(mdcContext);
-        return create.get();
-      });
-    } finally {
-      // Ensure MDC context is restored
-      MDCUtils.applyContextMap(mdcContext);
-    }
+	  return find.get().map(update).orElseGet(create);
   }
 }

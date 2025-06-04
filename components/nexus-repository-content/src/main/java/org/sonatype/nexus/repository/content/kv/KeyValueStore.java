@@ -73,39 +73,11 @@ public class KeyValueStore<T extends KeyValueDAO>
    * Transactional is intentionally omitted
    */
   public void removeAll(final int repositoryId, @Nullable final String category) {
-    // Use AtomicInteger to track count across virtual threads
-    AtomicInteger totalRemoved = new AtomicInteger(0);
-    AtomicInteger batchRemoved;
-    
-    do {
-      batchRemoved = new AtomicInteger(0);
-      
-      // Use virtual threads for concurrent batch processing
-      try {
-        virtualThreadExecutor.execute(() -> {
-          int count = removeCategoryPage(repositoryId, category);
-          batchRemoved.set(count);
-          totalRemoved.addAndGet(count);
-          
-          // Log using String Templates for structured logging
-          if (count > 0) {
-            log.debug(STR."Removed \{count} key-value entries for repository \{repositoryId} in category \{category == null ? "all" : category}");
-          }
-        });
-        
-        // Wait for the current batch to complete before starting the next one
-        // This maintains transaction boundaries while still using virtual threads
-        Thread.sleep(10); // Small delay to allow virtual thread to complete
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        log.warn(STR."Interrupted while removing key-value entries for repository \{repositoryId}");
-        break;
-      }
-    }
-    while (batchRemoved.get() > 0);
-    
-    log.info(STR."Total of \{totalRemoved.get()} key-value entries removed for repository \{repositoryId} in category \{category == null ? "all" : category}");
+	  int count;
+	    do {
+	      count = removeCategoryPage(repositoryId, category);
+	    }
+	    while (count > 0);
   }
 
   @Transactional
@@ -117,39 +89,11 @@ public class KeyValueStore<T extends KeyValueDAO>
    * Transactional is intentionally omitted
    */
   public void removeRepository(final int repositoryId) {
-    // Use AtomicInteger to track count across virtual threads
-    AtomicInteger totalRemoved = new AtomicInteger(0);
-    AtomicInteger batchRemoved;
-    
-    do {
-      batchRemoved = new AtomicInteger(0);
-      
-      // Use virtual threads for concurrent batch processing
-      try {
-        virtualThreadExecutor.execute(() -> {
-          int count = removeRepositoryPage(repositoryId);
-          batchRemoved.set(count);
-          totalRemoved.addAndGet(count);
-          
-          // Log using String Templates for structured logging
-          if (count > 0) {
-            log.debug(STR."Removed \{count} key-value entries for repository \{repositoryId}");
-          }
-        });
-        
-        // Wait for the current batch to complete before starting the next one
-        // This maintains transaction boundaries while still using virtual threads
-        Thread.sleep(10); // Small delay to allow virtual thread to complete
-      }
-      catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        log.warn(STR."Interrupted while removing key-value entries for repository \{repositoryId}");
-        break;
-      }
-    }
-    while (batchRemoved.get() > 0);
-    
-    log.info(STR."Total of \{totalRemoved.get()} key-value entries removed for repository \{repositoryId}");
+	  int count;
+	    do {
+	      count = removeRepositoryPage(repositoryId);
+	    }
+	    while (count > 0);
   }
 
   @Transactional

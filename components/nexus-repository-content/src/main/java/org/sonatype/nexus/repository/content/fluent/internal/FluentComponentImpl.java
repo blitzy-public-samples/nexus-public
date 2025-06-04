@@ -120,24 +120,15 @@ public class FluentComponentImpl
     return new FluentAssetBuilderImpl(facet, facet.stores().assetStore, path).component(this);
   }
 
-  @Override
-  public Collection<FluentAsset> assets() {
-    if (assets != null) {
-      return assets;
-    }
+	@Override
+	public Collection<FluentAsset> assets() {
+		if (assets != null) {
+			return assets;
+		}
 
-    // Using Virtual Threads to optimize asset query operations
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      var future = executor.submit(() -> 
-          transform(facet.stores().assetStore.browseComponentAssets(component),
-              asset -> new FluentAssetImpl(facet, asset)));
-      return future.get();
-    } catch (Exception e) {
-      // Fallback to synchronous execution if virtual thread execution fails
-      return transform(facet.stores().assetStore.browseComponentAssets(component),
-          asset -> new FluentAssetImpl(facet, asset));
-    }
-  }
+		return transform(facet.stores().assetStore.browseComponentAssets(component),
+				asset -> new FluentAssetImpl(facet, asset));
+	}
 
   @Override
   public Collection<FluentAsset> assets(boolean useCache) {

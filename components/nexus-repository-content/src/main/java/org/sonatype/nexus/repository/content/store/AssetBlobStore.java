@@ -76,7 +76,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       UnitOfWork work = UnitOfWork.pause();
       try {
         CompletableFuture<Continuation<AssetBlob>> future = CompletableFuture.supplyAsync(() -> {
-          UnitOfWork.begin(work);
+          UnitOfWork.begin(() -> work);
           try {
             return dao().browseUnusedAssetBlobs(limit, blobCreatedDelayMinute, continuationToken);
           } finally {
@@ -101,12 +101,13 @@ public class AssetBlobStore<T extends AssetBlobDAO>
    */
   @Transactional
   public Continuation<AssetBlob> browseAssetBlobs(final int limit, @Nullable final String continuationToken) {
+	
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Capture the current transaction context for use in the virtual thread
       UnitOfWork work = UnitOfWork.pause();
       try {
         CompletableFuture<Continuation<AssetBlob>> future = CompletableFuture.supplyAsync(() -> {
-          UnitOfWork.begin(work);
+          UnitOfWork.begin(() -> work);
           try {
             return dao().browseAssetBlobs(limit, continuationToken);
           } finally {
@@ -143,7 +144,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       UnitOfWork work = UnitOfWork.pause();
       try {
         CompletableFuture<Continuation<AssetReconcileData>> future = CompletableFuture.supplyAsync(() -> {
-          UnitOfWork.begin(work);
+          UnitOfWork.begin(() -> work);
           try {
             return dao().browseAssetBlobsWithinDuration(limit, start, end, continuationToken);
           } finally {
@@ -199,7 +200,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       UnitOfWork work = UnitOfWork.pause();
       try {
         CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-          UnitOfWork.begin(work);
+          UnitOfWork.begin(() -> work);
           try {
             return dao().deleteAssetBlob(blobRef);
           } finally {
@@ -226,7 +227,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       UnitOfWork work = UnitOfWork.pause();
       try {
         CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-          UnitOfWork.begin(work);
+          UnitOfWork.begin(() -> work);
           try {
             return dao().deleteAssetBlobBatch(blobRefIds);
           } finally {
@@ -337,7 +338,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
         // Process each batch in parallel using Virtual Threads
         List<CompletableFuture<Boolean>> futures = batches.stream()
             .map(batch -> CompletableFuture.supplyAsync(() -> {
-              UnitOfWork.begin(work);
+              UnitOfWork.begin(() -> work);
               try {
                 return dao().updateBlobRefs(batch);
               } finally {
@@ -373,7 +374,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
       UnitOfWork work = UnitOfWork.pause();
       try {
         CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
-          UnitOfWork.begin(work);
+          UnitOfWork.begin(() -> work);
           try {
             return dao().updateBlobRef(assetBlob);
           } finally {
@@ -447,7 +448,7 @@ public class AssetBlobStore<T extends AssetBlobDAO>
         // Process each batch in parallel using Virtual Threads
         List<CompletableFuture<List<AssetReconcileData>>> futures = batches.stream()
             .map(batch -> CompletableFuture.supplyAsync(() -> {
-              UnitOfWork.begin(work);
+              UnitOfWork.begin(() -> work);
               try {
                 return dao().browseAssetBlobsByBlobRefs(batch);
               } finally {

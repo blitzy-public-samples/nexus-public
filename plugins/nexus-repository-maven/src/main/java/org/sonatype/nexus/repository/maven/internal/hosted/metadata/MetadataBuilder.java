@@ -228,16 +228,16 @@ public class MetadataBuilder
     for (VersionCoordinates versionCoordinates : latestVersionCoordinatesMap.values()) {
       final Coordinates coordinates = versionCoordinates.coordinates();
       final Snapshot snapshotVersion = Maven2Metadata.newSnapshot(
-          new DateTime(coordinates.getTimestamp()),
-          coordinates.getExtension(),
-          coordinates.getClassifier(),
-          coordinates.getVersion()
+          new DateTime(coordinates.timestamp()),
+          coordinates.extension(),
+          coordinates.classifier(),
+          coordinates.version()
       );
       snapshots.add(snapshotVersion);
     }
 
-    Optional<Long> timestamp = Optional.ofNullable(latestVersionCoordinates.coordinates().getTimestamp());
-    Optional<Integer> buildNumber = Optional.ofNullable(latestVersionCoordinates.coordinates().getBuildNumber());
+    Optional<Long> timestamp = Optional.ofNullable(latestVersionCoordinates.coordinates().timestamp());
+    Optional<Integer> buildNumber = Optional.ofNullable(latestVersionCoordinates.coordinates().buildNumber());
 
     // Using pattern matching with instanceof would be ideal here in Java 21,
     // but we're keeping it simple with isEmpty() for now
@@ -268,28 +268,28 @@ public class MetadataBuilder
     }
 
     String path = mavenPath.getPath();
-    checkState(Objects.equals(groupId, coordinates.getGroupId()), "GroupId:%s Path:%s", groupId, path);
-    checkState(Objects.equals(artifactId, coordinates.getArtifactId()), "ArtifactId:%s Path:%s", artifactId, path);
-    checkState(Objects.equals(baseVersion, coordinates.getBaseVersion()), "Version:%s Path:%s", baseVersion, path);
+    checkState(Objects.equals(groupId, coordinates.groupId()), "GroupId:%s Path:%s", groupId, path);
+    checkState(Objects.equals(artifactId, coordinates.artifactId()), "ArtifactId:%s Path:%s", artifactId, path);
+    checkState(Objects.equals(baseVersion, coordinates.baseVersion()), "Version:%s Path:%s", baseVersion, path);
 
     log.debug("Discovered {}:{}:{}:{}:{}",
-        coordinates.getGroupId(),
-        coordinates.getArtifactId(),
-        coordinates.getVersion(),
-        coordinates.getClassifier(),
-        coordinates.getExtension());
+        coordinates.groupId(),
+        coordinates.artifactId(),
+        coordinates.version(),
+        coordinates.classifier(),
+        coordinates.extension());
 
-    addBaseVersion(coordinates.getBaseVersion());
+    addBaseVersion(coordinates.baseVersion());
 
     if (!coordinates.isSnapshot()) {
       return;
     }
-    if (Objects.equals(coordinates.getBaseVersion(), coordinates.getVersion())) {
+    if (Objects.equals(coordinates.baseVersion(), coordinates.version())) {
       log.debug("Non-timestamped snapshot, ignoring it: {}", mavenPath);
       return;
     }
 
-    final Version version = parseVersion(coordinates.getVersion());
+    final Version version = parseVersion(coordinates.version());
     if (version == null) {
       return; // could not parse, omit it from "latest" maintenance
     }
@@ -310,11 +310,11 @@ public class MetadataBuilder
   }
 
   private String key(final Coordinates coordinates) {
-    if (coordinates.getClassifier() == null) {
-      return coordinates.getExtension();
+    if (coordinates.classifier() == null) {
+      return coordinates.extension();
     }
     else {
-      return coordinates.getExtension() + ":" + coordinates.getClassifier();
+      return coordinates.extension() + ":" + coordinates.classifier();
     }
   }
 

@@ -68,30 +68,8 @@ public class MavenContentGroupIndexFacet
       // Execute the I/O-bound index publishing operation on a virtual thread
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         Future<?> future = executor.submit(() -> {
-          try {
-            // Use pattern matching for instanceof with the GroupFacet
-            if (var facet = facet(GroupFacet.class); facet instanceof GroupFacet groupFacet) {
-              mavenIndexPublisher.publishGroupIndex(getRepository(), groupFacet.leafMembers(), strategy);
-            } else {
-              throw new IOException(STR."GroupFacet not available for repository: \{getRepository().getName()}");
-            }
-            return null;
-          } catch (IOException e) {
-            throw new RuntimeException(STR."Failed to publish group index for repository: \{getRepository().getName()}", e);
-          }
+          mavenIndexPublisher.publishGroupIndex(getRepository(), facet(GroupFacet.class).leafMembers(), strategy);
         });
-        
-        try {
-          future.get(); // Wait for the virtual thread to complete
-        } catch (Exception e) {
-          Throwable cause = e.getCause();
-          if (cause instanceof IOException ioe) {
-            throw ioe;
-          } else if (cause instanceof RuntimeException re && re.getCause() instanceof IOException ioe) {
-            throw ioe;
-          }
-          throw new IOException(STR."Error during index publishing for repository: \{getRepository().getName()}", e);
-        }
       }
     }
   }

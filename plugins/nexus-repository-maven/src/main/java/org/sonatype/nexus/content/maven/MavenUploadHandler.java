@@ -111,7 +111,7 @@ public class MavenUploadHandler
   private void updateMetadata(final Repository repository, final Coordinates coordinates) {
     if (coordinates != null) {
       repository.facet(MavenMetadataRebuildFacet.class)
-          .rebuildMetadata(coordinates.getGroupId(), coordinates.getArtifactId(), coordinates.getVersion(),
+          .rebuildMetadata(coordinates.groupId(), coordinates.artifactId(), coordinates.version(),
               false, false);
     }
     else {

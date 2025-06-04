@@ -76,7 +76,7 @@ public class RepairMaven2BaseVersionTask
             NestedAttributesMap maven2 = fluentComponent.attributes("maven2");
             componentData.setBaseVersion(maven2.get("baseVersion", String.class));
             mavenContentFacet.updateBaseVersion(componentData);
-            log.debug("Updated base version for component: {}:{}", componentData.getNamespace(), componentData.getName());
+            log.debug("Updated base version for component: {}:{}", componentData.namespace(), componentData.name());
           } catch (Exception e) {
             log.error("Failed to update base version for component: {}:{}", 
                 fluentComponent.namespace(), fluentComponent.name(), e);

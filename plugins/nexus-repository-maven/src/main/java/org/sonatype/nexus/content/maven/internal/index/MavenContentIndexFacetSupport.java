@@ -52,7 +52,7 @@ public abstract class MavenContentIndexFacetSupport
    */
   @Nullable
   @Override
-  public DateTime lastPublished() throws IOException {
+  public Instant lastPublished() throws IOException {
     return mavenIndexPublisher.lastPublished(getRepository());
   }
 

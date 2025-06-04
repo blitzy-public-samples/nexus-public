@@ -58,7 +58,7 @@ public class VersionPolicyHandler
     if (path.getCoordinates() instanceof Coordinates coordinates && 
         !versionPolicyValidator.validArtifactPath(versionPolicy, coordinates)) {
       return createResponse(context,
-          "Repository version policy: " + versionPolicy + " does not allow version: " + coordinates.getVersion());
+          "Repository version policy: " + versionPolicy + " does not allow version: " + coordinates.version());
     }
     
     if (!versionPolicyValidator.validMetadataPath(versionPolicy, path.main().getPath())) {

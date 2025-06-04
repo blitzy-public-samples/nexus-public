@@ -51,7 +51,7 @@ public final class MavenModels
   private static final Logger log = LoggerFactory.getLogger(MavenModels.class);
 
   // String template processor for logging
-  private static final StringTemplate.Processor<String> STR = StringTemplate.Processor.of();
+  //private static final StringTemplate.Processor<String> STR = StringTemplate.Processor.of();
 
   private static final MetadataXpp3Reader METADATA_READER = new MetadataXpp3Reader();
 

@@ -126,8 +126,8 @@ public class MavenContentHandler
     return switch (coordinates) {
       case null -> true;
       case Coordinates c when c.isSnapshot() 
-                          && !c.getVersion().equals(c.getBaseVersion())
-                          && (c.getTimestamp() == null || c.getBuildNumber() == null) -> true;
+                          && !c.version().equals(c.baseVersion())
+                          && (c.timestamp() == null || c.buildNumber() == null) -> true;
       default -> false;
     };
   }

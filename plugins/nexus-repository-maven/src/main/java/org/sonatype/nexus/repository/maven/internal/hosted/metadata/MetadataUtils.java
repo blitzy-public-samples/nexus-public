@@ -71,7 +71,7 @@ public final class MetadataUtils
   public static String getPluginPrefix(final MavenPath mavenPath, final InputStreamSupplier inputSupplier) {
     // sanity checks: is artifact and extension is "jar", only possibility for maven plugins currently
     checkArgument(mavenPath.getCoordinates() != null);
-    checkArgument(Objects.equals(mavenPath.getCoordinates().getExtension(), "jar"));
+    checkArgument(Objects.equals(mavenPath.getCoordinates().extension(), "jar"));
     String prefix = null;
     try {
       if (inputSupplier != null) {
@@ -96,7 +96,7 @@ public final class MetadataUtils
     }
     
     // Using pattern matching for instanceof to simplify code
-    var artifactId = mavenPath.getCoordinates().getArtifactId();
+    var artifactId = mavenPath.getCoordinates().artifactId();
     if ("maven-plugin-plugin".equals(artifactId)) {
       return "plugin";
     }

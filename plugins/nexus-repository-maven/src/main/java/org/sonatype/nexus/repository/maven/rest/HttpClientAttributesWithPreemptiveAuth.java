@@ -47,7 +47,7 @@ public class HttpClientAttributesWithPreemptiveAuth
       @JsonProperty("connection") final HttpClientConnectionAttributes connection,
       @JsonProperty("authentication") final HttpClientConnectionAuthenticationAttributesWithPreemptive authentication)
   {
-    super(blocked, autoBlock, connection, null);
+    //super(blocked, autoBlock, connection, null);
     this.authenticationWithPreemptive = authentication;
   }
 
@@ -61,8 +61,8 @@ public class HttpClientAttributesWithPreemptiveAuth
       final HttpClientAttributes httpClientAttributes,
       final HttpClientConnectionAuthenticationAttributesWithPreemptive authentication)
   {
-    super(httpClientAttributes.getBlocked(), httpClientAttributes.getAutoBlock(), httpClientAttributes.getConnection(),
-        null);
+	  super();
+    //super(httpClientAttributes.blocked(), httpClientAttributes.autoBlock(), httpClientAttributes.connection(),null);
     this.authenticationWithPreemptive = authentication;
   }
 

@@ -51,14 +51,10 @@ class MavenContentIndexGroupHandler
   @Nonnull
   @Override
   public Response handle(@Nonnull final Context context) throws Exception {
-    MavenPath mavenPath = context.getAttributes().require(MavenPath.class);
-    MavenContentFacet mavenContentFacet = context.getRepository().facet(MavenContentFacet.class);
-    Optional<?> content = mavenContentFacet.get(mavenPath);
-    
-    // Using Java 21 pattern matching for Optional
-    return switch (content) {
-      case Optional.of(var asset) -> HttpResponses.ok(asset);
-      case Optional.empty() -> HttpResponses.notFound(mavenPath.getPath());
-    };
+	  MavenPath mavenPath = context.getAttributes().require(MavenPath.class);
+	    MavenContentFacet mavenContentFacet = context.getRepository().facet(MavenContentFacet.class);
+	    return mavenContentFacet.get(mavenPath)
+	        .map(HttpResponses::ok)
+	        .orElseGet(() -> HttpResponses.notFound(mavenPath.getPath()));
   }
 }

@@ -65,9 +65,7 @@ public class MavenContentProxyIndexFacet
     
     @Override
     public String toString() {
-      return STR."{getClass().getSimpleName()}{
-          cacheFallback={cacheFallback}
-          }";
+      return STR."\{getClass().getSimpleName()} cacheFallback=\{cacheFallback}";
     }
   }
 

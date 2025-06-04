@@ -42,6 +42,7 @@ import org.sonatype.nexus.repository.view.Response;
 import org.sonatype.nexus.transaction.RetryDeniedException;
 
 import static java.lang.StringTemplate.STR;
+import static com.google.common.base.Predicates.or;
 import static java.util.Optional.empty;
 import static java.util.Optional.ofNullable;
 import static java.util.stream.Collectors.toList;
@@ -58,8 +59,7 @@ public class MergingGroupHandler
     extends GroupHandler
 {
   private static final HasFacet PROXY_OR_GROUP =
-      repository -> repository instanceof HasFacet hasFacet && 
-          (hasFacet.hasFacet(ProxyFacet.class) || hasFacet.hasFacet(GroupFacet.class));
+		  or(new HasFacet(ProxyFacet.class), new HasFacet(GroupFacet.class));
 
   private Cooperation2 metadataCooperation;
 
@@ -227,6 +227,6 @@ public class MergingGroupHandler
     return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
         metadataCooperation.on(call)
             .cooperate(repository.getName(), path.toString())
-    ).join();
+    ).get();
   }
 }

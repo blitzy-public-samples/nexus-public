@@ -42,9 +42,9 @@ public class MavenProxyRepositoryApiRequestToConfigurationConverter
     
     // Set Maven-specific attributes
     NestedAttributesMap mavenAttributes = configuration.attributes(MAVEN);
-    mavenAttributes.set("versionPolicy", request.getMaven().getVersionPolicy());
-    mavenAttributes.set("layoutPolicy", request.getMaven().getLayoutPolicy());
-    mavenAttributes.set("contentDisposition", request.getMaven().getContentDisposition());
+    mavenAttributes.set("versionPolicy", request.getMaven().versionPolicy());
+    mavenAttributes.set("layoutPolicy", request.getMaven().layoutPolicy());
+    mavenAttributes.set("contentDisposition", request.getMaven().contentDisposition());
     
     // Configure HTTP client authentication if present
     NestedAttributesMap httpclient = configuration.attributes("httpclient");

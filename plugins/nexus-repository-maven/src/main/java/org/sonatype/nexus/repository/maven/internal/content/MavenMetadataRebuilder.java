@@ -185,3 +185,4 @@ public class MavenMetadataRebuilder
     // Using forEach with method reference for cleaner code
     failures.getFailures().forEach(failure -> log.warn(STR."Failure: \{failure.getMessage()}", failure));
   }
+}

@@ -23,6 +23,7 @@ import java.util.Locale;
 import java.util.TreeSet;
 import java.util.concurrent.Executors;
 import java.util.function.Predicate;
+import java.util.stream.StreamSupport;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Repository;
@@ -112,7 +113,7 @@ public abstract class MavenIndexPublisher extends ComponentSupport
     ResourceHandler resourceHandler = closer.register(getResourceHandler(repository));
     IndexReader indexReader = closer.register(new IndexReader(null, resourceHandler));
     ChunkReader chunkReader = closer.register(indexReader.iterator().next());
-    return chunkReader.stream()
+    return StreamSupport.stream(chunkReader.spliterator(), false)
         .map(RECORD_EXPANDER::apply)
         .filter(new RecordTypeFilter(Type.ARTIFACT_ADD))
         .toList();
@@ -193,13 +194,13 @@ public abstract class MavenIndexPublisher extends ComponentSupport
       });
       
       var records = recordsTask.get();
-      var filteredRecords = records.stream()
-          .flatMap(Iterable::stream)
+      var filteredRecords = StreamSupport.stream(records.spliterator(), false)
+          .flatMap(item -> StreamSupport.stream(item.spliterator(), false))
           .filter(duplicateDetectionStrategy)
           .toList();
       
       var decoratedRecords = decorate(filteredRecords, target.getName());
-      var compactedRecords = decoratedRecords.stream()
+      var compactedRecords = StreamSupport.stream(decoratedRecords.spliterator(), false)
           .map(RECORD_COMPACTOR::apply)
           .toList();
       

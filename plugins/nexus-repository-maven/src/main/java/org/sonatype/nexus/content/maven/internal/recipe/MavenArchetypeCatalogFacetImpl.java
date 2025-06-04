@@ -44,7 +44,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.eventbus.AllowConcurrentEvents;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.hash.HashCode;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.archetype.catalog.Archetype;
 import org.apache.maven.archetype.catalog.ArchetypeCatalog;
 
@@ -107,7 +107,7 @@ public class MavenArchetypeCatalogFacetImpl
   @Subscribe
   @AllowConcurrentEvents
   public void on(final RebuildMavenArchetypeCatalogEvent event) throws IOException {
-    if (StringUtils.equals(getRepository().getName(), event.getRepositoryName())) {
+    if (StringUtils.equals(getRepository().getName(), event.repositoryName())) {
       // Use Virtual Threads for I/O operations
       Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         try {
@@ -128,32 +128,35 @@ public class MavenArchetypeCatalogFacetImpl
 
     log.debug("Rebuilding hosted archetype catalog for {}", getRepository().getName());
 
-    // Use Virtual Threads for file I/O operations
-    var executor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    executor.submit(() -> {
-      try {
-        Path path = Files.createTempFile(HOSTED_ARCHETYPE_CATALOG, XML);
-        ArchetypeCatalog hostedCatalog = createArchetypeCatalog();
+    try {
+		Thread.ofVirtual().start(() -> {
+		  try {
+		    Path path = Files.createTempFile(HOSTED_ARCHETYPE_CATALOG, XML);
+		    ArchetypeCatalog hostedCatalog = createArchetypeCatalog();
 
-        try {
-          HashedPayload hashedPayload = createArchetypeCatalogFile(hostedCatalog, path);
-          try (Payload payload = hashedPayload.getPayload()) {
-            mavenContentFacet.put(archetypeCatalogMavenPath, payload);
-            putHashedContent(archetypeCatalogMavenPath, hashedPayload);
-            log.trace("Rebuilt hosted archetype catalog for {} with {} archetypes",
-                getRepository().getName(), hostedCatalog.getArchetypes().size());
-          }
-        }
-        finally {
-          Files.delete(path);
-        }
-      }
-      catch (IOException e) {
-        log.error("Failed to rebuild archetype catalog for {}: {}", 
-            getRepository().getName(), e.getMessage(), e);
-      }
-    }).join(); // Wait for completion
+		    try {
+		      HashedPayload hashedPayload = createArchetypeCatalogFile(hostedCatalog, path);
+		      try (Payload payload = hashedPayload.getPayload()) {
+		        mavenContentFacet.put(archetypeCatalogMavenPath, payload);
+		        putHashedContent(archetypeCatalogMavenPath, hashedPayload);
+		        log.trace("Rebuilt hosted archetype catalog for {} with {} archetypes",
+		            getRepository().getName(), hostedCatalog.getArchetypes().size());
+		      }
+		    }
+		    finally {
+		      Files.delete(path);
+		    }
+		  }
+		  catch (IOException e) {
+		    log.error("Failed to rebuild archetype catalog for {}: {}", 
+		        getRepository().getName(), e.getMessage(), e);
+		  }
+		}).join();
+	} catch (InterruptedException e) {
+		log.error("Failed to rebuild archetype catalog for {}: {}", 
+		        getRepository().getName(), e.getMessage(), e);
+	}
+    
   }
 
   private void deleteExistingCatalog() throws IOException {
@@ -177,8 +180,8 @@ public class MavenArchetypeCatalogFacetImpl
     
     // Use Java 21 Pattern Matching for enhanced type safety and readability
     for (var entry : hashPayloads.entrySet()) {
-      if (entry instanceof Entry<HashType, Payload>(var hashType, var payload)) {
-        mavenContentFacet.put(mavenPath.hash(hashType), payload);
+      if (entry instanceof Entry<HashType, Payload>) {
+        mavenContentFacet.put(mavenPath.hash(entry.getKey()), entry.getValue());
       }
     }
   }

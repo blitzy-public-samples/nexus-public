@@ -40,9 +40,9 @@ public class MavenHostedRepositoryApiRequestToConfigurationConverter
     var mavenAttributes = configuration.attributes(MAVEN);
     
     // Set Maven-specific attributes
-    mavenAttributes.set("versionPolicy", request.getMaven().getVersionPolicy());
-    mavenAttributes.set("layoutPolicy", request.getMaven().getLayoutPolicy());
-    mavenAttributes.set("contentDisposition", request.getMaven().getContentDisposition());
+    mavenAttributes.set("versionPolicy", request.getMaven().versionPolicy());
+    mavenAttributes.set("layoutPolicy", request.getMaven().layoutPolicy());
+    mavenAttributes.set("contentDisposition", request.getMaven().contentDisposition());
     
     return configuration;
   }

@@ -209,7 +209,7 @@ public class MavenVersionNormalizer
 
   private QualifierType getQualifierType(final String qualifier, final String originalVersion) {
     return switch (qualifier) {
-      case null, "", GA, RELEASE, FINAL -> QualifierType.RELEASE;
+      case "", GA, RELEASE, FINAL -> QualifierType.RELEASE;
       case String s when SNAPSHOT_TIMESTAMP.matcher(originalVersion).matches() -> QualifierType.SNAPSHOT;
       case String s when s.startsWith(ALPHA) || s.startsWith(BETA) || 
                        s.startsWith(MILESTONE) || s.startsWith(RC) -> QualifierType.BEFORE_RELEASE;

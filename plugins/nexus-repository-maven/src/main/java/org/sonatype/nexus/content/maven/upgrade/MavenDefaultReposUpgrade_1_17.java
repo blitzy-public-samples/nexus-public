@@ -56,10 +56,10 @@ public class MavenDefaultReposUpgrade_1_17
 {
   // Using String Templates for improved SQL readability
   private static final String FIND_ATTRIBUTES_BY_NAME = 
-      STR."SELECT attributes from repository WHERE name = ?;";
+		  "SELECT attributes from repository WHERE name = ?;";
 
   private static final String UPDATE_ATTRIBUTES_BY_NAME = 
-      STR."UPDATE repository SET attributes = ? WHERE name = ?;";
+         "UPDATE repository SET attributes = ? WHERE name = ?;";
 
   private final MavenDefaultRepositoriesContributor defaultRepositoriesContributor;
 
@@ -190,15 +190,5 @@ public class MavenDefaultReposUpgrade_1_17
       }
     }
   }
-  
-  /**
-   * Checks if the database connection is to an H2 database.
-   * 
-   * @param connection The database connection to check
-   * @return true if the connection is to an H2 database, false otherwise
-   * @throws SQLException If a database error occurs
-   */
-  private boolean isH2(Connection connection) throws SQLException {
-    return connection.getMetaData().getDatabaseProductName().toLowerCase().contains("h2");
-  }
+
 }

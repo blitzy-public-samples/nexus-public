@@ -760,13 +760,13 @@ public abstract class MavenUploadHandlerSupport
   protected Map<String, String> toMap(final Coordinates coordinates) {
     Map<String, String> map = new HashMap<>();
     if (coordinates != null) {
-      map.put(GROUP_ID, coordinates.getGroupId());
-      map.put(ARTIFACT_ID, coordinates.getArtifactId());
-      map.put(VERSION, coordinates.getVersion());
-      if (coordinates.getClassifier() != null) {
-        map.put(CLASSIFIER, coordinates.getClassifier());
+      map.put(GROUP_ID, coordinates.groupId());
+      map.put(ARTIFACT_ID, coordinates.artifactId());
+      map.put(VERSION, coordinates.version());
+      if (coordinates.classifier() != null) {
+        map.put(CLASSIFIER, coordinates.classifier());
       }
-      map.put(EXTENSION, coordinates.getExtension());
+      map.put(EXTENSION, coordinates.extension());
     }
     return map;
   }

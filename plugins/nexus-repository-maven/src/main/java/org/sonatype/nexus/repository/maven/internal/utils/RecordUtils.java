@@ -43,6 +43,6 @@ public final class RecordUtils
     String extension = record.get(FILE_EXTENSION);
     
     // Using Java 21 String Template feature
-    return STR."""#{groupId}#{artifactId}#{version}#{classifier}:#{extension}""";
+    return STR."\{groupId}\{artifactId}\{version}\{classifier}:\{extension}";
   }
 }

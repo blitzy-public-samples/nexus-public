@@ -26,7 +26,6 @@ import org.sonatype.nexus.repository.maven.MavenMetadataRebuildFacet;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.scheduling.Cancelable;
-import org.sonatype.nexus.common.log.LoggingUtil;
 
 import static java.lang.StringTemplate.STR;
 import static com.google.common.base.Preconditions.checkNotNull;

@@ -21,6 +21,13 @@ import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.rest.SearchMapping;
 import org.sonatype.nexus.repository.rest.SearchMappings;
 
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_1;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_2;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_3;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_4;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.NAME;
+import static org.sonatype.nexus.repository.rest.sql.SearchField.NAMESPACE;
+
 /**
  * @since 3.7
  */
@@ -48,10 +55,3 @@ public class MavenSearchMappings
     return MAPPINGS;
   }
 }
-
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_1;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_2;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_3;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.FORMAT_FIELD_4;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.NAME;
-import static org.sonatype.nexus.repository.rest.sql.SearchField.NAMESPACE;

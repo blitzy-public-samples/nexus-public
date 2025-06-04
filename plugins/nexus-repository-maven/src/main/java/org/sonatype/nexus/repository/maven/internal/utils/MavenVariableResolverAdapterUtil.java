@@ -53,13 +53,13 @@ public class MavenVariableResolverAdapterUtil
     // Using HashMap for mutable map creation as we need to add multiple entries
     // Map.of() would be limited to 10 entries and is immutable
     Map<String, String> coordMap = new HashMap<>();
-    coordMap.put(GROUP_ID, coordinates.getGroupId());
-    coordMap.put(ARTIFACT_ID, coordinates.getArtifactId());
-    coordMap.put(VERSION, coordinates.getBaseVersion());
-    coordMap.put(EXTENSION, coordinates.getExtension());
+    coordMap.put(GROUP_ID, coordinates.groupId());
+    coordMap.put(ARTIFACT_ID, coordinates.artifactId());
+    coordMap.put(VERSION, coordinates.baseVersion());
+    coordMap.put(EXTENSION, coordinates.extension());
     
     // Using Java 21 pattern matching for instanceof with type patterns
-    String classifier = switch (coordinates.getClassifier()) {
+    String classifier = switch (coordinates.classifier()) {
       case String s -> s;
       case null -> EMPTY;
     };

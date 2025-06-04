@@ -88,8 +88,9 @@ public class MavenVariableResolverAdapter
     Objects.requireNonNull(builder, "builder");
     Objects.requireNonNull(path, "path");
     
-    // Using Java 21 pattern matching for instanceof to simplify coordinate extraction
-    if (var coords = mavenPathParser.parsePath(path).getCoordinates()) {
+    Coordinates coords = mavenPathParser.parsePath(path).getCoordinates();
+
+    if (coords != null) {
       addCoordinates(builder, MavenVariableResolverAdapterUtil.createCoordinateMap(coords));
     }
   }

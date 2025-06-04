@@ -80,11 +80,11 @@ final class MavenAttributesHelper
       final int repositoryId)
   {
     Map<String, String> mavenAttributes = new HashMap<>();
-    mavenAttributes.put(P_GROUP_ID, coordinates.getGroupId());
-    mavenAttributes.put(P_ARTIFACT_ID, coordinates.getArtifactId());
-    mavenAttributes.put(P_VERSION, coordinates.getVersion());
-    mavenAttributes.put(P_BASE_VERSION, coordinates.getBaseVersion());
-    mavenAttributes.put(P_EXTENSION, coordinates.getExtension());
+    mavenAttributes.put(P_GROUP_ID, coordinates.groupId());
+    mavenAttributes.put(P_ARTIFACT_ID, coordinates.artifactId());
+    mavenAttributes.put(P_VERSION, coordinates.version());
+    mavenAttributes.put(P_BASE_VERSION, coordinates.baseVersion());
+    mavenAttributes.put(P_EXTENSION, coordinates.extension());
 
     optionalModel.ifPresent(model -> {
       mavenAttributes.put(P_PACKAGING, getPackaging(model));
@@ -93,7 +93,7 @@ final class MavenAttributesHelper
     });
 
     component.attributes(OVERLAY, NAME, mavenAttributes);
-    fillInBaseVersionColumn(componentStore, component, repositoryId, coordinates.getBaseVersion());
+    fillInBaseVersionColumn(componentStore, component, repositoryId, coordinates.baseVersion());
   }
 
   /**
@@ -106,12 +106,12 @@ final class MavenAttributesHelper
     Map<String, String> mavenAttributes = new HashMap<>();
     Coordinates coordinates = mavenPath.getCoordinates();
     if (coordinates != null) {
-      mavenAttributes.put(P_GROUP_ID, coordinates.getGroupId());
-      mavenAttributes.put(P_ARTIFACT_ID, coordinates.getArtifactId());
-      mavenAttributes.put(P_VERSION, coordinates.getVersion());
-      mavenAttributes.put(P_BASE_VERSION, coordinates.getBaseVersion());
-      ofNullable(coordinates.getClassifier()).ifPresent(value -> mavenAttributes.put(P_CLASSIFIER, value));
-      mavenAttributes.put(P_EXTENSION, coordinates.getExtension());
+      mavenAttributes.put(P_GROUP_ID, coordinates.groupId());
+      mavenAttributes.put(P_ARTIFACT_ID, coordinates.artifactId());
+      mavenAttributes.put(P_VERSION, coordinates.version());
+      mavenAttributes.put(P_BASE_VERSION, coordinates.baseVersion());
+      ofNullable(coordinates.classifier()).ifPresent(value -> mavenAttributes.put(P_CLASSIFIER, value));
+      mavenAttributes.put(P_EXTENSION, coordinates.extension());
     }
     asset.attributes(OVERLAY, NAME, mavenAttributes);
   }
@@ -143,8 +143,8 @@ final class MavenAttributesHelper
     
     // For non-artifact paths, determine the kind based on path characteristics
     return switch (mavenPathParser) {
-      case var parser when parser.isRepositoryMetadata(mavenPath) -> REPOSITORY_METADATA.name();
-      case var parser when parser.isRepositoryIndex(mavenPath) -> REPOSITORY_INDEX.name();
+      case MavenPathParser parser when parser.isRepositoryMetadata(mavenPath) -> REPOSITORY_METADATA.name();
+      case MavenPathParser parser when parser.isRepositoryIndex(mavenPath) -> REPOSITORY_INDEX.name();
       default -> OTHER.name();
     };
   }

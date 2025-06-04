@@ -52,9 +52,11 @@ public class MavenMetadataRebuildHandler
     
     // Using Java 21 pattern matching for switch to handle HTTP method checking
     switch (method) {
-      case GET, HEAD when isNotProxy(repository) -> {
-        repository.facet(MavenMetadataRebuildFacet.class)
-            .maybeRebuildMavenMetadata(prependIfMissing(context.getRequest().getPath(), PATH_PREFIX), false, true);
+      case GET, HEAD -> {
+    	  if( isNotProxy(repository) ) {
+    		  repository.facet(MavenMetadataRebuildFacet.class)
+              .maybeRebuildMavenMetadata(prependIfMissing(context.getRequest().getPath(), PATH_PREFIX), false, true);
+    	  }
       }
       default -> { /* No action needed for other methods */ }
     }

@@ -90,7 +90,7 @@ public class MavenApiRepositoryAdapter
       NestedAttributesMap authenticationMap = httpclient.child("authentication");
       Boolean preemptive = authenticationMap.get("preemptive", Boolean.class);
 
-      authentication = new HttpClientConnectionAuthenticationAttributesWithPreemptive(httpClientAttributes.getAuthentication(),
+      authentication = new HttpClientConnectionAuthenticationAttributesWithPreemptive(httpClientAttributes.authentication(),
           preemptive);
     }
 

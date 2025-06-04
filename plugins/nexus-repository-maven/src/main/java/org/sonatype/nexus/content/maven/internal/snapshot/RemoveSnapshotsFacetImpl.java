@@ -130,7 +130,7 @@ public class RemoveSnapshotsFacetImpl
 
     deleteSnapshotsForReleasedComponents(repository, config);
 
-    log.info(STR."Finished processing snapshots with more than \{config.getMinimumRetained()} versions created before \{OffsetDateTime.now().minusDays(Math.max(config.getSnapshotRetentionDays(), 0))}");
+    log.info(STR."Finished processing snapshots with more than \{config.minimumRetained()} versions created before \{OffsetDateTime.now().minusDays(Math.max(config.snapshotRetentionDays(), 0))}");
   }
 
   /**
@@ -152,8 +152,8 @@ public class RemoveSnapshotsFacetImpl
   List<Maven2ComponentData> findComponentsForGav(final Repository repository, final GAV gav)
   {
     MavenContentFacet facet = repository.facet(MavenContentFacet.class);
-    String releaseVersion = gav.baseVersion.replace("-SNAPSHOT", "");
-    return facet.findComponentsForGav(gav.name, gav.group, gav.baseVersion, releaseVersion);
+    String releaseVersion = gav.baseVersion().replace("-SNAPSHOT", "");
+    return facet.findComponentsForGav(gav.name(), gav.group(), gav.baseVersion(), releaseVersion);
   }
 
   /**
@@ -166,11 +166,11 @@ public class RemoveSnapshotsFacetImpl
       final List<Maven2ComponentData> components)
   {
     Set<Maven2ComponentData> snapshotsToDelete = new HashSet<>();
-    OffsetDateTime retentionTimeBorder = OffsetDateTime.now().minusDays(Math.max(config.getSnapshotRetentionDays(), 0));
+    OffsetDateTime retentionTimeBorder = OffsetDateTime.now().minusDays(Math.max(config.snapshotRetentionDays(), 0));
     int keptSnapshotsCount = 0;
-    if (config.getMinimumRetained() >= 0) {
+    if (config.minimumRetained() >= 0) {
       for (Maven2ComponentData component : components) {
-        if (retentionTimeBorder.isAfter(calculateLastUpdated(component)) && keptSnapshotsCount >= config.getMinimumRetained()) {
+        if (retentionTimeBorder.isAfter(calculateLastUpdated(component)) && keptSnapshotsCount >= config.minimumRetained()) {
           snapshotsToDelete.add(component);
         }
         else {
@@ -205,7 +205,7 @@ public class RemoveSnapshotsFacetImpl
   @VisibleForTesting
   void deleteRedundantSnapshots(final Repository repository, final RemoveSnapshotsConfig config)
   {
-    Set<GAV> snapshotCandidates = findSnapshotCandidates(repository, Math.max(config.getMinimumRetained(), 0));
+    Set<GAV> snapshotCandidates = findSnapshotCandidates(repository, Math.max(config.minimumRetained(), 0));
     log.debug(STR."Found \{snapshotCandidates.size()} snapshot GAVs to analyze");
 
     Set<GAV> gavsWithDeletions = new HashSet<>();
@@ -255,9 +255,9 @@ public class RemoveSnapshotsFacetImpl
   @VisibleForTesting
   void deleteSnapshotsForReleasedComponents(final Repository repository, final RemoveSnapshotsConfig config)
   {
-    if (config.getRemoveIfReleased()) {
+    if (config.removeIfReleased()) {
       MavenContentFacet facet = repository.facet(MavenContentFacet.class);
-      int[] snapshotsAfterReleaseToDelete = facet.selectSnapshotsAfterRelease(Math.max(config.getGracePeriod(), 0));
+      int[] snapshotsAfterReleaseToDelete = facet.selectSnapshotsAfterRelease(Math.max(config.gracePeriod(), 0));
       facet.deleteComponents(snapshotsAfterReleaseToDelete);
       log.info(STR."Deleted \{snapshotsAfterReleaseToDelete.length} snapshots for released components");
     }

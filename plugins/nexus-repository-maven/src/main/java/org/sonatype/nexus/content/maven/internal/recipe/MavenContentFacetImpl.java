@@ -310,11 +310,11 @@ public class MavenContentFacetImpl
     Coordinates coordinates = mavenPath.getCoordinates();
 
     FluentComponent component = components()
-        .name(coordinates.getArtifactId())
-        .namespace(coordinates.getGroupId())
-        .version(coordinates.getVersion())
+        .name(coordinates.artifactId())
+        .namespace(coordinates.groupId())
+        .version(coordinates.version())
         .normalizedVersion(
-            versionNormalizerService().getNormalizedVersionByFormat(coordinates.getVersion(), repository().getFormat()))
+            versionNormalizerService().getNormalizedVersionByFormat(coordinates.version(), repository().getFormat()))
         .kind(optionalKind)
         .getOrCreate();
 
@@ -460,9 +460,9 @@ public class MavenContentFacetImpl
    */
   private void maybeDeleteComponent(final Coordinates coordinates) {
     var component = components()
-        .name(coordinates.getArtifactId())
-        .namespace(coordinates.getGroupId())
-        .version(coordinates.getVersion())
+        .name(coordinates.artifactId())
+        .namespace(coordinates.groupId())
+        .version(coordinates.version())
         .find();
         
     if (component instanceof Optional<FluentComponent> opt && opt.isPresent()) {
@@ -740,10 +740,10 @@ public class MavenContentFacetImpl
   @Transactional
   private FluentComponent createOrGetComponent(final Coordinates coordinates) {
     MavenContentFacet facet = getRepository().facet(MavenContentFacet.class);
-    final String artifactId = coordinates.getArtifactId();
-    final String groupId = coordinates.getGroupId();
-    final String version = coordinates.getVersion();
-    final String baseVersion = coordinates.getBaseVersion();
+    final String artifactId = coordinates.artifactId();
+    final String groupId = coordinates.groupId();
+    final String version = coordinates.version();
+    final String baseVersion = coordinates.baseVersion();
 
     FluentComponent component = facet.components()
         .name(artifactId)
@@ -774,14 +774,14 @@ public class MavenContentFacetImpl
 
   private void configureAssetAttributes(final FluentAsset asset, final Coordinates coordinates) {
     ImmutableMap.Builder<String, String> assetAttributes = ImmutableMap.builder();
-    assetAttributes.put(P_GROUP_ID, coordinates.getGroupId());
-    assetAttributes.put(P_ARTIFACT_ID, coordinates.getArtifactId());
-    assetAttributes.put(P_VERSION, coordinates.getVersion());
-    assetAttributes.put(P_BASE_VERSION, coordinates.getBaseVersion());
-    if (coordinates.getClassifier() != null) {
-      assetAttributes.put(P_CLASSIFIER, coordinates.getClassifier());
+    assetAttributes.put(P_GROUP_ID, coordinates.groupId());
+    assetAttributes.put(P_ARTIFACT_ID, coordinates.artifactId());
+    assetAttributes.put(P_VERSION, coordinates.version());
+    assetAttributes.put(P_BASE_VERSION, coordinates.baseVersion());
+    if (coordinates.classifier() != null) {
+      assetAttributes.put(P_CLASSIFIER, coordinates.classifier());
     }
-    assetAttributes.put(P_EXTENSION, coordinates.getExtension());
+    assetAttributes.put(P_EXTENSION, coordinates.extension());
     asset.attributes(OVERLAY, Maven2Format.NAME, assetAttributes.build());
   }
 }

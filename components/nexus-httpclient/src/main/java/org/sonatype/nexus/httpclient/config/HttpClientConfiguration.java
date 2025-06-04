@@ -17,6 +17,8 @@ import javax.annotation.Nullable;
 import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 
+import java.util.concurrent.ExecutorService;
+
 /**
  * HTTP-client configuration.
  *
@@ -58,4 +60,10 @@ public interface HttpClientConfiguration
   void setDisableContentCompression(final Boolean disableContentCompression);
 
   HttpClientConfiguration copy();
+
+
+  @Nullable
+  ExecutorService getExecutorService();
+
+  void setExecutorService(@Nullable ExecutorService executorService);
 }

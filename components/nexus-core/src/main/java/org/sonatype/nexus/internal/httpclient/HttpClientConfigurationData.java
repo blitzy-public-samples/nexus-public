@@ -23,6 +23,8 @@ import org.sonatype.nexus.httpclient.config.ProxyConfiguration;
 import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 
+import java.util.concurrent.ExecutorService;
+
 /**
  * {@link HttpClientConfiguration} data.
  *
@@ -61,6 +63,20 @@ public class HttpClientConfigurationData
   @Valid
   @Nullable
   private Boolean shouldNormalizeUri;
+
+  private ExecutorService executorService;
+
+  @Nullable
+  @Override
+  public ExecutorService getExecutorService() {
+    return executorService;
+  }
+
+  @Override
+  public void setExecutorService(@Nullable ExecutorService executorService) {
+    this.executorService = executorService;
+  }
+
 
   @Override
   @Nullable

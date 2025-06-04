@@ -28,6 +28,8 @@ import com.google.common.annotations.VisibleForTesting;
 import org.apache.http.client.AuthenticationStrategy;
 import org.apache.http.client.RedirectStrategy;
 
+import java.util.concurrent.ExecutorService;
+
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.StringTemplate.STR;
 
@@ -105,6 +107,20 @@ public class MemoryHttpClientConfigurationStore
     @Valid
     @Nullable
     private Boolean disableContentCompression;
+
+    private ExecutorService executorService;
+
+    @Nullable
+    @Override
+    public ExecutorService getExecutorService() {
+      return executorService;
+    }
+
+    @Override
+    public void setExecutorService(@Nullable ExecutorService executorService) {
+      this.executorService = executorService;
+    }
+
 
     @Nullable
     public ConnectionConfiguration getConnection() {

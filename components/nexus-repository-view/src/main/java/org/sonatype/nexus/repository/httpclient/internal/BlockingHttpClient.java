@@ -128,14 +128,20 @@ public class BlockingHttpClient
       int statusCode = response.getStatusLine().getStatusCode();
 
       switch (statusCode) {
-        case SC_UNAUTHORIZED when !autoBlock -> {
-          updateStatusToAvailableWithParams(getReason(statusCode), statusCode, target);
+        case SC_UNAUTHORIZED: {
+          if (!autoBlock) {
+            updateStatusToAvailableWithParams(getReason(statusCode), statusCode, target);
+            break;
+          }
+          // fallthrough if autoBlock is true
         }
-        case Integer i when autoBlockConfiguration.shouldBlock(i) -> {
-          updateStatusToUnavailable(getReason(statusCode), statusCode, target);
-        }
-        default -> {
-          updateStatusToAvailable();
+        default: {
+          if (autoBlockConfiguration.shouldBlock(statusCode)) {
+            updateStatusToUnavailable(getReason(statusCode), statusCode, target);
+          } else {
+            updateStatusToAvailable();
+          }
+          break;
         }
       }
       return response;

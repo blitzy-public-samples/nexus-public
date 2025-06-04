@@ -20,6 +20,7 @@ import org.sonatype.nexus.httpclient.config.HttpClientConfiguration;
 import org.sonatype.nexus.httpclient.config.ProxyConfiguration;
 
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
 
 public class TestHttpClientConfiguration
     implements HttpClientConfiguration
@@ -38,6 +39,7 @@ public class TestHttpClientConfiguration
   private Boolean normalizeUri;
 
   private Boolean disableContentCompression;
+  private ExecutorService executorService;
 
   public TestHttpClientConfiguration() {
 
@@ -113,5 +115,15 @@ public class TestHttpClientConfiguration
   @Override
   public TestHttpClientConfiguration copy() {
     return this;
+  }
+
+  @Override
+  public ExecutorService getExecutorService() {
+    return executorService;
+  }
+
+  @Override
+  public void setExecutorService(ExecutorService executorService) {
+    this.executorService = executorService;
   }
 }

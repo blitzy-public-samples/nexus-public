@@ -38,7 +38,7 @@ import static java.lang.String.format;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
-import static org.apache.commons.lang.ArrayUtils.subarray;
+import static org.apache.commons.lang3.ArrayUtils.subarray;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsSame.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;

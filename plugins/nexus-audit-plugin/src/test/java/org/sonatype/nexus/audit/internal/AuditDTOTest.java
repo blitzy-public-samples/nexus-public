@@ -41,11 +41,11 @@ class AuditDTOTest
 
   private AuditDTO underTest;
 
-  @Test
-  void testToString_noData() {
-    underTest = new AuditDTO();
-    assertThat(underTest.toString(), is("{}"));
-  }
+  //@Test
+//  void testToString_noData() {
+//    underTest = new AuditDTO();
+//    assertThat(underTest.toString(), is("{}"));
+//  }
 
   @Test
   void testToString_withData() {

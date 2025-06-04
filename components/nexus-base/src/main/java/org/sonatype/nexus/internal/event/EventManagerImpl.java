@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.internal.event;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.goodies.lifecycle.LifecycleSupport;
 import org.sonatype.nexus.common.app.ManagedLifecycle;
@@ -31,6 +31,8 @@ import com.google.inject.Key;
 import org.eclipse.sisu.BeanEntry;
 import org.eclipse.sisu.Mediator;
 import org.eclipse.sisu.inject.BeanLocator;
+
+import java.util.concurrent.CompletableFuture;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.sonatype.nexus.common.app.ManagedLifecycle.Phase.EVENTS;
@@ -160,4 +162,27 @@ public class EventManagerImpl
   public boolean isAffinityEnabled() {
     return eventExecutor.isAffinityEnabled();
   }
+
+  @Override
+  public boolean isVirtualThreadsEnabled() {
+    return true;
+  }
+
+  @Override
+  public CompletableFuture<Void> postAsync(final Object event) {
+    return CompletableFuture.runAsync(() -> {
+      if (isAffinityEnabled() && event instanceof HasAffinity) {
+        String affinity = ((HasAffinity) event).getAffinity();
+        if (affinity != null) {
+          eventExecutor.executeWithAffinity(affinity, () -> asyncBus.post(event));
+        } else {
+          log.warn(STR."Event \{event} requested 'null' affinity");
+          asyncBus.post(event);
+        }
+      } else {
+        asyncBus.post(event);
+      }
+    });
+  }
+
 }

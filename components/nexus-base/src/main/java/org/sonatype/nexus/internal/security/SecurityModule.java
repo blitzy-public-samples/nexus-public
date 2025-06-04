@@ -15,7 +15,8 @@ package org.sonatype.nexus.internal.security;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-
+import javax.inject.Provider;
+import javax.servlet.Filter;
 import org.sonatype.nexus.security.FilterProviderSupport;
 import org.sonatype.nexus.security.JwtFilter;
 import org.sonatype.nexus.security.anonymous.AnonymousFilter;
@@ -72,6 +73,7 @@ public class SecurityModule
   @Singleton
   static class AuthcBasicFilterProvider
       extends FilterProviderSupport
+          implements Provider<Filter>
   {
     @Inject
     AuthcBasicFilterProvider(final NexusAuthenticationFilter filter) {
@@ -89,6 +91,7 @@ public class SecurityModule
   @Singleton
   static class AuthcApiKeyFilterProvider
       extends FilterProviderSupport
+          implements Provider<Filter>
   {
     @Inject
     AuthcApiKeyFilterProvider(final ApiKeyAuthenticationFilter filter) {
@@ -106,6 +109,7 @@ public class SecurityModule
   @Singleton
   static class AuthcAntiCsrfFilterProvider
       extends FilterProviderSupport
+          implements Provider<Filter>
   {
     @Inject
     AuthcAntiCsrfFilterProvider(final AntiCsrfFilter filter) {

@@ -58,6 +58,6 @@ public class RealmConfigurationData
   @Override
   public String toString() {
     // Using Java 21 String Templates for more efficient string concatenation
-    return STR."\{getClass().getSimpleName()}\{realmNames=\{realmNames}\}";
+    return STR."\{getClass().getSimpleName()}{realmNames=\{realmNames}}";
   }
 }

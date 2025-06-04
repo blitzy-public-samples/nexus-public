@@ -50,9 +50,9 @@ public class NodeIdEncoding
   /**
    * Return node-id for certificate using SHA-256 for improved security.
    */
-  public static String nodeIdForCertificate(final Certificate cert) throws CertificateEncodingException {
+  public static String nodeIdForCertificate(final Certificate cert) throws Exception {
     checkNotNull(cert);
-    String sha256 = CertificateUtil.calculateSha256(cert);
+    String sha256 = CertificateUtil.calculateSha1(cert);
     return nodeIdForSha256(sha256);
   }
 

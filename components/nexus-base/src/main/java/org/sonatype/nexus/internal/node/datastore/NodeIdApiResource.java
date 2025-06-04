@@ -74,7 +74,7 @@ public class NodeIdApiResource
   @DELETE
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
-  public void clear() {
+  public void clear() throws InterruptedException {
     log.info(STR."Clearing node ID store");
     nodeIdStore.clear();
   }

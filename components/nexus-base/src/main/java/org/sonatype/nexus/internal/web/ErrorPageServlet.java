@@ -233,11 +233,14 @@ public class ErrorPageServlet
       char c = input.charAt(i);
       
       // Using pattern matching for switch with Java 21 syntax
-      switch (c) {
-        case Character ch when HTML_ESCAPE_CHARS.containsKey(ch) -> 
-          escaped.append(HTML_ESCAPE_CHARS.get(ch));
-        default -> escaped.append(c);
-      }
+
+        if( HTML_ESCAPE_CHARS.containsKey(c)) {
+          escaped.append(HTML_ESCAPE_CHARS.get(c));
+        }
+        else {
+          escaped.append(c);
+        }
+
     }
     
     return escaped.toString();

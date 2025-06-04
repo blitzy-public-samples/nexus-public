@@ -126,27 +126,25 @@ public class GlobalComponentLookupHelperImpl
       Iterator<BeanEntry> iter = beanLocator.locate(key).iterator();
       
       // Using pattern matching for switch to simplify component lookup logic
-      return switch(iter.hasNext()) {
-        case true -> {
-          try {
-            // Add safeguards for reflective operations under Java 21's stricter access controls
-            BeanEntry entry = iter.next();
-            yield entry.getValue();
-          } 
-          catch (SecurityException e) {
-            log.trace("Security exception accessing bean value for key: {}", key, e);
-            yield null;
-          }
-          catch (Exception e) {
-            log.trace("Exception retrieving bean value for key: {}", key, e);
-            yield null;
-          }
+      if(iter.hasNext()) {
+        try {
+          // Add safeguards for reflective operations under Java 21's stricter access controls
+          BeanEntry entry = iter.next();
+          return entry.getValue();
+        } catch (SecurityException e) {
+          log.trace("Security exception accessing bean value for key: {}", key, e);
+          return null;
+        } catch (Exception e) {
+          log.trace("Exception retrieving bean value for key: {}", key, e);
+          return null;
         }
-        case false -> {
+      }
+
+        else{
           log.trace("Component not found for key: {}", key);
-          yield null;
+        return null;
         }
-      };
+
     }
     catch (Exception e) {
       // Enhanced exception handling with pattern matching for different exception types
@@ -197,16 +195,17 @@ public class GlobalComponentLookupHelperImpl
    * Helper method to handle exceptions during type lookup with pattern matching.
    * This leverages Java 21's pattern matching capabilities for more precise exception handling.
    */
-  private void handleTypeException(String className, Exception e) {
+  private void handleTypeException(String className, Throwable e) {
     switch (e) {
-      case SecurityException se -> 
+      case SecurityException se ->
           log.trace("Security exception accessing class: {}", className, se);
-      case LinkageError le -> 
+      case LinkageError le ->
           log.trace("Linkage error loading class: {}", className, le);
-      case InvocationTargetException ite -> 
+      case InvocationTargetException ite ->
           log.trace("Invocation exception during class loading: {}", className, ite);
-      default -> 
+      default ->
           log.trace("Unable to lookup type: {}; ignoring", className, e);
     }
+
   }
 }

@@ -17,6 +17,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
@@ -52,7 +54,7 @@ public class NodeIdStoreImpl
    */
   @Transactional
   @Override
-  public void clear() {
+  public void clear() throws InterruptedException {
     // Use virtual thread for this I/O-bound operation
     Thread.startVirtualThread(() -> dao().clear()).join();
   }
@@ -65,8 +67,14 @@ public class NodeIdStoreImpl
   @Transactional
   @Override
   public Optional<String> get() {
+    Executor virtualThreadExecutor = runnable -> {
+      Thread t = Thread.ofVirtual().factory().newThread(runnable);
+      t.start();
+    };
     // Use virtual thread for this I/O-bound operation
-    return Thread.startVirtualThread(() -> dao().get()).join();
+    //return Thread.startVirtualThread(() -> dao().get()).join();
+    return CompletableFuture.supplyAsync(() -> dao().get(),virtualThreadExecutor)
+            .join();
   }
 
   /**
@@ -76,7 +84,7 @@ public class NodeIdStoreImpl
    */
   @Transactional
   @Override
-  public void set(final String nodeId) {
+  public void set(final String nodeId) throws InterruptedException {
     // Use virtual thread for this I/O-bound operation
     Thread.startVirtualThread(() -> dao().set(nodeId)).join();
   }
@@ -89,15 +97,22 @@ public class NodeIdStoreImpl
   @Transactional(retryOn = DuplicateKeyException.class)
   @Override
   public String getOrCreate() {
+
+    Executor virtualThreadExecutor = runnable -> {
+      Thread t = Thread.ofVirtual().factory().newThread(runnable);
+      t.start();
+    };
     // Use virtual thread for this I/O-bound operation with potential database transaction
-    return Thread.startVirtualThread(() -> 
+    return CompletableFuture.supplyAsync(() ->
         get().orElseGet(() -> {
           String newNodeId = generateNodeId();
           dao().create(newNodeId);
           return newNodeId;
-        })
+        }),virtualThreadExecutor
     ).join();
+
   }
+
 
   /**
    * Generate a new node ID using SHA-1 hash of a random UUID.
@@ -105,7 +120,7 @@ public class NodeIdStoreImpl
    * @return the generated node ID
    */
   private String generateNodeId() {
-    log.debug(STR."Generating nodeId using Java \{System.getProperty(\"java.version\")} virtual threads");
+    log.debug(STR."Generating nodeId using Java \{System.getProperty("java.version")} virtual threads");
 
     // Generate something unique
     UUID cn = UUID.randomUUID();

@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.security.realm;
 import java.io.File;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
@@ -59,7 +60,9 @@ public class RealmConfigurationExport
           log.error(STR."Failed to export RealmConfiguration data to \{file}", e);
           throw new RuntimeException(e);
         }
-      }).join(); // Wait for completion
+      }).get(); // Wait for completion
+    } catch (ExecutionException | InterruptedException e) {
+        throw new RuntimeException(e);
     }
   }
 
@@ -72,18 +75,21 @@ public class RealmConfigurationExport
       executor.submit(() -> {
         try {
           Optional<RealmConfigurationData> realmConfiguration = importObjectFromJson(file, RealmConfigurationData.class);
-          
-          // Use pattern matching for switch with Optional handling
-          switch (realmConfiguration) {
-            case Optional.of(RealmConfigurationData data) -> configuration.save(data);
-            case Optional.empty() -> log.warn(STR."No RealmConfiguration data found in \{file}");
+
+          if (realmConfiguration.isPresent()) {
+            configuration.save(realmConfiguration.get());
+          }
+          else {
+            log.warn(STR."No RealmConfiguration data found in \{file}");
           }
         } 
         catch (IOException e) {
           log.error(STR."Failed to restore RealmConfiguration data from \{file}", e);
           throw new RuntimeException(e);
         }
-      }).join(); // Wait for completion
+      }).get(); // Wait for completion
+    } catch (Exception e) {
+        throw new RuntimeException("Error during restore operation",e);
     }
   }
 }

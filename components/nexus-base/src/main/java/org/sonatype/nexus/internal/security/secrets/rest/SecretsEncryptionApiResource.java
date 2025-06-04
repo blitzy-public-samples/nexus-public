@@ -59,7 +59,7 @@ public abstract class SecretsEncryptionApiResource
       var executor = Executors.newVirtualThreadPerTaskExecutor();
       try (executor) {
         var future = executor.submit(() -> reEncryptService.submitReEncryption(
-            request.getSecretKeyId(), request.getNotifyEmail()));
+            request.secretKeyId(), request.notifyEmail()));
         String taskId = future.get();
         
         Map<String, Object> response = ImmutableMap.of(
@@ -74,14 +74,16 @@ public abstract class SecretsEncryptionApiResource
     }
     // Using Java 21 pattern matching for exception handling
     catch (Exception ex) {
-      return switch (ex) {
-        case MissingKeyException | ReEncryptionNotSupportedException e -> 
+        switch (ex) {
+        case MissingKeyException  e ->
+          throw new WebApplicationMessageException(Status.BAD_REQUEST, e.getMessage(), APPLICATION_JSON);
+        case   ReEncryptionNotSupportedException e ->
           throw new WebApplicationMessageException(Status.BAD_REQUEST, e.getMessage(), APPLICATION_JSON);
         case IllegalStateException e -> 
           throw new WebApplicationMessageException(Status.CONFLICT, e.getMessage(), APPLICATION_JSON);
         default -> 
           throw new WebApplicationMessageException(Status.INTERNAL_SERVER_ERROR, ex.getMessage(), APPLICATION_JSON);
-      };
+      }
     }
   }
 }

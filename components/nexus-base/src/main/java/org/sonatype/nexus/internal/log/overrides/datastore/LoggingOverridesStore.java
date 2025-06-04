@@ -17,9 +17,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.common.entity.Continuation;
 import org.sonatype.nexus.datastore.ConfigStoreSupport;
@@ -44,7 +44,7 @@ import static org.sonatype.nexus.internal.log.overrides.datastore.LoggerOverride
 @Singleton
 public class LoggingOverridesStore
     extends ConfigStoreSupport<LoggingOverridesDAO>
-    implements TransactionalStore<LoggingOverridesDAO>
+    //implements TransactionalStore<LoggingOverridesDAO>
 {
   private static final Logger log = LoggerFactory.getLogger(LoggingOverridesStore.class);
   
@@ -78,14 +78,51 @@ public class LoggingOverridesStore
    */
   @Transactional
   public Continuation<LoggingOverridesData> readRecords() {
-    try {
-      return dao().readRecords(null);
-    }
-    catch (Exception e) {
-      handleDatabaseException("Failed to read logging overrides", e);
-      return Continuation.empty();
-    }
+  try {
+    return dao().readRecords(null);
   }
+  catch (Exception e) {
+    handleDatabaseException("Failed to read logging overrides", e);
+    return EMPTY_CONTINUATION;
+  }
+}
+
+private static final Continuation<LoggingOverridesData> EMPTY_CONTINUATION = new Continuation<>() {
+  @Override
+  public boolean isEmpty() {
+    return true;
+  }
+  @Override
+  public int size() {
+    return 0;
+  }
+  @Override
+  public java.util.Iterator<LoggingOverridesData> iterator() {
+    return java.util.Collections.emptyIterator();
+  }
+
+
+  @Override
+  public String nextContinuationToken() {
+    return null;  // no next token for empty continuation
+  }
+  // Implement other Collection methods to return empty or throw UnsupportedOperationException
+
+  @Override public boolean contains(Object o) { return false; }
+  @Override public Object[] toArray() { return new Object[0]; }
+  @Override public <T> T[] toArray(T[] a) {
+    if (a.length > 0) a[0] = null;
+    return a;
+  }
+  @Override public boolean add(LoggingOverridesData e) { throw new UnsupportedOperationException(); }
+  @Override public boolean remove(Object o) { throw new UnsupportedOperationException(); }
+  @Override public boolean containsAll(java.util.Collection<?> c) { return c.isEmpty(); }
+  @Override public boolean addAll(java.util.Collection<? extends LoggingOverridesData> c) { throw new UnsupportedOperationException(); }
+  @Override public boolean removeAll(java.util.Collection<?> c) { throw new UnsupportedOperationException(); }
+  @Override public boolean retainAll(java.util.Collection<?> c) { throw new UnsupportedOperationException(); }
+  @Override public void clear() { }
+};
+
 
   /**
    * Checks if a logging override with the given name exists
@@ -184,10 +221,10 @@ public class LoggingOverridesStore
         log.error("{}. Invalid argument: {}", message, iae.getMessage(), iae);
         throw new IllegalStateException(message + ". Database operation failed due to invalid argument.", iae);
       }
-      case UnitOfWork.Pause pause -> {
-        log.warn("{}. Transaction paused: {}", message, pause.getMessage());
-        throw pause;
-      }
+//      case UnitOfWork.Pause pause -> {
+//        log.warn("{}. Transaction paused: {}", message, pause.getMessage());
+//        throw pause;
+//      }
       default -> {
         log.error("{}. Database error: {}", message, e.getMessage(), e);
         throw new IllegalStateException(message + ". Database operation failed.", e);

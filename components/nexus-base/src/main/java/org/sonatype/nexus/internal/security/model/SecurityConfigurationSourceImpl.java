@@ -13,6 +13,7 @@
 package org.sonatype.nexus.internal.security.model;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -61,10 +62,11 @@ public class SecurityConfigurationSourceImpl
   @Override
   protected void doStart() throws Exception {
     // Use CompletableFuture with Virtual Threads to parallelize initialization tasks
-    CompletableFuture<Void> usersTask = CompletableFuture.runAsync(this::addDefaultUsers, Thread.ofVirtual().factory());
-    CompletableFuture<Void> rolesTask = CompletableFuture.runAsync(this::addDefaultRoles, Thread.ofVirtual().factory());
-    CompletableFuture<Void> privilegesTask = CompletableFuture.runAsync(this::addDefaultPrivileges, Thread.ofVirtual().factory());
-    CompletableFuture<Void> mappingsTask = CompletableFuture.runAsync(this::addDefaultUserRoleMappings, Thread.ofVirtual().factory());
+    Executor virtualThreadExecutor = command -> Thread.ofVirtual().start(command);
+    CompletableFuture<Void> usersTask = CompletableFuture.runAsync(this::addDefaultUsers, virtualThreadExecutor);
+    CompletableFuture<Void> rolesTask = CompletableFuture.runAsync(this::addDefaultRoles, virtualThreadExecutor);
+    CompletableFuture<Void> privilegesTask = CompletableFuture.runAsync(this::addDefaultPrivileges, virtualThreadExecutor);
+    CompletableFuture<Void> mappingsTask = CompletableFuture.runAsync(this::addDefaultUserRoleMappings, virtualThreadExecutor);
     
     // Wait for all initialization tasks to complete
     CompletableFuture.allOf(usersTask, rolesTask, privilegesTask, mappingsTask).join();

@@ -17,6 +17,7 @@ import javax.inject.Named;
 import javax.inject.Provider;
 import javax.inject.Singleton;
 
+import org.apache.shiro.SecurityUtils;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.goodies.common.Mutex;
 import org.sonatype.nexus.common.event.EventAware;
@@ -40,6 +41,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+
+import org.apache.shiro.mgt.SecurityManager;
+
 
 /**
  * Default {@link AnonymousManagerImpl}.
@@ -188,14 +192,14 @@ public class AnonymousManagerImpl
 
     // Updated for Shiro 2.0.0 compatibility
     // Create a SubjectContext to configure the subject properly
-    SubjectContext context = new DefaultSubjectFactory().createSubjectContext();
+    SubjectContext context = (SubjectContext) new DefaultSubjectFactory();
     context.setPrincipals(principals);
     context.setAuthenticated(false);
     context.setSessionCreationEnabled(false);
 
-    return new Subject.Builder()
-        .context(context)
-        .buildSubject();
+    SecurityManager securityManager = SecurityUtils.getSecurityManager();
+    Subject subject = securityManager.createSubject(context);
+    return subject;
   }
 
   /**

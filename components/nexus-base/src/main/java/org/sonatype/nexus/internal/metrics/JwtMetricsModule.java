@@ -26,8 +26,10 @@ import org.sonatype.nexus.security.authc.NexusAuthenticationFilter;
 import org.sonatype.nexus.security.authz.PermissionsFilter;
 
 import com.google.inject.name.Names;
-import io.dropwizard.metrics.Clock;
-import io.dropwizard.metrics.MetricRegistry;
+//import io.dropwizard.metrics.Clock;
+//import io.dropwizard.metrics.MetricRegistry;
+import com.codahale.metrics.Clock;
+import com.codahale.metrics.MetricRegistry;
 import io.prometheus.client.CollectorRegistry;
 import io.prometheus.client.dropwizard.DropwizardExports;
 import com.fasterxml.jackson.core.JsonFactory;
@@ -73,7 +75,8 @@ public class JwtMetricsModule
     bind(MetricRegistry.class).toInstance(metricRegistry);
     
     // Register Java 21 specific metrics registry with VirtualThreadMetrics
-    final MetricRegistry java21Registry = new MetricRegistry().register("jvm.21", new VirtualThreadMetrics());
+    final MetricRegistry java21Registry = new MetricRegistry();
+            java21Registry.register("jvm.21", new VirtualThreadMetrics());
     bind(MetricRegistry.class).annotatedWith(Names.named("java21Registry")).toInstance(java21Registry);
     
     // Configure Prometheus integration

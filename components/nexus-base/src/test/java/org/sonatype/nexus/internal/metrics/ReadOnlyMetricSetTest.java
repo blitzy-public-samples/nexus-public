@@ -15,6 +15,7 @@ package org.sonatype.nexus.internal.metrics;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.FreezeRequest;
@@ -63,8 +64,8 @@ public class ReadOnlyMetricSetTest
   public void testMetrics_validWhenInReadonlyMode() throws Exception {
     when(freezeService.isFrozen()).thenReturn(true);
     when(freezeService.currentFreezeRequests()).thenReturn(
-        asList(new FreezeRequest("SYSTEM", "system initiator", new DateTime(1504111817165L), null, null),
-            new FreezeRequest("USER", "user initiator", new DateTime(1504111817166L), null, null)));
+        asList(new FreezeRequest(Optional.of("SYSTEM"), "system initiator", new DateTime(1504111817165L), null, null),
+            new FreezeRequest(Optional.of("USER"), "user initiator", new DateTime(1504111817166L), null, null)));
 
     ReadOnlyMetricSet readOnlyMetricSet = new ReadOnlyMetricSet(() -> freezeService);
     Map<String, Metric> metrics = readOnlyMetricSet.getMetrics();

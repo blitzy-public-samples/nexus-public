@@ -193,7 +193,7 @@ public class EventManagerImplTest
   }
 
   private static EventExecutor newEventExecutor() {
-    return new EventExecutor(false, 0, Time.seconds(0), false, false);
+    return new EventExecutor(false, 0, Time.seconds(0), false);
   }
 
   private class AsyncHandler

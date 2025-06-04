@@ -27,18 +27,18 @@ package org.sonatype.nexus.freeze.event;
  *       log.warn("System freeze force-released");
  *       // Handle forced release
  *     }
- *     case FreezeRequestEvent e -> { /* handle request */ }
- *     case FreezeReleaseEvent e -> { /* handle normal release */ }
- *   }
- * }
- * }</pre>
- * <p>
- * This class is designed to be compatible with Java 21's virtual threads and can be safely
- * used in high-concurrency scenarios. Event handlers processing this event type can be
- * executed on virtual threads without blocking concerns.
- *
- * @since 3.0
- */
+// *     case FreezeRequestEvent e -> { /* handle request */ //}
+// *     case FreezeReleaseEvent e -> { /* handle normal release */ }
+// *   }
+// * }
+// * }</pre>
+// * <p>
+// * This class is designed to be compatible with Java 21's virtual threads and can be safely
+// * used in high-concurrency scenarios. Event handlers processing this event type can be
+// * executed on virtual threads without blocking concerns.
+// *
+// * @since 3.0
+// */
 @FreezeEvent.VirtualThreadCompatible("Safe for processing on virtual threads with no blocking operations")
 public final class FreezeForceReleaseEvent
     extends FreezeEvent

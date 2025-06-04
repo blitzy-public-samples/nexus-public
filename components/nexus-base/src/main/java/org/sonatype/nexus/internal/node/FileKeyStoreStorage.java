@@ -107,7 +107,7 @@ public class FileKeyStoreStorage
       loadTask.join();
     } catch (Exception e) {
       // Unwrap and rethrow the original exception
-      handleExecutionException(e);
+      throwAsUnchecked(e);
     }
     
     lastRead = readStart;

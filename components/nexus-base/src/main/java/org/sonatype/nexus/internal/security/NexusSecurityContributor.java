@@ -20,7 +20,7 @@ import org.sonatype.nexus.security.config.SecurityContributor;
 import org.sonatype.nexus.security.config.SecurityContributorSupport;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 
-import static org.apache.commons.lang.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.sonatype.nexus.security.Roles.ADMIN_ROLE_ID;
 import static org.sonatype.nexus.security.Roles.ANONYMOUS_ROLE_ID;
 

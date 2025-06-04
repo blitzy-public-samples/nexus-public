@@ -81,7 +81,7 @@ public class VelocityEngineProvider
     try {
       engine.init();
     }
-    catch (Exception e) {
+    catch (Throwable e) {
       if (e instanceof RuntimeException runtimeException) {
         throw runtimeException;
       }

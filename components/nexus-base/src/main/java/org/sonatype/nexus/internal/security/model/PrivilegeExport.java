@@ -92,7 +92,7 @@ public class PrivilegeExport
     
     try {
       // Use virtual threads for I/O operations to improve performance
-      Future<List<CPrivilege>> importTask = virtualThreadExecutor.submit(() -> {
+      Future<List<CPrivilegeData>> importTask = virtualThreadExecutor.submit(() -> {
         try {
           return importFromJson(file, CPrivilegeData.class);
         } 

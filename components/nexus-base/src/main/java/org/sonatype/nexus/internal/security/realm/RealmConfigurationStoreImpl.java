@@ -76,8 +76,18 @@ public class RealmConfigurationStoreImpl
   private RealmConfigurationChangedEvent createEventWithVirtualThreadContext(final RealmConfiguration configuration) {
     // Capture the current MDC context for propagation to event handlers
     // This is especially important for Virtual Threads which may be scheduled on different carrier threads
-    return MDCUtils.isVirtualThread() 
-        ? MDCUtils.withMdcContext(() -> new RealmConfigurationChangedEvent((RealmConfigurationData) configuration)).run()
-        : new RealmConfigurationChangedEvent((RealmConfigurationData) configuration);
+//    return MDCUtils.isVirtualThread()
+//        ? MDCUtils.withMdcContext(() -> new RealmConfigurationChangedEvent((RealmConfigurationData) configuration)).run()
+//        : new RealmConfigurationChangedEvent((RealmConfigurationData) configuration);
+//
+//    RealmConfigurationChangedEvent event = new RealmConfigurationChangedEvent((RealmConfigurationData) configuration);
+
+    if (MDCUtils.isVirtualThread()) {
+      MDCUtils.withMdcContext(() -> {
+        new RealmConfigurationChangedEvent((RealmConfigurationData) configuration);
+      }).run();
+    }
+
+    return new  RealmConfigurationChangedEvent((RealmConfigurationData) configuration);
   }
 }

@@ -16,7 +16,10 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -134,21 +137,25 @@ public class ApplicationDirectoriesImpl
     }
   }
 
-  private File resolve(File dir, final boolean create) {
+  private File resolve( File dir, final boolean create) {
     checkNotNull(dir);
 
+    ExecutorService virtualThreadExecutor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
     log.trace(STR."Resolving directory: \{dir}; create: \{create}");
     try {
+      final File dirfinal=dir;
       // Use virtual thread for file canonicalization to handle potential module system restrictions
-      Path canonicalPath = Thread.startVirtualThread(() -> {
+      Path canonicalPath = CompletableFuture.supplyAsync(() -> {
+
         try {
-          return dir.getCanonicalFile().toPath();
+          return dirfinal.getCanonicalFile().toPath();
         }
         catch (IOException e) {
-          log.error(STR."Failed to canonicalize directory: \{dir}");
+          log.error(STR."Failed to canonicalize directory: \{dirfinal}");
           throw new RuntimeException(e);
         }
-      }).join();
+
+      },virtualThreadExecutor).get();
       
       dir = canonicalPath.toFile();
     }

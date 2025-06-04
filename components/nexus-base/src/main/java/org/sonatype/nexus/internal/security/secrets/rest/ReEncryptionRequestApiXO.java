@@ -33,16 +33,20 @@ public record ReEncryptionRequestApiXO(
   /**
    * Default constructor for serialization.
    */
-  public ReEncryptionRequestApiXO {
-    // validation happens via annotations
-  }
-  
+//  public ReEncryptionRequestApiXO {
+//    // validation happens via annotations
+//  }
+
   /**
    * Constructor for testing.
    */
   @VisibleForTesting
-  public ReEncryptionRequestApiXO(final String secretKeyId, final String notifyEmail) {
+  public    ReEncryptionRequestApiXO(final String secretKeyId, final String notifyEmail) {
     this.secretKeyId = secretKeyId;
     this.notifyEmail = notifyEmail;
   }
+
+    public ReEncryptionRequestApiXO() {
+        this("", null);
+    }
 }

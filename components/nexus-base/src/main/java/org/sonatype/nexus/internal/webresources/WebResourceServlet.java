@@ -109,6 +109,7 @@ public class WebResourceServlet
       return;
     }
 
+
     WebResource resource = webResources.getResource(path);
     if (resource == null) {
       // if there is an index.html for the requested path, redirect to it
@@ -126,6 +127,7 @@ public class WebResourceServlet
     // Use Virtual Threads to handle resource serving
     // This allows for high concurrency without blocking platform threads
     try {
+      final String finalPath = path;
       // Submit the resource serving task to the virtual thread executor
       // This allows the servlet container thread to return to the pool quickly
       virtualThreadExecutor.submit(() -> {
@@ -133,12 +135,12 @@ public class WebResourceServlet
           serveResource(resource, request, response);
         }
         catch (IOException e) {
-          log.warn("Error serving resource {}: {}", path, e.getMessage());
+          log.warn("Error serving resource {}: {}", finalPath, e.getMessage());
           // Cannot call sendError here as it might be too late (response already committed)
           // Just log the error and let the client handle the incomplete response
         }
         catch (Exception e) {
-          log.error("Unexpected error serving resource {}", path, e);
+          log.error("Unexpected error serving resource {}", finalPath, e);
         }
       }).get(); // Wait for completion to ensure response is fully sent
     }

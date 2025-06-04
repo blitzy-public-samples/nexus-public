@@ -77,11 +77,11 @@ public class AuthenticationEventSubscriber
       final ClientInfo clientInfo = clientInfoProvider.get().getCurrentThreadClientInfo();
       
       // Using Java 21 String Templates for logging
-      logger.fine(STR."Processing authentication event for user: \{event.getUserId()}, success: \{event.isSuccessful()}");
+      logger.fine(STR."Processing authentication event for user: \{event.userId()}, success: \{event.successful()}");
       
       ClientInfo.Builder builder = ClientInfo
           .builder()
-          .userId(event.getUserId());
+          .userId(event.userId());
       
       // Using pattern matching to check clientInfo properties
       if (clientInfo instanceof ClientInfo info) {
@@ -98,8 +98,8 @@ public class AuthenticationEventSubscriber
       eventManager.get()
           .post(new NexusAuthenticationEvent(
               builder.build(),
-              event.isSuccessful(),
-              event.getAuthenticationFailureReasons()));
+              event.successful(),
+              event.authenticationFailureReasons()));
     });
   }
 }

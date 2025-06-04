@@ -191,7 +191,7 @@ public class LocalFreezeService
 
   private FreezeRequest newRequest(@Nullable final String token, final String reason) {
     Optional<ClientInfo> clientInfo = ofNullable(clientInfoProvider.getCurrentThreadClientInfo());
-    return new FreezeRequest(token, reason, now(UTC),
+      return new FreezeRequest(ofNullable(token), reason, now(UTC),
         clientInfo.map(ClientInfo::getUserid).orElse(null),
         clientInfo.map(ClientInfo::getRemoteIP).orElse(null));
   }
@@ -266,8 +266,8 @@ public class LocalFreezeService
         Map<String, Object> json = ImmutableMap.of(
             "reason", request.reason(),
             "frozenAt", request.frozenAt().toString(),
-            "frozenBy", request.frozenBy().orElse(null),
-            "frozenByIp", request.frozenByIp().orElse(null));
+            "frozenBy", request.frozenBy(),
+            "frozenByIp", request.frozenByIp());
 
         mapper.writeValue(markerFile, json);
       }

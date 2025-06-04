@@ -26,7 +26,7 @@ public interface NodeIdStore
   /**
    * Remove the currently persisted node id, this will not change the {@link NodeAccess}.
    */
-  void clear();
+  void clear() throws InterruptedException;
 
   /**
    * Retrieve the current node id if it exists.
@@ -47,5 +47,5 @@ public interface NodeIdStore
    * 
    * @param nodeId
    */
-  void set(final String nodeId);
+  void set(final String nodeId) throws InterruptedException;
 }

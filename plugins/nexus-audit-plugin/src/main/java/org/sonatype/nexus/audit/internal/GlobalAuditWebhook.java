@@ -25,7 +25,7 @@ import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditDataRecordedEvent;
 import org.sonatype.nexus.audit.internal.GlobalAuditWebhook.AuditWebhookPayload.Audit;
 import org.sonatype.nexus.webhooks.GlobalWebhook;
-import org.sonatype.nexus.webhooks.Subscription;
+import org.sonatype.nexus.webhooks.WebhookSubscription;
 import org.sonatype.nexus.webhooks.WebhookPayload;
 
 import com.google.common.eventbus.AllowConcurrentEvents;
@@ -93,14 +93,14 @@ public class GlobalAuditWebhook
     
     // Submit each webhook operation to the Virtual Thread executor
     subscriptions.forEach(subscription -> {
-      final Subscription s = subscription; // Capture for thread safety
+      final WebhookSubscription s = subscription; // Capture for thread safety
       final WebhookPayload p = payload;   // Capture for thread safety
       
       executor.submit(() -> {
         try {
           queue(s, p);
         } catch (Exception e) {
-          log.error("Error processing audit webhook for subscription {}", s.getId(), e);
+          log.error("Error processing audit webhook for subscription {}", s.getConfiguration(), e);
         }
       });
     });

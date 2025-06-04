@@ -55,19 +55,8 @@ public class SearchParameterContributor
   }
 
   private static Collection<QueryParameter> transformMappings(final Iterable<SearchMapping> searchMappings) {
-    return StreamSupport.stream(searchMappings.spliterator(), false)
-        .map(mapping -> switch (mapping) {
-          // Using pattern matching with type patterns for improved handling
-          case SearchMapping m -> {
-            // Using more concise syntax with method chaining
-            yield new QueryParameter()
-                .name(m.getAlias())
-                .type("string")
-                .description(m.getDescription());
-          }
-          // Default case to handle any future subclasses of SearchMapping
-          default -> throw new IllegalArgumentException(STR."Unsupported mapping type: \{mapping.getClass().getName()}");
-        })
-        .collect(toList());
+	  return StreamSupport.stream(searchMappings.spliterator(), false)
+		        .map(m -> new QueryParameter().name(m.getAlias()).type("string").description(m.getDescription()))
+		        .collect(toList());
   }
 }

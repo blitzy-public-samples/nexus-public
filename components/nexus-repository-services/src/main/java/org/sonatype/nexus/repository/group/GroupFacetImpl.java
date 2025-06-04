@@ -27,8 +27,8 @@ import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
-import javax.validation.ConstraintViolation;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.common.stateguard.Guarded;
@@ -380,3 +380,5 @@ public class GroupFacetImpl
   public void maintainCacheInfo(final AttributesMap attributesMap) {
     attributesMap.set(CacheInfo.class, cacheController.current());
   }
+
+}

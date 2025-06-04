@@ -169,7 +169,7 @@ public class UploadComponentMultipartHelper
       finally {
         if (!successful) {
           for (TempBlobFormField tempBlob : multipartForm.getFiles().values()) {
-            tempBlob.getTempBlob().close();
+            tempBlob.tempBlob().close();
           }
         }
       }

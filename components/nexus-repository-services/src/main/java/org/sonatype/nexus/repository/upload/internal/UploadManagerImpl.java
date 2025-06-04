@@ -22,6 +22,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -122,8 +124,8 @@ public class UploadManagerImpl
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         // Submit all validation tasks and wait for completion
         List<Future<?>> validationTasks = componentUploadExtensions.stream()
-            .map(extension -> executor.submit(() -> extension.validate(upload)))
-            .toList();
+            .map(extension -> (Future<?>) executor.submit(() -> extension.validate(upload)))
+            .collect(Collectors.toList());
         
         // Wait for all validations to complete
         for (Future<?> task : validationTasks) {
@@ -146,8 +148,8 @@ public class UploadManagerImpl
       // Use structured concurrency for applying extensions
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         List<Future<?>> extensionTasks = componentUploadExtensions.stream()
-            .map(extension -> executor.submit(() -> extension.apply(repository, upload, componentIds)))
-            .toList();
+            .map(extension -> (Future<?>)executor.submit(() -> extension.apply(repository, upload, componentIds)))
+            .collect(Collectors.toList());
             
         // Wait for all extensions to complete
         for (Future<?> task : extensionTasks) {
@@ -199,14 +201,16 @@ public class UploadManagerImpl
   {
     UploadHandler uploadHandler = getUploadHandler(importFileConfiguration.getRepository());
 
-    return switch (importFileConfiguration.isHardLinkingEnabled()) {
-      case true -> uploadHandler.handle(importFileConfiguration);
-      case false -> uploadHandler.handle(
-          importFileConfiguration.getRepository(),
-          importFileConfiguration.getFile(),
-          importFileConfiguration.getAssetName()
-      );
-    };
+    if (importFileConfiguration.isHardLinkingEnabled()) {
+        return uploadHandler.handle(importFileConfiguration);
+      }
+      else {
+        return uploadHandler.handle(
+            importFileConfiguration.getRepository(),
+            importFileConfiguration.getFile(),
+            importFileConfiguration.getAssetName()
+        );
+      }
   }
 
   @Override
@@ -221,16 +225,14 @@ public class UploadManagerImpl
   {
     try {
       // Use Virtual Thread for multipart file upload handling to improve throughput for large artifacts
-      return Thread.ofVirtual()
-          .name(STR."upload-\{repository.getName()}-\{System.currentTimeMillis()}")
-          .call(() -> {
+    	return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
             try {
               BlobStoreMultipartForm multipartForm = multipartHelper.parse(repository, request);
               return ComponentUploadUtils.createComponentUpload(repository.getFormat().getValue(), multipartForm);
             } catch (FileUploadException e) {
               throw new IOException(STR."File upload failed: \{e.getMessage()}", e);
             }
-          });
+          }).get();
     }
     catch (Exception e) {
       // Pattern matching for exception handling

@@ -22,7 +22,7 @@ import org.sonatype.nexus.security.config.SecurityContributorSupport;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege.MemoryCPrivilegeBuilder;
 
-import static org.apache.commons.lang.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor.P_ACTIONS;
 import static org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor.P_FORMAT;
 import static org.sonatype.nexus.repository.security.RepositoryViewPrivilegeDescriptor.P_REPOSITORY;

@@ -179,7 +179,7 @@ public class ComponentUploadUtils
     // Optimize temporary blob handling with improved I/O capabilities
     TempBlobPartPayload payload = switch (assetPayload) {
       case TempBlobFormField field when field != null -> 
-        new TempBlobPartPayload(field.getFieldName(), false, field.getFileName(), null, field.getTempBlob());
+        new TempBlobPartPayload(field.fieldName(), false, field.fileName(), null, field.tempBlob());
       default -> throw new IllegalArgumentException("Asset payload cannot be null");
     };
     

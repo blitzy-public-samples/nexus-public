@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -82,7 +83,7 @@ public class RoutingRulesApiResource
       routingRule.matchers(routingRuleXO.getMatchers());
 
       routingRuleStore.create(routingRule);
-    }).join();
+    });
   }
 
   @Override
@@ -91,12 +92,21 @@ public class RoutingRulesApiResource
     routingRuleHelper.ensureUserHasPermissionToRead();
     
     // Use Virtual Thread for database operation
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
-      routingRuleStore.list()
-              .stream()
-              .map(RoutingRuleXO::fromRoutingRule)
-              .collect(Collectors.toList())
-    ).join();
+    try {
+		return Executors.newVirtualThreadPerTaskExecutor().submit(() ->
+		  routingRuleStore.list()
+		          .stream()
+		          .map(RoutingRuleXO::fromRoutingRule)
+		          .collect(Collectors.toList())
+		).get();
+	} catch (InterruptedException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	} catch (ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    return List.of();
   }
 
   @Override
@@ -127,7 +137,7 @@ public class RoutingRulesApiResource
           .matchers(routingRuleXO.getMatchers());
 
       routingRuleStore.update(routingRule);
-    }).join();
+    });
   }
 
   @Override
@@ -140,37 +150,53 @@ public class RoutingRulesApiResource
     EntityId routingRuleId = routingRule.id();
     
     // Use Virtual Thread for potentially expensive operation
-    Map<EntityId, List<Repository>> assignedRepositories = Executors.newVirtualThreadPerTaskExecutor()
-        .submit(routingRuleHelper::calculateAssignedRepositories).join();
+    Map<EntityId, List<Repository>> assignedRepositories;
+	try {
+		assignedRepositories = Executors.newVirtualThreadPerTaskExecutor()
+		    .submit(routingRuleHelper::calculateAssignedRepositories).get();
+		
+		// Use Pattern Matching for error handling logic
+	    var repositories = assignedRepositories.computeIfAbsent(routingRuleId, id -> emptyList());
+	    if (!repositories.isEmpty()) {
+	      throw new WebApplicationMessageException(
+	          Status.BAD_REQUEST,
+	          "\"Routing rule is still in use by " + repositories.size() + " repositories.\"",
+	          APPLICATION_JSON);
+	    }
 
-    // Use Pattern Matching for error handling logic
-    if (var repositories = assignedRepositories.computeIfAbsent(routingRuleId, id -> emptyList());
-        !repositories.isEmpty()) {
-      throw new WebApplicationMessageException(
-          Status.BAD_REQUEST,
-          "\"Routing rule is still in use by " + repositories.size() + " repositories.\"",
-          APPLICATION_JSON);
-    }
-
-    // Use Virtual Thread for database operation
-    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      routingRuleStore.delete(routingRule);
-    }).join();
+	    // Use Virtual Thread for database operation
+	    Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+	      routingRuleStore.delete(routingRule);
+	    });
+	} catch (InterruptedException e) {
+		e.printStackTrace();
+	} catch (ExecutionException e) {
+		e.printStackTrace();
+	}
   }
 
   private RoutingRule getRuleFromStore(final String name) {
     // Use Virtual Thread for database operation
-    RoutingRule routingRule = Executors.newVirtualThreadPerTaskExecutor()
-        .submit(() -> routingRuleStore.getByName(name)).join();
-    
-    // Use Pattern Matching for error handling logic
-    if (routingRule == null) {
-      throw new WebApplicationMessageException(
-          Status.NOT_FOUND,
-         "\"Did not find a routing rule with the name '" + name + "'\"",
-          APPLICATION_JSON
-      );
-    }
+    RoutingRule routingRule = null;
+	try {
+		routingRule = Executors.newVirtualThreadPerTaskExecutor()
+		    .submit(() -> routingRuleStore.getByName(name)).get();
+		
+		// Use Pattern Matching for error handling logic
+	    if (routingRule == null) {
+	      throw new WebApplicationMessageException(
+	          Status.NOT_FOUND,
+	         "\"Did not find a routing rule with the name '" + name + "'\"",
+	          APPLICATION_JSON
+	      );
+	    }
+	} catch (InterruptedException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	} catch (ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
     return routingRule;
   }
 }

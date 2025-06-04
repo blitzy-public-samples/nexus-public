@@ -75,7 +75,7 @@ public class NestedAttributesMapJsonParser
       
       // Using record pattern matching to check the value type
       switch (pathPart) {
-        case PathPart(String p, null) -> existingChild = existingChild.child(p);
+        case PathPart(String p, Object value) when value == null -> existingChild = existingChild.child(p);
         case PathPart(String p, Map<?, ?> m) -> existingChild = existingChild.child(p);
         default -> { /* Skip this path part as it's not a Map or null */ }
       }

@@ -68,12 +68,7 @@ public class SimpleApiHostedRepository
    * This demonstrates the use of Record Patterns to directly access record components.
    */
   public Collection<String> getCleanupPolicyNames() {
-    if (cleanup instanceof record(Collection<String> policyNames)) {
-      // Using Record Pattern to directly extract policyNames component
-      return policyNames;
-    }
-    // Fallback for non-record implementation
-    return cleanup != null ? cleanup.getPolicyNames() : null;
+    return cleanup != null ? cleanup.policyNames() : null;
   }
 
   /**
@@ -89,7 +84,7 @@ public class SimpleApiHostedRepository
    * This demonstrates the use of Record Patterns to directly access record components.
    */
   public String getWritePolicy() {
-    if (storage instanceof record(String blobStoreName, Boolean strictContentTypeValidation, String writePolicy)) {
+    if (storage instanceof HostedStorageAttributes(String blobStoreName, Boolean strictContentTypeValidation, String writePolicy)) {
       // Using Record Pattern to directly extract writePolicy component
       return writePolicy;
     }
@@ -110,11 +105,11 @@ public class SimpleApiHostedRepository
    * This demonstrates the use of Record Patterns to directly access record components.
    */
   public Boolean getProprietaryComponents() {
-    if (component instanceof record(Boolean proprietaryComponents)) {
+    if (component instanceof ComponentAttributes(Boolean proprietaryComponents)) {
       // Using Record Pattern to directly extract proprietaryComponents component
       return proprietaryComponents;
     }
     // Fallback for non-record implementation
-    return component != null ? component.getProprietaryComponents() : null;
+    return component != null ? component.proprietaryComponents() : null;
   }
 }

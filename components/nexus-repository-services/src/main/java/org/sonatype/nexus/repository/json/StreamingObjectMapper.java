@@ -94,6 +94,7 @@ public class StreamingObjectMapper
       throws IOException
   {
     // Use Virtual Thread for I/O operations to improve performance
+	  try {
     Thread.ofVirtual().start(() -> {
       try {
         objectMapper.readAndWrite(input, output);
@@ -102,6 +103,9 @@ public class StreamingObjectMapper
         throw new RuntimeException(STR."Error during read and write operation: \{e.getMessage()}", e);
       }
     }).join();
+	  } catch(InterruptedException ie) {
+		  throw new RuntimeException("InterruptedException in " + StreamingObjectMapper.class.getName(), ie);
+	  }
     
     return this;
   }

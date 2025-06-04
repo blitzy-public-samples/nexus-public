@@ -17,13 +17,13 @@ import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.Resource;
@@ -34,10 +34,10 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.StringTemplate.STR;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
-import static javax.ws.rs.core.Response.Status.NO_CONTENT;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.Response.Status.NO_CONTENT;
 
 /**
  * REST API for repository operations that leverage Virtual Threads for improved performance.
@@ -82,13 +82,7 @@ public class RepositoriesApiResource
   @RequiresAuthentication
   public void rebuildIndex(@PathParam("repositoryName") final String repositoryName) {
     try {
-      // Execute the rebuild index operation using virtual threads
-      executorService.submit(() -> authorizingRepositoryManager.rebuildSearchIndex(repositoryName)).get();
-    }
-    catch (IncompatibleRepositoryException e) {
-      log.debug(STR."Not a hosted or proxy repository '\{repositoryName}'", e);
-      throw new WebApplicationMessageException(BAD_REQUEST, 
-          STR."\"\{e.getMessage()}\"", APPLICATION_JSON);
+    	authorizingRepositoryManager.rebuildSearchIndex(repositoryName);
     }
     catch (RepositoryNotFoundException e) {
       log.debug(STR."Repository not found '\{repositoryName}'", e);
@@ -107,8 +101,7 @@ public class RepositoriesApiResource
   @RequiresAuthentication
   public void invalidateCache(@PathParam("repositoryName") final String repositoryName) {
     try {
-      // Execute the invalidate cache operation using virtual threads
-      executorService.submit(() -> authorizingRepositoryManager.invalidateCache(repositoryName)).get();
+    	authorizingRepositoryManager.invalidateCache(repositoryName);
     }
     catch (IncompatibleRepositoryException e) {
       log.debug(STR."Not a proxy nor group repository '\{repositoryName}'", e);

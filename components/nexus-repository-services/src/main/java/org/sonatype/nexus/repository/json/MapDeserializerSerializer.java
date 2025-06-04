@@ -35,11 +35,7 @@ public class MapDeserializerSerializer
   public MapDeserializerSerializer(final MapDeserializer rootDeserializer,
                                    final UntypedObjectDeserializerSerializer deserializerSerializer)
   {
-    super(checkNotNull(rootDeserializer).getValueType(), 
-          checkNotNull(rootDeserializer).getValueInstantiator(), 
-          null,
-          checkNotNull(deserializerSerializer instanceof UntypedObjectDeserializerSerializer ? deserializerSerializer : null), 
-          null,
-          null);
+	  super(checkNotNull(rootDeserializer).getValueType(), checkNotNull(rootDeserializer).getValueInstantiator(), null,
+		        checkNotNull(deserializerSerializer), null);
   }
 }

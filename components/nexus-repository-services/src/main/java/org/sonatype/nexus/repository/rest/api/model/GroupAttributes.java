@@ -25,15 +25,18 @@ import io.swagger.annotations.ApiModelProperty;
  *
  * @since 3.20
  */
-public record GroupAttributes(
+public class GroupAttributes
+{
   @ApiModelProperty(value = "Member repositories' names", dataType = "[Ljava.lang.String;")
   @NotEmpty
-  @JsonProperty("memberNames")
-  Collection<String> memberNames) 
-{
+  protected final Collection<String> memberNames;
+
   @JsonCreator
-  public GroupAttributes {
-    // Canonical constructor is automatically generated
-    // No need for explicit field assignment as it's handled by the record
+  public GroupAttributes(@JsonProperty("memberNames") final Collection<String> memberNames) {
+    this.memberNames = memberNames;
+  }
+
+  public Collection<String> getMemberNames() {
+    return memberNames;
   }
 }

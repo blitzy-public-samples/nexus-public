@@ -323,11 +323,8 @@ public class ElasticSearchIndexServiceImpl
   {
     checkNotNull(repository);
     checkNotNull(components);
-    String indexName = repositoryIndexNames.get(repository.getName());
-    if (indexName == null) {
-      return emptyList();
-    }
-
+    final String indexName = repositoryIndexNames.getOrDefault(repository.getName(), "");
+   
     final Entry<BulkProcessor, ExecutorService> bulkProcessorToExecutorPair = pickABulkProcessor();
     final BulkProcessor bulkProcessor = bulkProcessorToExecutorPair.getKey();
     final ExecutorService executorService = bulkProcessorToExecutorPair.getValue();
@@ -335,16 +332,16 @@ public class ElasticSearchIndexServiceImpl
 
     for (T component : components) {
       checkCancellation();
-      String identifier = identifierProducer.apply(component);
+      final String identifier = identifierProducer.apply(component);
       String json = jsonDocumentProducer.apply(component);
       if (json != null) {
         json = filterConanAssetAttributes(json);
         updateCount.getAndIncrement();
-
+        final String effectJson = json;
         log.debug(STR."Bulk adding to index document \{identifier} from \{repository}: \{json}");
         futures.add(executorService.submit(
             () -> {
-              bulkProcessor.add(createIndexRequest(indexName, identifier, json));
+              bulkProcessor.add(createIndexRequest(indexName, identifier, effectJson));
               return null;
             }));
       }

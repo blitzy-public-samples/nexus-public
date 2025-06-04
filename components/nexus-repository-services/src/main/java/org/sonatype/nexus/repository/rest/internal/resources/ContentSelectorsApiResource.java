@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 
 import jakarta.inject.Inject;
@@ -96,11 +97,20 @@ public class ContentSelectorsApiResource
   @NotCacheable
   public List<ContentSelectorApiResponse> getContentSelectors() {
     // Use virtual threads for database operations
-    return virtualThreadExecutor.submit(() -> 
-        store.browse().stream()
-            .map(ContentSelectorsApiResource::fromSelectorConfiguration)
-            .collect(toList())
-    ).join();
+    try {
+		return virtualThreadExecutor.submit(() -> 
+		    store.browse().stream()
+		        .map(ContentSelectorsApiResource::fromSelectorConfiguration)
+		        .collect(toList())
+		).get();
+	} catch (InterruptedException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	} catch (ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    return List.of();
   }
 
   @POST
@@ -126,7 +136,7 @@ public class ContentSelectorsApiResource
       );
       
       return null;
-    }).join();
+    });
   }
 
   @GET
@@ -135,10 +145,17 @@ public class ContentSelectorsApiResource
   @RequiresPermissions("nexus:selectors:read")
   public ContentSelectorApiResponse getContentSelector(@PathParam("name") final String name) {
     // Use virtual threads for database operations
-    return virtualThreadExecutor.submit(() -> {
-      SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(name);
-      return ContentSelectorsApiResource.fromSelectorConfiguration(configuration);
-    }).join();
+	ContentSelectorApiResponse response = null;   
+    try {
+    	response = virtualThreadExecutor.submit(() -> {
+		  SelectorConfiguration configuration = findConfigurationByNameOrThrowNotFound(name);
+		  return ContentSelectorsApiResource.fromSelectorConfiguration(configuration);
+		}).get();
+	} catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    return response;
   }
 
   @PUT
@@ -167,7 +184,7 @@ public class ContentSelectorsApiResource
       );
       
       return null;
-    }).join();
+    });
   }
 
   @DELETE
@@ -188,7 +205,7 @@ public class ContentSelectorsApiResource
       );
       
       return null;
-    }).join();
+    });
   }
 
   private SelectorConfiguration findConfigurationByNameOrThrowNotFound(final String name) {

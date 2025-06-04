@@ -39,39 +39,50 @@ public abstract class SqlSearchValidationSupport
    * For SQL search we prohibit leading wildcards and less than 3 characters with wildcards for performance reasons.
    */
   protected Collection<String> getValidTokens(final Collection<String> tokens) {
-    ValidationErrorsException validation = new ValidationErrorsException();
-    Set<String> validTokens = new LinkedHashSet<>(tokens);
+	  ValidationErrorsException validation = new ValidationErrorsException();
+	    Set<String> validTokens = new LinkedHashSet<>(tokens);
 
-    // Process each validation rule using pattern matching for switch
-    tokens.stream()
-        .filter(Objects::nonNull)
-        .forEach(token -> {
-          switch (validateToken(token)) {
-            case ValidationResult(String errorMsg, boolean isLeadingWildcard, _, _) when isLeadingWildcard -> {
-              validation.withError(errorMsg);
-              log.debug("{} for token: {}", errorMsg, token);
-              validTokens.remove(token);
-            }
-            case ValidationResult(String errorMsg, _, boolean isLeadingSpecialWithWildcard, _) when isLeadingSpecialWithWildcard -> {
-              validation.withError(errorMsg);
-              log.debug("{} for token: {}", errorMsg, token);
-              validTokens.remove(token);
-            }
-            case ValidationResult(String errorMsg, _, _, boolean isNotEnoughSymbols) when isNotEnoughSymbols -> {
-              validation.withError(errorMsg);
-              log.debug("{} for token: {}", errorMsg, token);
-              validTokens.remove(token);
-            }
-            default -> { /* Token is valid, keep it in the set */ }
-          }
-        });
+	    Set<String> invalidTokens = tokens.stream()
+	        .filter(Objects::nonNull)
+	        .filter(SqlSearchValidationSupport::hasLeadingWildcard)
+	        .collect(Collectors.toSet());
+	    if (!invalidTokens.isEmpty()) {
+	      String errorMsg = "Leading wildcards are prohibited";
+	      validation.withError(errorMsg);
+	      log.debug("{} for tokens: {}", errorMsg, invalidTokens);
+	      validTokens.removeAll(invalidTokens);
+	    }
 
-    if (validTokens.isEmpty()) {
-      log.debug("No valid search tokens");
-      throw validation;
-    }
+	    invalidTokens = tokens.stream()
+	        .filter(Objects::nonNull)
+	        .filter(SqlSearchValidationSupport::hasLeadingSpecialCharacterAndWildcard)
+	        .collect(Collectors.toSet());
+	    if (!invalidTokens.isEmpty()) {
+	      String errorMsg = "Searches cannot begin with a special character followed by a wildcard";
+	      validation.withError(errorMsg);
+	      log.debug("{} for tokens: {}", errorMsg, invalidTokens);
+	      validTokens.removeAll(invalidTokens);
+	    }
 
-    return validTokens;
+	    invalidTokens = tokens.stream()
+	            .filter(Objects::nonNull)
+	            .filter(SqlSearchValidationSupport::notEnoughSymbols)
+	            .collect(Collectors.toSet());
+	    if (!invalidTokens.isEmpty()) {
+	      String errorMsg = String.format("%d characters or more are required with a trailing wildcard (*)",
+	          MIN_ALLOWED_SYMBOLS_TO_SEARCH);
+	      validation.withError(errorMsg);
+	      log.debug("{} for tokens: {}", errorMsg, invalidTokens);
+	      validTokens.removeAll(invalidTokens);
+	    }
+
+	    if (validTokens.isEmpty()) {
+	      log.debug("No valid search tokens");
+
+	      throw validation;
+	    }
+
+	    return validTokens;
   }
   
   /**
@@ -84,7 +95,7 @@ public abstract class SqlSearchValidationSupport
   
   /**
    * Validates a token against all validation rules and returns a ValidationResult.
-   */
+  
   private ValidationResult validateToken(final String token) {
     String trimmedToken = token.trim();
     
@@ -107,7 +118,7 @@ public abstract class SqlSearchValidationSupport
     };
     
     return new ValidationResult(errorMsg, isLeadingWildcard, isLeadingSpecialWithWildcard, isNotEnoughSymbols);
-  }
+  } */
 
   private static boolean hasLeadingWildcard(final String token) {
     if (token.length() > 0) {
@@ -169,7 +180,9 @@ public abstract class SqlSearchValidationSupport
     TrailingAsteriskResult wildcard = checkTrailingAsterisk(token);
     
     return switch (wildcard) {
-      case TrailingAsteriskResult(true, var length) when length < MIN_ALLOWED_SYMBOLS_TO_SEARCH -> true;
+      case TrailingAsteriskResult(var hasTrailingWildcard, var length)  -> { 
+    	  yield length < MIN_ALLOWED_SYMBOLS_TO_SEARCH; 
+      }
       default -> false;
     };
   }

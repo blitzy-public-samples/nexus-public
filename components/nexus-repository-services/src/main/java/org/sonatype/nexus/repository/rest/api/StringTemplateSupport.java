@@ -18,7 +18,7 @@ import java.util.StringJoiner;
 import java.util.function.Function;
 
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

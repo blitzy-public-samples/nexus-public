@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 
 import org.sonatype.nexus.common.hash.HashAlgorithm;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import com.google.common.hash.HashCode;
 
 /**

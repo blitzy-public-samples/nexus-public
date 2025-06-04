@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.StreamSupport;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -79,7 +80,7 @@ public class RepositoriesSecretsMigrator
    */
   @Override
   public void migrate() {
-    List<Repository> repositories = repositoryManager.browse().stream().toList();
+    List<Repository> repositories =  StreamSupport.stream(repositoryManager.browse().spliterator(), false).toList();
     log.info("Starting migration of {} repositories", repositories.size());
     
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -120,53 +121,25 @@ public class RepositoriesSecretsMigrator
    * Ensures decryption operations are compatible with Java 21's enhanced security model.
    */
   private void migrateProxy(final Repository repository) {
-    Configuration configuration = repository.getConfiguration().copy();
-    boolean needUpdate = false;
+	  Configuration configuration = repository.getConfiguration().copy();
+	    boolean needUpdate = false;
 
-    // Using Pattern Matching for switch to handle the configuration structure
-    Map<String, Object> authConfig = switch (configuration.getAttributes()) {
-      case null -> Collections.emptyMap();
-      case var attributes -> {
-        Object httpClient = attributes.get(HTTP_CLIENT_KEY);
-        yield switch (httpClient) {
-          case null -> Collections.emptyMap();
-          case Map<?, ?> http -> {
-            Object auth = http.get(AUTHENTICATION_KEY);
-            yield switch (auth) {
-              case null -> Collections.emptyMap();
-              case Map<?, ?> authMap -> (Map<String, Object>) authMap;
-              default -> Collections.emptyMap();
-            };
-          }
-          default -> Collections.emptyMap();
-        };
-      }
-    };
+	    Map<String, Object> authConfig = Optional.ofNullable(configuration.getAttributes())
+	        .map(global -> global.get(HTTP_CLIENT_KEY))
+	        .map(http -> (Map<String, Object>) http.get(AUTHENTICATION_KEY))
+	        .orElse(Collections.emptyMap());
 
-    // Process password if present
-    Object passwordObj = authConfig.get(PASSWORD_KEY);
-    if (passwordObj instanceof String password) {
-      try {
-        Secret passwordKey = secretsService.from(password);
-        if (passwordKey != null && isLegacyEncryptedString(passwordKey)) {
-          log.debug("Migrating legacy encrypted password for repository: {}", repository.getName());
-          needUpdate = true;
-          // Ensure decryption is compatible with Java 21's enhanced security model
-          byte[] decryptedBytes = passwordKey.decrypt();
-          authConfig.put(PASSWORD_KEY, new String(decryptedBytes));
-        }
-      } 
-      catch (Exception e) {
-        log.error("Failed to process password for repository {}: {}", 
-            repository.getName(), e.getMessage(), e);
-        throw new SecretMigrationException(
-            "Failed to process password for repository: " + repository.getName(), e);
-      }
-    }
+	    Secret passwordKey = Optional.ofNullable((String) authConfig.get(PASSWORD_KEY))
+	        .map(secretsService::from)
+	        .orElse(null);
+	    if (passwordKey != null && isLegacyEncryptedString(passwordKey)) {
+	      needUpdate = true;
+	      authConfig.put(PASSWORD_KEY, new String(passwordKey.decrypt()));
+	    }
 
-    if (needUpdate) {
-      save(configuration);
-    }
+	    if (needUpdate) {
+	      save(configuration);
+	    }
   }
 
   /**

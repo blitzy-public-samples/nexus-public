@@ -49,7 +49,7 @@ public record StorageAttributesRecord(
    */
   public static StorageAttributesRecord from(StorageAttributes attributes) {
     return new StorageAttributesRecord(
-        attributes.getBlobStoreName(),
-        attributes.getStrictContentTypeValidation());
+        attributes.blobStoreName(),
+        attributes.strictContentTypeValidation());
   }
 }

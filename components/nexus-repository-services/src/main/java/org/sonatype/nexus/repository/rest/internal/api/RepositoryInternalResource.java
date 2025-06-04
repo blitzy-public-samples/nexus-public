@@ -17,19 +17,20 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Collection;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.container.AsyncResponse;
-import javax.ws.rs.container.Suspended;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.Suspended;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Format;
@@ -52,7 +53,7 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Streams.stream;
 import static java.util.stream.Collectors.toList;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.sonatype.nexus.security.BreadActions.READ;
 
@@ -94,7 +95,7 @@ public class RepositoryInternalResource
   private final ApiRepositoryAdapter defaultAdapter;
   
   // Virtual Thread executor for handling I/O-bound operations
-  private final var virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+  private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public RepositoryInternalResource(
@@ -136,7 +137,7 @@ public class RepositoryInternalResource
                         || formatParam.equals(ALL_FORMATS)
                         || formatParam.equals(repository.getFormat().getValue()))
             .map(repository -> new RepositoryXO(repository.getName(), repository.getName()))
-            .sorted(Comparator.comparing(RepositoryXO::getName))
+            .sorted(Comparator.comparing(RepositoryXO::name))
             .collect(toList());
 
         List<RepositoryXO> result = new ArrayList<>();
@@ -149,7 +150,7 @@ public class RepositoryInternalResource
                   RepositorySelector.allOfFormat(format.getValue()).toSelector(),
                   STR."(All \{format.getValue()} Repositories)"
               ))
-              .sorted(Comparator.comparing(RepositoryXO::getName))
+              .sorted(Comparator.comparing(RepositoryXO::name))
               .forEach(result::add);
         }
         result.addAll(repositories);

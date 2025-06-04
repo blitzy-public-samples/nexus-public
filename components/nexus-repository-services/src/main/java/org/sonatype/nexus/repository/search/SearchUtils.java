@@ -21,7 +21,7 @@ import java.util.Optional;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.ws.rs.core.UriInfo;
+import jakarta.ws.rs.core.UriInfo;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.Repository;
@@ -131,6 +131,10 @@ public class SearchUtils
             .map(value -> {
                 // Use pattern matching to handle different value types
                 return switch (value) {
+	                case null -> {
+	                    log.warn(STR."Null value for parameter: \{entry.getKey()}, using empty string");
+	                    yield createSearchFilter(entry.getKey(), "");
+	                }
                     case String s when s.isEmpty() -> {
                         log.trace(STR."Empty value for parameter: \{entry.getKey()}");
                         yield createSearchFilter(entry.getKey(), s);
@@ -143,14 +147,7 @@ public class SearchUtils
                         log.trace(STR."Standard search value for parameter: \{entry.getKey()}");
                         yield createSearchFilter(entry.getKey(), s);
                     }
-                    case null -> {
-                        log.warn(STR."Null value for parameter: \{entry.getKey()}, using empty string");
-                        yield createSearchFilter(entry.getKey(), "");
-                    }
-                    default -> {
-                        log.warn(STR."Unexpected value type for parameter: \{entry.getKey()}, using toString()");
-                        yield createSearchFilter(entry.getKey(), value.toString());
-                    }
+                    
                 };
             }))
         .collect(toList());

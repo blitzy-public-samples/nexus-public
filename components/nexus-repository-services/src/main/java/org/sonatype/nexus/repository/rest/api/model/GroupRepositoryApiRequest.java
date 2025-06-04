@@ -25,49 +25,32 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * @since 3.20
  */
-@JsonIgnoreProperties({"type"})
-public class GroupRepositoryApiRequest
-    extends AbstractRepositoryApiRequest
-{
-  @Schema(description = "Storage attributes for the repository")
-  @NotNull
-  @Valid
-  protected final StorageAttributesRecord storage;
+@JsonIgnoreProperties({ "type" })
+public class GroupRepositoryApiRequest extends AbstractRepositoryApiRequest {
+	@Schema(description = "Storage attributes for the repository")
+	@NotNull
+	@Valid
+	protected final StorageAttributes storage;
 
-  @Schema(description = "Group attributes for the repository")
-  @NotNull
-  @Valid
-  protected final GroupAttributesRecord group;
+	@Schema(description = "Group attributes for the repository")
+	@NotNull
+	@Valid
+	protected final GroupAttributes group;
 
-  @JsonCreator
-  public GroupRepositoryApiRequest(
-      @JsonProperty("name") final String name,
-      @JsonProperty("format") final String format,
-      @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final Object storageObj,
-      @JsonProperty("group") final Object groupObj)
-  {
-    super(name, format, GroupType.NAME, online);
-    
-    // Handle both legacy and record-based attribute objects using pattern matching
-    this.storage = switch (storageObj) {
-      case StorageAttributesRecord record -> record;
-      case StorageAttributes attributes -> StorageAttributesRecord.from(attributes);
-      default -> throw new IllegalArgumentException("Invalid storage attributes type: " + storageObj.getClass().getName());
-    };
-    
-    this.group = switch (groupObj) {
-      case GroupAttributesRecord record -> record;
-      case GroupAttributes attributes -> GroupAttributesRecord.from(attributes);
-      default -> throw new IllegalArgumentException("Invalid group attributes type: " + groupObj.getClass().getName());
-    };
-  }
+	@JsonCreator
+	public GroupRepositoryApiRequest(@JsonProperty("name") final String name,
+			@JsonProperty("format") final String format, @JsonProperty("online") final Boolean online,
+			@JsonProperty("storage") final StorageAttributes storage, @JsonProperty("group") final GroupAttributes group) {
+		super(name, format, GroupType.NAME, online);
+		this.storage = storage;
+		this.group = group;
+	}
 
-  public StorageAttributesRecord getStorage() {
-    return storage;
-  }
+	public StorageAttributes getStorage() {
+		return storage;
+	}
 
-  public GroupAttributesRecord getGroup() {
-    return group;
-  }
+	public GroupAttributes getGroup() {
+		return group;
+	}
 }

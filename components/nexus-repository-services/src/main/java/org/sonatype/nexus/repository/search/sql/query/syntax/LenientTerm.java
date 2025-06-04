@@ -52,12 +52,12 @@ public class LenientTerm
    *
    * @param term the term to extract from
    * @return the string value if it's a StringTerm, otherwise null
-   */
+  
   public static String extractTermValue(Term<?> term) {
     return switch (term) {
       case null -> null;
-      case StringTerm stringTerm -> stringTerm.getValue();
-      default -> null;
+      case StringTerm stringTerm -> stringTerm.get();
     };
   }
+   */
 }

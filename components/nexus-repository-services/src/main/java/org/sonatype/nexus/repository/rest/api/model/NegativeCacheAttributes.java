@@ -23,17 +23,34 @@ import io.swagger.annotations.ApiModelProperty;
  *
  * @since 3.20
  */
-@JsonCreator
-public record NegativeCacheAttributes(
+public record NegativeCacheAttributes(Boolean enabled, Integer timeToLive) {
+
+	@JsonCreator
+	public NegativeCacheAttributes(
+        @NotNull
+        @JsonProperty("enabled")
+        Boolean enabled,
+
+	    @NotNull
+	    @JsonProperty("timeToLive")
+        Integer timeToLive
+    ) {
+        this.enabled = enabled;
+        this.timeToLive = timeToLive;
+    }
+	
+	 // Apply @ApiModelProperty to the accessor methods (getters)
     @ApiModelProperty(value = "Whether to cache responses for content not present in the proxied repository",
         example = "true")
-    @NotNull
-    @JsonProperty("enabled")
-    Boolean enabled,
+    @Override // It's good practice to mark it as @Override if you're explicitly defining it
+    public Boolean enabled() {
+        return this.enabled;
+    }
 
     @ApiModelProperty(value = "How long to cache the fact that a file was not found in the repository (in minutes)",
         example = "1440")
-    @NotNull
-    @JsonProperty("timeToLive")
-    Integer timeToLive
-) {}
+    @Override // It's good practice to mark it as @Override
+    public Integer timeToLive() {
+        return this.timeToLive;
+    }
+}

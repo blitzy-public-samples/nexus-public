@@ -74,38 +74,46 @@ public class SearchResultFilterUtils
   @VisibleForTesting
   @SuppressWarnings("unchecked")
   static Optional<Object> getValueFromAssetMap(final AssetSearchResult asset, final String identifier) {
-    if (isNullOrEmpty(identifier)) {
-      return Optional.empty();
-    }
+	  if (isNullOrEmpty(identifier)) {
+	      return Optional.empty();
+	    }
 
-    List<String> keys = newArrayList(identifier.split("\\.")); 
+	    List<String> keys = newArrayList(identifier.split("\\."));
 
-    if ("assets".equals(keys.get(0))) {
-      keys.remove(0);
-    }
+	    if ("assets".equals(keys.get(0))) {
+	      keys.remove(0);
+	    }
 
-    if (keys.isEmpty()) {
-      return Optional.empty();
-    }
+	    switch (keys.get(0)) {
+	      case "contentType":
+	        return Optional.of(asset.getContentType());
+	      case "format":
+	        return Optional.of(asset.getFormat());
+	      case "id":
+	        return Optional.of(asset.getId());
+	      case "path":
+	        return Optional.of(asset.getPath());
+	    }
 
-    return switch (keys.get(0)) {
-      case "contentType" -> Optional.of(asset.getContentType());
-      case "format" -> Optional.of(asset.getFormat());
-      case "id" -> Optional.of(asset.getId());
-      case "path" -> Optional.of(asset.getPath());
-      case "attributes" when !keys.isEmpty() -> {
-        keys.remove(0);
-        Object value = asset.getAttributes();
-        
-        if (!keys.isEmpty() && "checksum".equals(keys.get(0))) {
-          keys.remove(0);
-          value = asset.getChecksum();
-        }
-        
-        yield extractNestedValue(value, keys);
-      }
-      default -> Optional.empty();
-    };
+	    Object value = Collections.emptyMap();
+	    if (!keys.isEmpty() && "attributes".equals(keys.get(0))) {
+	      keys.remove(0);
+	      value = asset.getAttributes();
+
+	      if (!keys.isEmpty() && "checksum".equals(keys.get(0))) {
+	        keys.remove(0);
+	        value = asset.getChecksum();
+	      }
+	    }
+
+	    for (String key : keys) {
+	      if (value == null) {
+	        return Optional.empty();
+	      }
+	      value = ((Map<String, Object>) value).get(key);
+	    }
+
+	    return Optional.ofNullable(value);
   }
 
   /**

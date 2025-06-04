@@ -40,7 +40,9 @@ public class SimpleApiGroupDeployRepository
       @JsonProperty("storage") final StorageAttributesRecord storage,
       @JsonProperty("group") final GroupDeployAttributesRecord group)
   {
-    super(name, format, url, online, storage, group);
+    super(name, format, url, online,
+    		new StorageAttributes(storage.blobStoreName(), storage.strictContentTypeValidation()), 
+    		new GroupDeployAttributes(group.memberNames(), group.writableMember()));
     this.groupDeploy = group;
   }
 
@@ -60,8 +62,8 @@ public class SimpleApiGroupDeployRepository
   }
 
   @Override
-  public GroupDeployAttributesRecord getGroup() {
-    return groupDeploy;
+  public GroupDeployAttributes getGroup() {
+    return (GroupDeployAttributes) super.getGroup();
   }
   
   /**

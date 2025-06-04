@@ -22,7 +22,7 @@ import java.util.Objects;
 import javax.annotation.Nullable;
 
 import com.google.common.io.ByteStreams;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.bouncycastle.bcpg.ArmoredOutputStream;
 import org.bouncycastle.bcpg.BCPGOutputStream;
 import org.bouncycastle.openpgp.PGPException;
@@ -253,7 +253,7 @@ public class GpgUtils
     
     PGPSignatureGenerator sigGenerator = new PGPSignatureGenerator(
         new JcaPGPContentSignerBuilder(publicKey.getAlgorithm(), SHA256)
-            .setProvider(BC_PROVIDER), publicKey);
+            .setProvider(BC_PROVIDER));
     sigGenerator.init(pgpSignature, privateKey);
     return sigGenerator;
   }

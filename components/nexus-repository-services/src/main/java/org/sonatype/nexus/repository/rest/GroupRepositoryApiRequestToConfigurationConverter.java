@@ -40,8 +40,8 @@ public class GroupRepositoryApiRequestToConfigurationConverter<T extends GroupRe
 
     // Use pattern matching to extract storage attributes
     StorageAttributes storage = request.getStorage();
-    configuration.attributes(STORAGE).set(BLOB_STORE_NAME, storage.getBlobStoreName());
-    configuration.attributes(STORAGE).set(STRICT_CONTENT_TYPE_VALIDATION, storage.getStrictContentTypeValidation());
+    configuration.attributes(STORAGE).set(BLOB_STORE_NAME, storage.blobStoreName());
+    configuration.attributes(STORAGE).set(STRICT_CONTENT_TYPE_VALIDATION, storage.strictContentTypeValidation());
     maybeAddDataStoreName(configuration);
 
     // Configure group attributes

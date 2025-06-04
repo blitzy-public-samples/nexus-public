@@ -21,11 +21,11 @@ import org.sonatype.nexus.repository.rest.api.ComponentXO;
 import org.sonatype.nexus.repository.rest.internal.resources.SearchResource;
 import org.sonatype.nexus.rest.Page;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
 
 import static org.sonatype.nexus.repository.rest.internal.resources.AssetDownloadResponseProcessor.NO_SEARCH_RESULTS_FOUND;
 import static org.sonatype.nexus.repository.rest.internal.resources.AssetDownloadResponseProcessor.SEARCH_RETURNED_MULTIPLE_ASSETS;
@@ -36,14 +36,9 @@ import static org.sonatype.nexus.repository.search.index.SearchConstants.VERSION
 /**
  * Swagger documentation for {@link SearchResource}
  *
- * This interface is compatible with Java 21 Virtual Threads, allowing for improved
- * scalability and performance when handling concurrent search requests. Virtual Threads
- * provide lightweight concurrency without the overhead of traditional platform threads,
- * making search operations more efficient in high-throughput scenarios.
- *
  * @since 3.4
  */
-@Tag(name = "Search")
+@Api(value = "Search")
 public interface SearchResourceDoc
 {
   String CONTINUATION_TOKEN_DESCRIPTION = "A token returned by a prior request. If present, the next page of results are returned";
@@ -55,43 +50,43 @@ public interface SearchResourceDoc
   String ALLOWABLE_SORT_VALUES = GROUP + ", " + NAME + ", " + VERSION + ", repository";
   String ALLOWABLE_SORT_DIRECTIONS = "asc, desc";
 
-  @Operation(summary = "Search components")
+  @ApiOperation("Search components")
   Page<ComponentXO> search(
-      @Parameter(description = CONTINUATION_TOKEN_DESCRIPTION)
+      @ApiParam(value = CONTINUATION_TOKEN_DESCRIPTION, allowEmptyValue = true)
       final String continuationToken,
-      @Parameter(description = SORT_DESCRIPTION, allowableValues = ALLOWABLE_SORT_VALUES)
+      @ApiParam(value = SORT_DESCRIPTION, allowEmptyValue = true, allowableValues = ALLOWABLE_SORT_VALUES)
       final String sort,
-      @Parameter(description = DIRECTION_DESCRIPTION, allowableValues = ALLOWABLE_SORT_DIRECTIONS)
+      @ApiParam(value = DIRECTION_DESCRIPTION, allowEmptyValue = true, allowableValues = ALLOWABLE_SORT_DIRECTIONS)
       final String direction,
-      @Parameter(description = TIMEOUT_DESCRIPTION)
+      @ApiParam(value = TIMEOUT_DESCRIPTION, allowEmptyValue = true)
       final Integer timeout,
       @Context final UriInfo uriInfo);
 
-  @Operation(summary = "Search assets")
+  @ApiOperation("Search assets")
   Page<AssetXO> searchAssets(
-      @Parameter(description = CONTINUATION_TOKEN_DESCRIPTION)
+      @ApiParam(value = CONTINUATION_TOKEN_DESCRIPTION)
       final String continuationToken,
-      @Parameter(description = SORT_DESCRIPTION, allowableValues = ALLOWABLE_SORT_VALUES)
+      @ApiParam(value = SORT_DESCRIPTION, allowEmptyValue = true, allowableValues = ALLOWABLE_SORT_VALUES)
       final String sort,
-      @Parameter(description = DIRECTION_DESCRIPTION, allowableValues = ALLOWABLE_SORT_DIRECTIONS)
+      @ApiParam(value = DIRECTION_DESCRIPTION, allowEmptyValue = true, allowableValues = ALLOWABLE_SORT_DIRECTIONS)
       final String direction,
-      @Parameter(description = TIMEOUT_DESCRIPTION)
+      @ApiParam(value = TIMEOUT_DESCRIPTION, allowEmptyValue = true)
       final Integer timeout,
       @Context final UriInfo uriInfo);
 
-  @Operation(summary = "Search and download asset", 
-    description = "Returns a 302 Found with location header field set to download URL. "
+  @ApiOperation(value = "Search and download asset",
+    notes = "Returns a 302 Found with location header field set to download URL. "
       + "Unless a sort parameter is supplied, the search must return a single asset to receive download URL.")
   @ApiResponses(value = {
-      @ApiResponse(responseCode = "400", description = "ValidationErrorXO{id='*', message='" + SEARCH_RETURNED_MULTIPLE_ASSETS + "'}"),
-      @ApiResponse(responseCode = "404", description = NO_SEARCH_RESULTS_FOUND)
+      @ApiResponse(code = 400, message = "ValidationErrorXO{id='*', message='" + SEARCH_RETURNED_MULTIPLE_ASSETS + "'}"),
+      @ApiResponse(code = 404, message = NO_SEARCH_RESULTS_FOUND)
   })
   Response searchAndDownloadAssets(
-      @Parameter(description = SEARCH_AND_DL_SORT_DESCRIPTION, allowableValues = ALLOWABLE_SORT_VALUES)
+      @ApiParam(value = SEARCH_AND_DL_SORT_DESCRIPTION, allowEmptyValue = true, allowableValues = ALLOWABLE_SORT_VALUES)
       final String sort,
-      @Parameter(description = DIRECTION_DESCRIPTION, allowableValues = ALLOWABLE_SORT_DIRECTIONS)
+      @ApiParam(value = DIRECTION_DESCRIPTION, allowEmptyValue = true, allowableValues = ALLOWABLE_SORT_DIRECTIONS)
       final String direction,
-      @Parameter(description = TIMEOUT_DESCRIPTION)
+      @ApiParam(value = TIMEOUT_DESCRIPTION, allowEmptyValue = true)
       final Integer timeout,
       @Context final UriInfo uriInfo);
 }

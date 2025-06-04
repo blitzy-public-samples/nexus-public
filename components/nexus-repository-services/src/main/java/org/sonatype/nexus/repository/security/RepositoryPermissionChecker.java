@@ -213,7 +213,7 @@ public class RepositoryPermissionChecker
     Permission[] actionPermissions = StreamSupport.stream(repositories.spliterator(), false)
         .map(r -> switch (r) {
             case Repository repo -> new RepositoryAdminPermission(repo, action);
-            default -> throw new IllegalArgumentException(STR."Unexpected repository type: \{r.getClass().getName()}");
+           // default -> throw new IllegalArgumentException(STR."Unexpected repository type: \{r.getClass().getName()}");
         })
         .toArray(Permission[]::new);
     
@@ -342,21 +342,13 @@ public class RepositoryPermissionChecker
 
     List<Repository> permittedRepositories = new ArrayList<>();
     for (Repository repository : repositories) {
-      // Use pattern matching to check selector configurations
-      boolean hasPermission = selectors.stream().anyMatch(selector -> 
-          switch (selector) {
-              case SelectorConfiguration s -> {
-                  Permission permission = new RepositoryContentSelectorPermission(s, repository, singletonList(BROWSE));
-                  yield securityHelper.anyPermitted(subject, permission);
-              }
-              default -> false;
-          }
-      );
-      
-      if (hasPermission) {
-        permittedRepositories.add(repository);
+        Permission[] permissions = selectors.stream()
+            .map(s -> new RepositoryContentSelectorPermission(s, repository, singletonList(BROWSE)))
+            .toArray(Permission[]::new);
+        if (securityHelper.anyPermitted(subject, permissions)) {
+          permittedRepositories.add(repository);
+        }
       }
-    }
 
     return permittedRepositories;
   }
@@ -391,24 +383,14 @@ public class RepositoryPermissionChecker
 
     List<Configuration> permittedRepositories = new ArrayList<>();
     for (Configuration configuration : configurations) {
-      // Use pattern matching to check selector configurations
-      boolean hasPermission = selectors.stream().anyMatch(selector -> 
-          switch (selector) {
-              case SelectorConfiguration s -> {
-                  String format = toFormat(configuration);
-                  String repoName = configuration.getRepositoryName();
-                  Permission permission = new RepositoryContentSelectorPermission(
-                      s.getName(), format, repoName, singletonList(BROWSE));
-                  yield securityHelper.anyPermitted(subject, permission);
-              }
-              default -> false;
-          }
-      );
-      
-      if (hasPermission) {
-        permittedRepositories.add(configuration);
+        Permission[] permissions = selectors.stream()
+            .map(s -> new RepositoryContentSelectorPermission(s.getName(), toFormat(configuration),
+                configuration.getRepositoryName(), singletonList(BROWSE)))
+            .toArray(Permission[]::new);
+        if (securityHelper.anyPermitted(subject, permissions)) {
+          permittedRepositories.add(configuration);
+        }
       }
-    }
 
     return permittedRepositories;
   }
@@ -438,19 +420,10 @@ public class RepositoryPermissionChecker
    * @return true if the user has any content selector access to the repository for the specified actions
    */
   private boolean userHasAnyContentSelectorAccessTo(final Repository repository, final String... actions) {
-    // Getting the subject a single time improves performance
-    Subject subject = securityHelper.subject(); 
-    
-    // Use Java 21 pattern matching for improved readability
-    return selectorManager.browse().stream().anyMatch(selector -> 
-        switch (selector) {
-            case SelectorConfiguration s when s.isActive() -> 
-                securityHelper.anyPermitted(subject,
-                    Arrays.stream(actions)
-                        .map(action -> new RepositoryContentSelectorPermission(s, repository, singletonList(action)))
-                        .toArray(Permission[]::new));
-            default -> false;
-        }
-    );
+	  Subject subject = securityHelper.subject(); //Getting the subject a single time improves performance
+	    return selectorManager.browse().stream().anyMatch(selector -> securityHelper.anyPermitted(subject,
+	        Arrays.stream(actions)
+	            .map(action -> new RepositoryContentSelectorPermission(selector, repository, singletonList(action)))
+	            .toArray(Permission[]::new)));
   }
 }

@@ -14,7 +14,7 @@ package org.sonatype.nexus.repository.search.query;
 
 import java.util.function.Consumer;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.queryparser.classic.QueryParserBase;
 import org.elasticsearch.index.query.QueryBuilder;
 

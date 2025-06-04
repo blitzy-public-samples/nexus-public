@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.rest.internal.resources;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -58,24 +59,20 @@ public class RepositoriesResource
   @Override
   public List<RepositoryXO> getRepositories() {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> repositoryManagerRESTAdapter.getRepositories()).join();
-    }
+      return executor.submit(() -> repositoryManagerRESTAdapter.getRepositories()).get();
+    } catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    return List.of();
   }
 
   @GET
   @Override
   @Path("/{repositoryName}")
   public RepositoryXO getRepository(@PathParam("repositoryName") final String repositoryName) {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> {
-        Repository repository = repositoryManagerRESTAdapter.getReadableRepository(repositoryName);
-        var size = repositoryManagerRESTAdapter.getRepositorySize(repositoryName).orElse(null);
-        
-        return switch (repository) {
-          case Repository repo when repo != null -> RepositoryXO.fromRepository(repo, size);
-          case null -> throw new IllegalArgumentException(STR."Repository \{repositoryName} not found");
-        };
-      }).join();
-    }
+	  return RepositoryXO.fromRepository(
+	            repositoryManagerRESTAdapter.getReadableRepository(repositoryName),
+	            repositoryManagerRESTAdapter.getRepositorySize(repositoryName).orElse(null));
   }
 }

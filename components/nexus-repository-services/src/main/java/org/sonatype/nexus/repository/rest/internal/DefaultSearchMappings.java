@@ -56,12 +56,12 @@ public class DefaultSearchMappings
   // Using Java's built-in List.of() instead of Guava's ImmutableList for improved performance
   private static final List<SearchMapping> MAPPINGS = of(
       createMapping("q", "keyword", "Query by keyword", KEYWORDS, false),
-      createMapping("repository", REPOSITORY_NAME, "Repository name", REPOSITORY_NAME),
+      createMapping("repository", REPOSITORY_NAME, "Repository name", SearchField.REPOSITORY_NAME),
       createMapping("format", "format", "Query by format", FORMAT),
       createMapping("group", GROUP_RAW, "Component group", NAMESPACE),
       createMapping(NAME_RAW_ALIAS, NAME_RAW, "Component name", NAME),
-      createMapping(VERSION, VERSION, "Component version", VERSION),
-      createMapping(PRERELEASE, IS_PRERELEASE_KEY, "Prerelease version flag", PRERELEASE),
+      createMapping(VERSION, VERSION, "Component version", SearchField.VERSION),
+      createMapping(PRERELEASE, IS_PRERELEASE_KEY, "Prerelease version flag", SearchField.PRERELEASE),
       createMapping("md5", MD5_ATTR, "Specific MD5 hash of component's asset", MD5),
       createMapping("sha1", SHA1_ATTR, "Specific SHA-1 hash of component's asset", SHA1),
       createMapping("sha256", SHA256_ATTR, "Specific SHA-256 hash of component's asset", SHA256),

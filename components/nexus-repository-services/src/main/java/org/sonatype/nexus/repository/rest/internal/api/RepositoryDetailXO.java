@@ -12,85 +12,52 @@
  */
 package org.sonatype.nexus.repository.rest.internal.api;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 /**
- * Repository detail transfer object.
- * Converted to a record for improved immutability and data handling.
- *
  * @since 3.30
  */
-public record RepositoryDetailXO(String name,
-                                String type,
-                                String format,
-                                String url,
-                                RepositoryStatusXO status) {
+public class RepositoryDetailXO
+{
+  private final String name;
 
-  /**
-   * Constructor with validation using pattern matching instead of manual null checks.
-   */
-  public RepositoryDetailXO {
-    // Validate non-null fields using pattern matching
-    if (name == null || type == null || format == null || url == null || status == null) {
-      throw new NullPointerException("All fields in RepositoryDetailXO must be non-null");
-    }
+  private final String type;
+
+  private final String format;
+
+  private final String url;
+
+  private final RepositoryStatusXO status;
+
+  public RepositoryDetailXO(final String name,
+                            final String type,
+                            final String format,
+                            final String url,
+                            final RepositoryStatusXO status) {
+    this.name = checkNotNull(name);
+    this.type = checkNotNull(type);
+    this.format = checkNotNull(format);
+    this.url = checkNotNull(url);
+    this.status = checkNotNull(status);
   }
 
-  /**
-   * Returns the repository name.
-   * Maintained for API compatibility.
-   *
-   * @return the repository name
-   */
   public String getName() {
-    return switch(this) {
-      case RepositoryDetailXO(String n, _, _, _, _) -> n;
-    };
+    return name;
   }
 
-  /**
-   * Returns the repository type.
-   * Maintained for API compatibility.
-   *
-   * @return the repository type
-   */
   public String getType() {
-    return switch(this) {
-      case RepositoryDetailXO(_, String t, _, _, _) -> t;
-    };
+    return type;
   }
 
-  /**
-   * Returns the repository format.
-   * Maintained for API compatibility.
-   *
-   * @return the repository format
-   */
   public String getFormat() {
-    return switch(this) {
-      case RepositoryDetailXO(_, _, String f, _, _) -> f;
-    };
+    return format;
   }
 
-  /**
-   * Returns the repository URL.
-   * Maintained for API compatibility.
-   *
-   * @return the repository URL
-   */
   public String getUrl() {
-    return switch(this) {
-      case RepositoryDetailXO(_, _, _, String u, _) -> u;
-    };
+    return url;
   }
 
-  /**
-   * Returns the repository status.
-   * Maintained for API compatibility.
-   *
-   * @return the repository status
-   */
   public RepositoryStatusXO getStatus() {
-    return switch(this) {
-      case RepositoryDetailXO(_, _, _, _, RepositoryStatusXO s) -> s;
-    };
+    return status;
   }
 }

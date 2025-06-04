@@ -190,7 +190,7 @@ public class SimpleApiProxyRepository
              .append(" min, metadata cache: ").append(metadataMaxAge).append(" min)\n");
     }
     
-    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection)) {
+    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection, var authentication)) {
       summary.append("HTTP Client: blocked=").append(blocked)
              .append(", autoBlock=").append(autoBlock).append("\n");
     }

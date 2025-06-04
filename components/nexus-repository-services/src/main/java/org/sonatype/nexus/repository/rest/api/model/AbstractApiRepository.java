@@ -131,11 +131,11 @@ public abstract class AbstractApiRepository
     return switch (attribute) {
       // Match StorageAttributes class and bind to variable
       case StorageAttributes storage -> 
-          "StorageAttributes with blobStore: " + storage.getBlobStoreName();
+          "StorageAttributes with blobStore: " + storage.blobStoreName();
           
       // Match ComponentAttributes class and bind to variable
       case ComponentAttributes component -> 
-          "ComponentAttributes with proprietaryComponents: " + component.getProprietaryComponents();
+          "ComponentAttributes with proprietaryComponents: " + component.proprietaryComponents();
           
       // Match any Record type (for future Record-based attributes)
       case Record record -> "Record of type: " + record.getClass().getSimpleName();
@@ -159,7 +159,7 @@ public abstract class AbstractApiRepository
         // Handle class-based StorageAttributes
         obj -> {
           if (obj instanceof StorageAttributes storageAttrs) {
-            return storageAttrs.getBlobStoreName();
+            return storageAttrs.blobStoreName();
           }
           return null;
         },
@@ -193,7 +193,7 @@ public abstract class AbstractApiRepository
         // Handle class-based ComponentAttributes
         obj -> {
           if (obj instanceof ComponentAttributes componentAttrs) {
-            return componentAttrs.getProprietaryComponents();
+            return componentAttrs.proprietaryComponents();
           }
           return null;
         },
@@ -230,7 +230,7 @@ public abstract class AbstractApiRepository
           // Using Pattern Matching with instanceof (Java 16+)
           if (obj instanceof CleanupPolicyAttributes cleanupAttrs) {
             // Access the policy names directly through the pattern variable
-            return cleanupAttrs.getPolicyNames();
+            return cleanupAttrs.policyNames();
           }
           return null;
         },

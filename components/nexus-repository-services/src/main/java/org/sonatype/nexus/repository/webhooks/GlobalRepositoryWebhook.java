@@ -14,6 +14,8 @@ package org.sonatype.nexus.repository.webhooks;
 
 import java.util.Date;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -59,7 +61,7 @@ public class GlobalRepositoryWebhook
   /**
    * Virtual Thread executor for processing webhook events
    */
-  private final Executor virtualExecutor = Thread.ofVirtual().name("webhook-", 0).factory().asExecutor();
+  private final Executor virtualExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public GlobalRepositoryWebhook(final NodeAccess nodeAccess, final InitiatorProvider initiatorProvider) {
@@ -114,7 +116,7 @@ public class GlobalRepositoryWebhook
       getSubscriptions().forEach(subscription -> {
         virtualExecutor.execute(() -> {
           try {
-            log.debug(STR."Enqueueing \{eventAction} webhook for repository \{repository.getName()} to \{subscription.getUrl()}");
+            log.debug(STR."Enqueueing \{eventAction} webhook for repository \{repository.getName()} to \{subscription.getConfiguration().getUrl()}");
             queue(subscription, payload);
           } catch (Exception e) {
             log.error(STR."Failed to queue webhook for repository \{repository.getName()}: \{e.getMessage()}", e);

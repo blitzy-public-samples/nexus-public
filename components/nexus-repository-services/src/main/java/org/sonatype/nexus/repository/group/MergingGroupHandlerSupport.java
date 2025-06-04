@@ -43,6 +43,7 @@ import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Headers;
 import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.Response;
+import org.sonatype.nexus.repository.view.ViewFacet;
 
 import com.google.common.collect.Iterables;
 import com.google.common.hash.HashFunction;
@@ -102,7 +103,7 @@ public abstract class MergingGroupHandlerSupport
         .minorTimeout(minorTimeout)
         .threadsPerKey(threadsPerKey)
         // Leverage Virtual Threads for concurrent rebuilding operations
-        .virtualThreads(true)
+        .useVirtualThreads(true)
         .build(getClass());
   }
 
@@ -248,7 +249,29 @@ public abstract class MergingGroupHandlerSupport
     }
   }
 
-  /*
+  private Response get(Context context, Repository repository, DispatchedRepositories dispatched) {
+		log.trace("Trying member: {}", repository);
+		// track repositories we have dispatched to, prevent circular dispatch for
+		// nested groups
+		if (dispatched.contains(repository)) {
+			log.trace("Skipping already dispatched member: {}", repository);
+		}
+		dispatched.add(repository);
+
+		final ViewFacet view = repository.facet(ViewFacet.class);
+		Response response;
+		try {
+			response = view.dispatch(context.getRequest(), context);
+		} catch (Exception e) {
+			log.error("Member {} Error {}", repository,  e);
+			return null;
+		}
+		log.trace("Member {} response {}", repository, response.getStatus());
+
+		return response;
+}
+
+/*
    * Attempts to create a consistent hash derived from the responses of member repositories, we use this to identify
    * whether any members have changed their responses which allows us to avoid recomputing the values.
    * 

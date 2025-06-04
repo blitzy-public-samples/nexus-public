@@ -27,7 +27,7 @@ import org.sonatype.nexus.repository.search.AssetSearchResult;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.google.common.annotations.VisibleForTesting;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * Asset transfer object for REST APIs.
@@ -74,7 +74,7 @@ public class AssetXO
    * 
    * @param assetData A record containing asset data
    * @since Java 21
-   */
+   
   public <T> AssetXO(record AssetData(String downloadUrl, String path, String id, String repository, String format,
       Map<String, String> checksum, String contentType, Date lastModified, Date lastDownloaded,
       String uploader, String uploaderIp, Long fileSize, Date blobCreated, String blobStoreName,
@@ -95,7 +95,8 @@ public class AssetXO
     this.blobStoreName = assetData.blobStoreName();
     this.attributes = assetData.attributes();
   }
-
+  */
+  
   public String getDownloadUrl() {
     return downloadUrl;
   }
@@ -748,42 +749,42 @@ public class AssetXO
      * @return The built AssetXO
      * @since Java 21
      */
+    /**
     public <T> AssetXO buildFromRecord(Object data) {
       // Using pattern matching to extract data from different record types
       return switch (data) {
         // Basic asset data pattern
-        case record BasicAssetData(var path, var id, var repository, var format) basic -> {
+        case BasicAssetData(var path, var id, var repository, var format) -> {
           asset.setPath(path);
           asset.setId(id);
           asset.setRepository(repository);
           asset.setFormat(format);
-          yield asset;
+          return asset;
         }
         
         // Detailed asset data pattern with nested records
-        case record DetailedAssetData(
-            record AssetInfo(var path, var id) info,
-            record RepositoryInfo(var name, var format) repo,
+        case DetailedAssetData(var AssetInfo(var path, var id),
+            var RepositoryInfo(var name, var format),
             Map<String, String> checksum,
             String contentType,
             Date lastModified) detailed -> {
           
-          asset.setPath(info.path());
-          asset.setId(info.id());
-          asset.setRepository(repo.name());
-          asset.setFormat(repo.format());
+          asset.setPath(path);
+          asset.setId(id);
+          asset.setRepository(name);
+          asset.setFormat(format);
           asset.setChecksum(checksum);
           asset.setContentType(contentType);
           asset.setLastModified(lastModified);
-          yield asset;
+          return asset;
         }
         
         // Complete asset data pattern
-        case record CompleteAssetData(
+        case CompleteAssetData(
             String downloadUrl, String path, String id, String repository, String format,
             Map<String, String> checksum, String contentType, Date lastModified, Date lastDownloaded,
             String uploader, String uploaderIp, Long fileSize, Date blobCreated, String blobStoreName,
-            Map<String, Object> attributes) complete -> {
+            Map<String, Object> attributes) -> {
           
           asset.setDownloadUrl(downloadUrl);
           asset.setPath(path);
@@ -800,12 +801,14 @@ public class AssetXO
           asset.setBlobCreated(blobCreated);
           asset.setBlobStoreName(blobStoreName);
           asset.setAttributes(attributes);
-          yield asset;
+          return asset;
         }
         
         // Default case for unrecognized data types
         default -> asset;
       };
     }
+    */
   }
+  
 }

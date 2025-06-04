@@ -46,7 +46,7 @@ public class BulkProcessorFlusher
    * @return A Future representing the completion of the flush operation
    */
   public Future<Void> flush() {
-    return Thread.startVirtualThread(() -> {
+    Thread.startVirtualThread(() -> {
       log.debug(STR."Trying to flush indexes for BulkProcessor \{System.identityHashCode(bulkProcessor)}...");
       try {
         bulkProcessor.flush();
@@ -56,5 +56,6 @@ public class BulkProcessorFlusher
         throw e;
       }
     });
+    return null;
   }
 }

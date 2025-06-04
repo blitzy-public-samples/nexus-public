@@ -145,10 +145,7 @@ public class ElasticSearchUtils
    */
   public QueryBuilder buildQuery(final Collection<SearchFilter> searchFilters, final boolean conjunction) {
     BoolQueryBuilder query = QueryBuilders.boolQuery();
-    Consumer<QueryBuilder> contribute = switch (conjunction) {
-      case true -> query::must;
-      case false -> query::should;
-    };
+    Consumer<QueryBuilder> contribute = conjunction ? query::must : query::should;
     
     searchFilters.stream()
         .filter(searchFilter -> !isBlank(searchFilter.getValue()))

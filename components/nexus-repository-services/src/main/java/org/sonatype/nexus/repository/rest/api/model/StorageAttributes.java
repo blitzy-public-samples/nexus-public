@@ -24,16 +24,35 @@ import javax.validation.constraints.NotEmpty;
  *
  * @since 3.20
  */
-@JsonCreator
 public record StorageAttributes(
-    @ApiModelProperty(value = "Blob store used to store repository contents", example = "default", required = true)
-    @NotEmpty
-    @JsonProperty("blobStoreName")
     String blobStoreName,
-
-    @ApiModelProperty(value = "Whether to validate uploaded content's MIME type appropriate for the repository format",
-        example = "true")
-    @NotNull
-    @JsonProperty("strictContentTypeValidation")
     Boolean strictContentTypeValidation
-) {}
+) {
+
+	@JsonCreator
+	public StorageAttributes( 
+			@NotEmpty
+		    @JsonProperty("blobStoreName")
+			String blobStoreName, 
+			
+			@NotNull
+			@JsonProperty("strictContentTypeValidation")
+			Boolean strictContentTypeValidation) {
+		this.blobStoreName = blobStoreName;
+		this.strictContentTypeValidation = strictContentTypeValidation;
+	}
+	
+	@ApiModelProperty(value = "Blob store used to store repository contents", example = "default", required = true)
+	@Override
+	public String blobStoreName() {
+		return blobStoreName;
+	}
+
+	 @ApiModelProperty(value = "Whether to validate uploaded content's MIME type appropriate for the repository format",
+		        example = "true")
+	 @Override
+	public Boolean strictContentTypeValidation() {
+		return strictContentTypeValidation;
+	}
+	
+}

@@ -52,27 +52,7 @@ public class ApiPrivilegeRepositoryView
    */
   public ApiPrivilegeRepositoryView(final Privilege privilege) {
     // Using pattern matching to validate the privilege object
-    if (privilege instanceof Privilege p && RepositoryViewPrivilegeDescriptor.TYPE.equals(p.getType())) {
-      // Using record patterns to extract properties more elegantly
-      if (p.getProperties() instanceof Map<String, String> properties) {
-        super.setType(p.getType());
-        super.setName(p.getName());
-        super.setDescription(p.getDescription());
-        super.setReadOnly(p.isReadOnly());
-        super.setFormat(properties.get(FORMAT_KEY));
-        super.setRepository(properties.get(REPOSITORY_KEY));
-        
-        // Extract actions using pattern matching
-        String actionsStr = properties.get(ACTIONS_KEY);
-        if (actionsStr != null) {
-          setActions(parseActions(actionsStr));
-        }
-      }
-    }
-    else {
-      // Fallback to parent constructor if pattern matching fails
-      super(privilege);
-    }
+	super(privilege);
   }
   
   /**
@@ -81,12 +61,12 @@ public class ApiPrivilegeRepositoryView
   private Collection<PrivilegeAction> parseActions(String actionsStr) {
     return java.util.Arrays.stream(actionsStr.split(","))
         .map(action -> switch (action.trim()) {
-          case var s when "create".equals(s) -> PrivilegeAction.ADD;
-          case var s when "update".equals(s) -> PrivilegeAction.EDIT;
-          case var s when "read".equals(s) -> PrivilegeAction.READ;
-          case var s when "delete".equals(s) -> PrivilegeAction.DELETE;
-          case var s when "browse".equals(s) -> PrivilegeAction.BROWSE;
-          case var s when "*".equals(s) -> PrivilegeAction.ALL;
+          case "create" -> PrivilegeAction.ADD;
+          case "update" -> PrivilegeAction.EDIT;
+          case "read" -> PrivilegeAction.READ;
+          case "delete" -> PrivilegeAction.DELETE;
+          case "browse" -> PrivilegeAction.BROWSE;
+          case "*" -> PrivilegeAction.ALL;
           default -> null;
         })
         .filter(java.util.Objects::nonNull)

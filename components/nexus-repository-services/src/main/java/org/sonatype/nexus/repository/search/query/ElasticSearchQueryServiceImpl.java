@@ -377,25 +377,22 @@ public class ElasticSearchQueryServiceImpl
   }
 
   private void logProfileResults(final SearchResponse searchResponse) {
-    for (Entry<String, List<ProfileShardResult>> entry : searchResponse.getProfileResults().entrySet()) {
-      for (ProfileShardResult profileShardResult : entry.getValue()) {
-        try {
-          // Using pattern matching with record patterns for more concise code
-          if (profileShardResult instanceof ProfileShardResult(var searchProfile, var collectors, var rewriteTime)) {
-            XContentBuilder builder = XContentFactory.contentBuilder(XContentType.JSON);
-            builder.startObject();
-            profileShardResult.toXContent(builder, ToXContent.EMPTY_PARAMS);
-            builder.endObject();
-            if (log.isInfoEnabled()) {
-              log.info(STR."Elasticsearch profile for \{entry.getKey()} is: \{builder.string()}");
-            }
-          }
-        }
-        catch (IOException e) {
-          log.error("Error writing elasticsearch profile result", e);
-        }
-      }
-    }
+	  for (Entry<String, List<ProfileShardResult>> entry : searchResponse.getProfileResults().entrySet()) {
+	      for (ProfileShardResult profileShardResult : entry.getValue()) {
+	        try {
+	          XContentBuilder builder = XContentFactory.contentBuilder(XContentType.JSON);
+	          builder.startObject();
+	          profileShardResult.toXContent(builder, ToXContent.EMPTY_PARAMS);
+	          builder.endObject();
+	          if (log.isInfoEnabled()) {
+	            log.info("Elasticsearch profile for {} is: {}", entry.getKey(), builder.string());
+	          }
+	        }
+	        catch (IOException e) {
+	          log.error("Error writing elasticsearch profile result", e);
+	        }
+	      }
+	    }
   }
 
   private class SearchHitIterator

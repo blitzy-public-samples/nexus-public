@@ -199,3 +199,4 @@ public class AuthorizingRepositoryManagerImpl
     repositoryPermissionChecker.ensureUserCanAdmin(EDIT, repository);
     return repository;
   }
+}

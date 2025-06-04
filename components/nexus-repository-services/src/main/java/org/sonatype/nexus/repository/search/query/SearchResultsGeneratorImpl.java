@@ -85,7 +85,7 @@ public class SearchResultsGeneratorImpl
       // Using pattern matching for different result types
       var generator = switch (componentData) {
         // When format is null, use default generator
-        case ComponentData(null, var id) -> defaultSearchResultComponentGenerator;
+        case ComponentData(var format, var id) when format == null -> defaultSearchResultComponentGenerator;
         
         // When format is present, look up specific generator or use default
         case ComponentData(var format, var id) -> searchResultComponentGeneratorMap

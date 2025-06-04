@@ -120,12 +120,13 @@ public abstract class AbstractRepositoryApiRequest
    * @param <R> the return type
    * @return an Optional containing the extracted value, or empty if pattern matching fails
    */
+  /*
   protected <T extends Record, R> Optional<R> extractFromRecord(Object attribute, Function<T, R> accessor) {
     if (attribute instanceof T record) {
       return Optional.ofNullable(accessor.apply(record));
     }
     return Optional.empty();
-  }
+  }*/
   
   /**
    * Process a map of attributes using pattern matching to extract and transform values.

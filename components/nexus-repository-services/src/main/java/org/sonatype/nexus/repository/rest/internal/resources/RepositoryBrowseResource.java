@@ -189,11 +189,6 @@ public class RepositoryBrowseResource
   }
 
   private boolean isRoot(final String path) {
-    // Use pattern matching for more concise path handling
-    return switch (path) {
-      case null, "" -> true;
-      case String s when s.isBlank() -> true;
-      default -> false;
-    };
+	  return Strings2.isBlank(path);
   }
 }

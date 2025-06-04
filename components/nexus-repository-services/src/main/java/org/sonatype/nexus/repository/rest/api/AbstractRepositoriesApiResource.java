@@ -25,16 +25,16 @@ import javax.inject.Inject;
 import javax.validation.ConstraintViolationException;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
-import javax.ws.rs.BeanParam;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.BeanParam;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
@@ -59,10 +59,10 @@ import org.apache.shiro.authz.annotation.RequiresAuthentication;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.lang.StringTemplate.STR;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
-import static javax.ws.rs.core.Response.Status.BAD_REQUEST;
-import static javax.ws.rs.core.Response.Status.METHOD_NOT_ALLOWED;
-import static javax.ws.rs.core.Response.Status.NOT_FOUND;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.Response.Status.BAD_REQUEST;
+import static jakarta.ws.rs.core.Response.Status.METHOD_NOT_ALLOWED;
+import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 import static org.sonatype.nexus.rest.ApiDocConstants.BLOBSTORE_CHANGE_NOT_ALLOWED;
 import static org.sonatype.nexus.rest.ApiDocConstants.BLOBSTORE_NOT_FOUND;
 
@@ -163,12 +163,10 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
       try {
         future.get(30, TimeUnit.SECONDS);
         return Response.status(Status.CREATED).build();
-      } catch (InterruptedException | TimeoutException e) {
+      } catch (InterruptedException | TimeoutException | ExecutionException e) {
         Thread.currentThread().interrupt();
         throw new WebApplicationMessageException(BAD_REQUEST, 
             STR."Repository creation timed out for \{configuration.getRepositoryName()}", APPLICATION_JSON);
-      } catch (ExecutionException e) {
-        throw e.getCause();
       }
     }
     catch (AuthorizationException | AuthenticationException | ConstraintViolationException e) {
@@ -216,13 +214,11 @@ public abstract class AbstractRepositoriesApiResource<T extends AbstractReposito
         boolean updated = future.get(30, TimeUnit.SECONDS);
         Status status = updated ? Status.NO_CONTENT : Status.NOT_FOUND;
         return Response.status(status).build();
-      } catch (InterruptedException | TimeoutException e) {
+      } catch (InterruptedException | TimeoutException | ExecutionException e) {
         Thread.currentThread().interrupt();
         throw new WebApplicationMessageException(BAD_REQUEST, 
             STR."Repository update timed out for \{repositoryName}", APPLICATION_JSON);
-      } catch (ExecutionException e) {
-        throw e.getCause();
-      }
+      } 
     }
     catch (AuthorizationException | AuthenticationException | ConstraintViolationException e) {
       throw e;

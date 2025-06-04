@@ -134,10 +134,6 @@ public class ProxyRepositoryApiRequest
    * @return the HTTP client attributes
    */
   public HttpClientAttributes getHttpClient() {
-    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection)) {
-      // Using record pattern to access the components directly
-      return httpClient;
-    }
     return httpClient;
   }
 
@@ -156,10 +152,6 @@ public class ProxyRepositoryApiRequest
    * @return the replication attributes
    */
   public ReplicationAttributes getReplication() { 
-    if (replication != null && replication instanceof ReplicationAttributes(var enabled, var url, var credential)) {
-      // Using record pattern to access the components directly
-      return replication;
-    }
     return replication; 
   }
 

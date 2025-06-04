@@ -63,7 +63,7 @@ public abstract class SingleMetadataMergingGroupHandlerSupport
   protected Optional<Payload> mergeWithVirtualThreads(Collection<Response> successfulResponses) {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // Process responses in parallel using Virtual Threads
-      var futures = successfulResponses.stream()
+    	Collection<Future<?>> futures = successfulResponses.stream()
           .map(response -> executor.submit(() -> processResponse(response)))
           .collect(Collectors.toList());
       

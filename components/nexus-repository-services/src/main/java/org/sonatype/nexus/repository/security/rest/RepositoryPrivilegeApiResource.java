@@ -28,7 +28,7 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.Suspended;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.common.thread.VirtualThreadExecutorService;
 import org.sonatype.nexus.repository.security.RepositoryAdminPrivilegeDescriptor;
@@ -259,3 +259,4 @@ public class RepositoryPrivilegeApiResource
       throw e;
     }
   }
+}

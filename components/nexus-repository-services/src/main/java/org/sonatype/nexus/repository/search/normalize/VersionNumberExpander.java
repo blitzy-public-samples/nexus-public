@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 import org.sonatype.goodies.common.Loggers;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 
 /**
@@ -62,8 +62,16 @@ public class VersionNumberExpander
         String numberGroup = matcher.group();
         String expandedNumber = switch (numberGroup.length()) {
           case 0 -> "000000000"; // Empty match (shouldn't happen with \d+)
-          case var len when len >= 9 -> numberGroup; // Already at or exceeding target width
-          default -> STR."\{String.format(NUMBER_FORMAT, Long.parseLong(numberGroup))}"; 
+          case 9 -> numberGroup; // Already at or exceeding target width
+          default -> {
+        	// If length is 9 or more, return numberGroup.
+              // Otherwise, format the numberGroup.
+              if (numberGroup.length() > 9) {
+                  yield numberGroup; // Already at or exceeding target width
+              } else {
+                  yield STR."\{String.format(NUMBER_FORMAT, Long.parseLong(numberGroup))}";
+              }
+          }
         };
         matcher.appendReplacement(result, expandedNumber);
       }

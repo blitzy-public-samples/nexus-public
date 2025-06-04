@@ -12,9 +12,9 @@
  */
 package org.sonatype.nexus.repository.security.rest;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.core.Response;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.security.internal.rest.NexusSecurityApiConstants;
 

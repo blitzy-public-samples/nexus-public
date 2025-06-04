@@ -71,7 +71,11 @@ public class NegativeCacheFacetImpl
 
     @Override
     public String toString() {
-      return STR."""{Config{enabled=\{enabled}, timeToLive=\{timeToLive}}""";
+    	return getClass().getSimpleName() + "{" +
+    	          "enabled=" + enabled +
+    	          ", timeToLive=" + timeToLive +
+    	          '}';
+      //return STR."""Config{enabled=\{enabled}, timeToLive=\{timeToLive}}""";
     }
   }
 

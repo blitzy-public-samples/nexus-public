@@ -28,24 +28,14 @@ public class GroupDeployRepositoryApiRequest
       @JsonProperty("name") final String name,
       @JsonProperty("format") final String format,
       @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final Object storage,
-      @JsonProperty("group") final Object group)
+      @JsonProperty("storage") final StorageAttributes storage,
+      @JsonProperty("group") final GroupAttributes group)
   {
     super(name, format, online, storage, group);
   }
 
   @Override
-  public GroupDeployAttributesRecord getGroup() {
-    // Use pattern matching to handle the group object appropriately
-    return switch (super.getGroup()) {
-      case GroupDeployAttributesRecord record -> record;
-      case GroupAttributesRecord record -> {
-        // If it's a regular GroupAttributesRecord, we need to convert it to a GroupDeployAttributesRecord
-        // with a null writableMember
-        yield new GroupDeployAttributesRecord(record.memberNames(), null);
-      }
-      default -> throw new IllegalArgumentException("Invalid group attributes type: " + 
-          super.getGroup().getClass().getName());
-    };
+  public GroupDeployAttributes getGroup() {
+	  return (GroupDeployAttributes) super.getGroup();
   }
 }

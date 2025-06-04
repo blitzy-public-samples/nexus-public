@@ -34,5 +34,7 @@ public record ReplicationAttributes(
         @JsonProperty("preemptivePullEnabled") Boolean preemptivePullEnabled,
         @JsonProperty("assetPathRegex") String assetPathRegex) {
         // The record automatically assigns parameters to components
+    	this.preemptivePullEnabled = preemptivePullEnabled;
+    	this.assetPathRegex = assetPathRegex;
     }
 }

@@ -185,7 +185,7 @@ public class SearchResource
   {
     Page<AssetXO> assets = assetSearch(null, sort, direction, seconds, uriInfo);
 
-    return new AssetDownloadResponseProcessor(assets.getItems(), !Strings2.isEmpty(sort)).process();
+    return new AssetDownloadResponseProcessor(assets.items(), !Strings2.isEmpty(sort)).process();
   }
 
   private Page<AssetXO> assetSearch(
@@ -301,4 +301,5 @@ public class SearchResource
         virtualThreadExecutor
     );
   }
+
 }

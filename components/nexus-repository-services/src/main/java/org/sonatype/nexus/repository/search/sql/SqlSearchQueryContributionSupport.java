@@ -162,36 +162,36 @@ public abstract class SqlSearchQueryContributionSupport
     boolean terminalWildcard = false;
     
     for (int i = 0; i < chars.length; i++) {
-      char c = chars[i];
-      TokenState state = new TokenState(c, quoted, terminated, terminalWildcard);
-      
-      // Use pattern matching for switch to handle different character cases
-      switch (state) {
-        case TokenState('\\', _, _, _) when i + 1 < chars.length -> {
-          token.append(chars[++i]);
+    	char c = chars[i];
+        if (c == '\\') {
+          if (i + 1 < chars.length) {
+            token.append(chars[++i]);
+          }
         }
-        case TokenState('"', true, _, _) -> {
-          doCreateMatchTerm(exact, token).ifPresent(tokens::add);
-          token = new StringBuilder();
-          quoted = false;
+        else if (c == '"') {
+          if (quoted) {
+            doCreateMatchTerm(exact, token).ifPresent(tokens::add);
+            token = new StringBuilder();
+            quoted = false;
+          }
+          else {
+            quoted = true;
+          }
         }
-        case TokenState('"', false, _, _) -> {
-          quoted = true;
-        }
-        case TokenState(char c, false, _, _) when c == ' ' || c == '*' || c == '?' -> {
-          terminalWildcard = c == '*' || c == '?';
+        else if (!quoted && (c == ' ' || c == '*' || c == '?')) {
+          terminalWildcard |= c == '*' || c == '?';
           terminated = true;
         }
-        case TokenState(_, _, true, _) -> {
+        else if (terminated == true) {
           create(exact, terminalWildcard, token.toString().trim()).ifPresent(tokens::add);
+
           terminalWildcard = terminated = false;
           token = new StringBuilder();
           token.append(c);
         }
-        default -> {
+        else {
           token.append(c);
         }
-      }
     }
 
     create(exact, terminalWildcard, token.toString().trim()).ifPresent(tokens::add);
@@ -200,11 +200,11 @@ public abstract class SqlSearchQueryContributionSupport
   }
 
   private Optional<StringTerm> create(final boolean exact, final boolean terminalWildcard, final String token) {
-    // Use pattern matching for switch to handle different term types based on terminalWildcard
-    return switch (terminalWildcard) {
-      case false -> doCreateMatchTerm(exact, token);
-      case true -> Optional.of(new WildcardTerm(token));
-    };
+	  if (!terminalWildcard) {
+	      return doCreateMatchTerm(exact, token);
+	    }
+
+	    return Optional.of(new WildcardTerm(token));
   }
 
   private Optional<StringTerm> doCreateMatchTerm(final boolean exact, final CharSequence value) {
@@ -226,11 +226,7 @@ public abstract class SqlSearchQueryContributionSupport
    * @param value the term
    */
   protected StringTerm createMatchTerm(final boolean exact, final String value) {
-    // Use switch expression for more concise conditional logic
-    return switch (exact) {
-      case true -> new ExactTerm(value);
-      case false -> new LenientTerm(value);
-    };
+	  return exact ? new ExactTerm(value) : new LenientTerm(value);
   }
 
   protected static String maybeTrimQuotes(String term) {

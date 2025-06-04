@@ -45,9 +45,8 @@ public class SearchMappingsServiceImpl
 
   @Inject
   public SearchMappingsServiceImpl(final Map<String, SearchMappings> searchMappings) {
-    var validatedMappings = requireNonNull(searchMappings, "searchMappings cannot be null");
+	 Map<String, SearchMappings> validatedMappings = requireNonNull(searchMappings, "searchMappings cannot be null");
     this.searchMappings = collectMappings(validatedMappings);
-    log.debug(STR."Initialized with \{this.searchMappings.size()} search mappings");
   }
 
   /**
@@ -65,38 +64,14 @@ public class SearchMappingsServiceImpl
         .filter(entry -> DEFAULT.equals(entry.getKey()))
         .findFirst()
         .ifPresent(entry -> {
-          log.debug(STR."Adding default mappings from provider: \{DEFAULT}");
           builder.addAll(entry.getValue().get());
         });
 
-    // Process remaining mappings concurrently using Virtual Threads
-    try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      // Create a CompletableFuture for each non-default mapping provider using Record Pattern
-      var futures = searchMappings.entrySet().stream()
-          .filter(entry -> !DEFAULT.equals(entry.getKey()))
-          .map(entry -> {
-            // Using Record Pattern for Map.Entry
-            if (entry instanceof Map.Entry(var key, var mappings)) {
-              return CompletableFuture.supplyAsync(() -> {
-                log.debug(STR."Processing mappings from provider: \{key}");
-                return mappings.get();
-              }, executor);
-            }
-            return null;
-          })
-          .filter(future -> future != null)
-          .toList();
-
-      if (!futures.isEmpty()) {
-        // Combine all futures and add their results to the builder
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .thenApply(v -> futures.stream()
-                .map(CompletableFuture::join)
-                .flatMap(mappings -> StreamSupport.stream(mappings.spliterator(), false)))
-            .join()
-            .forEach(builder::add);
-      }
-    }
+    // add the rest of the mappings
+    searchMappings.keySet().stream()
+        .filter(key -> !DEFAULT.equals(key))
+        .sorted()
+        .forEach(key -> builder.addAll(searchMappings.get(key).get()));
 
     return builder.build();
   }

@@ -14,7 +14,7 @@ package org.sonatype.nexus.repository.rest;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
 
 import org.sonatype.nexus.rest.ExceptionMapperSupport;
 

@@ -64,7 +64,7 @@ public class AssetSearchResult
    * 
    * @param searchData A record containing asset search data
    * @since Java 21
-   */
+   
   public <T> AssetSearchResult(record AssetData(String path, String id, String repository, String format,
       Map<String, String> checksum, String contentType, Date lastModified, Date lastDownloaded,
       Date blobCreated, Long fileSize, String uploader, String uploaderIp, Map<String, Object> attributes) searchData) {
@@ -82,16 +82,16 @@ public class AssetSearchResult
     this.uploaderIp = searchData.uploaderIp();
     this.attributes = searchData.attributes();
   }
-
+	*/
   /**
    * Static factory method that uses record patterns to efficiently map search result data
    * 
    * @param searchResult The search result object to extract data from
    * @return A new AssetSearchResult populated with data from the search result
    * @since Java 21
-   */
+   
   public static <T> AssetSearchResult fromSearchResult(Object searchResult) {
-    if (searchResult instanceof record AssetSearchData(String path, String id, String repository, String format,
+    if (searchResult instanceof AssetSearchData(String path, String id, String repository, String format,
         Map<String, String> checksum, String contentType, Date lastModified, Date lastDownloaded,
         Date blobCreated, Long fileSize, String uploader, String uploaderIp, Map<String, Object> attributes)) {
       
@@ -115,14 +115,14 @@ public class AssetSearchResult
     
     throw new IllegalArgumentException("Search result object does not match expected pattern");
   }
-  
+  */
   /**
    * Processes nested asset data using Java 21 record patterns for efficient data extraction
    * 
    * @param assetData The asset data object to process
    * @return A new AssetSearchResult populated with data from the nested structure
    * @since Java 21
-   */
+   
   public static AssetSearchResult processNestedAssetData(Object assetData) {
     // Using nested record patterns to extract data from complex structures
     if (assetData instanceof record NestedAssetData(
@@ -156,7 +156,7 @@ public class AssetSearchResult
     
     throw new IllegalArgumentException("Asset data does not match expected nested pattern");
   }
-  
+  */
   /**
    * Processes asset data using Java 21's pattern matching in switch statements
    * for more efficient data handling from search results
@@ -164,40 +164,40 @@ public class AssetSearchResult
    * @param data The data object to process
    * @return A new AssetSearchResult populated with data based on the input type
    * @since Java 21
-   */
+  
   public static AssetSearchResult processAssetData(Object data) {
     return switch (data) {
       // Using record patterns in switch cases for type-safe data extraction
-      case record SimpleAsset(String path, String id, String repository, String format) simple -> {
+      case SimpleAsset(String path, String id, String repository, String format) -> {
         var result = new AssetSearchResult();
         result.setPath(path);
         result.setId(id);
         result.setRepository(repository);
         result.setFormat(format);
-        yield result;
+        return result;
       }
       
       // Nested record pattern with asset and content information
-      case record DetailedAsset(
-          record AssetDetail(String path, String id, String repository) asset,
-          record ContentDetail(String format, String contentType, Map<String, String> checksums) content,
+      case DetailedAsset(
+          var AssetDetail(String path, String id, String repository),
+          var ContentDetail(String format, String contentType, Map<String, String> checksums),
           Date modified,
-          Long size) detailed -> {
+          Long size) -> {
         
         var result = new AssetSearchResult();
-        result.setPath(asset.path());
-        result.setId(asset.id());
-        result.setRepository(asset.repository());
-        result.setFormat(content.format());
-        result.setContentType(content.contentType());
-        result.setChecksum(content.checksums());
+        result.setPath(path);
+        result.setId(id);
+        result.setRepository(repository);
+        result.setFormat(format);
+        result.setContentType(contentType);
+        result.setChecksum(checksums);
         result.setLastModified(modified);
         result.setFileSize(size);
-        yield result;
+        return result;
       }
       
       // Using var for type inference in pattern variables
-      case record AssetWithAttributes(var path, var id, var repository, var attributes) withAttrs -> {
+      case AssetWithAttributes(var path, var id, var repository, var attributes) -> {
         var result = new AssetSearchResult();
         result.setPath(path);
         result.setId(id);
@@ -214,14 +214,14 @@ public class AssetSearchResult
           result.setAttributes(convertedMap);
         }
         
-        yield result;
+        return result;
       }
       
       // Default case for unrecognized data types
       default -> throw new IllegalArgumentException("Unrecognized asset data format");
     };
   }
-
+   */
   /**
    * Creates a new builder for AssetSearchResult
    * 

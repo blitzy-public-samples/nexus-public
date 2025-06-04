@@ -25,46 +25,23 @@ import io.swagger.annotations.ApiModelProperty;
 /**
  * @since 3.27
  */
-public record GroupDeployAttributes(
-    @JsonProperty("memberNames")
-    Collection<String> memberNames,
-    
-    @ApiModelProperty(value = "Pro-only: This field is for the Group Deployment feature available in NXRM Pro.")
-    @Nullable
-    @JsonInclude(Include.NON_NULL)
-    @JsonProperty("writableMember")
-    String writableMember)
+public class GroupDeployAttributes
+    extends GroupAttributes
 {
-  /**
-   * Creates a new GroupDeployAttributes instance.
-   *
-   * @param memberNames the collection of member repository names
-   * @param writableMember the optional writable member repository name
-   */
+  @ApiModelProperty(value = "Pro-only: This field is for the Group Deployment feature available in NXRM Pro.")
+  @Nullable
+  @JsonInclude(Include.NON_NULL)
+  protected final String writableMember;
+
   @JsonCreator
   public GroupDeployAttributes(
       @JsonProperty("memberNames") final Collection<String> memberNames,
       @JsonProperty("writableMember") @Nullable final String writableMember)
   {
-    this.memberNames = memberNames;
+    super(memberNames);
     this.writableMember = writableMember;
   }
-  
-  /**
-   * Returns the collection of member repository names.
-   * This method provides compatibility with the previous GroupAttributes inheritance.
-   *
-   * @return the collection of member repository names
-   */
-  public Collection<String> getMemberNames() {
-    return memberNames;
-  }
-  
-  /**
-   * Returns the optional writable member repository name.
-   *
-   * @return the writable member repository name, or null if not set
-   */
+
   @Nullable
   public String getWritableMember() {
     return writableMember;

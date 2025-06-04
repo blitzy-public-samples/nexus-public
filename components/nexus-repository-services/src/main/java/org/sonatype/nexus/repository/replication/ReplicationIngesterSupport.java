@@ -115,7 +115,7 @@ public abstract class ReplicationIngesterSupport
       throws ReplicationIngestionException
   {
     // Process the blob ingestion asynchronously using Virtual Threads
-    virtualThreadManager.executeReplicationTask(blobIdString, () -> {
+    virtualThreadManager.execute(() -> {
       try {
         processIngestBlob(blobIdString, blobStoreId, repositoryName, eventType);
       }

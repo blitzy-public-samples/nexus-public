@@ -37,10 +37,10 @@ import static jakarta.ws.rs.core.Response.Status.NOT_FOUND;
 public class AssetDownloadResponseProcessor
 {
   // Using String Templates for more readable error messages
-  public static final String NO_SEARCH_RESULTS_FOUND = STR."Asset search returned no results";
+  public static final String NO_SEARCH_RESULTS_FOUND = "Asset search returned no results";
 
   public static final String SEARCH_RETURNED_MULTIPLE_ASSETS = 
-      STR."Search returned multiple assets, please refine search criteria to find a single asset or use the sort query parameter to retrieve the first result.";
+      "Search returned multiple assets, please refine search criteria to find a single asset or use the sort query parameter to retrieve the first result.";
 
   private final List<AssetXO> assetXOs;
 

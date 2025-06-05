@@ -31,7 +31,7 @@ public record HashedPayload(Payload payload, Map<HashAlgorithm, HashCode> hashCo
    * @param payload the payload
    * @param hashCodes the hash codes for the payload
    */
-  HashedPayload {
+  public HashedPayload {
     // Compact constructor for validation if needed in the future
   }
   

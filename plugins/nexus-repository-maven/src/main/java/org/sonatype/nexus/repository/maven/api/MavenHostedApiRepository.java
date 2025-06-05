@@ -22,7 +22,6 @@ import org.sonatype.nexus.repository.rest.api.model.HostedStorageAttributes;
 import org.sonatype.nexus.repository.rest.api.model.SimpleApiHostedRepository;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -32,20 +31,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @since 3.20
  */
 @JsonIgnoreProperties(value = {"format", "type", "url"}, allowGetters = true)
-public record MavenHostedApiRepository(
-    @JsonProperty("name") String name,
-    @JsonProperty("url") String url,
-    @JsonProperty("online") Boolean online,
-    @JsonProperty("storage") HostedStorageAttributes storage,
-    @JsonProperty("cleanup") CleanupPolicyAttributes cleanup,
-    @Valid @NotNull @JsonProperty("maven") MavenAttributes maven,
-    @JsonProperty("component") ComponentAttributes component,
-    // This field holds the delegate SimpleApiHostedRepository instance
-    @JsonIgnore SimpleApiHostedRepository delegate)
+public class MavenHostedApiRepository
+    extends SimpleApiHostedRepository
 {
-  /**
-   * Creates a new MavenHostedApiRepository with the specified attributes.
-   */
+  @Valid
+  @NotNull
+  protected final MavenAttributes maven;
+
   @JsonCreator
   public MavenHostedApiRepository(
       @JsonProperty("name") final String name,
@@ -56,21 +48,11 @@ public record MavenHostedApiRepository(
       @JsonProperty("maven") final MavenAttributes maven,
       @JsonProperty("component") final ComponentAttributes component)
   {
-    this(name, url, online, storage, cleanup, maven, component,
-        new SimpleApiHostedRepository(name, Maven2Format.NAME, url, online, storage, cleanup, component));
+    super(name, Maven2Format.NAME, url, online, storage, cleanup, component);
+    this.maven = maven;
   }
-  
-  /**
-   * @return the format of the repository
-   */
-  public String getFormat() {
-    return delegate.getFormat();
-  }
-  
-  /**
-   * @return the type of the repository
-   */
-  public String getType() {
-    return delegate.getType();
+
+  public MavenAttributes getMaven() {
+    return maven;
   }
 }

@@ -59,15 +59,16 @@ public class MavenApiRepositoryAdapter
           getCleanupPolicyAttributes(repository),
           createMavenAttributes(repository),
           getComponentAttributes(repository));
-      case ProxyType proxyType -> new MavenProxyApiRepository(name, url, online,
-          getHostedStorageAttributes(repository),
-          getCleanupPolicyAttributes(repository),
-          getProxyAttributes(repository),
-          getNegativeCacheAttributes(repository),
-          getHttpClientAttributes(repository),
-          getRoutingRuleName(repository),
-          createMavenAttributes(repository),
-          getReplicationAttributes(repository));
+      case ProxyType proxyType -> 
+      		new MavenProxyApiRepository(name, url, online,
+              getHostedStorageAttributes(repository),
+              getCleanupPolicyAttributes(repository),
+              getProxyAttributes(repository),
+              getNegativeCacheAttributes(repository),
+              getHttpClientAttributes(repository),
+              getRoutingRuleName(repository),
+              createMavenAttributes(repository),
+              getReplicationAttributes(repository));
       default -> super.adapt(repository);
     };
   }
@@ -90,7 +91,7 @@ public class MavenApiRepositoryAdapter
       NestedAttributesMap authenticationMap = httpclient.child("authentication");
       Boolean preemptive = authenticationMap.get("preemptive", Boolean.class);
 
-      authentication = new HttpClientConnectionAuthenticationAttributesWithPreemptive(httpClientAttributes.authentication(),
+      authentication = new HttpClientConnectionAuthenticationAttributesWithPreemptive(httpClientAttributes.getAuthentication(),
           preemptive);
     }
 

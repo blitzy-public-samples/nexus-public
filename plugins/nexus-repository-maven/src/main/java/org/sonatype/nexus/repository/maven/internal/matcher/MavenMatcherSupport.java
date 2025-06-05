@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.repository.maven.internal.matcher;
 
-import java.util.function.Predicate;
+import com.google.common.base.Predicate;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.repository.maven.MavenPath;
@@ -72,15 +72,12 @@ public class MavenMatcherSupport
    */
   @Override
   public boolean matches(final Context context) {
-    final String path = context.getRequest().getPath();
-    // Using pattern matching to simplify the code flow
-    return switch (predicate.test(path)) {
-      case true -> {
-        final MavenPath mavenPath = mavenPathParser.parsePath(path);
-        context.getAttributes().set(MavenPath.class, mavenPath);
-        yield true;
-      }
-      case false -> false;
-    };
+	  final String path = context.getRequest().getPath();
+	    if (predicate.apply(path)) {
+	      final MavenPath mavenPath = mavenPathParser.parsePath(path);
+	      context.getAttributes().set(MavenPath.class, mavenPath);
+	      return true;
+	    }
+	    return false;
   }
 }

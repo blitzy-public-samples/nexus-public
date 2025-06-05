@@ -111,7 +111,7 @@ public class SimpleApiRepositoryAdapter
           format, 
           url, 
           online,
-          getStorageAttributes(repository),
+          getHostedStorageAttributes(repository),
           getCleanupPolicyAttributes(repository),
           getProxyAttributes(repository),
           getNegativeCacheAttributes(repository),

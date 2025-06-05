@@ -69,9 +69,9 @@ public class ProxyRepositoryApiRequestToConfigurationConverter<T extends ProxyRe
     HttpClientAttributes httpClient = request.getHttpClient();
     if (nonNull(httpClient)) {
       NestedAttributesMap httpClientConfiguration = configuration.attributes("httpclient");
-      httpClientConfiguration.set("blocked", httpClient.blocked());
-      httpClientConfiguration.set("autoBlock", httpClient.autoBlock());
-      HttpClientConnectionAttributes connection = httpClient.connection();
+      httpClientConfiguration.set("blocked", httpClient.getBlocked());
+      httpClientConfiguration.set("autoBlock", httpClient.getAutoBlock());
+      HttpClientConnectionAttributes connection = httpClient.getConnection();
       NestedAttributesMap connectionConfiguration = httpClientConfiguration.child("connection");
       convertConnection(connection, connectionConfiguration, request.getProxy().remoteUrl().startsWith(HTTPS));
       convertAuthentication(httpClient, httpClientConfiguration);
@@ -82,15 +82,15 @@ public class ProxyRepositoryApiRequestToConfigurationConverter<T extends ProxyRe
       final HttpClientAttributes httpClient,
       final NestedAttributesMap httpClientConfiguration)
   {
-    HttpClientConnectionAuthenticationAttributes authentication = httpClient.authentication();
+    HttpClientConnectionAuthenticationAttributes authentication = httpClient.getAuthentication();
     if (nonNull(authentication)) {
       NestedAttributesMap authenticationConfiguration = httpClientConfiguration.child("authentication");
-      authenticationConfiguration.set("type", authentication.type());
-      authenticationConfiguration.set("username", authentication.username());
-      authenticationConfiguration.set("password", authentication.password());
-      authenticationConfiguration.set("ntlmHost", authentication.ntlmHost());
-      authenticationConfiguration.set("ntlmDomain", authentication.ntlmDomain());
-      authenticationConfiguration.set("bearerToken", authentication.bearerToken());
+      authenticationConfiguration.set("type", authentication.getType());
+      authenticationConfiguration.set("username", authentication.getUsername());
+      authenticationConfiguration.set("password", authentication.getPassword());
+      authenticationConfiguration.set("ntlmHost", authentication.getNtlmHost());
+      authenticationConfiguration.set("ntlmDomain", authentication.getNtlmDomain());
+      authenticationConfiguration.set("bearerToken", authentication.getBearerToken());
     }
   }
 

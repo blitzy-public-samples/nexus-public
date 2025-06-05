@@ -21,6 +21,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
@@ -134,18 +136,43 @@ public class MavenUploadHandler
 
     MavenContentFacet contentFacet = repository.facet(MavenContentFacet.class);
     // Use Virtual Thread for probing content type - an I/O operation
-    String contentType = Thread.startVirtualThread(() -> {
-      try {
-        return Files.probeContentType(contentPath);
-      } catch (IOException e) {
-        throw new RuntimeException(STR."Failed to probe content type for \{contentPath}", e);
-      }
-    }).join();
-    
-    try (TempBlob blob = contentFacet.blobs().ingest(contentPath, contentType, MavenPath.HashType.ALGORITHMS,
-        configuration.isHardLinkingEnabled())) {
-      return doPut(repository, mavenPath, new TempBlobPayload(blob, contentType));
-    }
+   try(ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+		   Future<String> future = executor.submit(() -> {
+	            try {
+	                // This IOException is caught and rethrown as RuntimeException
+	                return Files.probeContentType(contentPath);
+	            } catch (IOException e) {
+	                // Re-throwing as RuntimeException (unchecked)
+	                throw new RuntimeException(String.format("Failed to probe content type for %s", contentPath), e);
+	            }
+	        });
+		   
+		   try {
+	            String contentType = future.get();
+	            try (TempBlob blob = contentFacet.blobs().ingest(contentPath, contentType, MavenPath.HashType.ALGORITHMS,
+				        configuration.isHardLinkingEnabled())) {
+				      return doPut(repository, mavenPath, new TempBlobPayload(blob, contentType));
+				}
+	        } catch (InterruptedException e) {
+	            Thread.currentThread().interrupt(); // Restore the interrupted status
+	            System.err.println("Thread interrupted while getting content type: " + e.getMessage());
+	        } catch (ExecutionException e) {
+	            Throwable cause = e.getCause(); // Get the original exception
+
+	            if (cause instanceof RuntimeException) {
+	                System.err.println("Error probing content type (from RuntimeException): " + cause.getMessage());
+	            } else if (cause instanceof Error) {
+	                System.err.println("Error occurred during content type probe: " + cause.getMessage());
+	                throw (Error) cause; // Re-throw Errors
+	            } else {
+	                System.err.println("Unexpected exception during content type probe: " + cause.getMessage());
+	            }
+	        } finally {
+	            executor.shutdown(); // Always shut down the executor
+	        }
+     }
+   
+     return null;		
   }
 
   /**

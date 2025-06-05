@@ -32,14 +32,6 @@ public class HttpClientAttributesWithPreemptiveAuth
   @Valid
   protected final HttpClientConnectionAuthenticationAttributesWithPreemptive authenticationWithPreemptive;
 
-  /**
-   * Creates a new instance with the specified attributes.
-   *
-   * @param blocked whether the client is blocked
-   * @param autoBlock whether auto-blocking is enabled
-   * @param connection the connection attributes
-   * @param authentication the authentication attributes with preemptive support
-   */
   @JsonCreator
   public HttpClientAttributesWithPreemptiveAuth(
       @JsonProperty("blocked") final Boolean blocked,
@@ -47,22 +39,16 @@ public class HttpClientAttributesWithPreemptiveAuth
       @JsonProperty("connection") final HttpClientConnectionAttributes connection,
       @JsonProperty("authentication") final HttpClientConnectionAuthenticationAttributesWithPreemptive authentication)
   {
-    //super(blocked, autoBlock, connection, null);
+    super(blocked, autoBlock, connection, null);
     this.authenticationWithPreemptive = authentication;
   }
 
-  /**
-   * Creates a new instance based on existing HTTP client attributes.
-   *
-   * @param httpClientAttributes the base HTTP client attributes
-   * @param authentication the authentication attributes with preemptive support
-   */
   public HttpClientAttributesWithPreemptiveAuth(
       final HttpClientAttributes httpClientAttributes,
       final HttpClientConnectionAuthenticationAttributesWithPreemptive authentication)
   {
-	  super();
-    //super(httpClientAttributes.blocked(), httpClientAttributes.autoBlock(), httpClientAttributes.connection(),null);
+    super(httpClientAttributes.getBlocked(), httpClientAttributes.getAutoBlock(), httpClientAttributes.getConnection(),
+        null);
     this.authenticationWithPreemptive = authentication;
   }
 

@@ -81,4 +81,10 @@ public class HashBasedDuplicateDetectionStrategy
     }
     return hexString.toString();
   }
+
+@Override
+public boolean test(Record t) {
+	// TODO Auto-generated method stub
+	return false;
+}
 }

@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
@@ -42,6 +43,8 @@ import org.sonatype.nexus.repository.view.Response;
 import org.sonatype.nexus.transaction.RetryDeniedException;
 
 import static java.lang.StringTemplate.STR;
+
+import com.google.common.base.Predicate;
 import static com.google.common.base.Predicates.or;
 import static java.util.Optional.empty;
 import static java.util.Optional.ofNullable;
@@ -58,7 +61,7 @@ import static java.util.stream.Collectors.toList;
 public class MergingGroupHandler
     extends GroupHandler
 {
-  private static final HasFacet PROXY_OR_GROUP =
+  private static final Predicate<Repository> PROXY_OR_GROUP =
 		  or(new HasFacet(ProxyFacet.class), new HasFacet(GroupFacet.class));
 
   private Cooperation2 metadataCooperation;
@@ -224,9 +227,15 @@ public class MergingGroupHandler
       final MavenPath path,
       final IOCall<T> call) throws IOException
   {
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
-        metadataCooperation.on(call)
-            .cooperate(repository.getName(), path.toString())
-    ).get();
+    try {
+		return Executors.newVirtualThreadPerTaskExecutor().submit(() -> 
+		    metadataCooperation.on(call)
+		        .cooperate(repository.getName(), path.toString())
+		).get();
+	} catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    return null;
   }
 }

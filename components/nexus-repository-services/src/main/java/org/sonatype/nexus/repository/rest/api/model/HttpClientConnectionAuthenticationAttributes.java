@@ -23,32 +23,66 @@ import javax.validation.constraints.NotEmpty;
  *
  * @since 3.20
  */
-public record HttpClientConnectionAuthenticationAttributes(
-    @ApiModelProperty(value = "Authentication type", allowableValues = "username,ntlm,bearerToken")
-    @NotEmpty
-    @JsonProperty("type")
-    String type,
+public class HttpClientConnectionAuthenticationAttributes
+{
+  @ApiModelProperty(value = "Authentication type", allowableValues = "username,ntlm,bearerToken")
+  @NotEmpty
+  protected final String type;
 
-    @ApiModelProperty
-    @JsonProperty("username")
-    String username,
+  @ApiModelProperty
+  protected final String username;
 
-    @ApiModelProperty(access = "writeOnly")
-    @JsonProperty(value = "password", access = Access.WRITE_ONLY)
-    String password,
+  @ApiModelProperty(access = "writeOnly")
+  protected final String password;
 
-    @ApiModelProperty
-    @JsonProperty("ntlmHost")
-    String ntlmHost,
+  @ApiModelProperty
+  protected final String ntlmHost;
 
-    @ApiModelProperty
-    @JsonProperty("ntlmDomain")
-    String ntlmDomain,
+  @ApiModelProperty
+  protected final String ntlmDomain;
 
-    @ApiModelProperty
-    @JsonProperty(value = "bearerToken", access = Access.WRITE_ONLY)
-    String bearerToken
-) {
+  @ApiModelProperty
+  protected final String bearerToken;
+
   @JsonCreator
-  public HttpClientConnectionAuthenticationAttributes {}
+  public HttpClientConnectionAuthenticationAttributes(
+      @JsonProperty("type") final String type,
+      @JsonProperty("username") final String username,
+      @JsonProperty(value = "password", access = Access.WRITE_ONLY) final String password,
+      @JsonProperty("ntlmHost") final String ntlmHost,
+      @JsonProperty("ntlmDomain") final String ntlmDomain,
+      @JsonProperty(value = "bearerToken", access = Access.WRITE_ONLY) final String bearerToken)
+  {
+    this.type = type;
+    this.username = username;
+    this.password = password;
+    this.ntlmHost = ntlmHost;
+    this.ntlmDomain = ntlmDomain;
+    this.bearerToken = bearerToken;
+  }
+
+  public String getType() {
+    return type;
+  }
+
+  public String getUsername() {
+    return username;
+  }
+
+  public String getPassword() {
+    return password;
+  }
+
+  public String getNtlmHost() {
+    return ntlmHost;
+  }
+
+  public String getNtlmDomain() {
+    return ntlmDomain;
+  }
+
+  public String getBearerToken() {
+    return bearerToken;
+  }
+
 }

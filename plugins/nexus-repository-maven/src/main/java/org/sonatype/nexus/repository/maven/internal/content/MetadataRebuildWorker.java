@@ -306,7 +306,7 @@ public class MetadataRebuildWorker
               try {
                 metadataBuilder.addPlugin(getPluginPrefix(mavenPath,
                     () -> content.assets().with(asset).download().openInputStream()),
-                    coordinates.getArtifactId(),
+                    coordinates.artifactId(),
                     asset.component().get().attributes(Maven2Format.NAME).get(Attributes.P_POM_NAME, String.class));
               }
               catch (Exception e) {

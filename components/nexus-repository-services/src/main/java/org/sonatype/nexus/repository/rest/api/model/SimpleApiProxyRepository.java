@@ -35,7 +35,7 @@ public class SimpleApiProxyRepository
     extends AbstractApiRepository
 {
   @NotNull
-  protected final StorageAttributes storage;
+  protected final HostedStorageAttributes storage;
 
   protected final CleanupPolicyAttributes cleanup;
 
@@ -59,7 +59,7 @@ public class SimpleApiProxyRepository
       @JsonProperty("format") final String format,
       @JsonProperty("url") final String url,
       @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final StorageAttributes storage,
+      @JsonProperty("storage") final HostedStorageAttributes storage,
       @JsonProperty("cleanup") final CleanupPolicyAttributes cleanup,
       @JsonProperty("proxy") final ProxyAttributes proxy,
       @JsonProperty("negativeCache") final NegativeCacheAttributes negativeCache,
@@ -83,7 +83,7 @@ public class SimpleApiProxyRepository
    * 
    * @return the storage attributes record
    */
-  public StorageAttributes getStorage() {
+  public HostedStorageAttributes getStorage() {
     return storage;
   }
 
@@ -149,7 +149,7 @@ public class SimpleApiProxyRepository
    */
   public String getBlobStoreName() {
     // Using Record Pattern to extract the blobStoreName component directly
-    if (storage instanceof StorageAttributes(var blobStoreName, var strictContentTypeValidation)) {
+    if (storage instanceof HostedStorageAttributes(var blobStoreName, var strictContentTypeValidation, var writePolicy)) {
       return blobStoreName;
     }
     return null;
@@ -179,7 +179,7 @@ public class SimpleApiProxyRepository
     StringBuilder summary = new StringBuilder();
     
     // Using Record Patterns to extract components from multiple records
-    if (storage instanceof StorageAttributes(var blobStoreName, var strictContentTypeValidation)) {
+    if (storage instanceof HostedStorageAttributes(var blobStoreName, var strictContentTypeValidation, var writePolicy)) {
       summary.append("Storage: ").append(blobStoreName)
              .append(" (strict validation: ").append(strictContentTypeValidation).append(")\n");
     }
@@ -190,9 +190,9 @@ public class SimpleApiProxyRepository
              .append(" min, metadata cache: ").append(metadataMaxAge).append(" min)\n");
     }
     
-    if (httpClient instanceof HttpClientAttributes(var blocked, var autoBlock, var connection, var authentication)) {
-      summary.append("HTTP Client: blocked=").append(blocked)
-             .append(", autoBlock=").append(autoBlock).append("\n");
+    if (httpClient instanceof HttpClientAttributes hca) {
+      summary.append("HTTP Client: blocked=").append(hca.getBlocked())
+             .append(", autoBlock=").append(hca.getAutoBlock()).append("\n");
     }
     
     return summary.toString();

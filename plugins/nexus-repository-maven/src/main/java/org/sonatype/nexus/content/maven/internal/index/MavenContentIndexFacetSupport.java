@@ -65,51 +65,9 @@ public abstract class MavenContentIndexFacetSupport
    */
   @Nullable
   public Instant getLastPublishedInstant() throws IOException {
-    DateTime dateTime = lastPublished();
-    return dateTime != null ? Instant.ofEpochMilli(dateTime.getMillis()) : null;
-  }
-
-  /**
-   * Publishes Maven Indexer indexes for downstream consumption using Virtual Threads for improved I/O performance.
-   * 
-   * This implementation uses Java 21 Virtual Threads to handle the I/O-bound operation,
-   * which provides better scalability and resource utilization compared to platform threads.
-   * 
-   * @throws IOException if an I/O error occurs during publishing
-   * @since Java 21 upgrade
-   */
-  @Override
-  public void publishIndex() throws IOException {
-    // Use a structured concurrency approach with virtual threads
-    try {
-      // Run the I/O-bound operation on a virtual thread
-      Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-        try {
-          doPublishIndex(); // Call the implementation-specific method
-          return null;
-        } 
-        catch (IOException e) {
-          throw new RuntimeException(STR."Error publishing index files for \{getRepository().getName()}", e);
-        }
-      }).get(); // Wait for completion - this is a blocking call but runs on a virtual thread
-    } 
-    catch (Exception e) {
-      // Use pattern matching for instanceof check (Java 21 feature)
-      if (e.getCause() instanceof IOException ioe) {
-        throw ioe;
-      }
-      throw new IOException(STR."Error executing publishIndex operation for \{getRepository().getName()}", e);
-    }
+    return  lastPublished();
   }
   
-  /**
-   * Implementation-specific method to publish the index.
-   * Subclasses must implement this method to provide the actual publishing logic.
-   * 
-   * @throws IOException if an I/O error occurs during publishing
-   */
-  protected abstract void doPublishIndex() throws IOException;
-
   /**
    * Unpublishes the Maven index using Virtual Threads for improved I/O performance.
    * 

@@ -20,6 +20,7 @@ import javax.inject.Inject;
 import javax.inject.Named;
 
 import org.sonatype.nexus.repository.Facet;
+import org.sonatype.nexus.repository.MissingFacetException;
 import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.maven.MavenIndexFacet;
 import org.sonatype.nexus.repository.maven.internal.MavenIndexPublisher;
@@ -68,7 +69,12 @@ public class MavenContentGroupIndexFacet
       // Execute the I/O-bound index publishing operation on a virtual thread
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         Future<?> future = executor.submit(() -> {
-          mavenIndexPublisher.publishGroupIndex(getRepository(), facet(GroupFacet.class).leafMembers(), strategy);
+          try {
+			mavenIndexPublisher.publishGroupIndex(getRepository(), facet(GroupFacet.class).leafMembers(), strategy);
+		} catch (MissingFacetException | IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
         });
       }
     }

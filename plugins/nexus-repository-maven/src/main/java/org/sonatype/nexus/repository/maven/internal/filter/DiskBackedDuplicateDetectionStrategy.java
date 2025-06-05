@@ -95,4 +95,10 @@ public class DiskBackedDuplicateDetectionStrategy
       cacheManager.close();
     }
   }
+
+@Override
+public boolean test(Record t) {
+	// TODO Auto-generated method stub
+	return false;
+}
 }

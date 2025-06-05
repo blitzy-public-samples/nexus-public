@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.maven.internal;
 
+import java.time.temporal.ChronoField;
 import java.util.Locale;
 
 import javax.annotation.Nonnull;
@@ -159,9 +160,10 @@ public class Maven2MavenPathParser
           //check if we have something hokey like SNAPSHOT-20180101.121212
           if (str.length() > vTimestampStart + Constants.DOTTED_TIMESTAMP_VERSION_FORMAT.length()) {
             try { //NOSONAR not extracting to method as many variables external to the method need to be updated
-              Constants.METADATA_DOTTED_TIMESTAMP.parseDateTime(
+              Constants.METADATA_DOTTED_TIMESTAMP.parse(
                   str.substring(vTimestampStart, vTimestampStart + Constants.DOTTED_TIMESTAMP_VERSION_FORMAT.length()))
-                  .getMillis();
+              		.getLong(ChronoField.INSTANT_SECONDS);
+                  //.getMillis(); //TODOs: FIXME: Why getMillis was called ?
               version = str.substring(vTimestampStart, vTimestampStart + Constants.SNAPSHOT_VERSION_SUFFIX.length());
               vSnapshotStart = vTimestampStart;
               tail = null;
@@ -178,8 +180,8 @@ public class Maven2MavenPathParser
               vSnapshotStart + version.length() + Constants.SNAPSHOT_VERSION_SUFFIX.length() - 1));
 
           try {
-            timestamp = Constants.METADATA_DOTTED_TIMESTAMP.parseDateTime(
-                snapshotTimestampedVersion.toString()).getMillis();
+            timestamp = Constants.METADATA_DOTTED_TIMESTAMP.parse(
+                snapshotTimestampedVersion.toString()).getLong(ChronoField.INSTANT_SECONDS);
           }
           catch (IllegalArgumentException e) {
             log.trace(STR."metadata dotted timestamp failed parsing to millis \{snapshotTimestampedVersion}");

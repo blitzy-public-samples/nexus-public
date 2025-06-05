@@ -24,29 +24,50 @@ import io.swagger.annotations.ApiModelProperty;
  *
  * @since 3.20
  */
-public record HttpClientAttributes(
+public class HttpClientAttributes
+{
   @ApiModelProperty(value = "Whether to block outbound connections on the repository", example = "false")
   @NotNull
-  @JsonProperty("blocked")
-  Boolean blocked,
+  protected final Boolean blocked;
 
   @ApiModelProperty(
       value = "Whether to auto-block outbound connections if remote peer is detected as unreachable/unresponsive",
       example = "true")
   @NotNull
-  @JsonProperty("autoBlock")
-  Boolean autoBlock,
+  protected final Boolean autoBlock;
 
   @Valid
-  @JsonProperty("connection")
-  HttpClientConnectionAttributes connection,
+  protected final HttpClientConnectionAttributes connection;
 
   @Valid
-  @JsonProperty("authentication")
-  HttpClientConnectionAuthenticationAttributes authentication
-) {
-  @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
-  public HttpClientAttributes {
-    // The canonical constructor is automatically generated with validation
+  protected final HttpClientConnectionAuthenticationAttributes authentication;
+
+  @JsonCreator
+  public HttpClientAttributes(
+      @JsonProperty("blocked") final Boolean blocked,
+      @JsonProperty("autoBlock") final Boolean autoBlock,
+      @JsonProperty("connection") final HttpClientConnectionAttributes connection,
+      @JsonProperty("authentication") final HttpClientConnectionAuthenticationAttributes authentication)
+  {
+    this.blocked = blocked;
+    this.autoBlock = autoBlock;
+    this.connection = connection;
+    this.authentication = authentication;
+  }
+
+  public Boolean getBlocked() {
+    return blocked;
+  }
+
+  public Boolean getAutoBlock() {
+    return autoBlock;
+  }
+
+  public HttpClientConnectionAttributes getConnection() {
+    return connection;
+  }
+
+  public HttpClientConnectionAuthenticationAttributes getAuthentication() {
+    return authentication;
   }
 }

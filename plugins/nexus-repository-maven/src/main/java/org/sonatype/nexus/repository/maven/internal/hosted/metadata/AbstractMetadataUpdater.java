@@ -170,14 +170,14 @@ abstract public class AbstractMetadataUpdater
       versioning.setLatest(maven2Metadata.getBaseVersions().getLatest());
       versioning.setRelease(maven2Metadata.getBaseVersions().getRelease());
       versioning.setVersions(maven2Metadata.getBaseVersions().getVersions());
-      versioning.setLastUpdated(Constants.METADATA_DOTLESS_TIMESTAMP.print(maven2Metadata.getLastUpdated()));
+      versioning.setLastUpdated(Constants.METADATA_DOTLESS_TIMESTAMP.format(Instant.ofEpochMilli(maven2Metadata.getLastUpdated().toInstant().getMillis())));
       result.setVersioning(versioning);
     }
     if (maven2Metadata.getSnapshots() != null) {
       final Versioning versioning = result.getVersioning() != null ? result.getVersioning() : new Versioning();
       final org.apache.maven.artifact.repository.metadata.Snapshot snapshot = new org.apache.maven.artifact.repository.metadata.Snapshot();
       if (maven2Metadata.getSnapshots().getSnapshotTimestamp() != null) {
-        snapshot.setTimestamp(Constants.METADATA_DOTTED_TIMESTAMP.print(
+        snapshot.setTimestamp(Constants.METADATA_DOTTED_TIMESTAMP.format(
             Instant.ofEpochMilli(maven2Metadata.getSnapshots().getSnapshotTimestamp())));
       }
       snapshot.setBuildNumber(maven2Metadata.getSnapshots().getSnapshotBuildNumber());
@@ -189,11 +189,11 @@ abstract public class AbstractMetadataUpdater
         snapshotVersion.setExtension(snap.getExtension());
         snapshotVersion.setClassifier(snap.getClassifier());
         snapshotVersion.setVersion(snap.getVersion());
-        snapshotVersion.setUpdated(Constants.METADATA_DOTLESS_TIMESTAMP.print(snap.getLastUpdated()));
+        snapshotVersion.setUpdated(Constants.METADATA_DOTLESS_TIMESTAMP.format(Instant.ofEpochMilli(snap.getLastUpdated().toInstant().getMillis())));
         snapshotVersions.add(snapshotVersion);
       }
       versioning.setSnapshotVersions(snapshotVersions);
-      versioning.setLastUpdated(Constants.METADATA_DOTLESS_TIMESTAMP.print(maven2Metadata.getLastUpdated()));
+      versioning.setLastUpdated(Constants.METADATA_DOTLESS_TIMESTAMP.format(Instant.ofEpochMilli(maven2Metadata.getLastUpdated().toInstant().getMillis())));
       result.setVersioning(versioning);
     }
     return result;

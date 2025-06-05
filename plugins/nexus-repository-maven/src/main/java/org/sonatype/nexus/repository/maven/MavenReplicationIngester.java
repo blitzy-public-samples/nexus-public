@@ -21,6 +21,7 @@ import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.replication.ReplicationIngesterHelper;
 import org.sonatype.nexus.repository.replication.ReplicationIngester;
 import org.sonatype.nexus.repository.replication.ReplicationIngesterSupport;
+import org.sonatype.nexus.repository.replication.ReplicationVirtualThreadManager;
 
 /**
  * Maven implementation of {@link ReplicationIngester}.
@@ -40,10 +41,11 @@ public class MavenReplicationIngester
   @Inject
   public MavenReplicationIngester(
       final BlobStoreManager blobstoreManager,
-      final ReplicationIngesterHelper replicationIngesterHelper
+      final ReplicationIngesterHelper replicationIngesterHelper,
+      final ReplicationVirtualThreadManager virtualThreadManager
   )
   {
-    super(blobstoreManager, replicationIngesterHelper);
+    super(blobstoreManager, replicationIngesterHelper, virtualThreadManager);
   }
 
   @Override

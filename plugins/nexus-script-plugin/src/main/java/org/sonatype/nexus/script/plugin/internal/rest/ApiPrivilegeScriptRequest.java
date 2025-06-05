@@ -22,7 +22,7 @@ import org.sonatype.nexus.security.privilege.rest.ApiPrivilegeWithActionsRequest
 import org.sonatype.nexus.security.privilege.rest.PrivilegeAction;
 
 import io.swagger.annotations.ApiModelProperty;
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * @since 3.19

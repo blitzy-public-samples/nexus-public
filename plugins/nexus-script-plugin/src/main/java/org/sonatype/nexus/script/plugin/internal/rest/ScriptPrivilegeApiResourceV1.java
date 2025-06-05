@@ -57,7 +57,6 @@ public class ScriptPrivilegeApiResourceV1
    * 
    * @return the virtual thread executor
    */
-  @Override
   protected ExecutorService getExecutorService() {
     return virtualThreadExecutor;
   }

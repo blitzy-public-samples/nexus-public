@@ -23,7 +23,7 @@ import org.sonatype.nexus.security.config.memory.MemoryCPrivilege;
 import org.sonatype.nexus.security.config.memory.MemoryCPrivilege.MemoryCPrivilegeBuilder;
 
 import static java.lang.StringTemplate.STR;
-import static org.apache.commons.lang.StringUtils.capitalize;
+import static org.apache.commons.lang3.StringUtils.capitalize;
 import static org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor.P_ACTIONS;
 import static org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor.P_NAME;
 import static org.sonatype.nexus.script.plugin.internal.security.ScriptPrivilegeDescriptor.TYPE;

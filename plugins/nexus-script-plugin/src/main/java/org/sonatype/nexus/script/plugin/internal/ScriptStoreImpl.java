@@ -95,12 +95,7 @@ public class ScriptStoreImpl
   @Transactional
   @Override
   public List<Script> list() {
-    try {
-      return virtualThreadExecutor.submit(() -> ImmutableList.copyOf(dao().browse())).get();
-    }
-    catch (Exception e) {
-      throw new RuntimeException("Error listing scripts with Virtual Thread", e);
-    }
+    return ImmutableList.copyOf(dao().browse());
   }
 
   /**

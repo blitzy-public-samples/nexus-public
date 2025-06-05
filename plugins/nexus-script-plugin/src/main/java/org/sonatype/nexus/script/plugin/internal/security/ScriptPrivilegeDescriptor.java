@@ -33,7 +33,7 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
 import java.util.List;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -154,13 +154,8 @@ public class ScriptPrivilegeDescriptor
 
   @Override
   public void validate(final ApiPrivilegeScriptRequest apiPrivilege) {
-    switch (apiPrivilege) {
-      case ApiPrivilegeScriptRequest request when request != null -> {
-        validateActions(request, PrivilegeAction.getBreadRunActions());
-        validateScript(request.getScriptName());
-      }
-      case null -> throw new IllegalArgumentException("ApiPrivilegeScriptRequest cannot be null");
-    }
+	  validateActions(apiPrivilege, PrivilegeAction.getBreadRunActions());
+	  validateScript(apiPrivilege.getScriptName());
   }
 
   private void validateScript(final String scriptName) {

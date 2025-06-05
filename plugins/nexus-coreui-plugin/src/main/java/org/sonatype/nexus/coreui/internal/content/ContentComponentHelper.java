@@ -22,6 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.SequencedMap;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -29,6 +30,8 @@ import java.util.stream.Stream;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
+import jakarta.validation.constraints.NotBlank;
+
 import javax.ws.rs.WebApplicationException;
 
 import org.sonatype.goodies.common.ComponentSupport;
@@ -222,7 +225,7 @@ public class ContentComponentHelper
 
   @Override
   public Set<String> deleteComponent(final Repository repository, final ComponentXO model) {
-    log.info(STR."Deleting component \{model.getName()} from repository \{repository.getName()}");
+    log.info(STR."Deleting component \{model.name()} from repository \{repository.getName()}");
     return findComponentsByModel(repository, model)
         .flatMap(component -> maintenanceService.deleteComponent(repository, component).stream())
         .collect(toSet());
@@ -273,10 +276,10 @@ public class ContentComponentHelper
     String format = repository.getFormat().getValue();
     ComponentFinder finder = componentFinders.getOrDefault(format, defaultComponentFinder);
     return finder.findComponentsByModel(repository,
-        model.getId(),
-        model.getGroup(),
-        model.getName(),
-        model.getVersion());
+        model.id(),
+        model.group(),
+        model.name(),
+        model.version());
   }
 
   private Optional<FluentComponent> findComponentById(final Repository repository, final EntityId componentId) {
@@ -302,15 +305,14 @@ public class ContentComponentHelper
       final String format,
       final Component component)
   {
-    ComponentXO componentXO = new ComponentXO();
-    componentXO.setRepositoryName(repositoryName);
-    componentXO.setFormat(format);
-
-    componentXO.setId(componentId(component));
-    componentXO.setGroup(component.namespace());
-    componentXO.setName(component.name());
-    componentXO.setVersion(component.version());
-
+    ComponentXO componentXO = new ComponentXO(
+    		componentId(component)
+    		, repositoryName
+    		, component.namespace()
+    		, component.name()
+    		, component.version()
+    		, format
+    		, component.lastUpdated().toString() );
     return componentXO;
   }
 
@@ -321,17 +323,17 @@ public class ContentComponentHelper
       final String format,
       final Asset asset)
   {
-    AssetXO assetXO = new AssetXO();
-    assetXO.setRepositoryName(repositoryName);
-    assetXO.setContainingRepositoryName(containingRepositoryName);
-    assetXO.setFormat(format);
+    AssetXO.Builder builder = AssetXO.builder();
+    builder.repositoryName(repositoryName);
+    builder.containingRepositoryName(containingRepositoryName);
+    builder.format(format);
 
-    assetXO.setId(assetId(asset));
-    assetXO.setName(asset.path());
+    builder.id(assetId(asset));
+    builder.name(asset.path());
+    
+    asset.component().ifPresent(component -> builder.componentId(componentId(component)));
 
-    asset.component().ifPresent(component -> assetXO.setComponentId(componentId(component)));
-
-    Map<String, Object> attributes = new HashMap<>(asset.attributes().backing());
+    SequencedMap<String, Object> attributes = new HashMap<>(asset.attributes().backing());
     Object formatAttributes = attributes.get(format);
     if (!Strings2.isEmpty(asset.kind())) {
       if (formatAttributes instanceof Map<?, ?> formatMap) {
@@ -343,23 +345,24 @@ public class ContentComponentHelper
     }
 
     OffsetDateTime createdTime = asset.created();
-
-    assetXO.setBlobCreated(Date.from(createdTime.toInstant()));
+    
+    builder.blobCreated(Date.from(createdTime.toInstant()));
     asset.blob().ifPresent(blob -> {
       Date blobCreated = Date.from(blob.blobCreated().toInstant());
 
       // NEXUS-31391 Asset created time may have been set incorrectly
       if (blob.blobCreated().isBefore(createdTime)) {
-        assetXO.setBlobCreated(blobCreated);
+        builder.blobCreated(blobCreated);
       }
 
-      assetXO.setBlobRef(blob.blobRef().toString());
-      assetXO.setSize(blob.blobSize());
-      assetXO.setContentType(blob.contentType());
-      assetXO.setBlobUpdated(blobCreated);
-      attributes.put("checksum", blob.checksums());
-      assetXO.setCreatedBy(blob.createdBy().orElse(null));
-      assetXO.setCreatedByIp(blob.createdByIp().orElse(null));
+      builder.blobRef(blob.blobRef().toString());
+      builder.size(blob.blobSize());
+      builder.contentType(blob.contentType());
+      builder.blobUpdated(blobCreated);
+      
+      builder.addAttribute("checksum",  blob.checksums());
+      builder.createdBy(blob.createdBy().orElse(null));
+      builder.createdByIp(blob.createdByIp().orElse(null));
     });
 
     if (repositoryManager.get(repositoryName).getType() instanceof HostedType && attributes.containsKey(CONTENT)) {
@@ -367,11 +370,10 @@ public class ContentComponentHelper
       contentMap.remove(CONTENT_LAST_MODIFIED);
     }
 
-    assetXO.setAttributes(attributes);
+    builder.attributes(attributes);
+    asset.lastDownloaded().ifPresent(when -> builder.lastDownloaded(Date.from(when.toInstant())));
 
-    asset.lastDownloaded().ifPresent(when -> assetXO.setLastDownloaded(Date.from(when.toInstant())));
-
-    return assetXO;
+    return builder.build();
   }
 
   private static String componentId(final Component component) {

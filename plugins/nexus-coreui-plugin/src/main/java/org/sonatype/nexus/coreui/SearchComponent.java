@@ -139,7 +139,7 @@ public class SearchComponent
     return Optional.ofNullable(filters)
         .map(List::stream)
         .orElseGet(Stream::empty)
-        .map(filter -> new SearchFilter(filter.getProperty(), filter.getValue()))
+        .map(filter -> new SearchFilter(filter.property(), filter.value()))
         .collect(Collectors.toList());
   }
 
@@ -193,19 +193,15 @@ public class SearchComponent
   }
 
   private static ComponentXO toComponent(final ComponentSearchResult componentHit) {
-    ComponentXO componentXO = new ComponentXO();
-
-    componentXO.setGroup(componentHit.getGroup());
-    componentXO.setName(componentHit.getName());
-    componentXO.setVersion(componentHit.getVersion());
-    componentXO.setId(componentHit.getId());
-    componentXO.setRepositoryName(componentHit.getRepositoryName());
-    componentXO.setFormat(componentHit.getFormat());
-
-    if(componentHit.getLastModified() != null) {
-      componentXO.setLastBlobUpdated(componentHit.getLastModified().toString());
-    }
-
+    ComponentXO componentXO = new ComponentXO(
+    		componentHit.getId(), 
+    		componentHit.getRepositoryName(),
+    		componentHit.getGroup(),
+    		componentHit.getName(),
+    		componentHit.getVersion(),
+    		componentHit.getFormat(),
+    		componentHit.getLastModified() != null ? componentHit.getLastModified().toString(): null
+    		);
     return componentXO;
   }
 

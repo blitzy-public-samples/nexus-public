@@ -67,28 +67,28 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryXO> read() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.read()).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.read()).get();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<ReferenceXO> readRecipes() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readRecipes()).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.readRecipes()).get();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<Format> readFormats() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readFormats()).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.readFormats()).get();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<BrowseableFormatXO> getBrowseableFormats() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.getBrowseableFormats()).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.getBrowseableFormats()).get();
   }
 
   /**
@@ -98,7 +98,7 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryReferenceXO> readReferences(@Nullable final StoreLoadParameters parameters) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferences(parameters)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferences(parameters)).get();
   }
 
   /**
@@ -108,7 +108,7 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryReferenceXO> readReferencesAddingEntryForAll(@Nullable final StoreLoadParameters parameters) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntryForAll(parameters)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntryForAll(parameters)).get();
   }
 
   /**
@@ -121,7 +121,7 @@ public class RepositoryComponent
   public List<RepositoryReferenceXO> readReferencesAddingEntriesForAllFormats(
       @Nullable final StoreLoadParameters parameters)
   {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntriesForAllFormats(parameters)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntriesForAllFormats(parameters)).get();
   }
 
   @DirectMethod
@@ -130,7 +130,7 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate(groups = {Create.class, Default.class})
   public RepositoryXO create(@NotNull @Valid final RepositoryXO repositoryXO) throws Exception {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.create(repositoryXO)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.create(repositoryXO)).get();
   }
 
   @DirectMethod
@@ -139,7 +139,7 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate(groups = {Update.class, Default.class})
   public RepositoryXO update(@NotNull @Valid final RepositoryXO repositoryXO) throws Exception {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.update(repositoryXO)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.update(repositoryXO)).get();
   }
 
   @DirectMethod
@@ -151,7 +151,7 @@ public class RepositoryComponent
     virtualThreadExecutor.submit(() -> {
       repositoryUiService.remove(name);
       return null;
-    }).join();
+    }).get();
   }
 
   @DirectMethod
@@ -160,7 +160,7 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate
   public String rebuildIndex(@NotEmpty final String name) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.rebuildIndex(name)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.rebuildIndex(name)).get();
   }
 
   @DirectMethod
@@ -172,7 +172,7 @@ public class RepositoryComponent
     virtualThreadExecutor.submit(() -> {
       repositoryUiService.invalidateCache(name);
       return null;
-    }).join();
+    });
   }
 
   @Timed
@@ -180,7 +180,7 @@ public class RepositoryComponent
   @DirectPollMethod(event = "coreui_Repository_readStatus")
   @RequiresAuthentication
   public List<RepositoryStatusXO> readStatus(final Map<String, String> params) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readStatus(params)).join();
+    return virtualThreadExecutor.submit(() -> repositoryUiService.readStatus(params)).get();
   }
 
   public void addRecipe(String format, Recipe recipe) {

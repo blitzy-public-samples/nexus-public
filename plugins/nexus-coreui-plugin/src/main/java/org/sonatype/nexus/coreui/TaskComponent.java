@@ -31,12 +31,12 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Provider;
 import javax.inject.Singleton;
-import javax.validation.Valid;
-import javax.validation.Validator;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.groups.Default;
-import javax.ws.rs.NotFoundException;
+import jakarta.validation.Valid;
+import jakarta.validation.Validator;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.groups.Default;
+import jakarta.ws.rs.NotFoundException;
 
 import org.sonatype.nexus.coreui.TaskXO.AdvancedSchedule;
 import org.sonatype.nexus.coreui.TaskXO.OnceSchedule;
@@ -579,15 +579,13 @@ public class TaskComponent
   }
 
   private static TaskTypeXO asTaskTypeXO(final TaskDescriptor taskDescriptor) {
-    TaskTypeXO taskTypeXO = new TaskTypeXO();
+    TaskTypeXO taskTypeXO = new TaskTypeXO(taskDescriptor.getId()
+    		, taskDescriptor.getName()
+    		, taskDescriptor.isExposed()
+    		, taskDescriptor.allowConcurrentRun()
+    		, taskDescriptor.getFormFields() != null ? taskDescriptor.getFormFields().stream().map(FormFieldXO::create).collect(toList()) : null
+    		);
 
-    taskTypeXO.setId(taskDescriptor.getId());
-    taskTypeXO.setName(taskDescriptor.getName());
-    taskTypeXO.setExposed(taskDescriptor.isExposed());
-    taskTypeXO.setConcurrentRun(taskDescriptor.allowConcurrentRun());
-    if (taskDescriptor.getFormFields() != null) {
-      taskTypeXO.setFormFields(taskDescriptor.getFormFields().stream().map(FormFieldXO::create).collect(toList()));
-    }
     return taskTypeXO;
   }
 }

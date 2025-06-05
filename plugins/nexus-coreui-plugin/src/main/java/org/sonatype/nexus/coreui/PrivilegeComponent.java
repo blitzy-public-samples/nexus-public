@@ -133,16 +133,16 @@ public class PrivilegeComponent
 
     List<PrivilegeXO> result = new ArrayList<>(xos);
     if (parameters.getFilter() != null && !parameters.getFilter().isEmpty()) {
-      String filter = parameters.getFilter().get(0).getValue();
+      String filter = parameters.getFilter().get(0).value();
       // Using pattern matching for switch to improve readability
       result = xos.stream()
           .filter(xo -> {
             // Check each field for the filter value
             return switch(xo) {
-              case PrivilegeXO p when p.getName().contains(filter) -> true;
-              case PrivilegeXO p when p.getDescription().contains(filter) -> true;
-              case PrivilegeXO p when p.getPermission().contains(filter) -> true;
-              case PrivilegeXO p when p.getType().contains(filter) -> true;
+              case PrivilegeXO p when p.name().contains(filter) -> true;
+              case PrivilegeXO p when p.description().contains(filter) -> true;
+              case PrivilegeXO p when p.permission().contains(filter) -> true;
+              case PrivilegeXO p when p.type().contains(filter) -> true;
               default -> false;
             };
           })
@@ -151,8 +151,8 @@ public class PrivilegeComponent
 
     if (parameters.getSort() != null && !parameters.getSort().isEmpty()) {
       // assume one sort, not multiple props
-      boolean ascending = "ASC".equals(parameters.getSort().get(0).getDirection());
-      String sortProperty = parameters.getSort().get(0).getProperty();
+      boolean ascending = "ASC".equals(parameters.getSort().get(0).direction());
+      String sortProperty = parameters.getSort().get(0).property();
       result.sort((a, b) -> {
         int comparison = getFieldValue(a, sortProperty).compareTo(getFieldValue(b, sortProperty));
         return ascending ? comparison : -comparison;
@@ -179,10 +179,7 @@ public class PrivilegeComponent
   public List<PrivilegeTypeXO> readTypes() {
     return privilegeDescriptors.stream()
         .map(descriptor -> {
-          PrivilegeTypeXO xo = new PrivilegeTypeXO();
-          xo.setId(descriptor.getType());
-          xo.setName(descriptor.getName());
-          xo.setFormFields(convertFormFields(descriptor));
+          PrivilegeTypeXO xo = new PrivilegeTypeXO(descriptor.getType(), descriptor.getName(),convertFormFields(descriptor));
           return xo;
         })
         .collect(Collectors.toList()); // NOSONAR
@@ -320,12 +317,12 @@ public class PrivilegeComponent
       case null -> throw new IllegalArgumentException("Input privilege XO cannot be null");
       case PrivilegeXO p -> {
         Privilege privilege = new Privilege();
-        privilege.setId(p.getId());
-        privilege.setVersion(p.getVersion().isEmpty() ? 0 : Integer.parseInt(p.getVersion()));
-        privilege.setName(p.getName());
-        privilege.setDescription(p.getDescription());
-        privilege.setType(p.getType());
-        privilege.setProperties(Maps.newHashMap(p.getProperties()));
+        privilege.setId(p.id());
+        privilege.setVersion(p.version().isEmpty() ? 0 : Integer.parseInt(p.version()));
+        privilege.setName(p.name());
+        privilege.setDescription(p.description());
+        privilege.setType(p.type());
+        privilege.setProperties(Maps.newHashMap(p.properties()));
         yield privilege;
       }
     };

@@ -59,13 +59,11 @@ public class DatastoreStateContributor
 
   @Override
   public Map<String, Object> getState() {
-    // Using Java 21 Record Pattern Matching to destructure the state record
-    DatastoreState(var enabled, var developer, var postgresql) = state;
     
     return ImmutableMap.of(
-        DATASTORE_ENABLED, enabled,
-        DATASTORE_DEVELOPER, developer,
-        DATASTORE_IS_POSTGRESQL, postgresql
+        DATASTORE_ENABLED, this.state.enabled,
+        DATASTORE_DEVELOPER, this.state.developer,
+        DATASTORE_IS_POSTGRESQL, this.state.postgresql
     );
   }
 }

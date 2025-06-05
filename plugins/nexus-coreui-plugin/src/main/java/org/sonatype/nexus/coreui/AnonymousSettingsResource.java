@@ -15,9 +15,9 @@ package org.sonatype.nexus.coreui;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.Consumes;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.Consumes;
 import javax.ws.rs.GET;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
@@ -66,12 +66,9 @@ public class AnonymousSettingsResource
     Thread.startVirtualThread(() -> {
       try {
         AnonymousConfiguration config = anonymousManager.getConfiguration();
-        AnonymousSettingsXO xo = new AnonymousSettingsXO();
-
-        xo.setEnabled(config.isEnabled());
-        xo.setUserId(config.getUserId());
-        xo.setRealmName(config.getRealmName());
-
+        AnonymousSettingsXO xo = new AnonymousSettingsXO(config.isEnabled()
+        		, config.getUserId()
+        		, config.getRealmName());
         response.resume(xo);
       } catch (Exception e) {
         response.resume(e);
@@ -87,9 +84,9 @@ public class AnonymousSettingsResource
     Thread.startVirtualThread(() -> {
       try {
         AnonymousConfiguration configuration = anonymousManager.newConfiguration();
-        configuration.setEnabled(anonymousXO.getEnabled());
-        configuration.setRealmName(anonymousXO.getRealmName());
-        configuration.setUserId(anonymousXO.getUserId());
+        configuration.setEnabled(anonymousXO.enabled());
+        configuration.setRealmName(anonymousXO.realmName());
+        configuration.setUserId(anonymousXO.userId());
         anonymousManager.setConfiguration(configuration);
         
         response.resume("OK");

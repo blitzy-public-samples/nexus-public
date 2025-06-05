@@ -12,22 +12,30 @@
  */
 package org.sonatype.nexus.coreui;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Streams.stream;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.SequencedCollection;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.validation.constraints.NotEmpty;
 
+import org.apache.shiro.authz.annotation.RequiresAuthentication;
+import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.sonatype.nexus.common.entity.DetachedEntityId;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.extdirect.DirectComponent;
@@ -47,11 +55,6 @@ import com.codahale.metrics.annotation.Timed;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.softwarementors.extjs.djn.config.annotations.DirectAction;
 import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
-import org.apache.shiro.authz.annotation.RequiresAuthentication;
-import org.apache.shiro.authz.annotation.RequiresPermissions;
-
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.Streams.stream;
 
 /**
  * Component {@link DirectComponent}.
@@ -101,8 +104,27 @@ public class ComponentComponent
     
     // Use virtual threads for I/O-bound operations
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> componentHelper.readComponentAssets(repository, componentXO)).join();
+    	
+    	 Future<SequencedCollection<AssetXO>> future = executor.submit(() -> componentHelper.readComponentAssets(repository, componentXO));
+    	 try {
+    	 return (List<AssetXO>) future.get();
+    	 } catch (InterruptedException e) {
+             Thread.currentThread().interrupt(); 
+             System.err.println("Thread interrupted while getting content type: " + e.getMessage());
+         } catch (ExecutionException e) {
+             Throwable cause = e.getCause(); // Get the original exception
+             if (cause instanceof RuntimeException) {
+                 System.err.println("Error probing content type (from RuntimeException): " + cause.getMessage());
+             } else if (cause instanceof Error) {
+                 System.err.println("Error occurred during content type probe: " + cause.getMessage());
+                 throw (Error) cause; // Re-throw Errors
+             } else {
+                 System.err.println("Unexpected exception during content type probe: " + cause.getMessage());
+             }
+         }
     }
+    
+    return Collections.emptyList();
   }
 
   @DirectMethod

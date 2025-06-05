@@ -51,11 +51,17 @@ import com.google.inject.Key;
 import com.softwarementors.extjs.djn.config.annotations.DirectAction;
 import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
 import org.eclipse.sisu.inject.BeanLocator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -71,6 +77,8 @@ import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 public class UserComponent
     extends DirectComponentSupport
 {
+  private static final Logger logger = LoggerFactory.getLogger(UserComponent.class);
+	
   private final SecuritySystem securitySystem;
 
   private final AnonymousManager anonymousManager;
@@ -78,6 +86,8 @@ public class UserComponent
   private final AuthTicketService authTickets;
 
   private final BeanLocator beanLocator;
+  
+  private ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
   @Inject
   public UserComponent(
@@ -109,12 +119,13 @@ public class UserComponent
    * Retrieve users.
    *
    * @return a list of users
+ * @throws Exception 
    */
   @DirectMethod
   @Timed
   @ExceptionMetered
   @RequiresPermissions("nexus:users:read")
-  public List<UserXO> read(@Nullable final StoreLoadParameters parameters) {
+  public List<UserXO> read(@Nullable final StoreLoadParameters parameters) throws Exception {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       return executor.submit(() -> {
         Optional<StoreLoadParameters> optParameters = Optional.ofNullable(parameters);
@@ -137,7 +148,7 @@ public class UserComponent
             .stream()
             .map(this::convert)
             .collect(Collectors.toList()); // NOSONAR
-      }).join();
+      }).get();
     } catch (Exception e) {
       log.error("Error retrieving users", e);
       throw e;
@@ -154,17 +165,19 @@ public class UserComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:users:read")
   public List<ReferenceXO> readSources() {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> 
-        stream(beanLocator.locate(Key.get(UserManager.class, Named.class)).spliterator(), false)
+	try {
+		Future<List<ReferenceXO>> future = executor.submit(() -> {
+        return stream(beanLocator.locate(Key.get(UserManager.class, Named.class)).spliterator(), false)
           .map(entry -> new ReferenceXO(((Named) entry.getKey()).value(),
               Strings2.isBlank(entry.getDescription()) ? ((Named) entry.getKey()).value() : entry.getDescription()))
-          .collect(Collectors.toList()) // NOSONAR
-      ).join();
-    } catch (Exception e) {
-      log.error("Error retrieving user sources", e);
-      throw e;
-    }
+          .collect(Collectors.toList()); // NOSONAR
+		});
+		
+		return future.get();
+	}  catch (Exception e) {
+		logger.error("Error retrieves available user sources.: ", e);
+	}
+    return Collections.emptyList();
   }
 
   /**
@@ -180,22 +193,24 @@ public class UserComponent
   @RequiresPermissions("nexus:users:create")
   @Validate(groups = {Create.class, Default.class})
   public UserXO create(@NotNull @Valid final UserXO userXO) throws NoSuchUserManagerException {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> {
-        User user = new User();
-        user.setUserId(userXO.getUserId());
-        user.setSource(DEFAULT_SOURCE);
-        user.setFirstName(userXO.getFirstName());
-        user.setLastName(userXO.getLastName());
-        user.setEmailAddress(userXO.getEmail());
-        user.setStatus(userXO.getStatus());
-        user.setRoles(getRoles(userXO));
-        return convert(securitySystem.addUser(user, userXO.getPassword()));
-      }).join();
-    } catch (Exception e) {
-      log.error("Error creating user", e);
-      throw e;
-    }
+	  try {
+			Future<UserXO> future = executor.submit(() -> {
+		        User user = new User();
+		        user.setUserId(userXO.userId());
+		        user.setSource(DEFAULT_SOURCE);
+		        user.setFirstName(userXO.firstName());
+		        user.setLastName(userXO.lastName());
+		        user.setEmailAddress(userXO.email());
+		        user.setStatus(userXO.status());
+		        user.setRoles(getRoles(userXO));
+		        return convert(securitySystem.addUser(user, userXO.password()));
+		      });
+			
+			return future.get();
+		}  catch (Exception e) {
+			logger.error("Error while creating user: ", e);
+		}
+	  return null;
   }
 
   /**
@@ -211,23 +226,25 @@ public class UserComponent
   @RequiresPermissions("nexus:users:update")
   @Validate(groups = {Update.class, Default.class})
   public UserXO update(@NotNull @Valid final UserXO userXO) throws UserNotFoundException, NoSuchUserManagerException {
-    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> {
-        User user = new User();
-        user.setUserId(userXO.getUserId());
-        user.setVersion(Integer.parseInt(userXO.getVersion()));
-        user.setSource(DEFAULT_SOURCE);
-        user.setFirstName(userXO.getFirstName());
-        user.setLastName(userXO.getLastName());
-        user.setEmailAddress(userXO.getEmail());
-        user.setStatus(userXO.getStatus());
-        user.setRoles(getRoles(userXO));
-        return convert(securitySystem.updateUser(user));
-      }).join();
-    } catch (Exception e) {
-      log.error("Error updating user", e);
-      throw e;
-    }
+		try {
+			Future<UserXO> future = executor.submit(() -> {
+				User user = new User();
+				user.setUserId(userXO.userId());
+				user.setVersion(Integer.parseInt(userXO.version()));
+				user.setSource(DEFAULT_SOURCE);
+				user.setFirstName(userXO.firstName());
+				user.setLastName(userXO.lastName());
+				user.setEmailAddress(userXO.email());
+				user.setStatus(userXO.status());
+				user.setRoles(getRoles(userXO));
+				return convert(securitySystem.updateUser(user));
+			});
+
+			return future.get();
+		} catch (Exception e) {
+			logger.error("Error while updating user: ", e);
+		}
+		return null;
   }
 
   /**
@@ -247,27 +264,39 @@ public class UserComponent
   {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       return executor.submit(() -> {
-        Set<String> mappedRoles = userRoleMappingsXO.getRoles();
+        Set<String> mappedRoles = userRoleMappingsXO.roles();
         if (mappedRoles != null && !mappedRoles.isEmpty()) {
-          User user = securitySystem.getUser(userRoleMappingsXO.getUserId(), userRoleMappingsXO.getRealm());
+          User user = securitySystem.getUser(userRoleMappingsXO.userId(), userRoleMappingsXO.realm());
           user.getRoles().forEach(role -> {
-            if (role.getSource().equals(userRoleMappingsXO.getRealm())) {
+            if (role.getSource().equals(userRoleMappingsXO.realm())) {
               mappedRoles.remove(role.getRoleId());
             }
           });
         }
-        securitySystem.setUsersRoles(userRoleMappingsXO.getUserId(), userRoleMappingsXO.getRealm(),
+        securitySystem.setUsersRoles(userRoleMappingsXO.userId(), userRoleMappingsXO.realm(),
             mappedRoles != null && !mappedRoles.isEmpty()
                 ? mappedRoles.stream()
                     .map(roleId -> new RoleIdentifier(DEFAULT_SOURCE, roleId))
                     .collect(Collectors.toSet())
                 : null);
-        return convert(securitySystem.getUser(userRoleMappingsXO.getUserId(), userRoleMappingsXO.getRealm()));
-      }).join();
-    } catch (Exception e) {
-      log.error("Error updating user role mappings", e);
-      throw e;
+        return convert(securitySystem.getUser(userRoleMappingsXO.userId(), userRoleMappingsXO.realm()));
+      }).get();
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt(); 
+        System.err.println("Thread interrupted while getting content type: " + e.getMessage());
+    }  catch (ExecutionException e) {
+        Throwable cause = e.getCause(); // Get the original exception
+        if (cause instanceof RuntimeException) {
+            System.err.println("Error probing content type (from RuntimeException): " + cause.getMessage());
+        } else if (cause instanceof Error) {
+            System.err.println("Error occurred during content type probe: " + cause.getMessage());
+            throw (Error) cause; // Re-throw Errors
+        } else {
+            System.err.println("Unexpected exception during content type probe: " + cause.getMessage());
+        }
     }
+    
+    return null;
   }
 
   /**
@@ -302,7 +331,7 @@ public class UserComponent
           throw new IllegalAccessException("Invalid authentication ticket");
         }
         return null;
-      }).join();
+      });
     } catch (Exception e) {
       log.error("Error changing password", e);
       throw e;
@@ -333,7 +362,7 @@ public class UserComponent
         }
         securitySystem.deleteUser(id, source);
         return null;
-      }).join();
+      });
     } catch (Exception e) {
       log.error("Error removing user", e);
       throw e;

@@ -28,8 +28,8 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.container.AsyncResponse;
 import javax.ws.rs.container.Suspended;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.wonderland.AuthTicketService;
@@ -48,7 +48,7 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.apache.shiro.authz.annotation.RequiresUser;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 import static org.sonatype.nexus.security.user.UserManager.DEFAULT_SOURCE;
 
 /**
@@ -144,13 +144,13 @@ public class UserResource
   {
     executor.execute(() -> {
       try {
-        if (authTickets.redeemTicket(xo.getAuthToken())) {
+        if (authTickets.redeemTicket(xo.authToken())) {
           if (isAnonymousUser(userId)) {
             asyncResponse.resume(new WebApplicationMessageException(Status.BAD_REQUEST,
                 "Password cannot be changed for user " + userId + ", as it is configured as the Anonymous user"));
             return;
           }
-          securitySystem.changePassword(userId, xo.getPassword());
+          securitySystem.changePassword(userId, xo.password());
           asyncResponse.resume(Response.Status.OK);
         }
         else {
@@ -173,12 +173,12 @@ public class UserResource
   }
 
   UserAccountXO convert(final User user) {
-    UserAccountXO xo = new UserAccountXO();
-    xo.setUserId(user.getUserId());
-    xo.setFirstName(user.getFirstName());
-    xo.setLastName(user.getLastName());
-    xo.setEmail(user.getEmailAddress());
-    xo.setExternal(!DEFAULT_SOURCE.equals(user.getSource()));
+    UserAccountXO xo = new UserAccountXO(
+    		user.getUserId(),
+    		user.getFirstName(),
+    		user.getLastName(),
+    		user.getEmailAddress(),
+    		!DEFAULT_SOURCE.equals(user.getSource()));
     return xo;
   }
 

@@ -33,10 +33,10 @@ import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.groups.Default;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.groups.Default;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
@@ -152,9 +152,9 @@ public class RepositoryUiService
   }
 
   private static ReferenceXO toReference(final Entry<String, Recipe> recipe) {
-    ReferenceXO xo = new ReferenceXO();
-    xo.setId(recipe.getKey());
-    xo.setName(String.format("%s (%s)", recipe.getValue().getFormat(), recipe.getValue().getType()));
+    ReferenceXO xo = new ReferenceXO(
+    		recipe.getKey()
+    		, String.format("%s (%s)", recipe.getValue().getFormat(), recipe.getValue().getType()));
     return xo;
   }
 
@@ -175,9 +175,7 @@ public class RepositoryUiService
   }
 
   private static BrowseableFormatXO toBrowseableFormat(final String format) {
-    BrowseableFormatXO xo = new BrowseableFormatXO();
-    xo.setId(format);
-    return xo;
+    return new BrowseableFormatXO(format);
   }
 
   @Override
@@ -221,7 +219,7 @@ public class RepositoryUiService
   {
     if (StringUtils.isNotBlank(parameters.getQuery())) {
       return references.stream()
-          .filter(repo -> repo.getName().startsWith(parameters.getQuery()))
+          .filter(repo -> repo.getType().startsWith(parameters.getQuery()))
           .collect(Collectors.toList());
     }
     return references;
@@ -256,23 +254,23 @@ public class RepositoryUiService
   @RequiresAuthentication
   @Validate(groups = {Create.class, Default.class})
   public RepositoryXO create(final @NotNull @Valid RepositoryXO repositoryXO) throws Exception {
-    securityHelper.ensurePermitted(new RepositoryAdminPermission(repositoryXO.getFormat(), repositoryXO.getName(),
+    securityHelper.ensurePermitted(new RepositoryAdminPermission(repositoryXO.format(), repositoryXO.name(),
         Collections.singletonList(BreadActions.ADD)));
 
     initializeCleanupAttributes(repositoryXO);
 
     Configuration config = repositoryManager.newConfiguration();
-    config.setRepositoryName(repositoryXO.getName());
-    config.setRecipeName(repositoryXO.getRecipe());
-    config.setOnline(repositoryXO.getOnline());
+    config.setRepositoryName(repositoryXO.name());
+    config.setRecipeName(repositoryXO.recipe());
+    config.setOnline(repositoryXO.online());
 
     Optional.ofNullable(repositoryXO)
-        .map(RepositoryXO::getRoutingRuleId)
+        .map(RepositoryXO::routingRuleId)
         .filter(StringUtils::isNotBlank)
         .map(DetachedEntityId::new)
         .ifPresent(config::setRoutingRuleId);
 
-    config.setAttributes(repositoryXO.getAttributes());
+    config.setAttributes(repositoryXO.attributes());
 
     return asRepository(repositoryManager.create(config));
   }
@@ -280,12 +278,12 @@ public class RepositoryUiService
   @RequiresAuthentication
   @Validate(groups = {Update.class, Default.class})
   public RepositoryXO update(final @NotNull @Valid RepositoryXO repositoryXO) throws Exception {
-    Repository repository = repositoryManager.get(repositoryXO.getName());
+    Repository repository = repositoryManager.get(repositoryXO.name());
     securityHelper.ensurePermitted(adminPermission(repository, BreadActions.EDIT));
 
     // Replace stored password
     Optional.of(repositoryXO)
-        .map(RepositoryXO::getAttributes)
+        .map(RepositoryXO::attributes)
         .map(attr -> attr.get("httpclient"))
         .map(httpclient -> httpclient.get("authentication"))
         .map(Map.class::cast)
@@ -307,9 +305,9 @@ public class RepositoryUiService
     initializeCleanupAttributes(repositoryXO);
 
     Configuration updatedConfiguration = repository.getConfiguration().copy();
-    updatedConfiguration.setOnline(repositoryXO.getOnline());
-    updatedConfiguration.setRoutingRuleId(toDetachedEntityId(repositoryXO.getRoutingRuleId()));
-    updatedConfiguration.setAttributes(repositoryXO.getAttributes());
+    updatedConfiguration.setOnline(repositoryXO.online());
+    updatedConfiguration.setRoutingRuleId(toDetachedEntityId(repositoryXO.routingRuleId()));
+    updatedConfiguration.setAttributes(repositoryXO.attributes());
 
     return asRepository(repositoryManager.update(updatedConfiguration));
   }
@@ -371,49 +369,45 @@ public class RepositoryUiService
 
   @VisibleForTesting
   RepositoryXO asRepository(final Repository input) {
-    RepositoryXO xo = new RepositoryXO();
-    xo.setName(input.getName());
-    xo.setType(input.getType().getValue());
-    xo.setFormat(input.getFormat().getValue());
-    xo.setOnline(input.getConfiguration().isOnline());
-    xo.setRecipe(input.getConfiguration().getRecipeName());
-    xo.setStatus(buildStatus(input));
-
+	  
     String routingRuleId = Optional.of(input)
         .map(Repository::getConfiguration)
         .map(Configuration::getRoutingRuleId)
         .map(EntityId::getValue)
         .filter(StringUtils::isNotBlank)
-        .orElse("");
-    xo.setRoutingRuleId(routingRuleId);
-
-    xo.setAttributes(filterAttributes(input.getConfiguration().copy().getAttributes()));
-    xo.setUrl(getUrl(input.getName()));
-
-    return xo;
+        .orElse("");    
+    return RepositoryXO.builder()
+    	.name(input.getName())
+        .type(input.getType().getValue())
+        .format(input.getFormat().getValue())
+        .online(input.getConfiguration().isOnline())
+        .recipe(input.getConfiguration().getRecipeName())
+        .status(buildStatus(input))
+        .routingRuleId(routingRuleId)
+        .attributes(filterAttributes(input.getConfiguration().copy().getAttributes()))
+        .url(getUrl(input.getName()))
+        .build();
   }
 
   private RepositoryXO asRepository(final Configuration input) {
-    RepositoryXO xo = new RepositoryXO();
-    xo.setName(input.getRepositoryName());
-    xo.setType(getType(input));
-    xo.setFormat(getFormat(input));
-    xo.setSize(getSize(input));
-    xo.setOnline(input.isOnline());
-    xo.setRecipe(input.getRecipeName());
-    xo.setStatus(buildStatus(input));
-
     String routingRuleId = Optional.of(input)
         .map(Configuration::getRoutingRuleId)
         .map(EntityId::getValue)
         .filter(StringUtils::isNotBlank)
         .orElse("");
-    xo.setRoutingRuleId(routingRuleId);
 
-    xo.setAttributes(filterAttributes(input.copy().getAttributes()));
-    xo.setUrl(getUrl(input.getRepositoryName()));
-
-    return xo;
+    return RepositoryXO.builder()
+        	.name(input.getRepositoryName())
+            .type(getType(input))
+            .format(getFormat(input))
+            .size(getSize(input))
+            .online(input.isOnline())
+            .recipe(input.getRecipeName())
+            .status(buildStatus(input))
+            .routingRuleId(routingRuleId)
+            .attributes(filterAttributes(input.copy().getAttributes()))
+            .url(getUrl(input.getRepositoryName()))
+            .build();
   }
 
   private static String getUrl(final String repositoryName) {
@@ -451,10 +445,9 @@ public class RepositoryUiService
   }
 
   private RepositoryStatusXO buildStatus(final Repository repository) {
-    RepositoryStatusXO statusXO = new RepositoryStatusXO();
-    statusXO.setRepositoryName(repository.getName());
-    statusXO.setOnline(repository.getConfiguration().isOnline());
-
+    RepositoryStatusXO.Builder statusXOBuilder = RepositoryStatusXO.builder();
+    statusXOBuilder.repositoryName(repository.getName());
+    statusXOBuilder.online(repository.getConfiguration().isOnline());
     // TODO - should we try to aggregate status from group members?
     if (repository.getType() instanceof ProxyType) {
       try {
@@ -464,9 +457,11 @@ public class RepositoryUiService
               repository.facet(HttpClientFacet.class).getStatus());
           
           RemoteConnectionStatus remoteStatus = future.get();
-          statusXO.setDescription(remoteStatus.getDescription());
+          //statusXO.setDescription(remoteStatus.getDescription());
+          statusXOBuilder.description(remoteStatus.getDescription());
           if (remoteStatus.getReason() != null) {
-            statusXO.setReason(remoteStatus.getReason());
+            //statusXO.setReason(remoteStatus.getReason());
+            statusXOBuilder.reason(remoteStatus.getReason());
           }
         }
       }
@@ -477,13 +472,13 @@ public class RepositoryUiService
         log.error("Error retrieving remote connection status for repository {}", repository.getName(), e);
       }
     }
-    return statusXO;
+    return statusXOBuilder.build();
   }
 
   private RepositoryStatusXO buildStatus(final Configuration configuration) {
-    RepositoryStatusXO statusXO = new RepositoryStatusXO();
-    statusXO.setRepositoryName(configuration.getRepositoryName());
-    statusXO.setOnline(configuration.isOnline());
+    RepositoryStatusXO.Builder builder = RepositoryStatusXO.builder();
+    builder.repositoryName(configuration.getRepositoryName());
+    builder.online(configuration.isOnline());
 
     Recipe recipe = recipes.get(configuration.getRecipeName());
     // TODO - should we try to aggregate status from group members?
@@ -500,9 +495,9 @@ public class RepositoryUiService
                     .getStatus());
             
             RemoteConnectionStatus remoteStatus = future.get();
-            statusXO.setDescription(remoteStatus.getDescription());
+            builder.description(remoteStatus.getDescription());
             if (remoteStatus.getReason() != null) {
-              statusXO.setReason(remoteStatus.getReason());
+              builder.reason(remoteStatus.getReason());
             }
           }
         }
@@ -515,7 +510,7 @@ public class RepositoryUiService
             configuration.getRepositoryName(), e);
       }
     }
-    return statusXO;
+    return builder.build();
   }
 
   @VisibleForTesting

@@ -171,16 +171,16 @@ public class BlobStoreInternalResource
    */
   private static String getPath(final String typeId, BlobStoreConfiguration configuration) {
     return switch (typeId) {
-      case var id when id.equals(FileBlobStore.TYPE.toLowerCase()) -> 
+      case String id when id.equals(FileBlobStore.TYPE.toLowerCase()) -> 
           configuration.attributes(FileBlobStore.CONFIG_KEY).get(FileBlobStore.PATH_KEY, String.class);
-      case var id when id.equals(S3BlobStoreConfigurationHelper.CONFIG_KEY) -> 
+      case String id when id.equals(S3BlobStoreConfigurationHelper.CONFIG_KEY) -> 
           S3BlobStoreConfigurationHelper.getBucketPrefix(configuration) + configuration
              .attributes(S3BlobStoreConfigurationHelper.CONFIG_KEY).get(S3BlobStoreConfigurationHelper.BUCKET_KEY, String.class);
-      case var id when id.equals(AZURE_TYPE) -> 
+      case String id when id.equals(AZURE_TYPE) -> 
           configuration.attributes(AZURE_CONFIG).get(CONTAINER_NAME, String.class);
-      case var id when id.equals(BlobStoreGroup.TYPE.toLowerCase()) -> 
+      case String id when id.equals(BlobStoreGroup.TYPE.toLowerCase()) -> 
           "N/A";
-      case var id when id.equals(GOOGLE_TYPE) -> {
+      case String id when id.equals(GOOGLE_TYPE) -> {
           final String prefix = Optional.ofNullable(configuration.attributes(GOOGLE_CONFIG).get(PREFIX_KEY, String.class))
             .filter(Predicates.not(Strings::isNullOrEmpty))
             .map(s -> s.replaceFirst("/$", "") + "/")

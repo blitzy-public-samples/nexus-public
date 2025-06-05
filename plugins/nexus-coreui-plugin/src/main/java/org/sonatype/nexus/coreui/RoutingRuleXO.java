@@ -143,10 +143,10 @@ public class RoutingRuleXO
     // Using Record Pattern matching in a switch expression
     return switch (rule) {
       // Pattern matching with a record type and extracting components
-      case record RoutingRuleData(String id, String ruleName, var mode, var matchers) 
+      case RoutingRuleData(String id, String ruleName, var mode, var matchers) 
            when Objects.equals(this.name, ruleName) -> true;
       // Using var for type inference in pattern variables
-      case record RoutingRuleData(var id, var ruleName, var mode, var matchers) -> false;
+      case RoutingRuleData(var id, var ruleName, var mode, var matchers) -> false;
       // Default case for non-matching types
       default -> false;
     };
@@ -157,3 +157,4 @@ public class RoutingRuleXO
    * This is for demonstration purposes only.
    */
   public record RoutingRuleData(String id, String name, RoutingMode mode, List<String> matchers) {}
+}

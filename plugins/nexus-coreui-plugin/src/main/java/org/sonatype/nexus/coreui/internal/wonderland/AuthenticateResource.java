@@ -75,8 +75,8 @@ public class AuthenticateResource
   public AuthTicketXO post(final AuthTokenXO token) {
     checkNotNull(token);
 
-    final String username = Strings2.decodeBase64(token.getU());
-    final String password = Strings2.decodeBase64(token.getP());
+    final String username = Strings2.decodeBase64(token.u());
+    final String password = Strings2.decodeBase64(token.p());
 
     // Require current user to be the requested user to authenticate
     final Subject subject = SecurityUtils.getSubject();
@@ -113,6 +113,6 @@ public class AuthenticateResource
       // Get the first realm name using iterator, which works with any Collection
       realmName = realmNames.iterator().next();
     }
-    return new AuthTicketXO().withT(authTickets.createTicket(username, realmName));
+    return new AuthTicketXO.withT(authTickets.createTicket(username, realmName));
   }
 }

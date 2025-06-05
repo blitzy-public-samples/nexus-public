@@ -105,17 +105,17 @@ public class EmailComponent
 
   EmailConfiguration convert(final EmailConfigurationXO value) {
     EmailConfiguration emailConfiguration = emailManager.newConfiguration();
-    emailConfiguration.setEnabled(value.isEnabled());
-    emailConfiguration.setHost(value.getHost());
-    emailConfiguration.setPort(value.getPort());
-    emailConfiguration.setUsername(value.getUsername());
-    emailConfiguration.setFromAddress(value.getFromAddress());
-    emailConfiguration.setSubjectPrefix(value.getSubjectPrefix());
-    emailConfiguration.setStartTlsEnabled(value.isStartTlsEnabled());
-    emailConfiguration.setStartTlsRequired(value.isStartTlsRequired());
-    emailConfiguration.setSslOnConnectEnabled(value.isSslOnConnectEnabled());
-    emailConfiguration.setSslCheckServerIdentityEnabled(value.isSslCheckServerIdentityEnabled());
-    emailConfiguration.setNexusTrustStoreEnabled(value.isNexusTrustStoreEnabled());
+    emailConfiguration.setEnabled(value.enabled());
+    emailConfiguration.setHost(value.host());
+    emailConfiguration.setPort(value.port());
+    emailConfiguration.setUsername(value.username());
+    emailConfiguration.setFromAddress(value.fromAddress());
+    emailConfiguration.setSubjectPrefix(value.subjectPrefix());
+    emailConfiguration.setStartTlsEnabled(value.startTlsEnabled());
+    emailConfiguration.setStartTlsRequired(value.startTlsRequired());
+    emailConfiguration.setSslOnConnectEnabled(value.sslOnConnectEnabled());
+    emailConfiguration.setSslCheckServerIdentityEnabled(value.sslCheckServerIdentityEnabled());
+    emailConfiguration.setNexusTrustStoreEnabled(value.nexusTrustStoreEnabled());
 
     return emailConfiguration;
   }
@@ -134,7 +134,7 @@ public class EmailComponent
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       CompletableFuture.runAsync(() -> {
         try {
-          emailManager.sendVerification(convert(configuration), configuration.getPassword(), address);
+          emailManager.sendVerification(convert(configuration), configuration.password(), address);
         } catch (EmailException e) {
           throw new RuntimeException(e);
         }

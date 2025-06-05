@@ -419,11 +419,11 @@ public class BlobStoreComponent
 
   private static Map<String, Map<String, Object>> filterAttributes(Map<String, Map<String, Object>> attributes) {
     return switch (attributes) {
-      case var attrs when attrs.get("s3") != null && attrs.get("s3").get(SECRET_ACCESS_KEY) != null -> {
+      case Map<String, Map<String, Object>> attrs when attrs.get("s3") != null && attrs.get("s3").get(SECRET_ACCESS_KEY) != null -> {
         attrs.get("s3").put(SECRET_ACCESS_KEY, PasswordPlaceholder.get());
         yield attrs;
       }
-      case var attrs when attrs.get(AZURE_CONFIG) != null && attrs.get(AZURE_CONFIG).get(AZURE_ACCOUNT_KEY) != null -> {
+      case Map<String, Map<String, Object>> attrs when attrs.get(AZURE_CONFIG) != null && attrs.get(AZURE_CONFIG).get(AZURE_ACCOUNT_KEY) != null -> {
         attrs.get(AZURE_CONFIG).put(AZURE_ACCOUNT_KEY, PasswordPlaceholder.get());
         yield attrs;
       }

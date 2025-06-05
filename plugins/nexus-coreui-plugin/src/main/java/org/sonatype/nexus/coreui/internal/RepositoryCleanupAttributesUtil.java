@@ -51,7 +51,7 @@ public class RepositoryCleanupAttributesUtil
   public static void initializeCleanupAttributes(final RepositoryXO repositoryXO) {
     checkNotNull(repositoryXO);
 
-    Map<String, Map<String, Object>> attributes = checkNotNull(repositoryXO.getAttributes());
+    Map<String, Map<String, Object>> attributes = checkNotNull(repositoryXO.attributes());
     
     // Using pattern matching to check for cleanup attributes
     if (attributes.get(CLEANUP_ATTRIBUTES_KEY) instanceof Map<?, ?> cleanup) {

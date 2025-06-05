@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.SequencedCollection;
 import java.util.Map.Entry;
 import java.util.Set;
 
@@ -131,8 +132,8 @@ public class CapabilityComponent
   @RequiresPermissions("nexus:capabilities:create")
   @Validate(groups = {Create.class, Default.class})
   public CapabilityXO create(final @NotNull @Valid CapabilityXO capabilityXO) {
-    return asCapability(capabilityRegistry.add(capabilityType(capabilityXO.getTypeId()), capabilityXO.getEnabled(),
-        capabilityXO.getNotes(), capabilityXO.getProperties()));
+    return asCapability(capabilityRegistry.add(capabilityType(capabilityXO.typeId()), capabilityXO.enabled(),
+        capabilityXO.notes(), capabilityXO.properties()));
   }
 
   /**
@@ -148,10 +149,10 @@ public class CapabilityComponent
   @RequiresPermissions("nexus:capabilities:update")
   @Validate(groups = {Update.class, Default.class})
   public CapabilityXO update(final @NotNull @Valid CapabilityXO capabilityXO) {
-    CapabilityReference capabilityReference = capabilityRegistry.get(capabilityIdentity(capabilityXO.getId()));
-    return asCapability(capabilityRegistry.update(capabilityIdentity(capabilityXO.getId()), capabilityXO.getEnabled(),
-        capabilityXO.getNotes(),
-        unfilterProperties(capabilityXO.getProperties(), capabilityReference.context().properties())));
+    CapabilityReference capabilityReference = capabilityRegistry.get(capabilityIdentity(capabilityXO.id()));
+    return asCapability(capabilityRegistry.update(capabilityIdentity(capabilityXO.id()), capabilityXO.enabled(),
+        capabilityXO.notes(),
+        unfilterProperties(capabilityXO.properties(), capabilityReference.context().properties())));
   }
 
   /**
@@ -167,10 +168,10 @@ public class CapabilityComponent
   @RequiresPermissions("nexus:capabilities:update")
   @Validate(groups = {Update.class, Default.class})
   public CapabilityXO updateNotes(final @NotNull @Valid CapabilityNotesXO capabilityNotesXO) {
-    CapabilityReference capabilityReference = capabilityRegistry.get(capabilityIdentity(capabilityNotesXO.getId()));
+    CapabilityReference capabilityReference = capabilityRegistry.get(capabilityIdentity(capabilityNotesXO.id()));
     return asCapability(
         capabilityRegistry.update(capabilityReference.context().id(), capabilityReference.context().isEnabled(),
-            capabilityNotesXO.getNotes(), capabilityReference.context().properties()));
+            capabilityNotesXO.notes(), capabilityReference.context().properties()));
   }
 
   /**
@@ -229,37 +230,40 @@ public class CapabilityComponent
   private CapabilityXO asCapability(final CapabilityReference reference) {
     CapabilityDescriptor descriptor = reference.context().descriptor();
     Capability capability = reference.capability();
-
-    CapabilityXO capabilityXO = new CapabilityXO();
-    capabilityXO.setId(reference.context().id().toString());
-    capabilityXO.setNotes(reference.context().notes());
-    capabilityXO.setTypeId(descriptor.type().toString());
-    capabilityXO.setTypeName(descriptor.name());
-    capabilityXO.setEnabled(reference.context().isEnabled());
-    capabilityXO.setActive(reference.context().isActive());
-    capabilityXO.setError(reference.context().hasFailure());
-    capabilityXO.setState("disabled");
-    capabilityXO.setStateDescription(reference.context().stateDescription());
-    capabilityXO.setProperties(filterProperties(reference.context().properties(), capability));
-    capabilityXO.setDisableWarningMessage(descriptor.getDisableWarningMessage());
-    capabilityXO.setDeleteWarningMessage(descriptor.getDeleteWarningMessage());
-
-    if (capabilityXO.getEnabled() && capabilityXO.getError()) {
-      capabilityXO.setState("error");
+    CapabilityXO.Builder builder = CapabilityXO.builder();
+    
+    
+    builder.id(reference.context().id().toString());
+    builder.notes(reference.context().notes());
+    builder.typeId(descriptor.type().toString());
+    builder.typeName(descriptor.name());
+    builder.enabled(reference.context().isEnabled());
+    builder.active(reference.context().isActive());
+    builder.error(reference.context().hasFailure());
+    builder.state("disabled");
+    builder.stateDescription(reference.context().stateDescription());
+   // Use SequencedMap ?
+    builder.properties(filterProperties(reference.context().properties(), capability));
+    builder.disableWarningMessage(descriptor.getDisableWarningMessage());
+    builder.deleteWarningMessage(descriptor.getDeleteWarningMessage());
+    
+    /**
+    if (capabilityXO.enabled() && capabilityXO.error()) {
+      builder.state("error");
     }
     else if (capabilityXO.getEnabled() && capabilityXO.getActive()) {
       capabilityXO.setState("active");
     }
     else if (capabilityXO.getEnabled() && !capabilityXO.getActive()) {
       capabilityXO.setState("passive");
-    }
+    }**/
 
     if (capability.description() != null) {
-      capabilityXO.setDescription(capability.description());
+      builder.description(capability.description());
     }
 
     if (capability.status() != null) {
-      capabilityXO.setStatus(capability.status());
+      builder.status(capability.status());
     }
 
     Set<Tag> tags = new HashSet<>();
@@ -270,21 +274,20 @@ public class CapabilityComponent
       tags.addAll(taggable.getTags());
     }
     if (!tags.isEmpty()) {
-      capabilityXO.setTags(tags.stream().collect(toMap(Tag::key, Tag::value)));
+    	// Use SequencedMap ?
+      builder.tags(tags.stream().collect(toMap(Tag::key, Tag::value)));
     }
 
-    return capabilityXO;
+    return builder.build();
   }
 
   private CapabilityTypeXO asCapabilityType(final CapabilityDescriptor capabilityDescriptor) {
-    CapabilityTypeXO capabilityTypeXO = new CapabilityTypeXO();
-    capabilityTypeXO.setId(capabilityDescriptor.type().toString());
-    capabilityTypeXO.setName(capabilityDescriptor.name());
-    capabilityTypeXO.setAbout(capabilityDescriptor.about());
-    if (capabilityDescriptor.formFields() != null) {
-      capabilityTypeXO.setFormFields(
-          capabilityDescriptor.formFields().stream().map(FormFieldXO::create).collect(toList()));
-    }
+    CapabilityTypeXO capabilityTypeXO = new CapabilityTypeXO(
+    		capabilityDescriptor.type().toString(),
+    		capabilityDescriptor.name(),
+    		capabilityDescriptor.about(),
+    		capabilityDescriptor.formFields() != null ? capabilityDescriptor.formFields().stream().map(FormFieldXO::create).collect(toList()) : null
+    		);
     return capabilityTypeXO;
   }
 

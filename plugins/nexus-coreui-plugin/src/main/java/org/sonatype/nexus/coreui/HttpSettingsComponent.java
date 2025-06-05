@@ -22,12 +22,13 @@ import javax.inject.Inject;
 import javax.annotation.PreDestroy;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.sonatype.goodies.common.Time;
-import org.sonatype.nexus.common.log.LogManager;
-import org.sonatype.nexus.common.log.Logger;
 import org.sonatype.nexus.common.text.Strings2;
 import org.sonatype.nexus.crypto.secrets.Secret;
 import org.sonatype.nexus.crypto.secrets.SecretsService;
@@ -69,7 +70,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class HttpSettingsComponent
     extends DirectComponentSupport
 {
-  private static final Logger log = LogManager.getLogger(HttpSettingsComponent.class);
+  private final Logger log = LoggerFactory.getLogger(HttpSettingsComponent.class);
   
   private final HttpClientManager httpClientManager;
 
@@ -103,32 +104,31 @@ public class HttpSettingsComponent
   }
 
   private HttpSettingsXO convert(final HttpClientConfiguration value) {
-    HttpSettingsXO result = new HttpSettingsXO();
-
+    HttpSettingsXO.Builder builder = HttpSettingsXO.builder();
     if (value.getConnection() != null) {
       ConnectionConfiguration connection = value.getConnection();
-      result.setUserAgentSuffix(connection.getUserAgentSuffix());
-      result.setTimeout(connection.getTimeout() != null ? connection.getTimeout().toSecondsI() : null);
-      result.setRetries(connection.getRetries());
+      builder.userAgentSuffix(connection.getUserAgentSuffix());
+      builder.timeout(connection.getTimeout() != null ? connection.getTimeout().toSecondsI() : null);
+      builder.retries(connection.getRetries());
     }
 
     if (value.getProxy() != null) {
       ProxyConfiguration proxy = value.getProxy();
       if (proxy.getHttp() != null) {
-        configureHttpProxy(proxy.getHttp(), result);
+        configureHttpProxy(proxy.getHttp(), builder);
       }
 
       if (proxy.getHttps() != null) {
-        configureHttpsProxy(proxy.getHttps(), result);
+        configureHttpsProxy(proxy.getHttps(), builder);
       }
 
       if (proxy.getNonProxyHosts() != null) {
-        result.setNonProxyHosts(Set.of(proxy.getNonProxyHosts()));
+        builder.nonProxyHosts(Set.of(proxy.getNonProxyHosts()));
       }
     }
 
     // ignore authentication, this is not exposed for global configuration
-    return result;
+    return builder.build();
   }
 
   /**
@@ -167,52 +167,52 @@ public class HttpSettingsComponent
   private HttpClientConfiguration convert(final HttpSettingsXO value, final HttpClientConfiguration previous) {
     HttpClientConfiguration result = httpClientManager.newConfiguration();
 
-    if (!Strings2.isBlank(value.getUserAgentSuffix())) {
+    if (!Strings2.isBlank(value.userAgentSuffix())) {
       ensureConnectionInitialized(result);
-      result.getConnection().setUserAgentSuffix(value.getUserAgentSuffix());
+      result.getConnection().setUserAgentSuffix(value.userAgentSuffix());
     }
 
-    if (value.getTimeout() != null) {
+    if (value.timeout() != null) {
       ensureConnectionInitialized(result);
-      result.getConnection().setTimeout(Time.seconds(value.getTimeout()));
+      result.getConnection().setTimeout(Time.seconds(value.timeout()));
     }
 
-    if (value.getRetries() != null) {
+    if (value.retries() != null) {
       ensureConnectionInitialized(result);
-      result.getConnection().setRetries(value.getRetries());
+      result.getConnection().setRetries(value.retries());
     }
 
     // http proxy
-    if (Boolean.TRUE.equals(value.getHttpEnabled())) {
+    if (Boolean.TRUE.equals(value.httpEnabled())) {
       ensureProxyInitialized(result);
       ProxyServerConfiguration proxyConfig = new ProxyServerConfiguration();
       proxyConfig.setEnabled(true);
-      proxyConfig.setHost(value.getHttpHost());
-      proxyConfig.setPort(value.getHttpPort());
+      proxyConfig.setHost(value.httpHost());
+      proxyConfig.setPort(value.httpPort());
       proxyConfig
-          .setAuthentication(auth(value.getHttpAuthEnabled(), value.getHttpAuthUsername(), value.getHttpAuthPassword(),
-              value.getHttpAuthNtlmHost(), value.getHttpAuthNtlmDomain(),
+          .setAuthentication(auth(value.httpAuthEnabled(), value.httpAuthUsername(), value.httpAuthPassword(),
+              value.httpAuthNtlmHost(), value.httpAuthNtlmDomain(),
               getHttpSecret(previous)));
       result.getProxy().setHttp(proxyConfig);
     }
 
     // https proxy
-    if (Boolean.TRUE.equals(value.getHttpsEnabled())) {
+    if (Boolean.TRUE.equals(value.httpsEnabled())) {
       ensureProxyInitialized(result);
       ProxyServerConfiguration proxyConfig = new ProxyServerConfiguration();
       proxyConfig.setEnabled(true);
-      proxyConfig.setHost(value.getHttpsHost());
-      proxyConfig.setPort(value.getHttpsPort());
+      proxyConfig.setHost(value.httpsHost());
+      proxyConfig.setPort(value.httpsPort());
       proxyConfig.setAuthentication(
-          auth(value.getHttpsAuthEnabled(), value.getHttpsAuthUsername(), value.getHttpsAuthPassword(),
-              value.getHttpsAuthNtlmHost(), value.getHttpsAuthNtlmDomain(),
+          auth(value.httpsAuthEnabled(), value.httpsAuthUsername(), value.httpsAuthPassword(),
+              value.httpsAuthNtlmHost(), value.httpsAuthNtlmDomain(),
               getHttpsSecret(previous)));
       result.getProxy().setHttps(proxyConfig);
     }
 
-    if (value.getNonProxyHosts() != null) {
+    if (value.nonProxyHosts() != null) {
       ensureProxyInitialized(result);
-      result.getProxy().setNonProxyHosts(value.getNonProxyHosts().toArray(new String[0]));
+      result.getProxy().setNonProxyHosts(value.nonProxyHosts().toArray(new String[0]));
     }
 
     // ignore authentication, this is not exposed for global configuration
@@ -333,41 +333,41 @@ public class HttpSettingsComponent
     }
   }
 
-  private void configureHttpProxy(ProxyServerConfiguration http, HttpSettingsXO result) {
-    result.setHttpEnabled(http.isEnabled());
-    result.setHttpHost(http.getHost());
-    result.setHttpPort(http.getPort());
+  private void configureHttpProxy(ProxyServerConfiguration http, HttpSettingsXO.Builder result) {
+    result.httpEnabled(http.isEnabled());
+    result.httpHost(http.getHost());
+    result.httpPort(http.getPort());
 
     if (http.getAuthentication() instanceof UsernameAuthenticationConfiguration auth) {
-      result.setHttpAuthEnabled(true);
-      result.setHttpAuthUsername(auth.getUsername());
-      result.setHttpAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
+      result.httpAuthEnabled(true);
+      result.httpAuthUsername(auth.getUsername());
+      result.httpAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
     }
     else if (http.getAuthentication() instanceof NtlmAuthenticationConfiguration auth) {
-      result.setHttpAuthEnabled(true);
-      result.setHttpAuthUsername(auth.getUsername());
-      result.setHttpAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
-      result.setHttpAuthNtlmHost(auth.getHost());
-      result.setHttpAuthNtlmDomain(auth.getDomain());
+      result.httpAuthEnabled(true);
+      result.httpAuthUsername(auth.getUsername());
+      result.httpAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
+      result.httpAuthNtlmHost(auth.getHost());
+      result.httpAuthNtlmDomain(auth.getDomain());
     }
   }
 
-  private void configureHttpsProxy(ProxyServerConfiguration https, HttpSettingsXO result) {
-    result.setHttpsEnabled(https.isEnabled());
-    result.setHttpsHost(https.getHost());
-    result.setHttpsPort(https.getPort());
+  private void configureHttpsProxy(ProxyServerConfiguration https, HttpSettingsXO.Builder result) {
+    result.httpsEnabled(https.isEnabled());
+    result.httpsHost(https.getHost());
+    result.httpsPort(https.getPort());
 
     if (https.getAuthentication() instanceof UsernameAuthenticationConfiguration auth) {
-      result.setHttpsAuthEnabled(true);
-      result.setHttpsAuthUsername(auth.getUsername());
-      result.setHttpsAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
+      result.httpsAuthEnabled(true);
+      result.httpsAuthUsername(auth.getUsername());
+      result.httpsAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
     }
     else if (https.getAuthentication() instanceof NtlmAuthenticationConfiguration auth) {
-      result.setHttpsAuthEnabled(true);
-      result.setHttpsAuthUsername(auth.getUsername());
-      result.setHttpsAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
-      result.setHttpsAuthNtlmHost(auth.getHost());
-      result.setHttpsAuthNtlmDomain(auth.getDomain());
+      result.httpsAuthEnabled(true);
+      result.httpsAuthUsername(auth.getUsername());
+      result.httpsAuthPassword(PasswordPlaceholder.get(auth.getPassword()));
+      result.httpsAuthNtlmHost(auth.getHost());
+      result.httpsAuthNtlmDomain(auth.getDomain());
     }
   }
   

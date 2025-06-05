@@ -15,10 +15,10 @@ package org.sonatype.nexus.coreui;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
-import javax.validation.ConstraintViolationException;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.validation.groups.Default;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.groups.Default;
 
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
@@ -32,8 +32,10 @@ import org.sonatype.nexus.selector.SelectorConfiguration;
 import org.sonatype.nexus.selector.SelectorConfigurationStore;
 import org.sonatype.nexus.selector.SelectorFactory;
 import org.sonatype.nexus.selector.SelectorManager;
+import org.sonatype.nexus.selector.UniqueSelectorName;
 import org.sonatype.nexus.validation.ConstraintViolationFactory;
 import org.sonatype.nexus.validation.Validate;
+import org.sonatype.nexus.validation.constraint.NamePatternConstants;
 import org.sonatype.nexus.validation.group.Create;
 import org.sonatype.nexus.validation.group.Update;
 
@@ -42,7 +44,7 @@ import com.codahale.metrics.annotation.Timed;
 import com.softwarementors.extjs.djn.config.annotations.DirectAction;
 import com.softwarementors.extjs.djn.config.annotations.DirectMethod;
 
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotEmpty;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -120,11 +122,11 @@ public class SelectorComponent
   @Validate(groups = {Create.class, Default.class})
   public SelectorXO create(@NotNull @Valid final SelectorXO selectorXO) {
     return CompletableFuture.supplyAsync(() -> {
-      selectorFactory.validateSelector(selectorXO.getType(), selectorXO.getExpression());
+      selectorFactory.validateSelector(selectorXO.type(), selectorXO.expression());
 
       SelectorConfiguration configuration = selectorManager.newSelectorConfiguration(
-          selectorXO.getName(), selectorXO.getType(), selectorXO.getDescription(),
-          Collections.singletonMap(EXPRESSION_KEY, selectorXO.getExpression()));
+          selectorXO.name(), selectorXO.type(), selectorXO.description(),
+          Collections.singletonMap(EXPRESSION_KEY, selectorXO.expression()));
       selectorManager.create(configuration);
       return asSelector(configuration, securitySystem.listPrivileges());
     }, virtualThreadExecutor).join();
@@ -140,10 +142,10 @@ public class SelectorComponent
   @Validate(groups = {Update.class, Default.class})
   public SelectorXO update(@NotNull @Valid final SelectorXO selectorXO) {
     return CompletableFuture.supplyAsync(() -> {
-      selectorFactory.validateSelector(selectorXO.getType(), selectorXO.getExpression());
-      SelectorConfiguration config = selectorManager.readByName(selectorXO.getName());
-      config.setDescription(selectorXO.getDescription());
-      config.setAttributes(Collections.singletonMap(EXPRESSION_KEY, selectorXO.getExpression()));
+      selectorFactory.validateSelector(selectorXO.type(), selectorXO.expression());
+      SelectorConfiguration config = selectorManager.readByName(selectorXO.name());
+      config.setDescription(selectorXO.description());
+      config.setAttributes(Collections.singletonMap(EXPRESSION_KEY, selectorXO.expression()));
       selectorManager.update(config);
       return selectorXO;
     }, virtualThreadExecutor).join();
@@ -188,14 +190,13 @@ public class SelectorComponent
   private SelectorXO asSelector(final SelectorConfiguration configuration, final Set<Privilege> privilegeSet) {
     List<String> privileges = getPrivilegesUsingSelector(configuration, privilegeSet);
 
-    SelectorXO selectorXO = new SelectorXO();
-    selectorXO.setId(configuration.getName());
-    selectorXO.setName(configuration.getName());
-    selectorXO.setType(configuration.getType());
-    selectorXO.setDescription(configuration.getDescription());
-    selectorXO.setExpression(configuration.getAttributes().get(EXPRESSION_KEY));
-    selectorXO.setUsedBy(canReadPrivileges() ? privileges : Collections.emptyList());
-    selectorXO.setUsedByCount(privileges.size());
+	SelectorXO selectorXO = new SelectorXO(configuration.getName(),
+			configuration.getName(),
+			configuration.getType(),
+			configuration.getDescription(),
+			configuration.getAttributes().get(EXPRESSION_KEY),
+			canReadPrivileges() ? privileges : Collections.emptyList(), 
+		    privileges.size());
 
     return selectorXO;
   }

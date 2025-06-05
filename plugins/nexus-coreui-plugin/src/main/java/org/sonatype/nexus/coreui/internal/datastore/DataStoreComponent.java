@@ -15,6 +15,8 @@ package org.sonatype.nexus.coreui.internal.datastore;
 import java.util.List;
 import java.util.Map;
 import java.util.SequencedCollection;
+import java.util.stream.StreamSupport;
+
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -107,7 +109,7 @@ public class DataStoreComponent
     log.debug(STR."Retrieving \{count} datastores");
     
     // Convert Iterable to SequencedCollection for better performance and modern API usage
-    return dataStoreManager.browse().stream()
+    return StreamSupport.stream(dataStoreManager.browse().splititerator(), false)
         .map(this::asDataStoreXO)
         .collect(toList());
   }
@@ -127,22 +129,9 @@ public class DataStoreComponent
         repositoryManager.browse()
     );
     
-    log.debug(STR."Retrieving H2 datastores");
-    
-    // Using pattern matching for switch to filter H2 databases
-    List<DataStoreXO> h2Datastores = dataStoreManager.browse().stream()
-        .filter(dataStore -> {
-          Object jdbcUrl = dataStore.getConfiguration().getAttributes().getOrDefault(JDBCURL_FIELD, "");
-          return switch (jdbcUrl) {
-            case String url when url.startsWith("jdbc:h2:") -> true;
-            default -> false;
-          };
-        })
-        .map(this::asDataStoreXO)
-        .collect(toList());
-    
-    log.debug(STR."Found \{h2Datastores.size()} H2 datastores");
-    return h2Datastores;
+    return StreamSupport.stream(dataStoreManager.browse().spliterator(), false).filter(
+            dataStore -> dataStore.getConfiguration().getAttributes().getOrDefault(JDBCURL_FIELD, "").startsWith("jdbc:h2:"))
+        .map(this::asDataStoreXO).collect(toList());
   }
 
   /**

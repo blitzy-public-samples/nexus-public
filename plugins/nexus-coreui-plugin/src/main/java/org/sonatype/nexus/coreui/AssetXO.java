@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.SequencedMap;
 import java.util.LinkedHashMap;
 import java.util.Objects;
-import javax.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotEmpty;
 
 /**
  * Asset exchange object.
@@ -199,5 +199,174 @@ public record AssetXO(
    */
   public SequencedMap<String, Object> getAttributes() {
     return attributes;
+  }
+  
+//--- Builder Class ---
+
+  /**
+   * Provides a static method to create a new Builder instance for AssetXO.
+   *
+   * @return A new Builder.
+   */
+  public static Builder builder() {
+      return new Builder();
+  }
+
+  public static class Builder {
+      private String id;
+      private String name;
+      private String format;
+      private String contentType;
+      private long size;
+      private String repositoryName;
+      private String containingRepositoryName;
+      private Date blobCreated;
+      private Date blobUpdated;
+      private Date lastDownloaded;
+      private String blobRef;
+      private String componentId;
+      private String createdBy;
+      private String createdByIp;
+      private SequencedMap<String, Object> attributes;
+
+      // Private constructor to enforce usage of AssetXO.builder()
+      private Builder() {
+          // Initialize attributes to avoid null, the record constructor will handle it too
+          this.attributes = new LinkedHashMap<>();
+          // Other fields can remain null if they are optional and don't have default values
+      }
+
+      public Builder id(String id) {
+          this.id = id;
+          return this;
+      }
+
+      public Builder name(String name) {
+          this.name = name;
+          return this;
+      }
+
+      public Builder format(String format) {
+          this.format = format;
+          return this;
+      }
+
+      public Builder contentType(String contentType) {
+          this.contentType = contentType;
+          return this;
+      }
+
+      public Builder size(long size) {
+          this.size = size;
+          return this;
+      }
+
+      public Builder repositoryName(String repositoryName) {
+          this.repositoryName = repositoryName;
+          return this;
+      }
+
+      public Builder containingRepositoryName(String containingRepositoryName) {
+          this.containingRepositoryName = containingRepositoryName;
+          return this;
+      }
+
+      public Builder blobCreated(Date blobCreated) {
+          // Defensive copy for mutable Date object
+          this.blobCreated = (blobCreated != null) ? (Date) blobCreated.clone() : null;
+          return this;
+      }
+
+      public Builder blobUpdated(Date blobUpdated) {
+          // Defensive copy for mutable Date object
+          this.blobUpdated = (blobUpdated != null) ? (Date) blobUpdated.clone() : null;
+          return this;
+      }
+
+      public Builder lastDownloaded(Date lastDownloaded) {
+          // Defensive copy for mutable Date object
+          this.lastDownloaded = (lastDownloaded != null) ? (Date) lastDownloaded.clone() : null;
+          return this;
+      }
+
+      public Builder blobRef(String blobRef) {
+          this.blobRef = blobRef;
+          return this;
+      }
+
+      public Builder componentId(String componentId) {
+          this.componentId = componentId;
+          return this;
+      }
+
+      public Builder createdBy(String createdBy) {
+          this.createdBy = createdBy;
+          return this;
+      }
+
+      public Builder createdByIp(String createdByIp) {
+          this.createdByIp = createdByIp;
+          return this;
+      }
+
+      /**
+       * Sets the entire attributes SequencedMap. Defensively copies the map.
+       *
+       * @param attributes The attributes map.
+       * @return The builder instance.
+       */
+      public Builder attributes(SequencedMap<String, Object> attributes) {
+          // Defensively copy the map to ensure immutability
+          this.attributes = (attributes != null) ? new LinkedHashMap<>(attributes) : new LinkedHashMap<>();
+          return this;
+      }
+
+      /**
+       * Adds a single attribute to the attributes SequencedMap.
+       *
+       * @param key The key of the attribute.
+       * @param value The value of the attribute.
+       * @return The builder instance.
+       */
+      public Builder addAttribute(String key, Object value) {
+          if (this.attributes == null) {
+              this.attributes = new LinkedHashMap<>();
+          }
+          this.attributes.put(key, value);
+          return this;
+      }
+
+      /**
+       * Builds the final AssetXO instance.
+       * The validation within the record's compact constructor will handle
+       * the Objects.requireNonNull checks, and Bean Validation annotations
+       * will be processed if a validator is configured.
+       *
+       * @return A new AssetXO instance.
+       */
+      public AssetXO build() {
+          // Ensure attributes is not null before passing to the record constructor
+          if (this.attributes == null) {
+              this.attributes = new LinkedHashMap<>();
+          }
+          return new AssetXO(
+              id,
+              name,
+              format,
+              contentType,
+              size,
+              repositoryName,
+              containingRepositoryName,
+              // Pass defensive copies of Date objects
+              (blobCreated != null) ? (Date) blobCreated.clone() : null,
+              (blobUpdated != null) ? (Date) blobUpdated.clone() : null,
+              (lastDownloaded != null) ? (Date) lastDownloaded.clone() : null,
+              blobRef,
+              componentId,
+              createdBy,
+              createdByIp,
+              attributes // This will be a LinkedHashMap (which implements SequencedMap)
+          );
+      }
   }
 }

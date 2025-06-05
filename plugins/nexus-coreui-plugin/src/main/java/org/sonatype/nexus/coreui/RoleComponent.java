@@ -179,19 +179,19 @@ public class RoleComponent
     try {
       Future<RoleXO> future = virtualThreadExecutor.submit(() -> {
         // HACK: Temporary validation for external role IDs to support editable text entry in combo box (LDAP only)
-        if ("LDAP".equals(roleXO.getSource())) {
-          securitySystem.getAuthorizationManager(roleXO.getSource()).getRole(roleXO.getId());
+        if ("LDAP".equals(roleXO.source())) {
+          securitySystem.getAuthorizationManager(roleXO.source()).getRole(roleXO.id());
         }
         return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE)
             .addRole(
                 new Role(
-                    roleXO.getId(),
-                    roleXO.getName(),
-                    roleXO.getDescription(),
-                    roleXO.getSource(),
+                    roleXO.id(),
+                    roleXO.name(),
+                    roleXO.description(),
+                    roleXO.source(),
                     false,
-                    roleXO.getRoles(),
-                    roleXO.getPrivileges())));
+                    roleXO.roles(),
+                    roleXO.privileges())));
       });
       return future.get();
     } catch (InterruptedException | ExecutionException e) {
@@ -216,14 +216,14 @@ public class RoleComponent
     try {
       Future<RoleXO> future = virtualThreadExecutor.submit(() -> {
         Role roleToUpdate = new Role();
-        roleToUpdate.setRoleId(roleXO.getId());
-        roleToUpdate.setName(roleXO.getName());
-        roleToUpdate.setDescription(roleXO.getDescription());
-        roleToUpdate.setSource(roleXO.getSource());
+        roleToUpdate.setRoleId(roleXO.id());
+        roleToUpdate.setName(roleXO.name());
+        roleToUpdate.setDescription(roleXO.description());
+        roleToUpdate.setSource(roleXO.source());
         roleToUpdate.setReadOnly(false);
-        roleToUpdate.setRoles(roleXO.getRoles());
-        roleToUpdate.setPrivileges(roleXO.getPrivileges());
-        roleToUpdate.setVersion(Integer.parseInt(roleXO.getVersion()));
+        roleToUpdate.setRoles(roleXO.roles());
+        roleToUpdate.setPrivileges(roleXO.privileges());
+        roleToUpdate.setVersion(Integer.parseInt(roleXO.version()));
         return convert(securitySystem.getAuthorizationManager(DEFAULT_SOURCE)
             .updateRole(roleToUpdate));
       });
@@ -262,16 +262,22 @@ public class RoleComponent
    * Convert role to XO.
    */
   private RoleXO convert(final Role input) {
-    RoleXO roleXO = new RoleXO();
-    roleXO.setId(input.getRoleId());
-    roleXO.setVersion(String.valueOf(input.getVersion()));
-    roleXO.setSource((DEFAULT_SOURCE.equals(input.getSource()) ||
-        Strings2.isBlank(input.getSource())) ? "Nexus" : input.getSource());
-    roleXO.setName(Strings2.isBlank(input.getName()) ? input.getRoleId() : input.getName());
-    roleXO.setDescription(Strings2.isBlank(input.getDescription()) ? input.getRoleId() : input.getDescription());
-    roleXO.setReadOnly(input.isReadOnly());
-    roleXO.setPrivileges(input.getPrivileges());
-    roleXO.setRoles(input.getRoles());
+    RoleXO roleXO = new RoleXO(
+    		input.getRoleId(), 
+    		String.valueOf(input.getVersion()), 
+    		// Set source
+    	    (DEFAULT_SOURCE.equals(input.getSource()) ||
+    	        Strings2.isBlank(input.getSource())) ? "Nexus" : input.getSource(),
+    	     // Set Name  
+    	     Strings2.isBlank(input.getName()) ? input.getRoleId() : input.getName(),
+    	    // Set description		 
+    	     Strings2.isBlank(input.getDescription()) ? input.getRoleId() : input.getDescription(),
+    	    // Set readonly 
+    	    input.isReadOnly(),
+    	    // Set privileges
+    	    input.getPrivileges(), 
+    	    // Set roles
+    	    input.getRoles());
     return roleXO;
   }
 }

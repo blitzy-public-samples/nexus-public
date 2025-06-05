@@ -161,11 +161,18 @@ public class RepositoryReferenceXO
   public int hashCode() {
     return Objects.hash(super.hashCode(), type, format, versionPolicy, url, blobStoreName, status, sortOrder);
   }
-
+  
   @Override
+  public String toString() {
+    return "RepositoryReferenceXO [id=" + getId() + ", name=" + getName() + ", type=" + type + ", format=" + format +
+        ", versionPolicy=" + versionPolicy + ", url=" + url + ", blobStoreName=" + blobStoreName + ", status=" + status
+        + ", sortOrder=" + sortOrder + "]";
+  }
+
+  /*
   public String toString() {
     return STR."RepositoryReferenceXO [id=\{getId()}, name=\{getName()}, type=\{type}, format=\{format}, " +
         "versionPolicy=\{versionPolicy}, url=\{url}, blobStoreName=\{blobStoreName}, status=\{status}, " +
         "sortOrder=\{sortOrder}]"; 
-  }
+  }*/
 }

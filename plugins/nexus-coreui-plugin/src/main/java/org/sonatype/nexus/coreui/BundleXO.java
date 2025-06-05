@@ -14,8 +14,8 @@ package org.sonatype.nexus.coreui;
 
 import java.util.List;
 import java.util.Map;
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 
 /**
  * OSGI bundle.

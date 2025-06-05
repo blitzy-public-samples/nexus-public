@@ -40,4 +40,65 @@ public record RepositoryStatusXO(
    * A reason for the status.
    */
   String reason
-) {}
+) {
+	/**
+     * Provides a static method to create a new Builder instance for RepositoryStatusXO.
+     *
+     * @return A new Builder.
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    // --- Builder Class ---
+    public static class Builder {
+        private String repositoryName;
+        private boolean online;
+        private String description;
+        private String reason;
+
+        // Private constructor to enforce usage of RepositoryStatusXO.builder()
+        private Builder() {
+            // Initialize fields with default values if necessary
+            this.online = false; // Example: default to offline
+        }
+
+        public Builder repositoryName(String repositoryName) {
+            this.repositoryName = repositoryName;
+            return this; // Return this for method chaining
+        }
+
+        public Builder online(boolean online) {
+            this.online = online;
+            return this;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
+            return this;
+        }
+
+        public Builder reason(String reason) {
+            this.reason = reason;
+            return this;
+        }
+
+        /**
+         * Builds the final RepositoryStatusXO instance.
+         * The validation annotations on the record's fields (like @NotEmpty)
+         * will be checked when the record's canonical constructor is called.
+         *
+         * @return A new RepositoryStatusXO instance.
+         */
+        public RepositoryStatusXO build() {
+            // You can add any pre-build validation or default assignments here if needed
+            return new RepositoryStatusXO(
+                repositoryName,
+                online,
+                description,
+                reason
+            );
+        }
+    }
+	
+}

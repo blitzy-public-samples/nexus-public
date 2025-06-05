@@ -133,7 +133,8 @@ public class LogsResource
     // Using pattern-like approach for parameter validation and defaults
     // This is more readable than nested if-else statements
     Long from = switch(fromByte) {
-      case null, Long l when l < 0 -> 0L;
+      case null -> 0L;
+      case Long l when l < 0 -> 0L;
       default -> fromByte;
     };
     

@@ -120,9 +120,9 @@ public class RoutingRulesResource
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   public boolean isAllowed(RoutingRuleTestXO routingRuleTestXO) {
-    String path = routingRuleTestXO.getPath();
-    List<String> matchers = routingRuleTestXO.getMatchers();
-    RoutingMode mode = routingRuleTestXO.getMode();
+    String path = routingRuleTestXO.path();
+    List<String> matchers = routingRuleTestXO.matchers();
+    RoutingMode mode = routingRuleTestXO.mode();
     return routingRuleHelper.isAllowed(mode, matchers, path);
   }
 

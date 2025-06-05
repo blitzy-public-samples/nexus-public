@@ -256,6 +256,18 @@
         </plugins>
       </build>
     </profile>
+    <profile>
+      <id>groovy-plugins-release</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>groovy-plugins-release</id>
+          <url>https://groovy.jfrog.io/artifactory/plugins-release</url>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
   </profiles>
 
 </project>

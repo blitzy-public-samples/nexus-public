@@ -79,8 +79,7 @@ owners.
 
 		<!-- Define the node and yarn versions used by the frontend-maven-plugin -->
 		<node.version>v18.17.1</node.version>
-		<!--yarn.version>v1.22.19</yarn.version-->
-		<yarn.version>v4.7.0</yarn.version>
+		<yarn.version>v1.22.19</yarn.version>
 		<npm.install>install --immutable</npm.install>
 		<npm.skipTests>false</npm.skipTests>
 		<npm.build>build-all</npm.build>
@@ -1678,7 +1677,11 @@ owners.
 						<configuration>
 							<release>21</release> <!--
 							<release>13/14/15</release> -->
-							<compilerArgs>--enable-preview</compilerArgs>
+							<compilerArgs>
+								<arg>--enable-preview</arg>
+								<arg>-Xmaxerrs</arg>
+								<arg>10000</arg>
+							</compilerArgs>
 						</configuration>
 					</plugin>
 				</plugins>

@@ -21,12 +21,12 @@ import java.util.concurrent.Executors;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
-import jakarta.servlet.ServletConfig;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.ws.rs.ext.RuntimeDelegate;
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.ext.RuntimeDelegate;
 
 import org.sonatype.nexus.rest.Component;
 
@@ -152,12 +152,13 @@ public class SiestaServlet
     
     try {
       // Submit request processing to virtual thread executor
+      String finalUri = uri;
       virtualThreadExecutor.submit(() -> {
         // Propagate MDC context to virtual thread
         if (mdcContext != null) {
           MDC.setContextMap(mdcContext);
         }
-        MDC.put(mdcKey, uri);
+        MDC.put(mdcKey, finalUri);
         
         try {
           // Process the request in the virtual thread

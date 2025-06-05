@@ -18,13 +18,15 @@ import java.util.concurrent.ThreadFactory;
 import javax.servlet.DispatcherType;
 import javax.ws.rs.client.Client;
 
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.FilterHolder;
+import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.servlet.GuiceFilter;
 import com.google.inject.servlet.GuiceServletContextListener;
-import org.eclipse.jetty.servlet.ServletTester;
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,20 +37,20 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /**
  * Support for Siesta tests.
  */
-public class SiestaTestSupport
-    extends TestSupport
-{
-  private ServletTester servletTester;
+public class SiestaTestSupport extends TestSupport {
 
+  private Server server;
   private String url;
-
   private Client client;
 
   @BeforeEach
   public void startJetty() throws Exception {
-    servletTester = new ServletTester();
-    servletTester.getContext().addEventListener(new GuiceServletContextListener()
-    {
+    server = new Server(0); // 0 to auto-select port
+
+    ServletContextHandler context = new ServletContextHandler(ServletContextHandler.SESSIONS);
+    context.setContextPath("/");
+
+    context.addEventListener(new GuiceServletContextListener() {
       final Injector injector = Guice.createInjector(new TestModule());
 
       @Override
@@ -57,37 +59,35 @@ public class SiestaTestSupport
       }
     });
 
-    // Configure ServletTester for Java 21 compatibility
-    url = servletTester.createConnector(true) + TestModule.MOUNT_POINT;
-    servletTester.addFilter(GuiceFilter.class, "/*", EnumSet.of(DispatcherType.REQUEST));
-    servletTester.addServlet(DummyServlet.class, "/*");
-    servletTester.start();
+    // Add GuiceFilter to all requests
+    FilterHolder guiceFilterHolder = new FilterHolder(GuiceFilter.class);
+    context.addFilter(guiceFilterHolder, "/*", EnumSet.of(DispatcherType.REQUEST));
 
-    // Use ResteasyClientBuilder for RESTEasy 6.2.7.Final compatibility
+    // Add your DummyServlet
+    context.addServlet(DummyServlet.class, "/*");
+
+    server.setHandler(context);
+    server.start();
+
+    int port = server.getURI().getPort();
+    url = "http://localhost:" + port + TestModule.MOUNT_POINT;
+
     client = ResteasyClientBuilder.newClient();
   }
 
   @AfterEach
   public void stopJetty() throws Exception {
     try {
-      // Proper resource cleanup
       if (client != null) {
         client.close();
       }
     } finally {
-      if (servletTester != null) {
-        servletTester.stop();
+      if (server != null) {
+        server.stop();
       }
     }
   }
 
-  /**
-   * Creates a ThreadFactory that can be configured to use virtual threads when running on Java 21.
-   * 
-   * @param useVirtualThreads whether to use virtual threads (true) or platform threads (false)
-   * @param namePrefix prefix for thread names
-   * @return a ThreadFactory that creates either virtual or platform threads
-   */
   protected ThreadFactory createThreadFactory(boolean useVirtualThreads, String namePrefix) {
     if (useVirtualThreads) {
       return Thread.ofVirtual().name(namePrefix, 0).factory();

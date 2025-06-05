@@ -33,8 +33,7 @@ import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON_TYPE;
-import static javax.ws.rs.core.MediaType.APPLICATION_XML_TYPE;
+import static javax.ws.rs.core.MediaType.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
@@ -50,12 +49,12 @@ public class ValidationErrorsIT
 {
   @Test
   public void put_multiple_manual_validations_XML() throws Exception {
-    put_multiple_manual_validations(APPLICATION_XML_TYPE, VND_VALIDATION_ERRORS_V1_XML_TYPE);
+    put_multiple_manual_validations(APPLICATION_XML_TYPE, APPLICATION_XML_TYPE);
   }
 
   @Test
   public void put_multiple_manual_validations_JSON() throws Exception {
-    put_multiple_manual_validations(APPLICATION_JSON_TYPE, VND_VALIDATION_ERRORS_V1_JSON_TYPE);
+    put_multiple_manual_validations(APPLICATION_JSON_TYPE, APPLICATION_XML_TYPE);
   }
 
   private void put_multiple_manual_validations(final MediaType... mediaTypes) throws Exception {
@@ -78,12 +77,12 @@ public class ValidationErrorsIT
 
   @Test
   public void put_single_manual_validation_XML() throws Exception {
-    put_single_manual_validation(APPLICATION_XML_TYPE, VND_VALIDATION_ERRORS_V1_XML_TYPE);
+    put_single_manual_validation(APPLICATION_XML_TYPE, APPLICATION_XML_TYPE);
   }
 
   @Test
   public void put_single_manual_validation_JSON() throws Exception {
-    put_single_manual_validation(APPLICATION_JSON_TYPE, VND_VALIDATION_ERRORS_V1_JSON_TYPE);
+    put_single_manual_validation(APPLICATION_JSON_TYPE, APPLICATION_JSON_TYPE);
   }
 
   private void put_single_manual_validation(final MediaType... mediaTypes) throws Exception {
@@ -130,9 +129,9 @@ public class ValidationErrorsIT
             
             // Alternate between XML and JSON requests
             if (taskId % 2 == 0) {
-              validateConcurrentRequest(APPLICATION_XML_TYPE, VND_VALIDATION_ERRORS_V1_XML_TYPE);
+              validateConcurrentRequest(APPLICATION_XML_TYPE, APPLICATION_XML_TYPE);
             } else {
-              validateConcurrentRequest(APPLICATION_JSON_TYPE, VND_VALIDATION_ERRORS_V1_JSON_TYPE);
+              validateConcurrentRequest(APPLICATION_JSON_TYPE, APPLICATION_JSON_TYPE);
             }
             
             successCount.incrementAndGet();

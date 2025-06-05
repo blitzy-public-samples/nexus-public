@@ -12,10 +12,11 @@
  */
 package org.sonatype.nexus.siesta;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import jakarta.ws.rs.Path;
 
+import org.jboss.resteasy.spi.HttpResponse;
 import org.sonatype.nexus.siesta.internal.resteasy.ComponentContainerImpl;
 
 import org.jboss.resteasy.core.ResourceMethodInvoker;
@@ -72,10 +73,12 @@ public class SiestaResourceMethodFinder
                                                  final HttpServletResponse response)
   {
     // Updated constructor call for RESTEasy 6.2.7.Final compatibility with Java 21
+    HttpResponse httpSession = this.componentContainer.createResteasyHttpResponse(response);
     HttpRequest httpRequest = new HttpServletInputMessage(
         request,
         response,
         request.getServletContext(),
+        httpSession,
         extractHttpHeaders(request),
         extractUriInfo(request, MOUNT_POINT),
         request.getMethod(),

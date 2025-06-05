@@ -99,11 +99,16 @@
 
     <!-- https://mvnrepository.com/artifact/org.eclipse.jetty.ee10/jetty-ee10-servlet -->
     <dependency>
-      <groupId>org.eclipse.jetty.ee10</groupId>
-      <artifactId>jetty-ee10-servlet</artifactId>
-      <version>12.0.21</version>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-servlet</artifactId>
+      <version>9.4.51.v20230217</version>
     </dependency>
-
+    <dependency>
+      <groupId>org.jboss.resteasy</groupId>
+      <artifactId>resteasy-client</artifactId>
+      <version>3.15.6.Final</version>
+      <scope>test</scope>
+    </dependency>
     <!--
     HACK: Needed for ServletTester that moved into src/test in 9.3.x :-(
     -->

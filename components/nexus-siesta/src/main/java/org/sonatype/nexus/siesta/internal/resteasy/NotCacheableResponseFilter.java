@@ -14,10 +14,10 @@ package org.sonatype.nexus.siesta.internal.resteasy;
 
 import java.io.IOException;
 
-import jakarta.ws.rs.container.ContainerRequestContext;
-import jakarta.ws.rs.container.ContainerResponseContext;
-import jakarta.ws.rs.container.ContainerResponseFilter;
-import jakarta.ws.rs.core.CacheControl;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.container.ContainerResponseContext;
+import javax.ws.rs.container.ContainerResponseFilter;
+import javax.ws.rs.core.CacheControl;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.rest.NotCacheable;

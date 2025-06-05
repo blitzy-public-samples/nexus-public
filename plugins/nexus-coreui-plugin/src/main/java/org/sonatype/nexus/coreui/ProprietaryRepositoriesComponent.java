@@ -79,8 +79,7 @@ public class ProprietaryRepositoriesComponent
         .map(Repository::getName)
         .sorted()
         .collect(Collectors.toList());
-    ProprietaryRepositoriesXO proprietaryRepositoriesXO = new ProprietaryRepositoriesXO();
-    proprietaryRepositoriesXO.setEnabledRepositories(enabledRepositories);
+    ProprietaryRepositoriesXO proprietaryRepositoriesXO = new ProprietaryRepositoriesXO(enabledRepositories);
     return proprietaryRepositoriesXO;
   }
 
@@ -98,7 +97,7 @@ public class ProprietaryRepositoriesComponent
         .stream()
         .filter(ProprietaryRepositoriesComponent::isHosted)
         .map(repo -> new ReferenceXO(repo.getName(), repo.getName()))
-        .sorted(Comparator.comparing(ReferenceXO::getName))
+        .sorted(Comparator.comparing(ReferenceXO::name))
         .collect(Collectors.toList());
   }
 
@@ -114,7 +113,7 @@ public class ProprietaryRepositoriesComponent
   @RequiresPermissions("nexus:settings:update")
   @Validate
   ProprietaryRepositoriesXO update(@NotNull @Valid final ProprietaryRepositoriesXO proprietaryRepositoriesXO) {
-    Set<String> shouldBeEnabled = new HashSet<>(proprietaryRepositoriesXO.getEnabledRepositories());
+    Set<String> shouldBeEnabled = new HashSet<>(proprietaryRepositoriesXO.enabledRepositories());
     
     // Get repositories that need to be updated
     List<Repository> reposToUpdate = repositoryManager.getRepositoriesWithAdmin()
@@ -135,7 +134,7 @@ public class ProprietaryRepositoriesComponent
               throw new RuntimeException(e);
             }
           }))
-          .toList();
+          .collect(Collectors.toList());
       
       // Wait for all updates to complete
       for (Future<?> future : futures) {

@@ -99,7 +99,7 @@ public class UploadService
         log.error(STR."Error processing upload for repository \{repository.getName()}", e);
         throw new RuntimeException(e);
       }
-    }).join();
+    }).get();
 
     // Use pattern matching for format-specific processing
     String format = repository.getFormat().getValue();

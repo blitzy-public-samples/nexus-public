@@ -71,9 +71,7 @@ public class RealmSettingsComponent
   public RealmSettingsXO read() {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       return executor.submit(() -> {
-        RealmSettingsXO settingsXO = new RealmSettingsXO();
-        settingsXO.setRealms(realmManager.getConfiguredRealmIds());
-        return settingsXO;
+       return new RealmSettingsXO(realmManager.getConfiguredRealmIds());
       }).get();
     } catch (Exception e) {
       log.error("Error retrieving realm settings", e);
@@ -95,7 +93,7 @@ public class RealmSettingsComponent
       return executor.submit(() -> 
         stream(beanLocator.locate(Key.get(Realm.class, Named.class)).spliterator(), false)
           .map(entry -> new ReferenceXO(((Named) entry.getKey()).value(), entry.getDescription()))
-          .sorted((a, b) -> a.getName().compareToIgnoreCase(b.getName()))
+          .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
           .collect(Collectors.toList())
       ).get();
     } catch (Exception e) {
@@ -118,7 +116,7 @@ public class RealmSettingsComponent
   public RealmSettingsXO update(@NotNull @Valid final RealmSettingsXO realmSettingsXO) {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       return executor.submit(() -> {
-        realmManager.setConfiguredRealmIds(realmSettingsXO.getRealms());
+        realmManager.setConfiguredRealmIds(realmSettingsXO.realms());
         return read();
       }).get();
     } catch (Exception e) {

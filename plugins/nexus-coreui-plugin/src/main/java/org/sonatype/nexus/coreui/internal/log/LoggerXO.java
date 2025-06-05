@@ -35,10 +35,6 @@ public record LoggerXO(
    * @return new LoggerXO instance with override set to true
    */
   public static LoggerXO fromEntry(Map.Entry<String, LoggerLevel> entry) {
-    // Using record pattern matching to destructure the Map.Entry
-    if (entry instanceof Map.Entry<String, LoggerLevel>(var name, var level)) {
-      return new LoggerXO(name, level, true);
-    }
-    throw new IllegalArgumentException("Invalid Map.Entry provided");
+	  return new LoggerXO(entry.getKey(), entry.getValue(), true);
   }
 }

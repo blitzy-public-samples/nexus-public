@@ -153,10 +153,15 @@ public class ComponentComponent
           repositorySelector,
           selectedRepositories,
           expression,
-          toQueryOptions(parameters))).join();
+          toQueryOptions(parameters))).get();
 
       return new PagedResponse<>(result.getTotal(), result.getResults());
-    }
+    } catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    
+    return new PagedResponse<AssetXO>(0, Collections.emptyList());
   }
 
   @DirectMethod
@@ -166,7 +171,7 @@ public class ComponentComponent
   @Validate
   public boolean canDeleteComponent(@NotEmpty final String componentModelString) {
     ComponentXO componentXO = readComponent(componentModelString);
-    Repository repository = repositoryManager.get(componentXO.getRepositoryName());
+    Repository repository = repositoryManager.get(componentXO.repositoryName());
     return componentHelper.canDeleteComponent(repository, componentXO);
   }
 
@@ -177,12 +182,17 @@ public class ComponentComponent
   @Validate
   public Set<String> deleteComponent(@NotEmpty final String componentModelString) {
     ComponentXO componentXO = readComponent(componentModelString);
-    Repository repository = repositoryManager.get(componentXO.getRepositoryName());
+    Repository repository = repositoryManager.get(componentXO.repositoryName());
     
     // Use virtual threads for I/O-bound operations
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> componentHelper.deleteComponent(repository, componentXO)).join();
-    }
+      return executor.submit(() -> componentHelper.deleteComponent(repository, componentXO)).get();
+    } catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    
+    return Collections.emptySet();
   }
 
   @DirectMethod
@@ -207,8 +217,13 @@ public class ComponentComponent
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       // GSON used by DirectJNgine can exclude some of the Guava collection types
       return new HashSet<>(executor.submit(() -> 
-          componentHelper.deleteAsset(repository, new DetachedEntityId(assetId))).join());
-    }
+          componentHelper.deleteAsset(repository, new DetachedEntityId(assetId))).get());
+    } catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    
+    return Collections.emptySet();
   }
 
   /**
@@ -267,7 +282,7 @@ public class ComponentComponent
     
     // Use virtual threads for I/O-bound operations
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      executor.submit(() -> componentHelper.deleteFolder(repository, path)).join();
+      executor.submit(() -> componentHelper.deleteFolder(repository, path));
     }
   }
 
@@ -275,8 +290,8 @@ public class ComponentComponent
     StoreLoadParameters.Sort sort = storeLoadParameters.getSort() != null ? storeLoadParameters.getSort().get(0) : null;
     return new QueryOptions(
         storeLoadParameters.getFilter("filter"),
-        sort != null ? sort.getProperty() : null,
-        sort != null ? sort.getDirection() : null,
+        sort != null ? sort.property() : null,
+        sort != null ? sort.direction() : null,
         storeLoadParameters.getStart(),
         storeLoadParameters.getLimit());
   }

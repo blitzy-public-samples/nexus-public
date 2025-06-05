@@ -450,12 +450,12 @@ public class TaskComponent
       case "hourly" -> taskScheduler.getScheduleFactory().hourly(date.getTime());
       case "daily" -> taskScheduler.getScheduleFactory().daily(date.getTime());
       case "weekly" -> taskScheduler.getScheduleFactory()
-          .weekly(date.getTime(), Arrays.stream(taskXO.getRecurringDays())
+          .weekly(date.getTime(), taskXO.getRecurringDays().stream()
               .map(recurringDay -> Weekday.values()[shiftWeekDay(recurringDay - 1, startDateClient,
                   startDateServer)])
               .collect(Collectors.toSet()));
       case "monthly" -> taskScheduler.getScheduleFactory()
-          .monthly(date.getTime(), Arrays.stream(taskXO.getRecurringDays())
+          .monthly(date.getTime(), taskXO.getRecurringDays().stream()
               .map(recurringDay -> recurringDay == 999
                   ? CalendarDay.lastDay()
                   : CalendarDay.day(

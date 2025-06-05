@@ -272,9 +272,7 @@ public class BlobStoreComponent
         quotaFactories.entrySet()
             .stream()
             .map(entry -> {
-              BlobStoreQuotaTypeXO xo = new BlobStoreQuotaTypeXO();
-              xo.setId(entry.getKey());
-              xo.setName(entry.getValue().getDisplayName());
+              BlobStoreQuotaTypeXO xo = new BlobStoreQuotaTypeXO(entry.getKey(), entry.getValue().getDisplayName());
               return xo;
             })
             .collect(Collectors.toList()) // NOSONAR
@@ -351,9 +349,7 @@ public class BlobStoreComponent
   @ExceptionMetered
   @RequiresPermissions("nexus:blobstores:read")
   public PathSeparatorXO defaultWorkDirectory() {
-    PathSeparatorXO xo = new PathSeparatorXO();
-    xo.setPath(applicationDirectories.getWorkDirectory("blobs").getPath());
-    xo.setFileSeparator(File.separator);
+    PathSeparatorXO xo = new PathSeparatorXO(applicationDirectories.getWorkDirectory("blobs").getPath(), File.separator);
     return xo;
   }
 

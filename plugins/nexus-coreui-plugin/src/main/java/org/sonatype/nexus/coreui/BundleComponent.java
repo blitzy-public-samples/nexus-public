@@ -93,7 +93,7 @@ public class BundleComponent
           // convert header dict using modern approach with Java 21 features
           Map<String, String> headers = new LinkedHashMap<>();
           Dictionary<String, String> bundleHeaders = bundle.getHeaders();
-          bundleHeaders.keys().asEnumeration().forEachRemaining(key -> headers.put(key, bundleHeaders.get(key)));
+          bundleHeaders.keys().asIterator().forEachRemaining(key -> headers.put(key, bundleHeaders.get(key)));
           entry.withHeaders(headers);
           
           log.trace(STR."Processed bundle: \{info.getSymbolicName()} (\{info.getBundleId()})");

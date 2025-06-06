@@ -26,6 +26,7 @@ import org.sonatype.nexus.repository.view.Context;
 import org.sonatype.nexus.repository.view.Handler;
 import org.sonatype.nexus.repository.view.Payload;
 import org.sonatype.nexus.repository.view.Response;
+import org.sonatype.nexus.repository.view.Status;
 import org.sonatype.nexus.repository.view.matchers.token.TokenMatcher;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -70,7 +71,7 @@ public class RawContentHandler
           yield HttpResponses.created();
         } catch (Exception e) {
           log.error(STR."Error putting content to path \{path}", e);
-          yield HttpResponses.serverError(e.getMessage());
+          yield new Response.Builder().status(new Status(false, 500, e.getMessage())).build();
         }
       }
 

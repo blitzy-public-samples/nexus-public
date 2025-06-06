@@ -16,6 +16,7 @@ import jakarta.validation.constraints.NotNull;
 
 import org.sonatype.nexus.repository.raw.internal.RawFormat;
 import org.sonatype.nexus.repository.rest.api.model.CleanupPolicyAttributes;
+import org.sonatype.nexus.repository.rest.api.model.HostedStorageAttributes;
 import org.sonatype.nexus.repository.rest.api.model.HttpClientAttributes;
 import org.sonatype.nexus.repository.rest.api.model.NegativeCacheAttributes;
 import org.sonatype.nexus.repository.rest.api.model.ProxyAttributes;
@@ -41,7 +42,7 @@ public class RawProxyApiRepository
       @JsonProperty("name") final String name,
       @JsonProperty("url") final String url,
       @JsonProperty("online") final Boolean online,
-      @JsonProperty("storage") final StorageAttributes storage,
+      @JsonProperty("storage") final HostedStorageAttributes storage,
       @JsonProperty("cleanup") final CleanupPolicyAttributes cleanup,
       @JsonProperty("proxy") final ProxyAttributes proxy,
       @JsonProperty("negativeCache") final NegativeCacheAttributes negativeCache,

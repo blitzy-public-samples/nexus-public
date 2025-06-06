@@ -83,7 +83,8 @@ public class DebianVersion
 
   @Override
   public String toString() {
-    return STR."{epoch > 0 ? STR."{epoch}:" : ""}{upstreamVersion}{debianRevision.isEmpty() ? "" : STR."-{debianRevision}"}";
+	  return (epoch > 0 ? epoch : upstreamVersion) + "" + (debianRevision.isEmpty() ? "" : debianRevision);
+     //return STR."{epoch > 0 ? STR."{epoch}:" : ""}{upstreamVersion}{debianRevision.isEmpty() ? "" : STR."-{debianRevision}"}";
   }
 
   @Override

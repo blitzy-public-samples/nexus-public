@@ -19,10 +19,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import static java.util.stream.Collectors.toList;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 
+import com.amazonaws.services.s3.model.*;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
@@ -32,9 +34,13 @@ import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
 import com.amazonaws.services.s3.model.CopyPartRequest;
 import com.amazonaws.services.s3.model.CopyPartResult;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+
+//import software.amazon.awssdk.services.s3.model.AbortMultipartUploadRequest;
+//import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+//import software.amazon.awssdk.services.s3.model.CompletedPart;
 
 import static java.lang.Math.min;
 import static java.util.stream.Collectors.toList;
@@ -61,7 +67,11 @@ public class MultipartCopier
 
   @Override
   public void copy(final AmazonS3 s3, final String bucket, final String sourcePath, final String destinationPath) {
-    ObjectMetadata metadataResult = s3.getObjectMetadata(bucket, sourcePath);
+    GetObjectMetadataRequest metadataRequest = new GetObjectMetadataRequest(bucket, sourcePath);
+
+
+    ObjectMetadata metadataResult = s3.getObjectMetadata(metadataRequest);
+
     long length = metadataResult.getContentLength();
 
     try {
@@ -116,19 +126,19 @@ public class MultipartCopier
           
           log.trace("Submitting copy task for chunk {} for {} from byte {} to {}, size {}", 
               currentPartNumber, uploadId, partOffset, partOffset + partSize - 1, partSize);
-          
+          final String uploadIdFinal = uploadId;
           // Submit the copy task to a virtual thread
           Future<?> future = executor.submit(() -> {
             try {
-              log.trace("Copying chunk {} for {} from byte {} to {}, size {}", 
-                  currentPartNumber, uploadId, partOffset, partOffset + partSize - 1, partSize);
+              log.trace("Copying chunk {} for {} from byte {} to {}, size {}",
+                      currentPartNumber, uploadIdFinal, partOffset, partOffset + partSize - 1, partSize);
               
               CopyPartRequest part = new CopyPartRequest()
                   .withSourceBucketName(bucket)
                   .withSourceKey(sourcePath)
                   .withDestinationBucketName(bucket)
                   .withDestinationKey(destinationPath)
-                  .withUploadId(uploadId)
+                  .withUploadId(uploadIdFinal)
                   .withPartNumber(currentPartNumber)
                   .withFirstByte(partOffset)
                   .withLastByte(partOffset + partSize - 1);
@@ -138,7 +148,7 @@ public class MultipartCopier
               return result;
             } 
             catch (Exception e) {
-              log.error("Error copying part {} for upload {}", currentPartNumber, uploadId, e);
+              log.error("Error copying part {} for upload {}", currentPartNumber, uploadIdFinal, e);
               throw e;
             }
           });
@@ -170,21 +180,26 @@ public class MultipartCopier
       }
       
       // Sort results by part number to ensure correct order
-      List<PartETag> partETags = results.stream()
+      List<CompletedPart> completedParts = results.stream()
           .sorted((r1, r2) -> Integer.compare(r1.getPartNumber(), r2.getPartNumber()))
-          .map(r -> new PartETag(r.getPartNumber(), r.getETag()))
-          .collect(toList());
-      
+          .map(r ->  software.amazon.awssdk.services.s3.model.CompletedPart.builder()
+                  .partNumber(r.getPartNumber())
+                  .eTag(r.getETag())
+                  .build())
+          .toList();
+
       CompleteMultipartUploadRequest compRequest = new CompleteMultipartUploadRequest()
-          .withBucketName(bucket)
-          .withKey(destinationPath)
-          .withUploadId(uploadId)
-          .withPartETags(partETags);
+              .withBucketName(bucket)
+              .withKey(destinationPath)
+              .withUploadId(uploadId)
+              .withPartETags(results.stream()
+                      .map(result -> new PartETag(result.getPartNumber(), result.getETag()))
+                      .collect(toList()));
       
       s3.completeMultipartUpload(compRequest);
       log.debug("Copy {} complete", uploadId);
     }
-    catch(SdkClientException | RuntimeException e) {
+    catch( RuntimeException e) {
       if (uploadId != null) {
         try {
           s3.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, destinationPath, uploadId));

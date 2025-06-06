@@ -25,15 +25,11 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import com.amazonaws.services.s3.model.*;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
-import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
-import com.amazonaws.services.s3.model.CopyPartRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.PartETag;
 import com.codahale.metrics.annotation.Timed;
 
 import static java.lang.Math.min;
@@ -65,8 +61,8 @@ public class ParallelCopier
   @Override
   @Timed
   public void copy(final AmazonS3 s3, final String bucket, final String srcKey, final String destKey) {
-    long length = s3.getObjectMetadata(bucket, srcKey).getContentLength();
-
+    //long length = s3.getObjectMetadata(bucket, srcKey).getContentLength();
+    long length = s3.getObjectMetadata(new GetObjectMetadataRequest(bucket, srcKey)).getContentLength();
     try {
       if (length < chunkSize) {
         s3.copyObject(bucket, srcKey, bucket, destKey);

@@ -47,7 +47,9 @@ import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
 import com.amazonaws.services.s3.model.UploadPartRequest;
+//import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.codahale.metrics.annotation.Timed;
@@ -194,7 +196,7 @@ public class ProducerConsumerUploader
       
       CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
         try (Timer.Context uploadContext = uploadChunk.time()) {
-          tags.put(s3.uploadPart(request).getPartETag());
+          tags.put(new PartETag(request.getPartNumber(), s3.uploadPart(request).getETag()));
         }
         catch (Exception ex) {
           log.error("Error uploading part of multipart upload", ex);
@@ -228,18 +230,19 @@ public class ProducerConsumerUploader
   }
 
   private UploadPartRequest buildRequest(
-      final String bucket,
-      final String key,
-      final String uploadId,
-      final Chunk chunk)
+          final String bucket,
+          final String key,
+          final String uploadId,
+          final Chunk chunk)
   {
-    return new UploadPartRequest()
-        .withBucketName(bucket)
-        .withKey(key)
-        .withUploadId(uploadId)
-        .withPartNumber(chunk.chunkNumber)
-        .withInputStream(new ByteArrayInputStream(chunk.data, 0, chunk.dataLength))
-        .withPartSize(chunk.dataLength);
+    UploadPartRequest request = new UploadPartRequest();
+    request.setBucketName(bucket);
+    request.setKey(key);
+    request.setUploadId(uploadId);
+    request.setPartNumber(chunk.chunkNumber);
+    request.setInputStream(new ByteArrayInputStream(chunk.data, 0, chunk.dataLength));
+    request.setPartSize(chunk.dataLength);
+    return request;
   }
 
   public static class ChunkReader

@@ -110,7 +110,7 @@ public class S3BlobStoreApiModel
     if (data instanceof S3BlobStoreData(var n, var sq, var bucketConfig) && 
         bucketConfig != null && 
         bucketConfig.getBucket() != null) {
-      return bucketConfig.getBucket().getName();
+      return bucketConfig.getBucket().name();
     }
     return null;
   }
@@ -131,7 +131,7 @@ public class S3BlobStoreApiModel
     return data instanceof S3BlobStoreData(var n, var sq, var bucketConfig) && 
            bucketConfig != null && 
            bucketConfig.getBucket() != null &&
-           regionName.equals(bucketConfig.getBucket().getRegion());
+           regionName.equals(bucketConfig.getBucket().region());
   }
   
   /**
@@ -164,7 +164,7 @@ public class S3BlobStoreApiModel
     return switch (data) {
       case S3BlobStoreData(var name, var sq, var bc) when bc != null && bc.getEncryption() != null -> "ENCRYPTED";
       case S3BlobStoreData(var name, var sq, var bc) when bc != null && bc.getFailoverBuckets() != null && !bc.getFailoverBuckets().isEmpty() -> "FAILOVER_ENABLED";
-      case S3BlobStoreData(var name, var sq, var bc) when bc != null && bc.getBucket() != null && "us-east-1".equals(bc.getBucket().getRegion()) -> "US_EAST";
+      case S3BlobStoreData(var name, var sq, var bc) when bc != null && bc.getBucket() != null && "us-east-1".equals(bc.getBucket().region()) -> "US_EAST";
       case S3BlobStoreData(var name, var sq, var bc) -> "STANDARD";
       default -> "UNKNOWN";
     };

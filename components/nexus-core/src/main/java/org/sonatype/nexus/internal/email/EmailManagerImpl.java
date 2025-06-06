@@ -14,6 +14,7 @@ package org.sonatype.nexus.internal.email;
 
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
@@ -348,5 +349,25 @@ public class EmailManagerImpl
       Thread.currentThread().interrupt();
       throw new EmailException("Email sending was interrupted", e);
     }
+  }
+
+  @Override
+  public CompletableFuture<Void> sendAsync(Email mail) {
+    return null;
+  }
+
+  @Override
+  public CompletableFuture<Void> sendVerificationAsync(EmailConfiguration configuration, String password, String address) {
+    return null;
+  }
+
+  @Override
+  public CompletableFuture<Void> sendVerificationAsync(EmailConfiguration configuration, String address) {
+    return null;
+  }
+
+  @Override
+  public CompletableFuture<String> constructMessageAsync(String message) {
+    return null;
   }
 }

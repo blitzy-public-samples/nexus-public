@@ -15,6 +15,7 @@ package org.sonatype.nexus.blobstore.s3.internal.ui;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.IntStream;
@@ -77,9 +78,10 @@ public class S3Component
     );
 
     this.encryptionTypes = Arrays.asList(
-        new S3EncryptionTypeXO().withOrder(0).withId(NoEncrypter.ID).withName(NoEncrypter.NAME),
-        new S3EncryptionTypeXO().withOrder(1).withId(S3ManagedEncrypter.ID).withName(S3ManagedEncrypter.NAME),
-        new S3EncryptionTypeXO().withOrder(2).withId(KMSEncrypter.ID).withName(KMSEncrypter.NAME)
+            new S3EncryptionTypeXO(0, NoEncrypter.ID, NoEncrypter.NAME),
+            new S3EncryptionTypeXO(1, S3ManagedEncrypter.ID, S3ManagedEncrypter.NAME),
+            new S3EncryptionTypeXO(2, KMSEncrypter.ID, KMSEncrypter.NAME)
+
     );
   }
 
@@ -104,7 +106,9 @@ public class S3Component
   @RequiresPermissions("nexus:settings:read")
   public List<S3RegionXO> regions() {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> regions).join();
+      return executor.submit(() -> regions).get();
+    } catch (ExecutionException | InterruptedException e) {
+        throw new RuntimeException(e);
     }
   }
 
@@ -117,7 +121,9 @@ public class S3Component
   @RequiresPermissions("nexus:settings:read")
   public List<S3SignerTypeXO> signertypes() {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> signerTypes).join();
+      return executor.submit(() -> signerTypes).get();
+    } catch (ExecutionException | InterruptedException e) {
+        throw new RuntimeException(e);
     }
   }
 
@@ -130,7 +136,9 @@ public class S3Component
   @RequiresPermissions("nexus:settings:read")
   public List<S3EncryptionTypeXO> encryptionTypes() {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> encryptionTypes).join();
+      return executor.submit(() -> encryptionTypes).get();
+    } catch (ExecutionException | InterruptedException e) {
+        throw new RuntimeException(e);
     }
   }
 }

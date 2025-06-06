@@ -54,14 +54,15 @@ public class RepositoryCleanupAttributesUtil
     Map<String, Map<String, Object>> attributes = checkNotNull(repositoryXO.attributes());
     
     // Using pattern matching to check for cleanup attributes
-    if (attributes.get(CLEANUP_ATTRIBUTES_KEY) instanceof Map<?, ?> cleanup) {
+    if (attributes.get(CLEANUP_ATTRIBUTES_KEY) instanceof Map<String, Object> cleanup) {
       // Using pattern matching for type-safe cast
       Object policyNamesObj = cleanup.get(CLEANUP_NAME_KEY);
       if (policyNamesObj instanceof Collection<?> policyNames) {
         // Using pattern matching in switch for more concise code
         switch (policyNames) {
+          case null -> attributes.remove(CLEANUP_ATTRIBUTES_KEY);
           case Collection<?> c when c.isEmpty() -> attributes.remove(CLEANUP_ATTRIBUTES_KEY);
-          case Collection<String> c -> cleanup.put(CLEANUP_NAME_KEY, newLinkedHashSet(c));
+          //case Collection<String> c -> cleanup.put(CLEANUP_NAME_KEY, newLinkedHashSet(c));
           default -> attributes.remove(CLEANUP_ATTRIBUTES_KEY); // Invalid type in collection
         }
       } else {

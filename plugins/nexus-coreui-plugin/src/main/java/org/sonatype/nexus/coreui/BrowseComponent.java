@@ -138,14 +138,15 @@ public class BrowseComponent
   private BrowseNodeXO processBrowseNode(BrowseNode browseNode, String path) {
     String encodedPath = EncodingUtil.urlEncode(browseNode.getName());
     String type = getNodeType(browseNode);
-    return new BrowseNodeXO()
-        .withId(isRoot(path) ? encodedPath : (path + "/" + encodedPath))
-        .withType(type)
-        .withText(browseNode.getName())
-        .withLeaf(browseNode.isLeaf())
-        .withComponentId(browseNode.getComponentId() == null ? null : browseNode.getComponentId().getValue())
-        .withAssetId(browseNode.getAssetId() == null ? null : browseNode.getAssetId().getValue())
-        .withPackageUrl(browseNode.getPackageUrl());
+    BrowseNodeXO.Builder builder = BrowseNodeXO.builder();
+    return builder.id(isRoot(path) ? encodedPath : (path + "/" + encodedPath))
+        .type(type)
+        .text(browseNode.getName())
+        .leaf(browseNode.isLeaf())
+        .componentId(browseNode.getComponentId() == null ? null : browseNode.getComponentId().getValue())
+        .assetId(browseNode.getAssetId() == null ? null : browseNode.getAssetId().getValue())
+        .packageUrl(browseNode.getPackageUrl())
+        .build();
   }
 
   public boolean isRoot(String path) {

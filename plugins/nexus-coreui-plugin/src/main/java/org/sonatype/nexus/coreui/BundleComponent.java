@@ -77,27 +77,28 @@ public class BundleComponent
       return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         return stream(bundleContext.getBundles()).map(bundle -> {
           BundleInfo info = bundleService.getInfo(bundle);
-          BundleXO entry = new BundleXO()
-              .withId(info.getBundleId())
-              .withState(info.getState().name())
-              .withName(info.getName())
-              .withSymbolicName(info.getSymbolicName())
-              .withVersion(info.getVersion())
-              .withLocation(info.getUpdateLocation())
-              .withStartLevel(info.getStartLevel())
-              .withLastModified(bundle.getLastModified())
-              .withFragment(info.isFragment())
-              .withFragments(info.getFragments().stream().map(Bundle::getBundleId).collect(Collectors.toList()))
-              .withFragmentHosts(info.getFragmentHosts().stream().map(Bundle::getBundleId).collect(Collectors.toList()));
-
+          BundleXO.Builder builder = BundleXO.builder();
+          builder
+      		.id(info.getBundleId())
+            .state(info.getState().name())
+            .name(info.getName())
+            .symbolicName(info.getSymbolicName())
+            .version(info.getVersion())
+            .location(info.getUpdateLocation())
+            .startLevel(info.getStartLevel())
+            .lastModified(bundle.getLastModified())
+            .fragment(info.isFragment())
+            .fragments(info.getFragments().stream().map(Bundle::getBundleId).collect(Collectors.toList()))
+            .fragmentHosts(info.getFragmentHosts().stream().map(Bundle::getBundleId).collect(Collectors.toList()));
+          
           // convert header dict using modern approach with Java 21 features
           Map<String, String> headers = new LinkedHashMap<>();
           Dictionary<String, String> bundleHeaders = bundle.getHeaders();
           bundleHeaders.keys().asIterator().forEachRemaining(key -> headers.put(key, bundleHeaders.get(key)));
-          entry.withHeaders(headers);
+          builder.headers(headers);
           
           log.trace(STR."Processed bundle: \{info.getSymbolicName()} (\{info.getBundleId()})");
-          return entry;
+          return  builder.build();
         }).collect(Collectors.toList());
       }).get();
     }

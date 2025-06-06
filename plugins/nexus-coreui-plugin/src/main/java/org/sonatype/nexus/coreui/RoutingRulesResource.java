@@ -13,6 +13,7 @@
 package org.sonatype.nexus.coreui;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -131,36 +132,47 @@ public class RoutingRulesResource
   public List<RoutingRuleXO> getRoutingRules(@QueryParam("includeRepositoryNames") boolean includeRepositoryNames) {
     routingRuleHelper.ensureUserHasPermissionToRead();
 
-    List<RoutingRuleXO> rules = virtualThreadExecutor.submit(() -> 
-      routingRuleStore.list()
-        .stream()
-        .map(RoutingRulesResource::toXO)
-        .collect(toList())
-    ).join();
-
-    if (includeRepositoryNames) {
-      setAssignedRepositories(rules);
-    }
-
+    List<RoutingRuleXO> rules = Collections.emptyList();
+	try {
+		rules = virtualThreadExecutor.submit(() -> 
+		  routingRuleStore.list()
+		    .stream()
+		    .map(RoutingRulesResource::toXO)
+		    .collect(toList())
+		).get();
+		
+		if (includeRepositoryNames) {
+		     setAssignedRepositories(rules);
+		}
+	} catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
     return rules;
   }
 
   @RequiresAuthentication
   @RequiresPermissions("nexus:*")
   private void setAssignedRepositories(final List<RoutingRuleXO> rules) {
-    Map<EntityId, List<Repository>> assignedRepositories = virtualThreadExecutor.submit(() ->
-      routingRuleHelper.calculateAssignedRepositories()
-    ).join();
-    
-    for (RoutingRuleXO rule : rules) {
-      List<Repository> repositories = assignedRepositories.computeIfAbsent(id(rule.getId()), id -> emptyList());
-      List<String> repositoryNames = repositoryPermissionChecker
-          .userHasRepositoryAdminPermission(repositories, BreadActions.READ).stream().map(Repository::getName)
-          .sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList());
+    Map<EntityId, List<Repository>> assignedRepositories = Collections.emptyMap();
+	try {
+		assignedRepositories = virtualThreadExecutor.submit(() ->
+		  routingRuleHelper.calculateAssignedRepositories()
+		).get();
+		
+		for (RoutingRuleXO rule : rules) {
+		      List<Repository> repositories = assignedRepositories.computeIfAbsent(id(rule.getId()), id -> emptyList());
+		      List<String> repositoryNames = repositoryPermissionChecker
+		          .userHasRepositoryAdminPermission(repositories, BreadActions.READ).stream().map(Repository::getName)
+		          .sorted(String.CASE_INSENSITIVE_ORDER).collect(Collectors.toList());
 
-      rule.setAssignedRepositoryCount(repositories.size());
-      rule.setAssignedRepositoryNames(repositoryNames);
-    }
+		      rule.setAssignedRepositoryCount(repositories.size());
+		      rule.setAssignedRepositoryNames(repositoryNames);
+		    }
+	} catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
   }
 
   /**

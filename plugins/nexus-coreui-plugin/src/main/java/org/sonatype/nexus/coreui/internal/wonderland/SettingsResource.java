@@ -49,8 +49,9 @@ public class SettingsResource
     List<PropertyXO> properties = new ArrayList<>();
 
     properties.add(
-        new PropertyXO().withKey("keepAlive")
-            .withValue(Boolean.toString(SystemPropertiesHelper.getBoolean("nexus.ui.keepAlive", true)))
+        new PropertyXO(
+        		"keepAlive"
+             ,Boolean.toString(SystemPropertiesHelper.getBoolean("nexus.ui.keepAlive", true)))
     );
 
     return properties;

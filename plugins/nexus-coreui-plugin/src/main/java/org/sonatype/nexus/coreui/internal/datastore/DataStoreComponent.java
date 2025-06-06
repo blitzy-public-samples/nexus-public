@@ -109,7 +109,7 @@ public class DataStoreComponent
     log.debug(STR."Retrieving \{count} datastores");
     
     // Convert Iterable to SequencedCollection for better performance and modern API usage
-    return StreamSupport.stream(dataStoreManager.browse().splititerator(), false)
+    return StreamSupport.stream(dataStoreManager.browse().spliterator(), false)
         .map(this::asDataStoreXO)
         .collect(toList());
   }

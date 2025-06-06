@@ -16,7 +16,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -110,7 +112,7 @@ public class BlobStoreInternalResource
     this.blobStoreQuotaTypes = quotaFactories.entrySet().stream()
         .map(BlobStoreQuotaTypesUIResponse::new).collect(toList());
     this.repositoryManager = checkNotNull(repositoryManager);
-    this.virtualThreadExecutor = Thread.ofVirtual().name("blobstore-resource-", 0).factory();
+    this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /**
@@ -224,15 +226,18 @@ public class BlobStoreInternalResource
   @Path("/usage/{name}")
   public BlobStoreUsageUIResponse getBlobStoreUsage(@PathParam("name") final String name) {
     // Execute this I/O-bound operation on a virtual thread for better scalability
-    var task = () -> {
-      long repositoryUsage = repositoryManager.blobstoreUsageCount(name);
-      long blobStoreUsage = blobStoreManager.blobStoreUsageCount(name);
-      return new BlobStoreUsageUIResponse(repositoryUsage, blobStoreUsage);
-    };
+    Callable<BlobStoreUsageUIResponse> task = new Callable<BlobStoreUsageUIResponse>() {
+		@Override
+		public BlobStoreUsageUIResponse call() throws Exception {
+			long repositoryUsage = repositoryManager.blobstoreUsageCount(name);
+		      long blobStoreUsage = blobStoreManager.blobStoreUsageCount(name);
+		      return new BlobStoreUsageUIResponse(repositoryUsage, blobStoreUsage);
+		}
+	};
     
     // Run the task on a virtual thread
     try {
-      var future = NexusExecutorService.submit(virtualThreadExecutor, task);
+      var future = Executors.newVirtualThreadPerTaskExecutor().submit(task);
       return future.get();
     } catch (Exception e) {
       logger.error(STR."Error getting blob store usage for \{name}", e);

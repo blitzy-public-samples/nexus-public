@@ -80,11 +80,7 @@ public class NodeAccessComponent
       var displayName = e.getValue();
       var isLocal = nodeId.equals(nodeAccess.getId());
       
-      var nodeInfoXO = new NodeInfoXO();
-      nodeInfoXO.setName(nodeId);
-      nodeInfoXO.setLocal(isLocal);
-      nodeInfoXO.setDisplayName(displayName);
-      return nodeInfoXO;
+      return new NodeInfoXO(nodeId, isLocal, displayName );
     }
     
     // This should never happen as we're already checking the type in the stream

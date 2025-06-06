@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -225,11 +226,11 @@ public class ContentComponentHelper
   }
 
   @Override
-  public Set<String> deleteComponent(final Repository repository, final ComponentXO model) {
+  public SequencedSet<String> deleteComponent(final Repository repository, final ComponentXO model) {
     log.info(STR."Deleting component \{model.name()} from repository \{repository.getName()}");
     return findComponentsByModel(repository, model)
         .flatMap(component -> maintenanceService.deleteComponent(repository, component).stream())
-        .collect(toSet());
+        .collect(Collectors.toCollection(LinkedHashSet::new));
   }
 
   @Override
@@ -255,11 +256,14 @@ public class ContentComponentHelper
   }
 
   @Override
-  public SequencedSet deleteAsset(final Repository repository, final EntityId assetId) {
+  public SequencedSet<String> deleteAsset(final Repository repository, final EntityId assetId) {
     log.info(STR."Deleting asset with ID \{assetId} from repository \{repository.getName()}");
     return findAssetById(repository, assetId)
-        .map(asset -> maintenanceService.deleteAsset(repository, asset))
-        .orElse(ImmutableSet.of());
+        .map(asset -> { 
+        	Set<String> deleted = maintenanceService.deleteAsset(repository, asset);
+        	return new LinkedHashSet<String>(deleted);
+        })
+        .orElse(new LinkedHashSet<String>());
   }
 
   @Override
@@ -334,7 +338,7 @@ public class ContentComponentHelper
     
     asset.component().ifPresent(component -> builder.componentId(componentId(component)));
 
-    SequencedMap<String, Object> attributes = new HashMap<>(asset.attributes().backing());
+    SequencedMap<String, Object> attributes = new LinkedHashMap<String, Object>(asset.attributes().backing());
     Object formatAttributes = attributes.get(format);
     if (!Strings2.isEmpty(asset.kind())) {
       if (formatAttributes instanceof Map<?, ?> formatMap) {

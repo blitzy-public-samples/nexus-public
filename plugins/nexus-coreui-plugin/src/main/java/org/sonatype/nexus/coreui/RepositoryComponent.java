@@ -12,9 +12,11 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -67,28 +69,49 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryXO> read() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.read()).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.read()).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in read() operation", e);
+	}
+    
+    return Collections.emptyList();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<ReferenceXO> readRecipes() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readRecipes()).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.readRecipes()).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<Format> readFormats() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readFormats()).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.readFormats()).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   @DirectMethod
   @Timed
   @ExceptionMetered
   public List<BrowseableFormatXO> getBrowseableFormats() {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.getBrowseableFormats()).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.getBrowseableFormats()).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   /**
@@ -98,7 +121,12 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryReferenceXO> readReferences(@Nullable final StoreLoadParameters parameters) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferences(parameters)).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.readReferences(parameters)).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   /**
@@ -108,7 +136,12 @@ public class RepositoryComponent
   @Timed
   @ExceptionMetered
   public List<RepositoryReferenceXO> readReferencesAddingEntryForAll(@Nullable final StoreLoadParameters parameters) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntryForAll(parameters)).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntryForAll(parameters)).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   /**
@@ -121,7 +154,12 @@ public class RepositoryComponent
   public List<RepositoryReferenceXO> readReferencesAddingEntriesForAllFormats(
       @Nullable final StoreLoadParameters parameters)
   {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntriesForAllFormats(parameters)).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.readReferencesAddingEntriesForAllFormats(parameters)).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   @DirectMethod
@@ -160,7 +198,12 @@ public class RepositoryComponent
   @RequiresAuthentication
   @Validate
   public String rebuildIndex(@NotEmpty final String name) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.rebuildIndex(name)).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.rebuildIndex(name)).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return null;
   }
 
   @DirectMethod
@@ -180,7 +223,12 @@ public class RepositoryComponent
   @DirectPollMethod(event = "coreui_Repository_readStatus")
   @RequiresAuthentication
   public List<RepositoryStatusXO> readStatus(final Map<String, String> params) {
-    return virtualThreadExecutor.submit(() -> repositoryUiService.readStatus(params)).get();
+    try {
+		return virtualThreadExecutor.submit(() -> repositoryUiService.readStatus(params)).get();
+	} catch (InterruptedException | ExecutionException e) {
+		log.error("Error in repository component operation", e);
+	}
+    return Collections.emptyList();
   }
 
   public void addRecipe(String format, Recipe recipe) {

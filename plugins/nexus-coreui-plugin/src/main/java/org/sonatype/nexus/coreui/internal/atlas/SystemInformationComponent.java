@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.coreui.internal.atlas;
 
+import java.util.Collections;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -70,8 +72,13 @@ public class SystemInformationComponent
   public Map<String, Object> read() {
     // Using virtual thread for I/O-bound operation to improve scalability
     // This is especially beneficial when gathering system information involves I/O operations
+	  
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      return executor.submit(() -> dependencies.systemInformationGenerator().report()).join();
-    }
+      return executor.submit(() -> dependencies.systemInformationGenerator().report()).get();
+    } catch (InterruptedException | ExecutionException e) {
+		log.error("Error while retrieving system information", e);
+	}
+    
+    return Collections.emptyMap();
   }
 }

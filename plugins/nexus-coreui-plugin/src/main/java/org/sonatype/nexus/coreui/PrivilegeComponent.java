@@ -346,7 +346,7 @@ public class PrivilegeComponent
       return null;
     }
 
-    return descriptor.getFormFields()
+    return (List<FormFieldXO>) descriptor.getFormFields()
         .stream()
         .map(f -> FormFieldXO.create((FormField) f))
         .collect(Collectors.toList()); // NOSONAR

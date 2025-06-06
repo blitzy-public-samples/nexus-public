@@ -32,7 +32,7 @@ public interface AssetAttributeTransformer
    * @param assetXO the asset to be transformed
    * @return a new {@link AssetXO} instance with the transformed attributes
    */
-  AssetXO transform(AssetXO assetXO);
+  void transform(AssetXO assetXO);
   
   /**
    * Convenience method to create a transformer that only modifies the attributes map.
@@ -62,18 +62,5 @@ public interface AssetAttributeTransformer
         attributesTransformer.apply(assetXO.attributes())
     );
   }
-  
-  /**
-   * Returns a composed transformer that first applies this transformer and then
-   * applies the {@code after} transformer.
-   *
-   * @param after the transformer to apply after this transformer is applied
-   * @return a composed transformer that first applies this transformer and then
-   *         applies the {@code after} transformer
-   * @throws NullPointerException if after is null
-   */
-  default AssetAttributeTransformer andThen(AssetAttributeTransformer after) {
-    java.util.Objects.requireNonNull(after);
-    return assetXO -> after.transform(transform(assetXO));
-  }
+
 }

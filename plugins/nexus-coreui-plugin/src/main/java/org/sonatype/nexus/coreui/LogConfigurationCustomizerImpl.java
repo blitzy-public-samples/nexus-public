@@ -56,12 +56,6 @@ public class LogConfigurationCustomizerImpl
       // Example of using String Templates with conditional expressions
       log.debug(STR."Logger level is default: \{level == LoggerLevel.DEFAULT}");
       
-      // Example comparing old style vs. new String Template style
-      // Old style with concatenation:
-      // log.debug("Found " + configuration.getLoggerNames().size() + " loggers in configuration");
-      // New style with String Templates:
-      log.debug(STR."Found \{configuration.getLoggerNames().size()} loggers in configuration");
-      
       // Example with multiple expressions and formatting
       String className = this.getClass().getSimpleName();
       log.debug(STR."\{className} is applying configuration at thread \{Thread.currentThread().getName()}");

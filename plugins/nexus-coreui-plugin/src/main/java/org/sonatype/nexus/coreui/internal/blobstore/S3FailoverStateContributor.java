@@ -14,6 +14,7 @@ package org.sonatype.nexus.coreui.internal.blobstore;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -77,7 +78,7 @@ public class S3FailoverStateContributor
             log.trace(STR."Database check for S3 Failover migration version \{S3_FAILOVER_MIGRATION_VERSION} returned: \{result}");
             return result;
           },
-          CompletableFuture.delayedExecutor(0, java.util.concurrent.TimeUnit.MILLISECONDS, Thread.ofVirtual().factory())
+          CompletableFuture.delayedExecutor(0, java.util.concurrent.TimeUnit.MILLISECONDS, Executors.newVirtualThreadPerTaskExecutor())
       ).join();
     } catch (Exception e) {
       log.warn(STR."Error checking database version for S3 Failover: \{e.getMessage()}");

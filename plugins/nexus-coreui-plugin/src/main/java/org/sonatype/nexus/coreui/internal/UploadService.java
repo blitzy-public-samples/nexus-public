@@ -14,6 +14,7 @@ package org.sonatype.nexus.coreui.internal;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import javax.inject.Inject;
@@ -41,37 +42,33 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 @Singleton
-public class UploadService
-  extends ComponentSupport
-{
-  private final UploadManager uploadManager;
+public class UploadService extends ComponentSupport {
+	private final UploadManager uploadManager;
 
-  private final RepositoryManager repositoryManager;
+	private final RepositoryManager repositoryManager;
 
-  private final RepositoryCacheInvalidationService repositoryCacheInvalidationService;
+	private final RepositoryCacheInvalidationService repositoryCacheInvalidationService;
 
-  private static final String NPM_FORMAT = "npm";
+	private static final String NPM_FORMAT = "npm";
 
-  @Inject
-  public UploadService(final RepositoryManager repositoryManager,
-                       final UploadManager uploadManager,
-                       final RepositoryCacheInvalidationService repositoryCacheInvalidationService)
-  {
-    this.uploadManager = checkNotNull(uploadManager);
-    this.repositoryManager = checkNotNull(repositoryManager);
-    this.repositoryCacheInvalidationService = checkNotNull(repositoryCacheInvalidationService);
-  }
+	@Inject
+	public UploadService(final RepositoryManager repositoryManager, final UploadManager uploadManager,
+			final RepositoryCacheInvalidationService repositoryCacheInvalidationService) {
+		this.uploadManager = checkNotNull(uploadManager);
+		this.repositoryManager = checkNotNull(repositoryManager);
+		this.repositoryCacheInvalidationService = checkNotNull(repositoryCacheInvalidationService);
+	}
 
-  /**
-   * Get a list of available definitions for upload.
-   *
-   * @return collection of available upload definitions
-   */
-  public Collection<UploadDefinition> getAvailableDefinitions() {
-    return uploadManager.getAvailableDefinitions();
-  }
+	/**
+	 * Get a list of available definitions for upload.
+	 *
+	 * @return collection of available upload definitions
+	 */
+	public Collection<UploadDefinition> getAvailableDefinitions() {
+		return uploadManager.getAvailableDefinitions();
+	}
 
-  /**
+	/**
    * Perform an upload of assets using Virtual Threads for improved I/O handling.
    *
    * @since 3.16
@@ -91,6 +88,7 @@ public class UploadService
         STR."Specified repository '\{repositoryName}' is missing");
 
     // Handle the upload using a virtual thread for better I/O performance
+    try {
     UploadResponse uploadResponse = Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
       try {
         log.debug(STR."Handling upload for repository \{repository.getName()} with format \{repository.getFormat().getValue()}");
@@ -100,8 +98,8 @@ public class UploadService
         throw new RuntimeException(e);
       }
     }).get();
-
-    // Use pattern matching for format-specific processing
+    
+ // Use pattern matching for format-specific processing
     String format = repository.getFormat().getValue();
     switch (format) {
       case NPM_FORMAT -> {
@@ -118,9 +116,15 @@ public class UploadService
     }
 
     return createSearchTerm(uploadResponse.getAssetPaths());
+    
+    } catch (InterruptedException | ExecutionException e) {
+        log.error("Error executing read operation on virtual thread", e);
+        Thread.currentThread().interrupt();
+        throw new RuntimeException("Error reading blob stores", e);
+    }
   }
 
-  /**
+	/**
    * Creates a search term based on the common prefix of all created asset paths.
    *
    * @param createdPaths collection of asset paths created during upload
@@ -142,32 +146,32 @@ public class UploadService
     return prefix;
   }
 
-  /**
-   * Removes the last segment from a path.
-   *
-   * @param path the path to process
-   * @return the path with the last segment removed
-   */
-  private String removeLastSegment(final String path) {
-    int index = path.lastIndexOf('/');
-    if (index != -1) {
-      return path.substring(0, index);
-    }
-    return path;
-  }
+	/**
+	 * Removes the last segment from a path.
+	 *
+	 * @param path the path to process
+	 * @return the path with the last segment removed
+	 */
+	private String removeLastSegment(final String path) {
+		int index = path.lastIndexOf('/');
+		if (index != -1) {
+			return path.substring(0, index);
+		}
+		return path;
+	}
 
-  /**
-   * Finds the longest common prefix between the given prefix and path.
-   *
-   * @param prefix the current prefix
-   * @param path the path to compare against
-   * @return the longest common prefix
-   */
-  private String longestPrefix(final String prefix, final String path) {
-    String result = prefix;
-    while (result.length() > 0 && !path.startsWith(result)) {
-      result = removeLastSegment(result);
-    }
-    return result;
-  }
+	/**
+	 * Finds the longest common prefix between the given prefix and path.
+	 *
+	 * @param prefix the current prefix
+	 * @param path   the path to compare against
+	 * @return the longest common prefix
+	 */
+	private String longestPrefix(final String prefix, final String path) {
+		String result = prefix;
+		while (result.length() > 0 && !path.startsWith(result)) {
+			result = removeLastSegment(result);
+		}
+		return result;
+	}
 }

@@ -164,6 +164,10 @@ public class ProprietaryRepositoriesComponent
   private void setProprietaryStatus(final Repository repository, final boolean status) {
     Configuration newConfig = repository.getConfiguration().copy();
     newConfig.attributes(COMPONENT).set(PROPRIETARY_COMPONENTS, status);
-    repositoryManager.update(newConfig);
+    try {
+		repositoryManager.update(newConfig);
+	} catch (Exception e) {
+		log.error("Error changing proprietary status", e);
+	}
   }
 }

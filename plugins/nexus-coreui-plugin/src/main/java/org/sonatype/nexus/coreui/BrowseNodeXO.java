@@ -130,4 +130,90 @@ public record BrowseNodeXO(
   public BrowseNodeXO withPackageUrl(final String packageUrl) {
     return new BrowseNodeXO(this.id, this.text, this.type, this.leaf, this.componentId, this.assetId, packageUrl);
   }
+  
+  // --- Builder Pattern Implementation ---
+
+  /**
+   * Returns a new {@code Builder} for {@code BrowseNodeXO}.
+   */
+  public static Builder builder() {
+    return new Builder();
+  }
+
+  /**
+   * A builder for {@code BrowseNodeXO} instances.
+   */
+  public static class Builder {
+    private String id;
+    private String text;
+    private String type;
+    private boolean leaf;
+    private String componentId;
+    private String assetId;
+    private String packageUrl;
+
+    // Optional: You can provide default values here if some fields are truly optional or
+    // have common defaults. For @NotBlank fields, you'll need to set them explicitly
+    // or handle validation during the build process.
+    public Builder() {
+      this.leaf = false; // Example default for boolean
+    }
+
+    public Builder id(String id) {
+      this.id = id;
+      return this;
+    }
+
+    public Builder text(String text) {
+      this.text = text;
+      return this;
+    }
+
+    public Builder type(String type) {
+      this.type = type;
+      return this;
+    }
+
+    public Builder leaf(boolean leaf) {
+      this.leaf = leaf;
+      return this;
+    }
+
+    public Builder componentId(String componentId) {
+      this.componentId = componentId;
+      return this;
+    }
+
+    public Builder assetId(String assetId) {
+      this.assetId = assetId;
+      return this;
+    }
+
+    public Builder packageUrl(String packageUrl) {
+      this.packageUrl = packageUrl;
+      return this;
+    }
+
+    /**
+     * Builds a new {@code BrowseNodeXO} instance from the current builder state.
+     *
+     * @return a new {@code BrowseNodeXO} instance
+     * @throws IllegalStateException if required fields are not set
+     */
+    public BrowseNodeXO build() {
+      // You can add validation here for @NotBlank fields, for example
+      if (id == null || id.isBlank()) {
+        throw new IllegalStateException("id cannot be blank");
+      }
+      if (text == null || text.isBlank()) {
+        throw new IllegalStateException("text cannot be blank");
+      }
+      if (type == null || type.isBlank()) {
+        throw new IllegalStateException("type cannot be blank");
+      }
+
+      return new BrowseNodeXO(id, text, type, leaf, componentId, assetId, packageUrl);
+    }
+  }
+
 }

@@ -12,8 +12,12 @@
  */
 package org.sonatype.nexus.coreui;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
@@ -191,5 +195,47 @@ public record BundleXO(
   public BundleXO withHeaders(Map<String, String> headers) {
     return new BundleXO(id, state, name, symbolicName, location, version, startLevel, fragment, lastModified, 
         fragments, fragmentHosts, headers);
+  }
+  
+  public static Builder builder() {
+      return new Builder();
+  }
+
+  public static class Builder {
+      private long id = 0L;
+      private String state = "UNKNOWN";
+      private String name = "Unnamed Bundle";
+      private String symbolicName = "com.example.unnamed";
+      private String location = "";
+      private String version = "0.0.0";
+      private int startLevel = 0;
+      private boolean fragment = false;
+      private long lastModified = System.currentTimeMillis();
+      private List<Long> fragments = new ArrayList<>();
+      private List<Long> fragmentHosts = new ArrayList<>();
+      private Map<String, String> headers = new HashMap<>();
+
+      public Builder id(long id) { this.id = id; return this; }
+      public Builder state(String state) { this.state = state; return this; }
+      public Builder name(String name) { this.name = name; return this; }
+      public Builder symbolicName(String symbolicName) { this.symbolicName = symbolicName; return this; }
+      public Builder location(String location) { this.location = location; return this; }
+      public Builder version(String version) { this.version = version; return this; }
+      public Builder startLevel(int startLevel) { this.startLevel = startLevel; return this; }
+      public Builder fragment(boolean fragment) { this.fragment = fragment; return this; }
+      public Builder lastModified(long lastModified) { this.lastModified = lastModified; return this; }
+      public Builder fragments(List<Long> fragments) { this.fragments = new ArrayList<>(fragments); return this; } // Defensive copy
+      public Builder fragmentHosts(List<Long> fragmentHosts) { this.fragmentHosts = new ArrayList<>(fragmentHosts); return this; } // Defensive copy
+      public Builder headers(Map<String, String> headers) { this.headers = new HashMap<>(headers); return this; } // Defensive copy
+
+      public BundleXO build() {
+          return new BundleXO(
+              id, state, name, symbolicName, location, version,
+              startLevel, fragment, lastModified,
+              Collections.unmodifiableList(fragments), // Make lists unmodifiable for true immutability
+              Collections.unmodifiableList(fragmentHosts),
+              Collections.unmodifiableMap(headers)
+          );
+      }
   }
 }

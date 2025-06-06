@@ -14,6 +14,7 @@ package org.sonatype.nexus.blobstore.s3.internal;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Objects;
 
 import org.sonatype.nexus.blobstore.BlobAttributesSupport;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
@@ -88,7 +89,7 @@ public class S3BlobAttributes
     }
     catch (AmazonS3Exception e) {
       // Using pattern matching to check for 404 status code
-      if (e instanceof AmazonS3Exception exception && exception.getStatusCode() != 404) {
+      if (e instanceof AmazonS3Exception exception && !Objects.equals(exception.getErrorCode(), "404")) {
         log.error(STR."Failed to load blob attributes: \{propertiesFile}", e);
         throw e;
       }

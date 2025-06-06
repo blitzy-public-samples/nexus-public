@@ -216,4 +216,8 @@ public abstract class DatastoreBlobStoreMetricsServiceSupport<B extends BlobStor
   public void remove() {
     blobStoreMetricsStore.remove(blobStore.getBlobStoreConfiguration().getName());
   }
+
+  protected DatastoreBlobStoreMetricsContainer getDatastoreBlobStoreMetricsContainer() {
+    return this.datastoreBlobStoreMetricsContainer;
+  }
 }

@@ -14,6 +14,7 @@ package org.sonatype.nexus.blobstore.s3.internal;
 
 import java.io.InputStream;
 
+import com.amazonaws.services.s3.AmazonS3;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
@@ -41,5 +42,5 @@ public interface S3Uploader {
    * @param key the object key in the bucket
    * @param contents the input stream containing the file contents
    */
-  void upload(S3Client s3, String bucket, String key, InputStream contents);
+  void upload(AmazonS3 s3, String bucket, String key, InputStream contents);
 }

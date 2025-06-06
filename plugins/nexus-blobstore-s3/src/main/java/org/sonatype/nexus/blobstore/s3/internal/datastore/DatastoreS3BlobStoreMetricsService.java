@@ -28,6 +28,7 @@ import org.sonatype.nexus.blobstore.api.OperationType;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsEntity;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsStore;
 
+import org.sonatype.nexus.blobstore.api.metrics.DatastoreBlobStoreMetricsContainer;
 import org.sonatype.nexus.blobstore.metrics.DatastoreBlobStoreMetricsServiceSupport;
 import org.sonatype.nexus.blobstore.s3.internal.S3BlobStore;
 import org.sonatype.nexus.common.scheduling.PeriodicJobService;
@@ -94,8 +95,10 @@ public class DatastoreS3BlobStoreMetricsService
    */
   @Override
   public void flush() throws IOException {
+    final DatastoreBlobStoreMetricsContainer datastoreBlobStoreMetricsContainer = getDatastoreBlobStoreMetricsContainer();
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       executor.submit(() -> {
+
         try {
           // Get metrics from the metrics container
           OperationMetrics uploadMetrics =
@@ -163,14 +166,14 @@ public class DatastoreS3BlobStoreMetricsService
   public void clearOperationMetrics() {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       executor.submit(() -> {
-        datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().values().forEach(OperationMetrics::clear);
+        getDatastoreBlobStoreMetricsContainer().getOperationMetricsDelta().values().forEach(OperationMetrics::clear);
         blobStoreMetricsStore.clearOperationMetrics(blobStore.getBlobStoreConfiguration().getName());
         return null;
       }).get(); // Wait for completion
     } catch (Exception e) {
       log.error("Error clearing operation metrics using virtual thread", e);
       // Fallback to direct operation in case of error
-      datastoreBlobStoreMetricsContainer.getOperationMetricsDelta().values().forEach(OperationMetrics::clear);
+      getDatastoreBlobStoreMetricsContainer().getOperationMetricsDelta().values().forEach(OperationMetrics::clear);
       blobStoreMetricsStore.clearOperationMetrics(blobStore.getBlobStoreConfiguration().getName());
     }
   }

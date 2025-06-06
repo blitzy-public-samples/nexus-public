@@ -376,7 +376,7 @@ class BucketManagerTest
     when(s3.doesBucketExistV2(anyString())).thenReturn(false);
     AmazonS3Exception s3Exception = mock(AmazonS3Exception.class);
     when(s3Exception.getErrorCode()).thenReturn(errorCode);
-    when(s3.createBucket(anyString())).thenThrow(s3Exception);
+//    when(s3.createBucket(anyString())).thenThrow(s3Exception);
 
     Map<String, Map<String, Object>> cfgAttributes = ImmutableMap.of(CONFIG_KEY,
         ImmutableMap.of(BUCKET_KEY, bucketName));

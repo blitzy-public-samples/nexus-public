@@ -16,21 +16,20 @@ import java.util.List;
 import javax.inject.Inject;
 import javax.inject.Named;
 
-import org.sonatype.goodies.common.ComponentSupport;
-import org.sonatype.nexus.blobstore.StorageLocationManager;
-import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration;
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration.Rule;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
+import com.amazonaws.services.s3.model.BucketPolicy;
+import com.amazonaws.services.s3.model.AmazonS3Exception;
+import com.amazonaws.services.s3.model.ListObjectsV2Result;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleAndOperator;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleFilter;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleFilterPredicate;
 import com.amazonaws.services.s3.model.lifecycle.LifecyclePrefixPredicate;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleTagPredicate;
+import org.sonatype.goodies.common.ComponentSupport;
+import org.sonatype.nexus.blobstore.StorageLocationManager;
+import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import com.google.common.annotations.VisibleForTesting;
 
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -59,19 +58,17 @@ import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStoreException.unex
  */
 @Named
 public class BucketManager
-    extends ComponentSupport
-    implements StorageLocationManager
+        extends ComponentSupport
+        implements StorageLocationManager
 {
   static final String OLD_LIFECYCLE_EXPIRATION_RULE_ID = "Expire soft-deleted blobstore objects";
-
   static final String LIFECYCLE_EXPIRATION_RULE_ID_PREFIX = "Expire soft-deleted objects in blobstore ";
 
   private AmazonS3 s3;
-
   private final BucketOwnershipCheckFeatureFlag ownershipCheckFeatureFlag;
 
   @Inject
-  public BucketManager(BucketOwnershipCheckFeatureFlag featureFlag) {
+  public BucketManager(final BucketOwnershipCheckFeatureFlag featureFlag) {
     this.ownershipCheckFeatureFlag = checkNotNull(featureFlag);
   }
 
@@ -82,7 +79,7 @@ public class BucketManager
   @Override
   public void prepareStorageLocation(final BlobStoreConfiguration blobStoreConfiguration) {
     String bucket = getConfiguredBucket(blobStoreConfiguration);
-    checkPermissions(getConfiguredBucket(blobStoreConfiguration));
+    checkPermissions(bucket);
     if (!s3.doesBucketExistV2(bucket)) {
       try {
         s3.createBucket(bucket);
@@ -95,7 +92,7 @@ public class BucketManager
         log.info("Error creating bucket {}", bucket, e);
         throw unexpectedError("creating bucket");
       }
-      setBucketLifecycleConfiguration(s3, blobStoreConfiguration, null);
+      setBucketLifecycleConfiguration(s3, blobStoreConfiguration, new BucketLifecycleConfiguration());
     }
     else {
       // bucket exists, we should test that the correct lifecycle config is present
@@ -109,8 +106,8 @@ public class BucketManager
   @Override
   public void deleteStorageLocation(final BlobStoreConfiguration blobStoreConfiguration) {
     String bucket = getConfiguredBucket(blobStoreConfiguration);
-    ObjectListing listing = s3.listObjects(new ListObjectsRequest().withBucketName(bucket).withMaxKeys(1));
-    if (listing.getObjectSummaries().isEmpty()) {
+    ListObjectsV2Result result = s3.listObjects(bucket, null);
+    if (result.getObjectSummaries().isEmpty()) {
       s3.deleteBucket(bucket);
     }
     else {
@@ -129,22 +126,21 @@ public class BucketManager
 
   @VisibleForTesting
   boolean isExpirationLifecycleConfigurationPresent(
-      final BucketLifecycleConfiguration lifecycleConfiguration,
-      final BlobStoreConfiguration blobStoreConfiguration)
+          final BucketLifecycleConfiguration lifecycleConfiguration,
+          final BlobStoreConfiguration blobStoreConfiguration)
   {
     String bucketPrefix = getBucketPrefix(blobStoreConfiguration);
     int expirationInDays = getConfiguredExpirationInDays(blobStoreConfiguration);
     return lifecycleConfiguration != null &&
-        lifecycleConfiguration.getRules() != null &&
-        lifecycleConfiguration.getRules()
-            .stream()
-            .filter(r -> r.getExpirationInDays() == expirationInDays)
-            .anyMatch(r -> isDeletedTagPredicate(r.getFilter().getPredicate(), bucketPrefix));
+            lifecycleConfiguration.getRules() != null &&
+            lifecycleConfiguration.getRules().stream()
+                    .filter(r -> r.getExpirationInDays() == expirationInDays)
+                    .anyMatch(r -> isDeletedTagPredicate(r.getFilter().getPredicate(), bucketPrefix));
   }
 
   private BucketLifecycleConfiguration makeLifecycleConfiguration(
-      final BucketLifecycleConfiguration existing,
-      final BlobStoreConfiguration blobStoreConfiguration)
+          final BucketLifecycleConfiguration existing,
+          final BlobStoreConfiguration blobStoreConfiguration)
   {
     String blobStoreName = blobStoreConfiguration.getName();
     String bucketPrefix = getBucketPrefix(blobStoreConfiguration);
@@ -155,14 +151,14 @@ public class BucketManager
     }
     else {
       filterPredicate = new LifecycleAndOperator(asList(
-          new LifecyclePrefixPredicate(bucketPrefix),
-          new LifecycleTagPredicate(S3BlobStore.DELETED_TAG)));
+              new LifecyclePrefixPredicate(bucketPrefix),
+              new LifecycleTagPredicate(S3BlobStore.DELETED_TAG)));
     }
     BucketLifecycleConfiguration.Rule rule = new BucketLifecycleConfiguration.Rule()
-        .withId(LIFECYCLE_EXPIRATION_RULE_ID_PREFIX + blobStoreName)
-        .withFilter(new LifecycleFilter(filterPredicate))
-        .withExpirationInDays(expirationInDays)
-        .withStatus(BucketLifecycleConfiguration.ENABLED);
+            .withId(LIFECYCLE_EXPIRATION_RULE_ID_PREFIX + blobStoreName)
+            .withFilter(new LifecycleFilter(filterPredicate))
+            .withExpirationInDays(expirationInDays)
+            .withStatus(BucketLifecycleConfiguration.ENABLED);
 
     BucketLifecycleConfiguration newConfiguration = null;
     if (existing != null && !existing.getRules().isEmpty()) {
@@ -189,19 +185,18 @@ public class BucketManager
       return emptyList();
     }
     return rules.stream()
-        .filter(r -> !r.getId().equals(LIFECYCLE_EXPIRATION_RULE_ID_PREFIX + blobStoreName) &&
-            !r.getId().equals(OLD_LIFECYCLE_EXPIRATION_RULE_ID))
-        .collect(toList());
+            .filter(r -> !r.getId().equals(LIFECYCLE_EXPIRATION_RULE_ID_PREFIX + blobStoreName) &&
+                    !r.getId().equals(OLD_LIFECYCLE_EXPIRATION_RULE_ID))
+            .collect(toList());
   }
 
   private void setBucketLifecycleConfiguration(
-      final AmazonS3 s3,
-      final BlobStoreConfiguration blobStoreConfiguration,
-      final BucketLifecycleConfiguration lifecycleConfiguration)
+          final AmazonS3 s3,
+          final BlobStoreConfiguration blobStoreConfiguration,
+          final BucketLifecycleConfiguration lifecycleConfiguration)
   {
     String bucket = getConfiguredBucket(blobStoreConfiguration);
-    BucketLifecycleConfiguration newLifecycleConfiguration =
-        makeLifecycleConfiguration(lifecycleConfiguration, blobStoreConfiguration);
+    BucketLifecycleConfiguration newLifecycleConfiguration = makeLifecycleConfiguration(lifecycleConfiguration, blobStoreConfiguration);
     if (newLifecycleConfiguration != null) {
       s3.setBucketLifecycleConfiguration(bucket, newLifecycleConfiguration);
     }
@@ -215,8 +210,8 @@ public class BucketManager
       return S3BlobStore.DELETED_TAG.equals(tagPredicate.getTag());
     }
     else if (filterPredicate instanceof LifecycleAndOperator andOperator) {
-      return andOperator.getOperands().stream().anyMatch(op -> isDeletedTagPredicate(op, bucketPrefix)) &&
-          andOperator.getOperands().stream().anyMatch(op -> isBucketPrefixPredicate(op, bucketPrefix));
+      return andOperator.getOperands().stream().anyMatch(op -> isDeletedTagPredicate(op, bucketPrefix))
+              && andOperator.getOperands().stream().anyMatch(op -> isBucketPrefixPredicate(op, bucketPrefix));
     }
     else {
       return false;
@@ -245,7 +240,7 @@ public class BucketManager
     }
     catch (AmazonS3Exception e) {
       if (INVALID_ACCESS_KEY_ID_CODE.equals(e.getErrorCode()) ||
-          SIGNATURE_DOES_NOT_MATCH_CODE.equals(e.getErrorCode())) {
+              SIGNATURE_DOES_NOT_MATCH_CODE.equals(e.getErrorCode())) {
         log.debug("Exception thrown checking AWS credentials", e);
         throw buildException(e);
       }
@@ -256,11 +251,11 @@ public class BucketManager
 
   private void checkBucketOwner(final String bucket) {
     try {
-      s3.getBucketPolicy(bucket);
+      BucketPolicy bucketPolicy = s3.getBucketPolicy(bucket);
     }
     catch (AmazonS3Exception e) {
       String errorCode = e.getErrorCode();
-      String logMessage = STR."Exception thrown checking ownership of \"\{bucket}\" bucket.";
+      String logMessage = String.format("Exception thrown checking ownership of \"%s\" bucket.", bucket);
       if (ACCESS_DENIED_CODE.equals(errorCode)) {
         log.debug(logMessage, e);
         throw bucketOwnershipError();

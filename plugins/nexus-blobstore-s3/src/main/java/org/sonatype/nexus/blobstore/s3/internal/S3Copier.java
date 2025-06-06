@@ -12,7 +12,9 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal;
 
+import com.amazonaws.services.s3.AmazonS3;
 import software.amazon.awssdk.services.s3.S3Client;
+
 
 /**
  * Copies a file in S3.
@@ -34,5 +36,5 @@ public interface S3Copier {
    * @param sourcePath the source object key path
    * @param destinationPath the destination object key path
    */
-  void copy(S3Client s3Client, String bucket, String sourcePath, String destinationPath);
+  void copy(AmazonS3 s3Client, String bucket, String sourcePath, String destinationPath);
 }

@@ -80,9 +80,9 @@ public final class S3BlobStoreApiConfigurationMapper
       
       // Using pattern matching to simplify null checks
       if (quotaType != null && quotaLimit != null) {
-        var blobStoreApiSoftQuota = new BlobStoreApiSoftQuota();
-        blobStoreApiSoftQuota.setType(quotaType);
-        blobStoreApiSoftQuota.setLimit(parseLong(quotaLimit));
+        var blobStoreApiSoftQuota = new BlobStoreApiSoftQuota(quotaType, parseLong(quotaLimit));
+//        blobStoreApiSoftQuota.setType(quotaType);
+//        blobStoreApiSoftQuota.setLimit(parseLong(quotaLimit));
         return blobStoreApiSoftQuota;
       }
     }
@@ -151,15 +151,15 @@ public final class S3BlobStoreApiConfigurationMapper
     final String sessionToken = getValue(attributes, SESSION_TOKEN_KEY);
     
     // Using pattern matching to check if any credentials are provided
-    return switch (accessKeyId, roleToAssume, sessionToken) {
-      case (String a, _, _) when a != null -> 
-          new S3BlobStoreApiBucketSecurity(accessKeyId, null, roleToAssume, sessionToken);
-      case (_, String r, _) when r != null -> 
-          new S3BlobStoreApiBucketSecurity(accessKeyId, null, roleToAssume, sessionToken);
-      case (_, _, String s) when s != null -> 
-          new S3BlobStoreApiBucketSecurity(accessKeyId, null, roleToAssume, sessionToken);
-      default -> null;
-    };
+    if (accessKeyId != null) {
+      return new S3BlobStoreApiBucketSecurity(accessKeyId, null, roleToAssume, sessionToken);
+    } else if (roleToAssume != null) {
+      return new S3BlobStoreApiBucketSecurity(null, null, roleToAssume, sessionToken);
+    } else if (sessionToken != null) {
+      return new S3BlobStoreApiBucketSecurity(null, null, null, sessionToken);
+    } else {
+      return null;
+    }
   }
 
   /**
@@ -172,12 +172,13 @@ public final class S3BlobStoreApiConfigurationMapper
     final String encryptionType = getValue(s3BucketAttributes, ENCRYPTION_TYPE);
     final String encryptionKey = getValue(s3BucketAttributes, ENCRYPTION_KEY);
 
-    // Using pattern matching to check if encryption is configured
-    return switch (encryptionType, encryptionKey) {
-      case (String t, _) when t != null -> new S3BlobStoreApiEncryption(encryptionType, encryptionKey);
-      case (_, String k) when k != null -> new S3BlobStoreApiEncryption(encryptionType, encryptionKey);
-      default -> null;
-    };
+    if (encryptionType != null) {
+      return new S3BlobStoreApiEncryption(encryptionType, encryptionKey);
+    } else if (encryptionKey != null) {
+      return new S3BlobStoreApiEncryption(null, encryptionKey);
+    } else {
+      return null;
+    }
   }
 
   /**

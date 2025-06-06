@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.lang.StringTemplate.STR;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -83,7 +84,11 @@ public class DebianVersion
 
   @Override
   public String toString() {
-    return STR."{epoch > 0 ? STR."{epoch}:" : ""}{upstreamVersion}{debianRevision.isEmpty() ? "" : STR."-{debianRevision}"}";
+    String epochPart = epoch > 0 ? String.valueOf(epoch) + ":" : "";
+    String debianPart = debianRevision.isEmpty() ? "" : "-" + debianRevision;
+
+    return STR."{epochPart}{upstreamVersion}{debianPart}";
+    //return STR."{epoch > 0 ? STR."{epoch}:" : ""}{upstreamVersion}{debianRevision.isEmpty() ? "" : STR."-{debianRevision}"}";
   }
 
   @Override

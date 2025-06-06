@@ -97,7 +97,7 @@ public class AptKeyValueFacet
   public Stream<String> browsePackagesMetadata() {
     return Continuations
         .streamOf((browseLimit, continuationToken) -> browseValues(CATEGORY, browseLimit, continuationToken), limit)
-        .map(KeyValue::getValue);
+        .map(KeyValue::value);
   }
 
   /**

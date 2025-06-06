@@ -73,7 +73,7 @@ public class AptUploadHandler
   {
     super(variableResolverAdapter, contentPermissionChecker, uploadDefinitionExtensions);
     // Create a virtual thread executor for I/O-bound operations
-    this.virtualThreadExecutor = NexusExecutorService.forVirtualThreads(TASK_SUBJECT);
+    this.virtualThreadExecutor = NexusExecutorService.forFixedSubjectVirtual(TASK_SUBJECT);
   }
 
   /**

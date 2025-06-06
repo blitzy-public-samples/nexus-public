@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.repository.apt.rest;
 
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import jakarta.ws.rs.BeanParam;
@@ -71,7 +72,15 @@ public abstract class AptHostedRepositoriesApiResource
   @Override
   public Response createRepository(final AptHostedRepositoryApiRequest request) {
     // Process the request on a virtual thread for improved scalability
-    return Thread.startVirtualThread(() -> super.createRepository(request)).join();
+    //return Thread.startVirtualThread(() -> super.createRepository(request)).join();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(() -> super.createRepository(request));
+      return future.get();  // blocks until done, returns Response
+    } catch (InterruptedException e) {
+      throw new RuntimeException("Failed to create repository", e);
+    } catch (ExecutionException e) {
+        throw new RuntimeException(e);
+    }
   }
 
   /**
@@ -99,7 +108,16 @@ public abstract class AptHostedRepositoriesApiResource
       @Parameter(description = "Name of the repository to update") @PathParam("repositoryName") final String repositoryName)
   {
     // Process the request on a virtual thread for improved scalability
-    return Thread.startVirtualThread(() -> super.updateRepository(request, repositoryName)).join();
+    //return Thread.startVirtualThread(() -> super.updateRepository(request, repositoryName)).join();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(() -> super.updateRepository(request, repositoryName));
+      return future.get(); // blocks until done and returns Response
+    } catch (InterruptedException e) {
+      throw new RuntimeException("Failed to update repository", e);
+    } catch (ExecutionException e) {
+        throw new RuntimeException(e);
+    }
+
   }
 
   /**
@@ -122,12 +140,20 @@ public abstract class AptHostedRepositoriesApiResource
       @Parameter(description = "Name of the repository to retrieve") @PathParam("repositoryName") final String repositoryName)
   {
     // Use pattern matching to validate the format and type
-    if (formatAndType instanceof FormatAndType(var format, var type) && !AptFormat.NAME.equals(format)) {
+    if (formatAndType !=null && !AptFormat.NAME.equals(formatAndType.format())) {
       throw new IllegalArgumentException("Format must be " + AptFormat.NAME);
     }
     
     // Process the request on a virtual thread for improved scalability
-    return Thread.startVirtualThread(() -> super.getRepository(formatAndType, repositoryName)).join();
+    //return Thread.startVirtualThread(() -> super.getRepository(formatAndType, repositoryName)).join();
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      var future = executor.submit(() -> super.getRepository(formatAndType, repositoryName));
+      return future.get(); // wait and return the result
+    } catch (InterruptedException e) {
+      throw new RuntimeException("Failed to get repository", e);
+    } catch (ExecutionException e) {
+        throw new RuntimeException(e);
+    }
   }
 
   /**

@@ -48,7 +48,7 @@ public class FilteredSnapshotComponentSelector
     return switch (settings.getField("Architectures")
         .map(s -> s.listValue())
         .map(l -> new HashSet<>(l))) {
-      case Optional<Set<String>> settingsArchitectures when settingsArchitectures.isPresent() -> {
+      case Optional<HashSet<String>> settingsArchitectures when settingsArchitectures.isPresent() -> {
         Set<String> releaseArchitectures = new HashSet<>(release.getArchitectures());
         releaseArchitectures.retainAll(settingsArchitectures.get());
         yield new ArrayList<>(releaseArchitectures);
@@ -63,7 +63,7 @@ public class FilteredSnapshotComponentSelector
     return switch (settings.getField("Components")
         .map(s -> s.listValue())
         .map(l -> new HashSet<>(l))) {
-      case Optional<Set<String>> settingsComponents when settingsComponents.isPresent() -> {
+      case Optional<HashSet<String>> settingsComponents when settingsComponents.isPresent() -> {
         Set<String> releaseComponents = new HashSet<>(release.getComponents());
         releaseComponents.retainAll(settingsComponents.get());
         yield new ArrayList<>(releaseComponents);

@@ -36,6 +36,7 @@ import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.common.net.PortAllocator;
 import org.sonatype.nexus.common.text.Strings2;
+import org.sonatype.nexus.pax.exam.*;
 import org.sonatype.nexus.scheduling.TaskScheduler;
 
 import com.adobe.testing.s3mock.testcontainers.S3MockContainer;
@@ -483,7 +484,7 @@ public abstract class NexusPaxExamSupport
 
         propagateSystemProperty(NEXUS_PAX_EXAM_TIMEOUT_KEY),
         propagateSystemProperty(TestCleaner.CLEAN_ON_SUCCESS_KEY),
-        propagateSystemProperty(TEST_VIRTUAL_THREADS_KEY, TEST_VIRTUAL_THREADS_DEFAULT),
+        propagateSystemProperty(TEST_VIRTUAL_THREADS_KEY),
 
         systemProperty("basedir").value(TestBaseDir.get()),
 

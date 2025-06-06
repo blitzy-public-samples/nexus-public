@@ -16,6 +16,7 @@ import java.io.File;
 import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import org.ops4j.pax.exam.Option;
@@ -29,7 +30,7 @@ import static org.ops4j.pax.exam.CoreOptions.mavenBundle;
 import static org.ops4j.pax.exam.CoreOptions.propagateSystemProperty;
 import static org.ops4j.pax.exam.CoreOptions.systemProperty;
 import static org.ops4j.pax.exam.CoreOptions.wrappedBundle;
-import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFile;
+//import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFile;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFileExtend;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFilePut;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.features;
@@ -56,10 +57,11 @@ public class BaseNexusTestDistribution
     List<Option> options = new ArrayList<>();
 
     // add standard configuration
-    options.add(configureNexus());
+    //options.add(configureNexus());
+    Collections.addAll(options, configureNexus());
 
     // add common distribution options
-    options.add(systemProperty("nexus-base-template", resolveBaseFile("target/nexus-base-template").getAbsolutePath()));
+    options.add(systemProperty("nexus-base-template").value(resolveBaseFile("target/nexus-base-template").getAbsolutePath()));
 
     // add nexus-base-template bundle
     options.add(mavenBundle("org.sonatype.nexus.assemblies", "nexus-base-template").versionAsInProject().type("zip"));
@@ -77,10 +79,10 @@ public class BaseNexusTestDistribution
     options.add(editConfigurationFileExtend("etc/nexus-default.properties", "nexus.react.enabled", "false"));
 
     // add PAX-EXAM configuration
-    options.add(systemProperty(NEXUS_PAX_EXAM_TIMEOUT_KEY).value(NEXUS_PAX_EXAM_TIMEOUT_DEFAULT));
+    options.add(systemProperty(NEXUS_PAX_EXAM_TIMEOUT_KEY).value(String.valueOf(NEXUS_PAX_EXAM_TIMEOUT_DEFAULT)));
 
     // add JVM options
-    options.add(NexusPaxExamSupport.javaVMOption());
+    //options.add(NexusPaxExamSupport.javaVMOption());
     
     // add propagation of test.virtual.threads system property to enable Virtual Thread support in tests
     options.add(propagateSystemProperty("test.virtual.threads"));

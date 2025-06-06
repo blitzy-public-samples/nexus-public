@@ -71,7 +71,7 @@ public class ExampleContentFacetImpl
       return CompletableFuture.supplyAsync(() -> {
         try (TempBlob blob = blobs().ingest(content, HASHING)) {
           return assets().path(path).blob(blob).save().markAsCached(content).download();
-        } catch (IOException e) {
+        } catch (Exception e) {
           throw new RuntimeException("Failed to store content at path: " + path, e);
         }
       }, executor).join();

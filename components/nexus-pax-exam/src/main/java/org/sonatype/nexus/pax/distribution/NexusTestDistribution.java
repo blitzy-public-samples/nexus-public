@@ -25,6 +25,8 @@ import java.io.File;
 
 import org.ops4j.pax.exam.Option;
 import org.sonatype.nexus.pax.exam.TestDatabase;
+import org.ops4j.pax.exam.options.WrappedUrlProvisionOption.OverwriteMode;
+
 
 /**
  * SPI for assembling Karaf-based Nexus test distributions.
@@ -97,7 +99,7 @@ public interface NexusTestDistribution
 
         // Awaitility
         wrappedBundle(maven("org.awaitility", "awaitility").versionAsInProject()).overwriteManifest(
-            org.ops4j.pax.exam.CoreOptions.OverwriteMode.MERGE),
+            OverwriteMode.MERGE),
 
         // propagate system property for virtual thread support in tests
         propagateSystemProperty("test.virtual.threads"),
@@ -112,8 +114,8 @@ public interface NexusTestDistribution
    */
   default Option javaVMCompositeOption() {
     return composite(
-        systemProperty("java.awt.headless", "true"),
-        systemProperty("java.net.preferIPv4Stack", "true")
+        systemProperty("java.awt.headless").value( "true"),
+        systemProperty("java.net.preferIPv4Stack").value("true")
     );
   }
 }

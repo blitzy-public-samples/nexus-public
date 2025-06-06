@@ -12,11 +12,7 @@
  */
 package org.sonatype.nexus.repository.httpbridge.internal;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -30,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import javax.servlet.ServletOutputStream;
+import javax.servlet.WriteListener;
 import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.goodies.testsupport.TestSupport;
@@ -59,13 +56,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.repository.http.HttpStatus.FORBIDDEN;
 
 /**
@@ -238,6 +229,16 @@ public class DefaultHttpResponseSenderTest
     // Setup the output stream to simulate slow I/O operations
     ServletOutputStream mockOutput = new ServletOutputStream() {
       @Override
+      public boolean isReady() {
+        return false;
+      }
+
+      @Override
+      public void setWriteListener(WriteListener writeListener) {
+
+      }
+
+      @Override
       public void write(int b) throws IOException {
         // Check if we're running on a virtual thread
         isVirtualThread.set(Thread.currentThread().isVirtual());
@@ -335,6 +336,16 @@ public class DefaultHttpResponseSenderTest
     
     // Setup the output stream to track thread IDs during write operations
     ServletOutputStream mockOutput = new ServletOutputStream() {
+      @Override
+      public boolean isReady() {
+        return false;
+      }
+
+      @Override
+      public void setWriteListener(WriteListener writeListener) {
+
+      }
+
       @Override
       public void write(int b) throws IOException {
         // Record the thread ID for each write operation
@@ -539,6 +550,16 @@ public class DefaultHttpResponseSenderTest
     
     // Setup output stream to detect virtual thread
     ServletOutputStream mockOutput = new ServletOutputStream() {
+      @Override
+      public boolean isReady() {
+        return false;
+      }
+
+      @Override
+      public void setWriteListener(WriteListener writeListener) {
+
+      }
+
       @Override
       public void write(int b) throws IOException {
         isVirtualThread.set(Thread.currentThread().isVirtual());

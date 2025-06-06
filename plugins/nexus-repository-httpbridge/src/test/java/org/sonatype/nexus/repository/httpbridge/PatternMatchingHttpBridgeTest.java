@@ -19,6 +19,7 @@ import javax.servlet.http.HttpServletRequest;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.BadRequestException;
 import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.httpbridge.internal.DefaultHttpResponseSender;
 import org.sonatype.nexus.repository.httpbridge.internal.HttpResponseSenderSelector;
 import org.sonatype.nexus.repository.httpbridge.internal.RepositoryPath;
 import org.sonatype.nexus.repository.view.ContentTypes;
@@ -204,7 +205,7 @@ public class PatternMatchingHttpBridgeTest
   @Test
   public void testHttpResponseSenderPatternMatching() {
     // Create mock HttpResponseSender implementations
-    HttpResponseSender defaultSender = mock(HttpResponseSender.class);
+    DefaultHttpResponseSender defaultSender = mock(DefaultHttpResponseSender.class);
     HttpResponseSender jsonSender = mock(HttpResponseSender.class);
     HttpResponseSender xmlSender = mock(HttpResponseSender.class);
     
@@ -236,7 +237,7 @@ public class PatternMatchingHttpBridgeTest
   private String getRepositoryNameWithPatternMatching(Object path) {
     // Using Pattern Matching with instanceof
     if (path instanceof RepositoryPath repositoryPath) {
-      return repositoryPath.getRepositoryName();
+      return repositoryPath.repositoryName();
     } else if (path instanceof String stringPath) {
       return "string-path";
     } else if (path == null) {
@@ -266,7 +267,7 @@ public class PatternMatchingHttpBridgeTest
   /**
    * Helper method that uses Pattern Matching with guarded patterns for HTTP status codes.
    */
-  private String getStatusDescriptionWithPatternMatching(int statusCode) {
+  private String getStatusDescriptionWithPatternMatching(Integer statusCode) {
     // Using Pattern Matching with guarded patterns in switch expressions
     return switch (statusCode) {
       case Integer i when i == 200 -> "OK";
@@ -328,9 +329,9 @@ public class PatternMatchingHttpBridgeTest
       case null -> "No exception";
       case BadRequestException e -> "Bad Request: " + e.getMessage();
       case IllegalArgumentException e -> "Invalid argument: " + e.getMessage();
-      case RuntimeException e -> "Runtime error: " + e.getMessage();
-      case NullPointerException e -> "Null pointer: " + e.getMessage();
-      default -> "Unknown exception: " + exception.getMessage();
+        case NullPointerException e -> "Null pointer: " + e.getMessage();
+        case RuntimeException e -> "Runtime error: " + e.getMessage();
+        default -> "Unknown exception: " + exception.getMessage();
     };
   }
 
@@ -343,7 +344,7 @@ public class PatternMatchingHttpBridgeTest
       return "No response sender";
     }
     
-    HttpResponseSender sender = selector.select(contentType);
+    HttpResponseSender sender = selector.defaultSender();
     return switch (sender) {
       case null -> "No matching sender";
       case HttpResponseSender s when contentType != null && contentType.equals(ContentTypes.APPLICATION_JSON) -> 

@@ -21,7 +21,7 @@ import org.apache.commons.io.FilenameUtils;
  *
  * @since 3.0
  */
-record RepositoryPath(String repositoryName, String remainingPath) {
+public record RepositoryPath(String repositoryName, String remainingPath) {
 
   /**
    * Validate and parse the path.
@@ -32,8 +32,9 @@ record RepositoryPath(String repositoryName, String remainingPath) {
    */
   public static RepositoryPath parse(final String input) {
     return switch (input) {
-      case null, "" -> throw new BadRequestException("Repository path must not be null or empty");
-      case String s when !s.startsWith("/") -> 
+      case "" -> throw new BadRequestException("Repository path must not be null or empty");
+        case null -> throw new BadRequestException("Repository path must not be null or empty");
+        case String s when !s.startsWith("/") ->
           throw new BadRequestException("Repository path must start with '/'");
       case String s -> {
         int secondSlashIndex = s.indexOf('/', 1);

@@ -141,11 +141,11 @@ public class StringTemplateLoggingTest
       """);
     
     // Verify the log message contains the expected format and values
-    verify(logger).info(containsString("Security Audit:"));
-    verify(logger).info(containsString("User: admin"));
-    verify(logger).info(containsString("Action: DELETE"));
-    verify(logger).info(containsString("Resource: /api/v1/components/12345"));
-    verify(logger).info(containsString("Timestamp:"));
+    verify(logger).info(containsString("Security Audit:").toString());
+    verify(logger).info(containsString("User: admin").toString());
+    verify(logger).info(containsString("Action: DELETE").toString());
+    verify(logger).info(containsString("Resource: /api/v1/components/12345").toString());
+    verify(logger).info(containsString("Timestamp:").toString());
   }
 
   /**

@@ -23,6 +23,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -140,7 +141,7 @@ public class ExhaustRequestFilterTest extends TestSupport
             setupMockInputStream(1024 * 10); // 10KB of data
             
             // Execute the filter
-            new ExhaustRequestFilter(PIPE_DELIMITED_MATCHING_PATTERN).doFilter(request, response, filterChain);
+            new ExhaustRequestFilter(PIPE_DELIMITED_MATCHING_PATTERN, true).doFilter(request, response, filterChain);
             
             // Verify the request was exhausted
             verify(request, times(1)).getInputStream();
@@ -185,7 +186,7 @@ public class ExhaustRequestFilterTest extends TestSupport
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       Future<?> future = executor.submit(() -> {
         try {
-          new ExhaustRequestFilter(PIPE_DELIMITED_MATCHING_PATTERN).doFilter(request, response, filterChain);
+          new ExhaustRequestFilter(PIPE_DELIMITED_MATCHING_PATTERN, true).doFilter(request, response, filterChain);
           verify(request, times(1)).getInputStream();
         }
         catch (Exception e) {
@@ -206,7 +207,7 @@ public class ExhaustRequestFilterTest extends TestSupport
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       Future<?> future = executor.submit(() -> {
         try {
-          new ExhaustRequestFilter(PIPE_DELIMITED_MATCHING_PATTERN).doFilter(request, response, filterChain);
+          new ExhaustRequestFilter(PIPE_DELIMITED_MATCHING_PATTERN, true).doFilter(request, response, filterChain);
           verify(request, times(1)).getInputStream();
         }
         catch (Exception e) {
@@ -242,7 +243,7 @@ public class ExhaustRequestFilterTest extends TestSupport
       throws Exception
   {
     setupMockResponse(status, method, userAgent);
-    new ExhaustRequestFilter(exhaustForAgents).doFilter(request, response, filterChain);
+    new ExhaustRequestFilter(exhaustForAgents, true).doFilter(request, response, filterChain);
     verify(request, verificationMode).getInputStream();
   }
 
@@ -270,6 +271,21 @@ public class ExhaustRequestFilterTest extends TestSupport
   private void setupBlockingInputStream() throws IOException {
     // Create a ServletInputStream that simulates blocking I/O operations
     ServletInputStream blockingStream = new ServletInputStream() {
+      @Override
+      public boolean isFinished() {
+        return false;
+      }
+
+      @Override
+      public boolean isReady() {
+        return false;
+      }
+
+      @Override
+      public void setReadListener(ReadListener readListener) {
+
+      }
+
       private int readCount = 0;
       private final int maxReads = 1000; // Number of reads before EOF
       
@@ -317,6 +333,21 @@ public class ExhaustRequestFilterTest extends TestSupport
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
       return delegate.read(b, off, len);
+    }
+
+    @Override
+    public boolean isFinished() {
+      return false;
+    }
+
+    @Override
+    public boolean isReady() {
+      return false;
+    }
+
+    @Override
+    public void setReadListener(ReadListener readListener) {
+
     }
   }
 }

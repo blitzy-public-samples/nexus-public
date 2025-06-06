@@ -16,6 +16,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 
@@ -57,6 +58,21 @@ public class HttpRequestPayloadAdapterTest
     // Create a ServletInputStream that returns our test content
     ByteArrayInputStream byteStream = new ByteArrayInputStream(TEST_CONTENT.getBytes());
     when(request.getInputStream()).thenReturn(new ServletInputStream() {
+      @Override
+      public boolean isFinished() {
+        return false;
+      }
+
+      @Override
+      public boolean isReady() {
+        return false;
+      }
+
+      @Override
+      public void setReadListener(ReadListener readListener) {
+
+      }
+
       @Override
       public int read() throws IOException {
         return byteStream.read();

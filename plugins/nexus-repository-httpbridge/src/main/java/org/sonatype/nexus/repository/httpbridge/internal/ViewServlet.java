@@ -46,7 +46,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HttpHeaders;
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.apache.shiro.authz.AuthorizationException;
 import org.jboss.logging.MDC;
 import org.slf4j.Logger;
@@ -129,11 +129,12 @@ public class ViewServlet
       String threadName = "nexus-request-" + httpRequest.getMethod() + "-" + uri.replaceAll("/", "_");
       
       // Submit the request processing to a virtual thread
+      String finalUri = uri;
       executor.submit(() -> {
         // Set MDC context for logging in the virtual thread
-        MDC.put(getClass().getName(), uri);
+        MDC.put(getClass().getName(), finalUri);
         MDC.put("requestMethod", httpRequest.getMethod());
-        MDC.put("requestURI", uri);
+        MDC.put("requestURI", finalUri);
         
         try {
           doService(httpRequest, httpResponse);
@@ -149,7 +150,7 @@ public class ViewServlet
         }
         catch (Exception e) {
           if (!(e instanceof AuthorizationException)) {
-            log.warn("Failure servicing: {} {}", httpRequest.getMethod(), uri, e);
+            log.warn("Failure servicing: {} {}", httpRequest.getMethod(), finalUri, e);
           }
           try {
             Throwables.propagateIfPossible(e, ServletException.class, IOException.class);
@@ -184,7 +185,7 @@ public class ViewServlet
     RepositoryPath path = RepositoryPath.parse(httpRequest.getPathInfo());
     log.debug("Parsed path: {}", path);
 
-    Repository repo = repository(path.getRepositoryName());
+    Repository repo = repository(path.repositoryName());
     if (repo == null) {
       send(null, HttpResponses.notFound(REPOSITORY_NOT_FOUND_MESSAGE), httpResponse);
       return;
@@ -200,7 +201,7 @@ public class ViewServlet
     log.debug("Dispatching to view facet: {}", facet);
 
     // Dispatch the request
-    Request request = buildRequest(httpRequest, path.getRemainingPath());
+    Request request = buildRequest(httpRequest, path.remainingPath());
     dispatchAndSend(request, facet, httpResponseSenderSelector.sender(repo), httpResponse);
   }
 
@@ -288,7 +289,7 @@ public class ViewServlet
   Response describe(final Request request, final Response response, final Exception exception, final String flags) {
     final Description description = new Description(ImmutableMap.of(
         // placeholder for the describeHtml.vm
-        "path", StringEscapeUtils.escapeHtml(request.getPath()),
+        "path", StringEscapeUtils.escapeHtml4(request.getPath()),
         "nexusUrl", BaseUrlHolder.get()
     ));
     if (exception != null) {

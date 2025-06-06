@@ -31,7 +31,7 @@ public record DescriptionItem(
   /**
    * Package-private constructor to maintain the same accessibility as the original class.
    */
-  DescriptionItem {
+  public DescriptionItem {
     // Compact constructor with package-private access
     // No additional validation needed at this time
   }

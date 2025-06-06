@@ -28,6 +28,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.repository.BadRequestException;
+import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.httpbridge.HttpResponseSender;
 import org.sonatype.nexus.repository.httpbridge.internal.describe.Description;
 import org.sonatype.nexus.repository.httpbridge.internal.describe.DescriptionHelper;
@@ -250,7 +251,7 @@ public class ViewServletTest
             underTest.service(requests.get(index), responses.get(index));
           } catch (Exception e) {
             // Log and rethrow to fail the test
-            log.error("Error in concurrent request processing", e);
+            logger.error("Error in concurrent request processing", e);
             throw new RuntimeException(e);
           } finally {
             latch.countDown();
@@ -311,7 +312,7 @@ public class ViewServletTest
             underTest.dispatchAndSend(req, delayedFacet, defaultResponseSender, resp);
             completedRequests.incrementAndGet();
           } catch (Exception e) {
-            log.error("Error in concurrent request processing", e);
+            logger.error("Error in concurrent request processing", e);
             throw new RuntimeException(e);
           } finally {
             latch.countDown();

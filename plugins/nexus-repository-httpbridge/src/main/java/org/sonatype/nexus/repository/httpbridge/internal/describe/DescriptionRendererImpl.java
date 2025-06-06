@@ -99,15 +99,13 @@ public class DescriptionRendererImpl
     try {
       return objectMapper.writeValueAsString(description);
     } catch (Exception e) {
-      // Use pattern matching for more elegant exception handling
-      return switch (e) {
-        case JsonProcessingException jpe -> 
-          throw new RuntimeException("Error processing JSON: " + jpe.getMessage(), jpe);
-        case IllegalArgumentException iae -> 
-          throw new RuntimeException("Invalid argument for JSON serialization: " + iae.getMessage(), iae);
-        default -> 
-          throw new RuntimeException("Unexpected error during JSON serialization: " + e.getMessage(), e);
-      };
+      if( e instanceof JsonProcessingException){
+        throw new RuntimeException("Error processing JSON: " + e.getMessage(), e);
+      }else if( e instanceof IllegalArgumentException){
+        throw new RuntimeException("Invalid argument for JSON serialization: " + e.getMessage(), e);
+      }else{
+        throw new RuntimeException("Unexpected error during JSON serialization: " + e.getMessage(), e);
+      }
     }
   }
   

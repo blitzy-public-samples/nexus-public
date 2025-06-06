@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.httpbridge.internal;
 
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import com.google.inject.servlet.ServletModule;
 
@@ -45,13 +46,15 @@ public abstract class LegacyHttpBridgeServletModule
    * Virtual thread executor for handling I/O-bound servlet operations.
    * Java 21 feature: Uses virtual threads for improved scalability with minimal resource usage.
    */
-  private static final Executor VIRTUAL_THREAD_EXECUTOR = Thread.ofVirtual().name("legacy-http-bridge-", 0).factory();
+  private static final Executor VIRTUAL_THREAD_EXECUTOR =
+          Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("legacy-http-bridge-", 0).factory());
+
 
   @Override
   protected void configureServlets() {
     // this technically makes non-group repositories visible under /content/groups,
     // but this is acceptable since their IDs are unique and it keeps things simple
-    serve(LEGACY_CONTENT_PATTERNS.toArray(String[]::new)).with(LegacyViewServlet.class);
+    serve(LEGACY_CONTENT_PATTERNS).with(LegacyViewServlet.class);
     bindViewFiltersFor(LEGACY_CONTENT_PATTERNS);
 
     // this makes /service/local/x/x available, as a view servlet. Note that we have to strip the last forward
@@ -67,7 +70,7 @@ public abstract class LegacyHttpBridgeServletModule
    * @param patterns the URL patterns to bind filters for
    */
   private void bindViewFiltersFor(final List<String> patterns) {
-    bindViewFilters(filter(patterns.toArray(String[]::new)));
+    bindViewFilters(filter(patterns));
   }
 
   /**

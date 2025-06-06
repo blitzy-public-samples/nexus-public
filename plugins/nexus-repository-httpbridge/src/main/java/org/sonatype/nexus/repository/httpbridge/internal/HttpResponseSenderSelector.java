@@ -37,7 +37,7 @@ import static java.util.Map.copyOf;
  */
 @Singleton
 @Named
-class HttpResponseSenderSelector
+public class HttpResponseSenderSelector
     extends ComponentSupport
 {
   /**

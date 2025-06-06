@@ -54,8 +54,8 @@ public class RepositoryPathTest
   private void assertPath(final String path, final String expectedRepoName, final String expectedRemainingPath) {
     final RepositoryPath parsedPath = RepositoryPath.parse(path);
     assertThat(parsedPath, notNullValue());
-    assertThat(parsedPath.getRepositoryName(), is(expectedRepoName));
-    assertThat(parsedPath.getRemainingPath(), is(expectedRemainingPath));
+    assertThat(parsedPath.repositoryName(), is(expectedRepoName));
+    assertThat(parsedPath.remainingPath(), is(expectedRemainingPath));
   }
 
   @Test

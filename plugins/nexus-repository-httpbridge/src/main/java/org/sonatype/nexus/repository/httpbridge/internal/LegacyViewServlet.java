@@ -16,14 +16,16 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.regex.Matcher;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.httpbridge.LegacyViewConfiguration;
@@ -84,34 +86,37 @@ public class LegacyViewServlet
   }
 
   private boolean handleFormatSpecificUri(final HttpServletRequest request, final HttpServletResponse response)
-      throws ServletException, IOException
-  {
+          throws ServletException, IOException {
+    FutureTask<Boolean> task = new FutureTask<>(() -> {
+      try {
+        return processFormatSpecificUri(request, response);
+      } catch (Exception e) {
+        log.error(STR."Error processing format-specific URI: {e.getMessage()}", e);
+        throw new RuntimeException(e);
+      }
+    });
+
+    Thread.startVirtualThread(task);
+
     try {
-      // Use a virtual thread to process format-specific URI handling which may involve I/O
-      return Thread.startVirtualThread(() -> {
-        try {
-          return processFormatSpecificUri(request, response);
-        }
-        catch (Exception e) {
-          log.error(STR."Error processing format-specific URI: {e.getMessage()}", e);
-          throw new RuntimeException(e);
-        }
-      }).join();
+      return task.get(); // This returns Boolean
     }
     catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new ServletException("Format-specific URI processing interrupted", e);
     }
-    catch (Exception e) {
-      if (e.getCause() instanceof ServletException servletException) {
+    catch (ExecutionException e) {
+      Throwable cause = e.getCause();
+      if (cause instanceof ServletException servletException) {
         throw servletException;
       }
-      if (e.getCause() instanceof IOException ioException) {
+      if (cause instanceof IOException ioException) {
         throw ioException;
       }
       throw new ServletException("Error processing format-specific URI", e);
     }
   }
+
 
   private boolean processFormatSpecificUri(final HttpServletRequest request, final HttpServletResponse response)
       throws ServletException, IOException
@@ -121,8 +126,9 @@ public class LegacyViewServlet
       FormatMatchResult result = checkFormatMatch(request, configuration);
       
       // Use pattern matching to check the result
-      if (result instanceof FormatMatchResult(true, Repository repository, LegacyViewConfiguration config)) {
-        if (repository == null || !Objects.equals(config.getFormat(), repository.getFormat().getValue())) {
+      if (result instanceof FormatMatchResult formatMatchResult) {
+        if (formatMatchResult.repository() == null
+                || !Objects.equals(formatMatchResult.configuration().getFormat(), formatMatchResult.repository().getFormat().getValue())) {
           send(null, notFound(REPOSITORY_NOT_FOUND_MESSAGE), response);
           return true;
         }

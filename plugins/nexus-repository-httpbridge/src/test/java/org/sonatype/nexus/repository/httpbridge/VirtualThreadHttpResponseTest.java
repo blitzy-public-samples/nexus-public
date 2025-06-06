@@ -237,7 +237,7 @@ public class VirtualThreadHttpResponseTest
         }
         catch (Exception e) {
           // Log and continue
-          log.error("Error in platform thread test", e);
+          logger.error("Error in platform thread test", e);
         }
         finally {
           platformLatch.countDown();
@@ -262,7 +262,7 @@ public class VirtualThreadHttpResponseTest
         }
         catch (Exception e) {
           // Log and continue
-          log.error("Error in virtual thread test", e);
+          logger.error("Error in virtual thread test", e);
         }
         finally {
           virtualLatch.countDown();
@@ -274,13 +274,13 @@ public class VirtualThreadHttpResponseTest
     long virtualDuration = System.nanoTime() - virtualStart;
     
     // Log the results for analysis
-    log.info("Platform thread duration: {} ms", TimeUnit.NANOSECONDS.toMillis(platformDuration));
-    log.info("Virtual thread duration: {} ms", TimeUnit.NANOSECONDS.toMillis(virtualDuration));
+    logger.info("Platform thread duration: {} ms", TimeUnit.NANOSECONDS.toMillis(platformDuration));
+    logger.info("Virtual thread duration: {} ms", TimeUnit.NANOSECONDS.toMillis(virtualDuration));
     
     // Virtual threads should be at least as fast as platform threads for this workload
     // In practice, they should be faster for I/O-bound operations
     assertThat("Virtual threads should not be significantly slower than platform threads",
-        virtualDuration, lessThan(platformDuration * 1.2)); // Allow some variance
+            (double) virtualDuration, lessThan(platformDuration * 1.2)); // Allow some variance
   }
 
   /**
@@ -335,7 +335,7 @@ public class VirtualThreadHttpResponseTest
           underTest.send(request, HttpResponses.ok(payloads.get(index)), httpServletResponse);
         }
         catch (Exception e) {
-          log.error("Error processing payload {}", index, e);
+          logger.error("Error processing payload {}", index, e);
         }
         finally {
           latch.countDown();

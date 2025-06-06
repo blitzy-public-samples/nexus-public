@@ -84,9 +84,9 @@ public abstract class AptSnapshotFacetSupport
       
       for (SnapshotItem item : snapshots) {
         futures.add(executor.submit(() -> {
-          String assetPath = createAssetPath(id, item.specifier.path);
-          try (InputStream is = item.content.openInputStream();
-               TempBlob tempBlob = contentFacet.getTempBlob(is, item.specifier.role.getMimeType())) {
+          String assetPath = createAssetPath(id, item.specifier().path());
+          try (InputStream is = item.content().openInputStream();
+               TempBlob tempBlob = contentFacet.getTempBlob(is, item.specifier().role().getMimeType())) {
             contentFacet.findOrCreateMetadataAsset(tempBlob, assetPath);
             return null;
           } catch (IOException e) {
@@ -145,20 +145,27 @@ public abstract class AptSnapshotFacetSupport
         fetchSnapshotItems(AptFacetHelper.getReleaseIndexSpecifiers(aptFacet.isFlat(), aptFacet.getDistribution()));
     
     // Use Java 21 enhanced collectors for better readability
-    Map<SnapshotItem.Role, SnapshotItem> itemsByRole = new EnumMap<>(
-        releaseIndexItems.stream().collect(Collectors.toMap(item -> item.specifier.role, item -> item)));
-    
+   // Map<SnapshotItem.Role, SnapshotItem> itemsByRole = new EnumMap<>(
+      //  releaseIndexItems.stream().collect(Collectors.toMap(item -> item.specifier().role(), item -> item)));
+
+    Map<SnapshotItem.Role, SnapshotItem> itemsByRole = releaseIndexItems.stream()
+            .collect(Collectors.toMap(
+                    item -> item.specifier().role(),
+                    item -> item,
+                    (existing, replacement) -> existing, // merge function in case of duplicate keys
+                    () -> new EnumMap<>(SnapshotItem.Role.class) // map supplier
+            ));
     InputStream releaseStream = null;
     
     // Use pattern matching for instanceof checks when processing the release index
     var releaseIndexItem = itemsByRole.get(SnapshotItem.Role.RELEASE_INDEX);
     if (releaseIndexItem != null) {
-      releaseStream = releaseIndexItem.content.openInputStream();
+      releaseStream = releaseIndexItem.content().openInputStream();
     }
     else {
       var inlineIndexItem = itemsByRole.get(SnapshotItem.Role.RELEASE_INLINE_INDEX);
       if (inlineIndexItem != null) {
-        try (InputStream is = inlineIndexItem.content.openInputStream()) {
+        try (InputStream is = inlineIndexItem.content().openInputStream()) {
           ArmoredInputStream aIs = new ArmoredInputStream(is);
           releaseStream = new AptFilterInputStream(aIs);
         }

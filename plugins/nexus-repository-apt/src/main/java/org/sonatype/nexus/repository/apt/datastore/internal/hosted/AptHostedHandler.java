@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.apt.datastore.internal.hosted;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
@@ -72,62 +73,76 @@ public class AptHostedHandler
   }
 
   private Response doGet(
-      final Context context,
-      final String path,
-      final AptContentFacet contentFacet) throws IOException
+          final Context context,
+          final String path,
+          final AptContentFacet contentFacet) throws IOException
   {
-    // Use virtual thread for I/O operations
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      try {
+    try {
+      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
         if (isMetadataRebuildRequired(path, contentFacet)) {
           context.getRepository().facet(AptHostedFacet.class).rebuildMetadata();
         }
         Optional<Content> content = contentFacet.get(path);
         return content.isPresent() ? HttpResponses.ok(content.get()) : HttpResponses.notFound(path);
-      } catch (IOException e) {
-        log.error(STR."Error processing GET request for path \{path}", e);
-        throw new RuntimeException(e);
-      }
-    }).join();
+      }).get();
+    }
+    catch (InterruptedException | ExecutionException e) {
+      Thread.currentThread().interrupt(); // preserve interrupt status
+      throw new IOException("Thread interrupted during GET operation", e);
+    }
   }
+
 
   private Response doPost(final Context context,
                           final String path,
                           final AptContentFacet contentFacet) throws IOException
   {
-    // Use virtual thread for I/O operations
-    return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
-      try {
-        final AptHostedFacet hostedFacet = context.getRepository().facet(AptHostedFacet.class);
-        if ("rebuild-indexes".equals(path)) {
-          hostedFacet.rebuildMetadata();
-          return HttpResponses.ok();
-        }
-        else if (StringUtils.isBlank(path)) {
-          final Payload payload = context.getRequest().getPayload();
-          try (TempBlob tempBlob = contentFacet.getTempBlob(payload)) {
-            ControlFile controlFile = AptPackageParser
-                .parsePackageInfo(tempBlob)
-                .getControlFile();
-            String assetPath = AptFacetHelper.buildAssetPath(controlFile);
-            long payloadSize = payload.getSize();
-            String contentType = payload.getContentType();
-
-            hostedFacet.
-                put(assetPath, new StreamPayload(tempBlob, payloadSize, contentType),
-                    new PackageInfo(controlFile));
+    try {
+      return Executors.newVirtualThreadPerTaskExecutor().submit(() -> {
+        try {
+          final AptHostedFacet hostedFacet = context.getRepository().facet(AptHostedFacet.class);
+          if ("rebuild-indexes".equals(path)) {
+            hostedFacet.rebuildMetadata();
+            return HttpResponses.ok();
           }
-          return HttpResponses.created();
+          else if (StringUtils.isBlank(path)) {
+            final Payload payload = context.getRequest().getPayload();
+            try (TempBlob tempBlob = contentFacet.getTempBlob(payload)) {
+              ControlFile controlFile = AptPackageParser
+                      .parsePackageInfo(tempBlob)
+                      .getControlFile();
+              String assetPath = AptFacetHelper.buildAssetPath(controlFile);
+              long payloadSize = payload.getSize();
+              String contentType = payload.getContentType();
+
+              hostedFacet.put(assetPath, new StreamPayload(tempBlob, payloadSize, contentType),
+                      new PackageInfo(controlFile));
+            }
+            return HttpResponses.created();
+          }
+          else {
+            return HttpResponses.methodNotAllowed(POST, GET, HEAD);
+          }
         }
-        else {
-          return HttpResponses.methodNotAllowed(POST, GET, HEAD);
+        catch (IOException e) {
+          log.error("Error processing POST request for path {}", path, e);
+          throw e;
         }
-      } catch (IOException e) {
-        log.error(STR."Error processing POST request for path \{path}", e);
-        throw new RuntimeException(e);
+      }).get();
+    }
+    catch (InterruptedException e) {
+      Thread.currentThread().interrupt(); // Restore interrupt status
+      throw new IOException("Thread interrupted during POST operation", e);
+    }
+    catch (ExecutionException e) {
+      Throwable cause = e.getCause();
+      if (cause instanceof IOException) {
+        throw (IOException) cause;
       }
-    }).join();
+      throw new IOException("Error executing POST operation", cause);
+    }
   }
+
 
   private boolean isMetadataRebuildRequired(final String path, final AptContentFacet contentFacet)
   {
@@ -140,6 +155,6 @@ public class AptHostedHandler
   }
 
   private String assetPath(final Context context) {
-    return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath;
+    return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath();
   }
 }

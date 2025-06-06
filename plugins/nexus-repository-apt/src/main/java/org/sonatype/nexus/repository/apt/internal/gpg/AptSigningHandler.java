@@ -75,6 +75,6 @@ public class AptSigningHandler
    */
   private String assetPath(final Context context) {
     // Extract the State object and access its assetPath property
-    return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath;
+    return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath();
   }
 }

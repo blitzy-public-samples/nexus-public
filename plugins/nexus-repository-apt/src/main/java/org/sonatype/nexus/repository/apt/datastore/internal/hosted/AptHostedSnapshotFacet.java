@@ -49,7 +49,7 @@ public class AptHostedSnapshotFacet
     // For small lists, process sequentially to avoid overhead of thread creation
     if (specs.size() <= 3) {
       for (ContentSpecifier spec : specs) {
-        apt.get(spec.path).map(value -> new SnapshotItem(spec, value)).ifPresent(list::add);
+        apt.get(spec.path()).map(value -> new SnapshotItem(spec, value)).ifPresent(list::add);
       }
       return list;
     }
@@ -61,7 +61,7 @@ public class AptHostedSnapshotFacet
       // Submit each content retrieval task to the virtual thread executor
       for (ContentSpecifier spec : specs) {
         futures.add(executor.submit(() -> {
-          return apt.get(spec.path)
+          return apt.get(spec.path())
               .map(value -> new SnapshotItem(spec, value))
               .orElse(null);
         }));

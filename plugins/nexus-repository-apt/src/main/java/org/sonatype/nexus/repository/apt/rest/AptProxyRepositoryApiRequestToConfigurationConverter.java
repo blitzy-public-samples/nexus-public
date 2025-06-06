@@ -36,8 +36,8 @@ public class AptProxyRepositoryApiRequestToConfigurationConverter
   @Override
   public Configuration convert(final AptProxyRepositoryApiRequest request) {
     Configuration configuration = super.convert(request);
-    configuration.attributes("apt").set("distribution", request.getApt().getDistribution());
-    configuration.attributes("apt").set("flat", request.getApt().getFlat());
+    configuration.attributes("apt").set("distribution", request.getApt().distribution());
+    configuration.attributes("apt").set("flat", request.getApt().flat());
     return configuration;
   }
 }

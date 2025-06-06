@@ -14,6 +14,7 @@ package org.sonatype.nexus.repository.apt.rest;
 
 import javax.inject.Named;
 
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.rest.api.HostedRepositoryApiRequestToConfigurationConverter;
 
@@ -33,13 +34,13 @@ public class AptHostedRepositoryApiRequestToConfigurationConverter
     Configuration configuration = super.convert(request);
     
     // Then add APT-specific attributes
-    configuration.attributes("apt").set("distribution", request.getApt().getDistribution());
+    configuration.attributes("apt").set("distribution", request.getApt().distribution());
     
     // Add APT signing attributes
     var aptSigning = request.getAptSigning();
-    configuration.attributes("aptSigning")
-        .set("keypair", aptSigning.keypair())
-        .set("passphrase", aptSigning.passphrase());
+    NestedAttributesMap aptSigningAttributes = configuration.attributes("aptSigning");
+    aptSigningAttributes.set("keypair", aptSigning.keypair());
+    aptSigningAttributes.set("passphrase", aptSigning.passphrase());
     
     return configuration;
   }

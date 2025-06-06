@@ -13,7 +13,9 @@
 package com.sonatype.nexus.edition.oc;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.SequencedMap;
 
 import javax.annotation.Nullable;
 import javax.inject.Named;
@@ -68,8 +70,8 @@ public class ApplicationLicenseImpl
    * Always empty-map.
    */
   @Override
-  public Map<String, Object> getAttributes() {
-    return Collections.emptyMap();
+  public SequencedMap<String, Object> getAttributes() {
+    return new LinkedHashMap<String, Object>();
   }
 
   /**

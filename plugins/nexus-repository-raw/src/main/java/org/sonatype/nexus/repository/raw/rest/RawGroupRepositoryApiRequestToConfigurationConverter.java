@@ -32,7 +32,7 @@ public class RawGroupRepositoryApiRequestToConfigurationConverter
   @Override
   public Configuration convert(final RawGroupRepositoryApiRequest request) {
     Configuration configuration = super.convert(request);
-    configuration.attributes("raw").set(CONTENT_DISPOSITION, request.getRaw().getContentDisposition().name());
+    configuration.attributes("raw").set(CONTENT_DISPOSITION, request.getRaw().contentDisposition().name());
     return configuration;
   }
 }

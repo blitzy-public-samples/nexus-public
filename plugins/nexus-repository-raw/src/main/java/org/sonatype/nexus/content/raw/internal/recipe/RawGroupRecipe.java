@@ -84,11 +84,41 @@ public class RawGroupRecipe
       List<Future<?>> futures = new ArrayList<>();
       
       // Submit facet attachment tasks to be executed concurrently
-      futures.add(executor.submit(() -> repository.attach(securityFacet.get())));
-      futures.add(executor.submit(() -> repository.attach(configure(viewFacet.get()))));
-      futures.add(executor.submit(() -> repository.attach(groupFacet.get())));
-      futures.add(executor.submit(() -> repository.attach(contentFacet.get())));
-      futures.add(executor.submit(() -> repository.attach(browseFacet.get())));
+      futures.add(executor.submit(() -> {
+		try {
+			repository.attach(securityFacet.get());
+		} catch (Exception e) {
+			log.error("Error while attaching security facet.", e);
+		}
+	}));
+      futures.add(executor.submit(() -> {
+		try {
+			repository.attach(configure(viewFacet.get()));
+		} catch (Exception e) {
+			log.error("Error while attaching view facet.", e);
+		}
+	}));
+      futures.add(executor.submit(() -> {
+		try {
+			repository.attach(groupFacet.get());
+		} catch (Exception e) {
+			log.error("Error while attaching group facet.", e);
+		}
+	}));
+      futures.add(executor.submit(() -> {
+		try {
+			repository.attach(contentFacet.get());
+		} catch (Exception e) {
+			log.error("Error while attaching content facet.", e);
+		}
+	}));
+      futures.add(executor.submit(() -> {
+		try {
+			repository.attach(browseFacet.get());
+		} catch (Exception e) {
+			log.error("Error while attaching browse facet.", e);
+		}
+	}));
       
       // Wait for all facet attachments to complete
       for (Future<?> future : futures) {

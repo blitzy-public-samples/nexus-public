@@ -21,6 +21,7 @@ import org.sonatype.nexus.repository.raw.internal.RawFormat;
 import org.sonatype.nexus.repository.replication.ReplicationIngester;
 import org.sonatype.nexus.repository.replication.ReplicationIngesterHelper;
 import org.sonatype.nexus.repository.replication.ReplicationIngesterSupport;
+import org.sonatype.nexus.repository.replication.ReplicationVirtualThreadManager;
 
 /**
  * Raw format implementation of {@link ReplicationIngester}.
@@ -41,9 +42,10 @@ public class RawReplicationIngester
    */
   @Inject
   public RawReplicationIngester(final BlobStoreManager blobstoreManager,
-                                final ReplicationIngesterHelper replicationIngesterHelper)
+                                final ReplicationIngesterHelper replicationIngesterHelper,
+                                final ReplicationVirtualThreadManager virtualThreadManager)
   {
-    super(blobstoreManager, replicationIngesterHelper);
+    super(blobstoreManager, replicationIngesterHelper,  virtualThreadManager);
   }
 
   @Override

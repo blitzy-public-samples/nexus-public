@@ -124,11 +124,6 @@ public class RawHostedRecipe
   private ViewFacet configure(final ConfigurableViewFacet facet) {
     Router.Builder builder = new Router.Builder();
 
-    // Configure StreamCopier to use virtual threads if enabled
-    if (useVirtualThreads) {
-      StreamCopier.configureVirtualThreads(true);
-    }
-
     // Additional handlers, such as the lastDownloadHandler, are intentionally
     // not included on this route because this route forwards to the route below.
     // This route specifically handles GET / and forwards to /index.html.

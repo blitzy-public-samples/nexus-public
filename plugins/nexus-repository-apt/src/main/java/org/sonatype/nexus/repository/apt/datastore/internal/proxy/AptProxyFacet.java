@@ -114,7 +114,7 @@ public class AptProxyFacet
   }
 
   private String assetPath(final Context context) {
-    return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath;
+    return context.getAttributes().require(AptSnapshotHandler.State.class).assetPath();
   }
 
   /**
@@ -137,7 +137,7 @@ public class AptProxyFacet
               return fetchLatest(spec);
             }
             catch (IOException e) {
-              log.warn("Failed to fetch {}: {}", spec.path, e.getMessage());
+              log.warn("Failed to fetch {}: {}", spec.path(), e.getMessage());
               return Optional.<SnapshotItem>empty();
             }
           }, virtualThreadExecutor))
@@ -157,7 +157,7 @@ public class AptProxyFacet
           item.ifPresent(list::add);
         }
         catch (IOException e2) {
-          log.warn("Failed to fetch {}: {}", spec.path, e2.getMessage());
+          log.warn("Failed to fetch {}: {}", spec.path(), e2.getMessage());
         }
       }
     }
@@ -171,9 +171,9 @@ public class AptProxyFacet
     HttpClient httpClient = httpClientFacet.getHttpClient();
     CacheController cacheController = cacheControllerHolder.getMetadataCacheController();
     CacheInfo cacheInfo = cacheController.current();
-    Content oldVersion = facet(AptContentFacet.class).get(spec.path).orElse(null);
+    Content oldVersion = facet(AptContentFacet.class).get(spec.path()).orElse(null);
 
-    URI fetchUri = proxyFacet.getRemoteUrl().resolve(spec.path);
+    URI fetchUri = proxyFacet.getRemoteUrl().resolve(spec.path());
     HttpGet getRequest = buildFetchRequest(oldVersion, fetchUri);
 
     HttpResponse response = httpClient.execute(getRequest);
@@ -186,14 +186,14 @@ public class AptProxyFacet
       contentAttrs.set(Content.CONTENT_LAST_MODIFIED, getDateHeader(response, HttpHeaders.LAST_MODIFIED));
       contentAttrs.set(Content.CONTENT_ETAG, getQuotedStringHeader(response, HttpHeaders.ETAG));
       contentAttrs.set(CacheInfo.class, cacheInfo);
-      Content storedContent = facet(AptContentFacet.class).put(spec.path, fetchedContent).download();
+      Content storedContent = facet(AptContentFacet.class).put(spec.path(), fetchedContent).download();
       return Optional.of(new SnapshotItem(spec, storedContent));
     }
 
     try {
       if (status.getStatusCode() == HttpStatus.SC_NOT_MODIFIED) {
         checkState(oldVersion != null, "Received 304 without conditional GET (bad server?) from %s", fetchUri);
-        doIndicateVerified(oldVersion, cacheInfo, spec.path);
+        doIndicateVerified(oldVersion, cacheInfo, spec.path());
         return Optional.of(new SnapshotItem(spec, oldVersion));
       }
       throwProxyExceptionForStatus(response);

@@ -29,7 +29,11 @@
 
   <properties>
     <eclipse-jetty.version>11.0.9</eclipse-jetty.version>
+<<<<<<< HEAD
     <eclipse-jetty.ee10.version>12.0.16</eclipse-jetty.ee10.version>
+=======
+    <eclipse-jetty-ee10.version>12.0.16</eclipse-jetty-ee10.version>
+>>>>>>> 4c606d0372674a629ce3ad79f5112c66efaff9d8
     <eclipse-jetty-continuation.version>9.4.56.v20240826</eclipse-jetty-continuation.version>
   </properties>
 
@@ -44,13 +48,21 @@
 	<dependency>
         <groupId>org.eclipse.jetty.ee10</groupId>
         <artifactId>jetty-ee10-servlet</artifactId>
+<<<<<<< HEAD
         <version>${eclipse-jetty.ee10.version}</version>
+=======
+        <version>${eclipse-jetty-ee10.version}</version>
+>>>>>>> 4c606d0372674a629ce3ad79f5112c66efaff9d8
     </dependency>
     
       <dependency>
         <groupId>org.eclipse.jetty.ee10</groupId>
         <artifactId>jetty-ee10-webapp</artifactId>
+<<<<<<< HEAD
         <version>${eclipse-jetty.ee10.version}</version>
+=======
+        <version>${eclipse-jetty-ee10.version}</version>
+>>>>>>> 4c606d0372674a629ce3ad79f5112c66efaff9d8
       </dependency>
 
       <dependency>

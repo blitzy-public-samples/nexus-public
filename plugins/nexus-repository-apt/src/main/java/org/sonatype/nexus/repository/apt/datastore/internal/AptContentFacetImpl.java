@@ -99,7 +99,7 @@ public class AptContentFacetImpl
     super(formatStoreManager);
     // Create a virtual thread executor for I/O-bound operations
     // This provides higher throughput with minimal resource overhead compared to platform threads
-    this.virtualThreadExecutor = NexusExecutorService.forVirtualThreads(FakeAlmightySubject.TASK_SUBJECT);
+    this.virtualThreadExecutor = NexusExecutorService.forFixedSubjectVirtual(FakeAlmightySubject.TASK_SUBJECT);
   }
 
   static class Config

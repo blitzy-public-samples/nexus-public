@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
@@ -203,16 +204,27 @@ public class AptHostedMetadataFacet
       // Use virtual threads for I/O-bound operations
       try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
         var futures = store.getFiles().entrySet().stream()
-            .map(entry -> executor.submit(() -> processFileEntry(entry, aptFacet, sha256Builder, md5Builder)))
+            .map(entry -> executor.submit(() -> {
+                try {
+                    processFileEntry(entry, aptFacet, sha256Builder, md5Builder);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }))
             .toList();
         
         // Wait for all operations to complete
         for (var future : futures) {
-          future.join();
+          try {
+            future.get();
+          }
+          catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
         }
       }
+      }
 
-      releaseFile = buildReleaseFile(
+        releaseFile = buildReleaseFile(
           aptFacet.getDistribution(),
           store.getFiles().keySet(),
           md5Builder.toString(),
@@ -295,7 +307,7 @@ public class AptHostedMetadataFacet
     try {
       Set<String> architectures =
           changes.stream()
-              .map(change -> getArchitecture(change.getAsset()))
+              .map(change -> getArchitecture(change.asset()))
               .collect(Collectors.toSet());
 
       final List<Map<String, Object>> packagesInfo = data()
@@ -317,8 +329,8 @@ public class AptHostedMetadataFacet
       for (List<Map<String, Object>> assets : assetsPerArch.values()) {
         Optional<AssetChange> removeAssetChange =
             changes.stream()
-                .filter(change -> change.getAsset().kind().equals(DEB))
-                .filter(change -> change.getAction() == AssetAction.REMOVED)
+                .filter(change -> change.asset().kind().equals(DEB))
+                .filter(change -> change.action() == AssetAction.REMOVED)
                 .findAny();
 
         if (assets.isEmpty() && removeAssetChange.isPresent()) {
@@ -358,7 +370,7 @@ public class AptHostedMetadataFacet
       final List<Map<String, Object>> assets) throws IOException
   {
     // NOTE:  We exclude added assets as well to account for the case where we are replacing an asset
-    Set<String> excludeNames = changes.stream().map(c -> c.getAsset().path()).collect(Collectors.toSet());
+    Set<String> excludeNames = changes.stream().map(c -> c.asset().path()).collect(Collectors.toSet());
 
     for (Map<String, Object> asset : assets) {
       final String name = asset.get(P_PACKAGE_NAME).toString();
@@ -491,7 +503,7 @@ public class AptHostedMetadataFacet
       final Map<String, Writer> streams,
       final AssetChange removeAssetChange)
   {
-    String arch = (String) FormatAttributesUtils.getFormatAttributes(removeAssetChange.getAsset())
+    String arch = (String) FormatAttributesUtils.getFormatAttributes(removeAssetChange.asset())
         .get(P_ARCHITECTURE);
     streams.computeIfAbsent(arch, result::openOutput);
   }

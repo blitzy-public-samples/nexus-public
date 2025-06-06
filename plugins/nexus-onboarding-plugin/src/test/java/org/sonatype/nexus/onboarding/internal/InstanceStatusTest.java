@@ -100,26 +100,29 @@ public class InstanceStatusTest
           
           // Create an instance state record for this combination
           InstanceState state = new InstanceState(anonymousConfigured, registrationStarted, registrationCompleted);
-          
+
+          boolean expectedIsNew;
           // Use pattern matching with switch to determine expected behavior
-          boolean expectedIsNew = switch (state) {
+          if (!state.anonymousConfigured()) {
             // Anonymous not configured -> instance is new
-            case InstanceState(false, _, _) -> true;
-            
+            expectedIsNew = true;
+          } else if (state.anonymousConfigured() && state.registrationStarted() && !state.registrationCompleted()) {
             // Anonymous configured, registration started but not completed -> instance is new
-            case InstanceState(true, true, false) -> true;
-            
+            expectedIsNew = true;
+          } else {
             // All other cases -> instance is not new
-            default -> false;
-          };
-          
-          boolean expectedIsUpgraded = switch (state) {
+            expectedIsNew = false;
+          }
+
+          boolean expectedIsUpgraded;
+
+          if (state.anonymousConfigured() && !state.registrationStarted()) {
             // Anonymous configured, registration not started -> instance is upgraded
-            case InstanceState(true, false, _) -> true;
-            
+            expectedIsUpgraded = true;
+          } else {
             // All other cases -> instance is not upgraded
-            default -> false;
-          };
+            expectedIsUpgraded = false;
+          }
           
           // Assert that the actual behavior matches the expected behavior
           assertThat("isNew() for state: " + state, underTest.isNew(), is(expectedIsNew));

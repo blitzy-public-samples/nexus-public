@@ -18,7 +18,8 @@ import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.realm.RealmManager;
 import org.sonatype.nexus.security.role.Role;
 
-import io.dropwizard.metrics.health.HealthCheck.Result;
+//import io.dropwizard.metrics.health.HealthCheck.Result;
+import com.codahale.metrics.health.HealthCheck.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;

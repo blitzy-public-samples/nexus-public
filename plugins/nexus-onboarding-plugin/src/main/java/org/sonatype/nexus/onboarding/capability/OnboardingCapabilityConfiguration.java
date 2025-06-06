@@ -18,6 +18,8 @@ import java.util.Objects;
 
 import org.sonatype.nexus.capability.CapabilityConfigurationSupport;
 
+import static java.lang.StringTemplate.STR;
+
 /**
  * Configuration for the Onboarding capability.
  *
@@ -108,10 +110,10 @@ public class OnboardingCapabilityConfiguration
 
   @Override
   public String toString() {
-    return STR."{getClass().getSimpleName()}{
-        proStarterInfoPageCompleted={proStarterInfoPageCompleted};
-        registrationStarted={registrationStarted};
-        registrationCompleted={registrationCompleted};
-      }";
+    return getClass().getSimpleName() + "{" +
+            "proStarterInfoPageCompleted=" + proStarterInfoPageCompleted + "; " +
+            "registrationStarted=" + registrationStarted + "; " +
+            "registrationCompleted=" + registrationCompleted +
+            "}";
   }
 }

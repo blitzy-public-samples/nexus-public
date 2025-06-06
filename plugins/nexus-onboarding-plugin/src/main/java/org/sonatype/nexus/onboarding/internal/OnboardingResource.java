@@ -97,7 +97,11 @@ public class OnboardingResource
         log.error(STR."Unable to locate 'admin' user to change password: \{userNotFound.getMessage()}");
         throw new WebApplicationException(Response.Status.NOT_FOUND);
       }
-      throw e;
+        try {
+            throw e;
+        } catch (UserNotFoundException ex) {
+            throw new RuntimeException(ex);
+        }
     }
   }
 }

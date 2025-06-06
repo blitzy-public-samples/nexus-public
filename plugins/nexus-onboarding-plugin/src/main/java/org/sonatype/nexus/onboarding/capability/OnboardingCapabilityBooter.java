@@ -20,6 +20,7 @@ import org.sonatype.nexus.capability.CapabilityRegistry;
 
 import com.google.common.collect.ImmutableMap;
 
+import static java.lang.StringTemplate.STR;
 import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityConfiguration.DEFAULT_PRO_STARTER_INFO_PAGE_COMPLETED;
 import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityConfiguration.DEFAULT_REGISTRATION_COMPLETED;
 import static org.sonatype.nexus.onboarding.capability.OnboardingCapabilityConfiguration.DEFAULT_REGISTRATION_STARTED;
@@ -46,9 +47,9 @@ public class OnboardingCapabilityBooter
         true,
         null,
         ImmutableMap.of(
-            PRO_STARTER_INFO_PAGE_COMPLETED, STR."""{DEFAULT_PRO_STARTER_INFO_PAGE_COMPLETED}""",
-            REGISTRATION_STARTED, STR."""{DEFAULT_REGISTRATION_STARTED}""",
-            REGISTRATION_COMPLETED, STR."""{DEFAULT_REGISTRATION_COMPLETED}"""
+            PRO_STARTER_INFO_PAGE_COMPLETED, STR."\{DEFAULT_PRO_STARTER_INFO_PAGE_COMPLETED}",
+            REGISTRATION_STARTED, STR."\{DEFAULT_REGISTRATION_STARTED}",
+            REGISTRATION_COMPLETED, STR."\{DEFAULT_REGISTRATION_COMPLETED}"
         )
     );
   }

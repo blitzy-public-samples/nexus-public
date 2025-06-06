@@ -20,7 +20,7 @@ import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.authz.NoSuchAuthorizationManagerException;
 import org.sonatype.nexus.security.realm.RealmManager;
 import org.sonatype.nexus.security.role.Role;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.subject.support.SubjectThreadState;
@@ -29,7 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.Category;
+import org.junit.experimental.categories.Category;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;

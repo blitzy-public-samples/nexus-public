@@ -72,10 +72,16 @@ public class S3PropertiesFile
   public void load() throws IOException {
     log.debug(STR."Loading: \{bucket}/\{key}");
 
-    try (S3Object object = s3.getObject(bucket, key)) {
-      try (InputStream inputStream = object.getObjectContent()) {
+    S3Object object = s3.getObject(bucket, key);
+    try {
+      InputStream inputStream = object.getObjectContent();
+      try {
         load(inputStream);
+      } finally {
+        inputStream.close();
       }
+    } finally {
+
     }
   }
 

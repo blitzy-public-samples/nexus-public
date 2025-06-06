@@ -23,6 +23,9 @@ import org.sonatype.nexus.common.collect.NestedAttributesMap;
 
 import com.amazonaws.regions.Region;
 import com.amazonaws.regions.Regions;
+//import software.amazon.awssdk.regions.Region;
+//import software.amazon.awssdk.regions.Regions;
+
 import com.google.common.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,12 +110,18 @@ public class S3BlobStoreConfigurationHelper
     String currentRegion = getCurrentRegion();
 
     // Use pattern matching to check for failover configuration availability
-    if (switch(config) {
-          case var c when !c.contains(FAILOVER_BUCKETS_KEY) -> true;
-          case var _ when currentRegion == null -> true;
-          default -> false;
-        }) {
-      log.trace(STR."No failover configuration possible");
+//    if (switch(config) {
+//          case var c when !c.contains(FAILOVER_BUCKETS_KEY) -> true;
+//          case var _ when currentRegion == null -> true;
+//          default -> false;
+//        }) {
+//      log.trace(STR."No failover configuration possible");
+//      return Map.of(primaryRegion, primaryBucket);
+//    }
+
+    boolean noFailoverConfigured = !config.contains(FAILOVER_BUCKETS_KEY) || currentRegion == null;
+    if (noFailoverConfigured) {
+      log.trace("No failover configuration possible");
       return Map.of(primaryRegion, primaryBucket);
     }
 

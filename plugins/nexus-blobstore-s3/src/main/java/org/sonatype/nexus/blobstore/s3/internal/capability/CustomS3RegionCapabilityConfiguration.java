@@ -49,6 +49,6 @@ public class CustomS3RegionCapabilityConfiguration
 
   @Override
   public String toString() {
-    return STR."\{getClass().getSimpleName()}\{regions='\{customRegions}'\}";
+    return STR."\{getClass().getSimpleName()}{regions='\{customRegions}'}";
   }
 }

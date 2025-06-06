@@ -113,6 +113,6 @@ public class AuthenticateResource
       // Get the first realm name using iterator, which works with any Collection
       realmName = realmNames.iterator().next();
     }
-    return new AuthTicketXO.withT(authTickets.createTicket(username, realmName));
+    return AuthTicketXO.withT(authTickets.createTicket(username, realmName));
   }
 }

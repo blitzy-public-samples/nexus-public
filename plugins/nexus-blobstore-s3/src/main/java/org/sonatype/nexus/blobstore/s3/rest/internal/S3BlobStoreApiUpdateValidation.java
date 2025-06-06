@@ -31,11 +31,11 @@ import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiModel;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import static java.lang.String.format;
 import static java.util.Optional.ofNullable;
-import static org.apache.commons.lang.StringUtils.equalsIgnoreCase;
+import static org.apache.commons.lang3.StringUtils.equalsIgnoreCase;
 import static org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.TYPE;
 import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiConstants.BLOB_STORE_NAME_UPDATE_ERROR_MESSAGE;
 import static org.sonatype.nexus.blobstore.s3.rest.internal.S3BlobStoreApiConstants.BLOB_STORE_TYPE_MISMATCH_ERROR_FORMAT;
@@ -171,7 +171,7 @@ public class S3BlobStoreApiUpdateValidation
 
       // Use modern collectors for transforming the data
       Set<String> regions = failoverBuckets.stream()
-          .map(S3BlobStoreApiFailoverBucket::getRegion)
+          .map(S3BlobStoreApiFailoverBucket::region)
           .map(String::toLowerCase)
           .collect(Collectors.toSet());
 
@@ -182,7 +182,7 @@ public class S3BlobStoreApiUpdateValidation
 
       // Check if primary region is in failover regions
       if (bucketConfig.getBucket() != null && 
-          regions.contains(bucketConfig.getBucket().getRegion().toLowerCase())) {
+          regions.contains(bucketConfig.getBucket().region().toLowerCase())) {
         errors.add(new ValidationErrorXO(FAILOVER_BUCKETS, MATCHES_PRIMARY_ERROR_MESSAGE));
       }
 

@@ -12,14 +12,16 @@
  */
 package com.amazonaws.services.s3;
 
-import java.io.File;
-import java.io.InputStream;
-
+import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
+import com.amazonaws.services.s3.model.BucketLifecycleConfiguration;
+import com.amazonaws.services.s3.model.BucketPolicy;
+import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
 import com.amazonaws.services.s3.model.CopyObjectRequest;
 import com.amazonaws.services.s3.model.CopyObjectResult;
+import com.amazonaws.services.s3.model.CopyPartRequest;
+import com.amazonaws.services.s3.model.CopyPartResult;
 import com.amazonaws.services.s3.model.DeleteObjectRequest;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest;
-import com.amazonaws.services.s3.model.DeleteObjectsResult;
 import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
 import com.amazonaws.services.s3.model.GetObjectRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
@@ -34,6 +36,10 @@ import com.amazonaws.services.s3.model.SetObjectTaggingRequest;
 import com.amazonaws.services.s3.model.SetObjectTaggingResult;
 import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.services.s3.model.UploadPartResult;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+
+import java.io.File;
+import java.io.InputStream;
 
 /**
  * Interface for Amazon S3 client operations.
@@ -210,7 +216,7 @@ public interface AmazonS3 {
    * @param request the delete objects request
    * @return the delete objects result
    */
-  DeleteObjectsResult deleteObjects(DeleteObjectsRequest request);
+  DeleteObjectsResponse deleteObjects(DeleteObjectsRequest request);
 
   /**
    * Deletes the lifecycle configuration for a bucket.
@@ -223,4 +229,20 @@ public interface AmazonS3 {
    * Closes the client and releases any system resources associated with it.
    */
   void shutdown();
+
+  void createBucket(String bucket);
+
+  BucketLifecycleConfiguration getBucketLifecycleConfiguration(String bucket);
+
+  void deleteBucket(String bucket);
+
+  void setBucketLifecycleConfiguration(String bucket, BucketLifecycleConfiguration lifecycleConfiguration);
+
+  BucketPolicy getBucketPolicy(String bucket);
+
+  void completeMultipartUpload(CompleteMultipartUploadRequest completeMultipartUploadRequest);
+
+  void abortMultipartUpload(AbortMultipartUploadRequest abortMultipartUploadRequest);
+
+  CopyPartResult copyPart(CopyPartRequest part);
 }

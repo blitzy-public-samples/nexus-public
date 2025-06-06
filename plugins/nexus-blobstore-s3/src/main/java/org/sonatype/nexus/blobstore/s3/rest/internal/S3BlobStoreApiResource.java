@@ -32,7 +32,10 @@ import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.rest.BlobStoreResourceUtil;
 import org.sonatype.nexus.blobstore.s3.internal.S3BlobStore;
+import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiBucketConfiguration;
+import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiBucketSecurity;
 import org.sonatype.nexus.blobstore.s3.rest.internal.model.S3BlobStoreApiModel;
+import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.crypto.secrets.SecretsFactory;
 import org.sonatype.nexus.rapture.PasswordPlaceholder;
 import org.sonatype.nexus.rest.Resource;
@@ -146,17 +149,17 @@ public class S3BlobStoreApiResource
     s3BlobStoreApiUpdateValidation.validateUpdateRequest(request, blobStoreName);
 
     // Use pattern matching for type checking (Java 21 feature)
-    if (request.getBucketConfiguration() instanceof var bucketConfig && 
-        bucketConfig != null && 
-        bucketConfig.getBucketSecurity() instanceof var security && 
-        security != null && 
+    if (request.getBucketConfiguration() instanceof  S3BlobStoreApiBucketConfiguration bucketConfig &&
+        bucketConfig != null &&
+        bucketConfig.getBucketSecurity() instanceof S3BlobStoreApiBucketSecurity security &&
+        security != null &&
         PasswordPlaceholder.is(security.getSecretAccessKey())) {
       
       // Did not update the password, just use the password we already have
       BlobStore currentS3Blobstore = blobStoreManager.get(blobStoreName);
       var attributes = currentS3Blobstore.getBlobStoreConfiguration().getAttributes();
       
-      if (attributes.get(TYPE.toLowerCase()) instanceof var typeAttrs && typeAttrs != null) {
+      if (attributes.get(TYPE.toLowerCase()) instanceof NestedAttributesMap typeAttrs && typeAttrs != null) {
         String secretId = typeAttrs.get(SECRET_ACCESS_KEY_KEY).toString();
         String decryptedSecretKey = new String(secretsFactory.from(secretId).decrypt());
         security.setSecretAccessKey(decryptedSecretKey);
@@ -242,9 +245,9 @@ public class S3BlobStoreApiResource
     // Use pattern matching for more concise code (Java 21 feature)
     if (result.isPresent()) {
       var model = result.get();
-      if (model.getBucketConfiguration() instanceof var bucketConfig && 
+      if (model.getBucketConfiguration() instanceof S3BlobStoreApiBucketConfiguration bucketConfig &&
           bucketConfig != null && 
-          bucketConfig.getBucketSecurity() instanceof var security && 
+          bucketConfig.getBucketSecurity() instanceof S3BlobStoreApiBucketSecurity security &&
           security != null && 
           security.getAccessKeyId() != null && 
           isNotEmpty(security.getAccessKeyId())) {

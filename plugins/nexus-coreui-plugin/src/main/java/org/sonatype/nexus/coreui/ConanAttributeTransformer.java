@@ -104,23 +104,16 @@ public class ConanAttributeTransformer
    * @return a flattened map
    */
   private Map<String, Object> flattenMap(final Map<String, Object> map, final String parentKey) {
-    Map<String, Object> flattenedMap = new HashMap<>();
-    for (var entry : map.entrySet()) {
-      // Using Java 21 Record Pattern for Map.Entry
-      var (key, value) = entry;
-      String fullKey = parentKey == null ? key : STR."\{parentKey}.\{key}";
-      
-      // Using Pattern Matching for switch with value type
-      switch (value) {
-        case Map<?, ?> nestedMap -> 
-          flattenedMap.putAll(flattenMap((Map<String, Object>) nestedMap, fullKey));
-        case null -> 
-          flattenedMap.put(fullKey, null);
-        default -> 
-          flattenedMap.put(fullKey, value);
-      }
-    }
-    return flattenedMap;
+	  Map<String, Object> flattenedMap = new HashMap<>();
+	    for (Map.Entry<String, ?> entry : map.entrySet()) {
+	      String key = parentKey == null ? entry.getKey() : parentKey + "." + entry.getKey();
+	      if (entry.getValue() instanceof Map) {
+	        flattenedMap.putAll(flattenMap((Map<String, Object>) entry.getValue(), key));
+	      } else {
+	        flattenedMap.put(key, entry.getValue());
+	      }
+	    }
+	    return flattenedMap;
   }
 
   /**

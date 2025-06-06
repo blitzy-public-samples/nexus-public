@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.SequencedMap;
+import java.util.SequencedSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -254,7 +255,7 @@ public class ContentComponentHelper
   }
 
   @Override
-  public Set<String> deleteAsset(final Repository repository, final EntityId assetId) {
+  public SequencedSet deleteAsset(final Repository repository, final EntityId assetId) {
     log.info(STR."Deleting asset with ID \{assetId} from repository \{repository.getName()}");
     return findAssetById(repository, assetId)
         .map(asset -> maintenanceService.deleteAsset(repository, asset))

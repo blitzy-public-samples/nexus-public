@@ -27,7 +27,7 @@ import org.sonatype.nexus.blobstore.s3.internal.encryption.KMSEncrypter;
 import org.sonatype.nexus.blobstore.s3.internal.encryption.NoEncrypter;
 import org.sonatype.nexus.blobstore.s3.internal.encryption.S3Encrypter;
 import org.sonatype.nexus.blobstore.s3.internal.encryption.S3ManagedEncrypter;
-import org.sonatype.nexus.common.thread.VirtualThreads;
+import org.sonatype.nexus.common.thread.VirtualThreadExecutors;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
@@ -102,9 +102,11 @@ public class EncryptingAmazonS3Client
     this.encrypter = getEncrypter(blobStoreConfig);
     
     // Create a virtual thread executor for I/O operations
-    this.virtualThreadExecutor = VirtualThreads.isEnabled() 
+    this.virtualThreadExecutor = VirtualThreadUtil.isVirtualThreadEnabled()
         ? Executors.newVirtualThreadPerTaskExecutor()
         : Executors.newCachedThreadPool();
+
+    //this.virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     MetricRegistry registry = SharedMetricRegistries.getOrCreate("nexus");
     getTimer = registry.timer(MetricRegistry.name(S3BlobStore.class, METRIC_NAME, "get"));
@@ -146,7 +148,7 @@ public class EncryptingAmazonS3Client
     CopyObjectRequest encryptedRequest = encrypter.addEncryption(request);
 
     try (final Timer.Context copyContext = copyTimer.time()) {
-      if (VirtualThreads.isEnabled()) {
+      if (VirtualThreadUtil.isVirtualThreadEnabled()) {
         CompletableFuture<CopyObjectResponse> future = CompletableFuture.supplyAsync(
             () -> s3Client.copyObject(encryptedRequest),
             virtualThreadExecutor
@@ -190,7 +192,7 @@ public class EncryptingAmazonS3Client
    */
   public CreateMultipartUploadResponse createMultipartUpload(final CreateMultipartUploadRequest request) {
     CreateMultipartUploadRequest encryptedRequest = encrypter.addEncryption(request);
-    if (VirtualThreads.isEnabled()) {
+    if (VirtualThreadUtil.isVirtualThreadEnabled()) {
       CompletableFuture<CreateMultipartUploadResponse> future = CompletableFuture.supplyAsync(
           () -> s3Client.createMultipartUpload(encryptedRequest),
           virtualThreadExecutor
@@ -280,7 +282,7 @@ public class EncryptingAmazonS3Client
   public PutObjectResponse putObject(final PutObjectRequest request, final RequestBody requestBody) {
     PutObjectRequest encryptedRequest = encrypter.addEncryption(request);
     try (final Timer.Context putContext = putTimer.time()) {
-      if (VirtualThreads.isEnabled()) {
+      if (VirtualThreadUtil.isVirtualThreadEnabled()) {
         CompletableFuture<PutObjectResponse> future = CompletableFuture.supplyAsync(
             () -> s3Client.putObject(encryptedRequest, requestBody),
             virtualThreadExecutor
@@ -300,7 +302,7 @@ public class EncryptingAmazonS3Client
    */
   public ResponseBytes<GetObjectResponse> getObject(GetObjectRequest request) {
     try (final Timer.Context getContext = getTimer.time()) {
-      if (VirtualThreads.isEnabled()) {
+      if (VirtualThreadUtil.isVirtualThreadEnabled()) {
         CompletableFuture<ResponseBytes<GetObjectResponse>> future = CompletableFuture.supplyAsync(
             () -> s3Client.getObjectAsBytes(request),
             virtualThreadExecutor
@@ -337,7 +339,7 @@ public class EncryptingAmazonS3Client
    */
   public UploadPartResponse uploadPart(UploadPartRequest request, RequestBody requestBody) {
     try (final Timer.Context uploadPartContext = uploadPartTimer.time()) {
-      if (VirtualThreads.isEnabled()) {
+      if (VirtualThreadUtil.isVirtualThreadEnabled()) {
         CompletableFuture<UploadPartResponse> future = CompletableFuture.supplyAsync(
             () -> s3Client.uploadPart(request, requestBody),
             virtualThreadExecutor
@@ -373,7 +375,7 @@ public class EncryptingAmazonS3Client
    */
   public DeleteObjectResponse deleteObject(DeleteObjectRequest request) {
     try (final Timer.Context deleteContext = deleteTimer.time()) {
-      if (VirtualThreads.isEnabled()) {
+      if (VirtualThreadUtil.isVirtualThreadEnabled()) {
         CompletableFuture<DeleteObjectResponse> future = CompletableFuture.supplyAsync(
             () -> s3Client.deleteObject(request),
             virtualThreadExecutor
@@ -393,7 +395,7 @@ public class EncryptingAmazonS3Client
    */
   public PutObjectTaggingResponse putObjectTagging(PutObjectTaggingRequest request) {
     try (final Timer.Context setTaggingContext = setTaggingTimer.time()) {
-      if (VirtualThreads.isEnabled()) {
+      if (VirtualThreadUtil.isVirtualThreadEnabled()) {
         CompletableFuture<PutObjectTaggingResponse> future = CompletableFuture.supplyAsync(
             () -> s3Client.putObjectTagging(request),
             virtualThreadExecutor
@@ -420,3 +422,4 @@ public class EncryptingAmazonS3Client
     }
   }
 }
+

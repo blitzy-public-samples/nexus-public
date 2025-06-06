@@ -38,7 +38,7 @@ import static org.sonatype.nexus.rest.APIConstants.V1_API_PREFIX;
  */
 @Named
 @Singleton
-@Path(RESOURCE_URI)
+@Path("RESOURCE_URI")
 public class S3BlobStoreApiResourceV1
   extends S3BlobStoreApiResource
 {

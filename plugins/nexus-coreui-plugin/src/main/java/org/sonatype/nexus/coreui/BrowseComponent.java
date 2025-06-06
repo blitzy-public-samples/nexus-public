@@ -85,8 +85,8 @@ public class BrowseComponent
   @Timed
   @ExceptionMetered
   public List<BrowseNodeXO> read(TreeStoreLoadParameters treeStoreLoadParameters) {
-    String repositoryName = treeStoreLoadParameters.getRepositoryName();
-    final String path = treeStoreLoadParameters.getNode();
+    String repositoryName = treeStoreLoadParameters.repositoryName();
+    final String path = treeStoreLoadParameters.node();
 
     Repository repository = repositoryManager.get(repositoryName);
 

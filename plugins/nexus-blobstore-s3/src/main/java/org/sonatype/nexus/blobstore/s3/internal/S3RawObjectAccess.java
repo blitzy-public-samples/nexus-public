@@ -18,11 +18,11 @@ import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.lang.StringTemplate;
 import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
 
+import com.amazonaws.services.s3.AmazonS3;
 import org.sonatype.nexus.blobstore.PerformanceLogger;
 import org.sonatype.nexus.blobstore.api.RawObjectAccess;
 
@@ -144,10 +144,11 @@ public class S3RawObjectAccess
           .build();
       
       // Log thread information for debugging if needed
+      System.out.println(performanceLogger.getClass());
       if (performanceLogger.isVirtualThread()) {
         String threadInfo = performanceLogger.getThreadInfo();
         // Using Java 21 String Templates for improved readability
-        System.out.println(STR."Getting S3 object from \{bucket}/\{key} using \{threadInfo}");
+        //System.out.println(STR."Getting S3 object from \{bucket}/\{key} using \{threadInfo}");
       }
           
       // The S3Client's getObject method already runs in the current thread,
@@ -177,7 +178,7 @@ public class S3RawObjectAccess
       String key = bucketPrefix + normalizeS3Path(path);
       long startTime = System.nanoTime();
       
-      uploader.upload(s3, bucket, key, in);
+      uploader.upload((AmazonS3) s3, bucket, key, in);
       
       // Log performance metrics if debug is enabled
       if (performanceLogger.isVirtualThread()) {

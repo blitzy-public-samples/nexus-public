@@ -25,6 +25,7 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
+import com.amazonaws.services.s3.model.UploadPartResult;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.s3.internal.ParallelUploader.ChunkReader.Chunk;
 
@@ -55,9 +56,10 @@ public class ParallelUploader
   private static final Chunk EMPTY_CHUNK = new ChunkReader.Chunk(0, new byte[0], 0);
 
   @Inject
-  public ParallelUploader(@Named("${nexus.s3.parallelRequests.chunksize:-5242880}") final int chunkSize)
+  public ParallelUploader(@Named("${nexus.s3.parallelRequests.chunksize:-5242880}") final int chunkSize,
+                          @Named("${nexus.s3.parallelRequests.max:-4}") final int maxParallelRequests)
   {
-    super(chunkSize, "uploadThreads");
+    super(chunkSize,maxParallelRequests, "uploadThreads");
   }
 
   @Override
@@ -85,10 +87,6 @@ public class ParallelUploader
     catch (IOException | SdkClientException e) { // NOSONAR
       throw new BlobStoreException(format("Error uploading blob to bucket:%s key:%s", bucket, key), e, null);
     }
-    catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new BlobStoreException(format("Upload interrupted for bucket:%s key:%s", bucket, key), e, null);
-    }
   }
 
   private List<PartETag> uploadChunks(final AmazonS3 s3,
@@ -96,21 +94,23 @@ public class ParallelUploader
                                       final String key,
                                       final String uploadId,
                                       final ChunkReader chunkReader)
-      throws IOException
+          throws IOException
   {
     List<PartETag> tags = new ArrayList<>();
     Optional<Chunk> chunk;
 
     while ((chunk = chunkReader.readChunk(chunkSize)).isPresent()) {
-      UploadPartRequest request = new UploadPartRequest()
-          .withBucketName(bucket)
-          .withKey(key)
-          .withUploadId(uploadId)
-          .withPartNumber(chunk.get().chunkNumber)
-          .withInputStream(new ByteArrayInputStream(chunk.get().data, 0, chunk.get().dataLength))
-          .withPartSize(chunk.get().dataLength);
+      UploadPartRequest part = new UploadPartRequest();
 
-      tags.add(s3.uploadPart(request).getPartETag());
+      part.setBucketName(bucket);
+      part.setKey(key);
+      part.setUploadId(uploadId);
+      part.setPartNumber(chunk.get().chunkNumber);
+      part.setInputStream(new ByteArrayInputStream(chunk.get().data, 0, chunk.get().dataLength));
+      part.setPartSize(chunk.get().dataLength);
+      UploadPartResult request = s3.uploadPart(part);
+
+      tags.add(new PartETag(request.getPartNumber(), request.getETag()));
     }
 
     return tags;

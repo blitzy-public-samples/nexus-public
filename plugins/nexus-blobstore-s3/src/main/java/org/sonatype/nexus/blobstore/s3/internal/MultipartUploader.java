@@ -25,17 +25,12 @@ import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Named;
 
+import com.amazonaws.services.s3.model.*;
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 
 import com.amazonaws.SdkClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
-import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.UploadPartRequest;
-import com.amazonaws.services.s3.model.UploadPartResult;
 import com.google.common.annotations.VisibleForTesting;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -109,13 +104,13 @@ public class MultipartUploader
       
       // Upload first chunk immediately
       log.debug("Uploading chunk 1 for {} of {} bytes", uploadId, firstChunk.available());
-      UploadPartRequest firstPart = new UploadPartRequest()
-          .withBucketName(bucket)
-          .withKey(key)
-          .withUploadId(uploadId)
-          .withPartNumber(1)
-          .withInputStream(firstChunk)
-          .withPartSize(firstChunk.available());
+      UploadPartRequest firstPart = new UploadPartRequest();
+      firstPart.setBucketName(bucket);
+      firstPart.setKey(key);
+      firstPart.setUploadId(uploadId);
+      firstPart.setPartNumber(1);
+      firstPart.setInputStream(firstChunk);
+      firstPart.setPartSize(firstChunk.available());
       results.add(s3.uploadPart(firstPart));
       
       // Use virtual threads for parallel uploads of remaining chunks
@@ -133,21 +128,23 @@ public class MultipartUploader
           final int chunkSize = chunk.available();
           
           log.debug("Preparing chunk {} for {} of {} bytes", currentPartNumber, uploadId, chunkSize);
-          
+          final String uploadIdForLambda = uploadId;
           CompletableFuture<UploadPartResult> future = CompletableFuture.supplyAsync(() -> {
             try {
-              log.debug("Uploading chunk {} for {} of {} bytes", currentPartNumber, uploadId, chunkSize);
-              UploadPartRequest part = new UploadPartRequest()
-                  .withBucketName(bucket)
-                  .withKey(key)
-                  .withUploadId(uploadId)
-                  .withPartNumber(currentPartNumber)
-                  .withInputStream(currentChunk)
-                  .withPartSize(chunkSize);
+              log.debug("Uploading chunk {} for {} of {} bytes", currentPartNumber, uploadIdForLambda, chunkSize);
+              UploadPartRequest part = new UploadPartRequest();
+
+              part.setBucketName(bucket);
+              part.setKey(key);
+              part.setUploadId(uploadIdForLambda);
+              part.setPartNumber(currentPartNumber);
+              part.setInputStream(currentChunk);
+              part.setPartSize(chunkSize);
+
               return s3.uploadPart(part);
             }
             catch (Exception e) {
-              log.error("Error uploading chunk {} for {}", currentPartNumber, uploadId, e);
+              log.error("Error uploading chunk {} for {}", currentPartNumber, uploadIdForLambda, e);
               throw new RuntimeException("Error uploading chunk " + currentPartNumber, e);
             }
           }, executor);
@@ -166,9 +163,10 @@ public class MultipartUploader
           .withKey(key)
           .withUploadId(uploadId)
           .withPartETags(results);
+
       s3.completeMultipartUpload(compRequest);
       log.debug("Upload {} complete", uploadId);
-      uploadId = null;
+      uploadId = s3.initiateMultipartUpload(initiateRequest).getUploadId();
     }
     finally {
       if (uploadId != null) {

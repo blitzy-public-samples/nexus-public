@@ -67,10 +67,7 @@ public class AnonymousSettingsComponent
     // Use CompletableFuture with virtual threads for I/O-bound operations
     CompletableFuture<AnonymousSettingsXO> future = CompletableFuture.supplyAsync(() -> {
       AnonymousConfiguration config = anonymousManager.getConfiguration();
-      AnonymousSettingsXO xo = new AnonymousSettingsXO();
-      xo.setEnabled(config.isEnabled());
-      xo.setUserId(config.getUserId());
-      xo.setRealmName(config.getRealmName());
+      AnonymousSettingsXO xo = new AnonymousSettingsXO(config.isEnabled(), config.getUserId(), config.getRealmName());
       return xo;
     }, virtualThreadExecutor);
     
@@ -91,9 +88,9 @@ public class AnonymousSettingsComponent
     // Use CompletableFuture with virtual threads for I/O-bound operations
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       AnonymousConfiguration configuration = anonymousManager.newConfiguration();
-      configuration.setEnabled(anonymousXO.getEnabled());
-      configuration.setRealmName(anonymousXO.getRealmName());
-      configuration.setUserId(anonymousXO.getUserId());
+      configuration.setEnabled(anonymousXO.enabled());
+      configuration.setRealmName(anonymousXO.realmName());
+      configuration.setUserId(anonymousXO.userId());
       anonymousManager.setConfiguration(configuration);
     }, virtualThreadExecutor);
     

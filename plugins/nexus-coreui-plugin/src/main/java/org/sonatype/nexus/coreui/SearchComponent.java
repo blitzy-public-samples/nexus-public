@@ -149,8 +149,8 @@ public class SearchComponent
       final List<Sort> sort,
       final List<SearchFilter> filters)
   {
-    String sortField = sort.stream().findFirst().map(Sort::getProperty).orElse(null);
-    String sortDirection = sort.stream().findFirst().map(Sort::getDirection).orElse(null);
+    String sortField = sort.stream().findFirst().map(Sort::property).orElse(null);
+    String sortDirection = sort.stream().findFirst().map(Sort::direction).orElse(null);
 
     int queryLimit =  Math.min(limit, searchResultsLimit);
     int offset = Optional.ofNullable(page)

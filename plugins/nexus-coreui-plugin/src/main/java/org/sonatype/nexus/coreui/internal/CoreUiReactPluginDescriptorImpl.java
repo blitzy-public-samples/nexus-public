@@ -57,10 +57,7 @@ public class CoreUiReactPluginDescriptorImpl
   @Nullable
   @Override
   public List<String> getScripts(final boolean isDebug) {
-    return switch(isDebug) {
-      case true -> debugScripts;
-      case false -> scripts;
-    };
+	  return isDebug ? debugScripts: scripts;
   }
 
   @Nullable

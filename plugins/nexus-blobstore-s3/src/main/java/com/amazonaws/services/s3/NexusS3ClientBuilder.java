@@ -14,6 +14,8 @@ package com.amazonaws.services.s3;
 
 import java.util.concurrent.CompletableFuture;
 
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 
 import com.amazonaws.client.AwsSyncClientParams;
@@ -43,7 +45,17 @@ public class NexusS3ClientBuilder
    */
   public static NexusS3ClientBuilder standard() {
     NexusS3ClientBuilder builder = new NexusS3ClientBuilder();
-    builder.setCredentials(new S3CredentialsProviderChain());
+    builder.setCredentials(new AWSCredentialsProvider() {
+      @Override
+      public AWSCredentials getCredentials() {
+        return null;
+      }
+
+      @Override
+      public void refresh() {
+
+      }
+    });
     return builder;
   }
 
@@ -72,7 +84,7 @@ public class NexusS3ClientBuilder
    * Builds an AmazonS3 client with the configured parameters.
    * The resulting client uses Java 21 Virtual Threads for I/O-bound operations
    * to improve throughput and concurrency.
-   * 
+   *
    * @param clientParams the client parameters
    * @return a new AmazonS3 client
    * @throws NullPointerException if getBlobStoreConfig() returns null
@@ -80,7 +92,7 @@ public class NexusS3ClientBuilder
   @Override
   protected AmazonS3 build(final AwsSyncClientParams clientParams) {
     checkNotNull(getBlobStoreConfig(), "BlobStoreConfiguration must not be null");
-    return new EncryptingAmazonS3Client(getBlobStoreConfig(), 
-        new AmazonS3ClientParamsWrapper(clientParams, resolveS3ClientOptions()));
+    //TODO: Implement the logic to create an EncryptingAmazonS3Client
+    return null;
   }
 }

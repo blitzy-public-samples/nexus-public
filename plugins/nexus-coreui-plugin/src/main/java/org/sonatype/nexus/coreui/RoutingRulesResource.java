@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -170,15 +171,23 @@ public class RoutingRulesResource
   public RoutingRuleXO getRoutingRule(@PathParam("name") final String name) {
     routingRuleHelper.ensureUserHasPermissionToRead();
     
-    RoutingRuleXO routingRule = virtualThreadExecutor.submit(() -> 
-      RoutingRulesResource.toXO(routingRuleStore.getByName(name))
-    ).join();
+    RoutingRuleXO routingRule = null;;
+	try {
+		routingRule = virtualThreadExecutor.submit(() -> 
+		  RoutingRulesResource.toXO(routingRuleStore.getByName(name))
+		).get();
+	
     
     Map<EntityId, List<Repository>> assignedRepositories = virtualThreadExecutor.submit(() ->
-      routingRuleHelper.calculateAssignedRepositories()
-    ).join();
+		  routingRuleHelper.calculateAssignedRepositories()
+		).get();
+	    populateAssignedRepositoryNames(assignedRepositories, routingRule);
+
+	} catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
     
-    populateAssignedRepositoryNames(assignedRepositories, routingRule);
     return routingRule;
   }
 
@@ -227,34 +236,41 @@ public class RoutingRulesResource
   @RequiresAuthentication
   public RoutingRulePreviewXO getRoutingRulesPreview(@QueryParam("path") final String path,
                                                      @QueryParam("filter") final String filter) {
-    return virtualThreadExecutor.submit(() -> {
-      Map<Class<?>, List<Repository>> repositoriesByType = stream(repositoryManager.browse())
-          .collect(groupingBy(r -> r.getType().getClass()));
-      List<Repository> groupRepositories = repositoriesByType.get(GroupType.class);
-      List<Repository> proxyRepositories = repositoriesByType.get(ProxyType.class);
+    try {
+		return virtualThreadExecutor.submit(() -> {
+		  Map<Class<?>, List<Repository>> repositoriesByType = stream(repositoryManager.browse())
+		      .collect(groupingBy(r -> r.getType().getClass()));
+		  List<Repository> groupRepositories = repositoriesByType.get(GroupType.class);
+		  List<Repository> proxyRepositories = repositoriesByType.get(ProxyType.class);
 
-      Map<RoutingRule, Boolean> routingRulePathMapping = routingRuleStore.list().stream()
-          .collect(toMap(identity(), (RoutingRule rule) -> routingRuleHelper.isAllowed(rule, path)));
+		  Map<RoutingRule, Boolean> routingRulePathMapping = routingRuleStore.list().stream()
+		      .collect(toMap(identity(), (RoutingRule rule) -> routingRuleHelper.isAllowed(rule, path)));
 
-      final Stream<Repository> repositories;
-      if (GROUPS.equals(filter)) {
-        repositories = groupRepositories.stream();
-      }
-      else if (PROXIES.equals(filter)) {
-        repositories = proxyRepositories.stream();
-      }
-      else {
-        repositories = Stream.of(groupRepositories, proxyRepositories).flatMap(Collection::stream);
-      }
+		  final Stream<Repository> repositories;
+		  if (GROUPS.equals(filter)) {
+		    repositories = groupRepositories.stream();
+		  }
+		  else if (PROXIES.equals(filter)) {
+		    repositories = proxyRepositories.stream();
+		  }
+		  else {
+		    repositories = Stream.of(groupRepositories, proxyRepositories).flatMap(Collection::stream);
+		  }
 
-      List<RoutingRulePreviewXO> rootRepositories = repositories.map(repository -> {
-        List<Repository> children = repository.optionalFacet(GroupFacet.class)
-            .map(facet -> facet.members()).orElse(null);
-        return toPreviewXO(repository, children, routingRulePathMapping);
-      }).collect(toList());
+		  List<RoutingRulePreviewXO> rootRepositories = repositories.map(repository -> {
+		    List<Repository> children = repository.optionalFacet(GroupFacet.class)
+		        .map(facet -> facet.members()).orElse(null);
+		    return toPreviewXO(repository, children, routingRulePathMapping);
+		  }).collect(toList());
 
-      return RoutingRulePreviewXO.builder().children(rootRepositories).expanded(!rootRepositories.isEmpty()).expandable(true).build();
-    }).join();
+		  return RoutingRulePreviewXO.builder().children(rootRepositories).expanded(!rootRepositories.isEmpty()).expandable(true).build();
+		}).get();
+	} catch (InterruptedException | ExecutionException e) {
+		// TODO Auto-generated catch block
+		e.printStackTrace();
+	}
+    
+    return null;
   }
 
   private RoutingRulePreviewXO toPreviewXO(final Repository repository,

@@ -55,9 +55,7 @@ public class StatusResource
   public StatusXO get() {
     log.debug(STR."Retrieving application status information (version: \{applicationVersion.getVersion()}, edition: \{applicationVersion.getEdition()})");
     
-    StatusXO result = new StatusXO();
-    result.setVersion(applicationVersion.getVersion());
-    result.setEdition(applicationVersion.getEdition());
+    StatusXO result = new StatusXO(applicationVersion.getEdition(),applicationVersion.getVersion());
     return result;
   }
 }

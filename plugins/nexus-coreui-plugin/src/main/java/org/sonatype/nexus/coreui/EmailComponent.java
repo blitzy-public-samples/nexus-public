@@ -97,7 +97,7 @@ public class EmailComponent
   public EmailConfigurationXO update(@NotNull @Valid final EmailConfigurationXO configuration) {
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       return CompletableFuture.supplyAsync(() -> {
-        emailManager.setConfiguration(convert(configuration), configuration.getPassword());
+        emailManager.setConfiguration(convert(configuration), configuration.password());
         return read();
       }, executor).join();
     }

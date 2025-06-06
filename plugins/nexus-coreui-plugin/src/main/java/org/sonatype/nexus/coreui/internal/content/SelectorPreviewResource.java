@@ -95,13 +95,13 @@ public class SelectorPreviewResource
   @RequiresPermissions(value = {"nexus:selectors:create", "nexus:selectors:update"}, logical = Logical.OR)
   public PageResult<AssetXO> previewContent(SelectorPreviewRequest request)
   {
-    String selectorType = request.getType().toLowerCase();
-    String expression = request.getExpression();
+    String selectorType = request.type().toLowerCase();
+    String expression = request.expression();
     
     log.debug(STR."Validating selector of type \{selectorType} with expression: \{expression}");
     selectorFactory.validateSelector(selectorType, expression);
 
-    RepositorySelector repositorySelector = RepositorySelector.fromSelector(request.getRepository());
+    RepositorySelector repositorySelector = RepositorySelector.fromSelector(request.repository());
     List<Repository> selectedRepositories = getPreviewRepositories(repositorySelector);
     
     if (selectedRepositories.isEmpty()) {

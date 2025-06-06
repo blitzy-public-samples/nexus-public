@@ -45,10 +45,10 @@ public final class S3BlobStoreApiModelMapper
 
     S3BlobStoreConfigurationBuilder builder =
         S3BlobStoreConfigurationBuilder.builder(blobStoreConfiguration, request.getName())
-        .bucket(bucket.getName())
-        .region(bucket.getRegion())
-        .expiration(bucket.getExpiration())
-        .prefix(bucket.getPrefix());
+        .bucket(bucket.name())
+        .region(bucket.region())
+        .expiration(bucket.expiration())
+        .prefix(bucket.prefix());
 
     S3BlobStoreApiBucketSecurity bucketSecurity = bucketConfiguration.getBucketSecurity();
     if (bucketSecurity != null) {
@@ -60,26 +60,26 @@ public final class S3BlobStoreApiModelMapper
 
     S3BlobStoreApiEncryption encryption = bucketConfiguration.getEncryption();
     if (encryption != null) {
-      builder.encryptionKey(encryption.getEncryptionKey());
-      builder.encryptionType(encryption.getEncryptionType());
+      builder.encryptionKey(encryption.encryptionKey());
+      builder.encryptionType(encryption.encryptionType());
     }
 
     S3BlobStoreApiAdvancedBucketConnection advanced = bucketConfiguration.getAdvancedBucketConnection();
     if (advanced != null) {
-      builder.endpoint(advanced.getEndpoint());
-      builder.signerType(advanced.getSignerType());
-      builder.maxConnectionPool(advanced.getMaxConnectionPoolSize());
-      builder.forcePathStyle(advanced.getForcePathStyle());
-    }
+      builder.endpoint(advanced.endpoint());
+      builder.signerType(advanced.signerType());
+      builder.maxConnectionPool(advanced.maxConnectionPoolSize());
+      builder.forcePathStyle(advanced.forcePathStyle());
+}
 
     List<S3BlobStoreApiFailoverBucket> failoverBuckets = bucketConfiguration.getFailoverBuckets();
     if (failoverBuckets != null) {
-      failoverBuckets.forEach(failover -> builder.failover(failover.getRegion(), failover.getBucketName()));
+      failoverBuckets.forEach(failover -> builder.failover(failover.region(), failover.bucketName()));
     }
 
     BlobStoreApiSoftQuota softQuota = request.getSoftQuota();
     if (softQuota != null) {
-      builder.quotaConfig(softQuota.getType(), checkNotNull(softQuota.getLimit(), "Missing quota limit"));
+      builder.quotaConfig(softQuota.type(), checkNotNull(softQuota.limit(), "Missing quota limit"));
     }
 
     return builder.build();

@@ -12,7 +12,9 @@
  */
 package com.amazonaws.services.s3;
 
-import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import com.amazonaws.client.AwsSyncClientParams;
+//import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import com.amazonaws.auth.AWSCredentialsProvider;
 
 /**
  * Abstract builder for AmazonS3 clients.
@@ -25,7 +27,7 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
  */
 public abstract class AmazonS3Builder<T extends AmazonS3Builder<T, U>, U>
 {
-  private AwsCredentialsProvider credentialsProvider;
+  private AWSCredentialsProvider credentialsProvider;
   private S3ClientOptions clientOptions = new S3ClientOptions();
 
   /**
@@ -35,7 +37,7 @@ public abstract class AmazonS3Builder<T extends AmazonS3Builder<T, U>, U>
    * @return this builder for method chaining
    */
   @SuppressWarnings("unchecked")
-  public T setCredentials(final AwsCredentialsProvider credentialsProvider) {
+  public T setCredentials(final AWSCredentialsProvider credentialsProvider) {
     this.credentialsProvider = credentialsProvider;
     return (T) this;
   }
@@ -45,7 +47,7 @@ public abstract class AmazonS3Builder<T extends AmazonS3Builder<T, U>, U>
    *
    * @return the credentials provider
    */
-  public AwsCredentialsProvider getCredentialsProvider() {
+  public AWSCredentialsProvider getCredentialsProvider() {
     return credentialsProvider;
   }
 

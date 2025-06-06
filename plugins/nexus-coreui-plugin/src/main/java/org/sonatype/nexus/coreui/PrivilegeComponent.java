@@ -31,7 +31,10 @@ import org.sonatype.nexus.security.authz.NoSuchAuthorizationManagerException;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 import org.sonatype.nexus.security.privilege.ReadonlyPrivilegeException;
+import org.sonatype.nexus.security.privilege.UniquePrivilegeId;
+import org.sonatype.nexus.security.privilege.UniquePrivilegeName;
 import org.sonatype.nexus.validation.Validate;
+import org.sonatype.nexus.validation.constraint.NamePatternConstants;
 import org.sonatype.nexus.validation.group.Create;
 import org.sonatype.nexus.validation.group.Update;
 
@@ -39,12 +42,15 @@ import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.validation.Valid;
+import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 import javax.validation.groups.Default;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -203,7 +209,7 @@ public class PrivilegeComponent
       try {
         AuthorizationManager authorizationManager = securitySystem.getAuthorizationManager(DEFAULT_SOURCE);
         privilege.withId(
-            privilege.getName()); // Use name as privilege ID (note: eventually IDs should go away in favor of names)
+            privilege.name()); // Use name as privilege ID (note: eventually IDs should go away in favor of names)
         return convert(authorizationManager.addPrivilege(convert(privilege)));
       } catch (NoSuchAuthorizationManagerException e) {
         throw new RuntimeException(e);
@@ -251,7 +257,7 @@ public class PrivilegeComponent
       if (e.getCause() instanceof NoSuchAuthorizationManagerException) {
         throw (NoSuchAuthorizationManagerException) e.getCause();
       } else if (e.getCause() instanceof ReadonlyPrivilegeException) {
-        throw new IllegalAccessException("Privilege [" + privilege.getId() + "] is readonly and cannot be updated");
+        throw new IllegalAccessException("Privilege [" + privilege.id() + "] is readonly and cannot be updated");
       }
       throw e;
     }
@@ -297,15 +303,11 @@ public class PrivilegeComponent
   PrivilegeXO convert(Privilege input) {
     return switch (input) {
       case null -> throw new IllegalArgumentException("Input privilege cannot be null");
-      case Privilege p -> new PrivilegeXO()
-          .withId(p.getId())
-          .withVersion(String.valueOf(p.getVersion()))
-          .withName(p.getName() != null ? p.getName() : p.getId())
-          .withDescription(p.getDescription() != null ? p.getDescription() : p.getId())
-          .withType(p.getType())
-          .withReadOnly(p.isReadOnly())
-          .withProperties(Maps.newHashMap(p.getProperties()))
-          .withPermission(p.getPermission().toString());
+      case Privilege p -> new PrivilegeXO(p.getId(), 
+    		  String.valueOf(p.getVersion()), p.getName() != null ? p.getName() : p.getId(),
+    		  p.getDescription() != null ? p.getDescription() : p.getId(), p.getType(), p.isReadOnly(),
+    		  Maps.newHashMap(p.getProperties()), p.getPermission().toString()
+      );
     };
   }
 

@@ -22,7 +22,7 @@ import java.util.Objects;
  * @since 3.0
  */
 public class RepositoryReferenceXO
-    extends ReferenceXO
+    //extends ReferenceXO
 {
   private final String type;
 
@@ -35,6 +35,8 @@ public class RepositoryReferenceXO
   private final String blobStoreName;
 
   private final RepositoryStatusXO status;
+  
+  private final ReferenceXO referenceXO;
 
   /**
    * sortOrder will override the typical alphanumeric ordering in the UI, so the higher your sortOrder, the closer to
@@ -53,8 +55,7 @@ public class RepositoryReferenceXO
       final RepositoryStatusXO status,
       final int sortOrder)
   {
-    setId(id);
-    setName(name);
+    this.referenceXO = new ReferenceXO(id, name);
     this.type = type;
     this.format = format;
     this.versionPolicy = versionPolicy;
@@ -97,8 +98,8 @@ public class RepositoryReferenceXO
    */
   public Components components() {
     return new Components(
-        getId(),
-        getName(),
+        this.referenceXO.id(),
+        this.referenceXO.name(),
         type,
         format,
         versionPolicy,
@@ -164,7 +165,7 @@ public class RepositoryReferenceXO
   
   @Override
   public String toString() {
-    return "RepositoryReferenceXO [id=" + getId() + ", name=" + getName() + ", type=" + type + ", format=" + format +
+    return "RepositoryReferenceXO [id=" + this.referenceXO.id() + ", name=" + this.referenceXO.name() + ", type=" + type + ", format=" + format +
         ", versionPolicy=" + versionPolicy + ", url=" + url + ", blobStoreName=" + blobStoreName + ", status=" + status
         + ", sortOrder=" + sortOrder + "]";
   }

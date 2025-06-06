@@ -12,7 +12,17 @@
  */
 package org.sonatype.nexus.coreui.internal.log;
 
+import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
+
 import java.util.Objects;
+
+import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.sonatype.goodies.common.ComponentSupport;
+import org.sonatype.nexus.common.log.LogMarker;
+import org.sonatype.nexus.rest.APIConstants;
+import org.sonatype.nexus.rest.Resource;
+
+import com.google.common.base.Strings;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -20,15 +30,6 @@ import jakarta.inject.Singleton;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
-
-import org.sonatype.goodies.common.ComponentSupport;
-import org.sonatype.nexus.common.log.LogMarker;
-import org.sonatype.nexus.rest.APIConstants;
-import org.sonatype.nexus.rest.Resource;
-
-import org.apache.shiro.authz.annotation.RequiresPermissions;
-
-import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN;
 
 /**
  * Log REST resource.
@@ -61,13 +62,11 @@ public class LogResource
   @Consumes({TEXT_PLAIN})
   @RequiresPermissions("nexus:logging:create")
   public void mark(final String message) {
-    // Using pattern matching with String type
-    switch (message) {
-      case null, "" -> logMarker.markLog(DEFAULT_MARK);
-      case String msg -> logMarker.markLog(msg);
-    }
-    
-    // Log the action using String Template
-    log.debug(STR."Log marked with message: \{message == null || message.isEmpty() ? DEFAULT_MARK : message}");
+	  if (Strings.isNullOrEmpty(message)) {
+	      logMarker.markLog(DEFAULT_MARK);
+	    }
+	    else {
+	      logMarker.markLog(message);
+	    }
   }
 }

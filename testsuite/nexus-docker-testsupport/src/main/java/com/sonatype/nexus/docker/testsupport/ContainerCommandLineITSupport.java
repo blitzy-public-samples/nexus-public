@@ -113,7 +113,7 @@ public abstract class ContainerCommandLineITSupport
   protected ContainerCommandLineITSupport(final DockerContainerConfig dockerContainerConfig, final String commands) {
     dockerContainerClient = new DockerContainerClient(dockerContainerConfig);
     dockerContainerClient.run(commands);
-    log.debug(STR"Container started with commands: \{commands}");
+    log.debug(STR."Container started with commands: \{commands}");
   }
 
   /**
@@ -124,7 +124,7 @@ public abstract class ContainerCommandLineITSupport
   protected ContainerCommandLineITSupport(final DockerContainerConfig dockerContainerConfig) {
     dockerContainerClient = new DockerContainerClient(dockerContainerConfig);
     dockerContainerClient.runAndKeepAlive();
-    log.debug(STR"Container started and kept alive with config: \{dockerContainerConfig}");
+    log.debug(STR."Container started and kept alive with config: \{dockerContainerConfig}");
   }
 
   /**
@@ -168,28 +168,34 @@ public abstract class ContainerCommandLineITSupport
    */
   @Override
   public Optional<List<String>> exec(final String command) {
-    log.debug(STR"Executing command in container: \{command}");
+    log.debug(STR."Executing command in container: \{command}");
     
     Optional<ExecResult> execResult = dockerContainerClient.exec(command);
     if (execResult.isPresent()) {
       // Using record pattern matching for cleaner code with ExecResult
-      ExecResult(String stdout, String stderr, int exitCode) = execResult.get();
-      
+      //ExecResult(String stdout, String stderr, int exitCode) = execResult.get();
+      ExecResult result = execResult.get();
+
+      int exitCode = result.getExitCode();
+      String stdout = result.getStdout();
+      String stderr = result.getStderr();
+
+
       // Log exit code for debugging purposes
-      log.debug(STR"Command exit code: \{exitCode}");
+      log.debug(STR."Command exit code: \{exitCode}");
       
       // Create a list with initial capacity based on expected output size
       List<String> output = new ArrayList<>();
       
       // Process stdout if present
       if (notBlank(stdout)) {
-        log.trace(STR"Command stdout: \{stdout}");
+        log.trace(STR."Command stdout: \{stdout}");
         output.addAll(asList(stdout.split("\\r?\\n")));
       }
       
       // Process stderr if present
       if (notBlank(stderr)) {
-        log.trace(STR"Command stderr: \{stderr}");
+        log.trace(STR."Command stderr: \{stderr}");
         output.addAll(asList(stderr.split("\\r?\\n")));
       }
       
@@ -211,9 +217,9 @@ public abstract class ContainerCommandLineITSupport
    */
   @Override
   public void download(final String fromContainerPath, final File toLocal) {
-    log.debug(STR"Downloading file from container path \{fromContainerPath} to local path \{toLocal}");
+    log.debug(STR."Downloading file from container path \{fromContainerPath} to local path \{toLocal}");
     dockerContainerClient.download(fromContainerPath, toLocal);
-    log.debug(STR"Download completed: \{toLocal.length()} bytes");
+    log.debug(STR."Download completed: \{toLocal.length()} bytes");
   }
   
   /**
@@ -226,13 +232,13 @@ public abstract class ContainerCommandLineITSupport
    * @param toLocal local file to download to
    * @return a CompletableFuture that will be completed when the download finishes
    */
-  protected CompletableFuture<File> downloadAsync(final String fromContainerPath, final File toLocal) {
-    return CompletableFuture.supplyAsync(() -> {
-      log.debug(STR"Downloading file asynchronously from \{fromContainerPath} to \{toLocal}");
-      download(fromContainerPath, toLocal);
-      return toLocal;
-    }, VIRTUAL_THREAD_EXECUTOR);
-  }
+//  protected CompletableFuture<File> downloadAsync(final String fromContainerPath, final File toLocal) {
+//    return CompletableFuture.supplyAsync(() -> {
+//      log.debug(STR"Downloading file asynchronously from \{fromContainerPath} to \{toLocal}");
+//      download(fromContainerPath, toLocal);
+//      return toLocal;
+//    }, VIRTUAL_THREAD_EXECUTOR);
+//  }
 
   /**
    * Gets the host TCP port that is mapped to the given container port.
@@ -247,7 +253,7 @@ public abstract class ContainerCommandLineITSupport
   @Override
   public Integer getHostTcpPort(final String containerPort) {
     Integer mappedPort = dockerContainerClient.getMappedPort(containerPort);
-    log.debug(STR"Container port \{containerPort} is mapped to host port \{mappedPort}");
+    log.debug(STR."Container port \{containerPort} is mapped to host port \{mappedPort}");
     return mappedPort;
   }
   
@@ -260,12 +266,12 @@ public abstract class ContainerCommandLineITSupport
    * @param command the command to execute
    * @return a runnable that will execute the command when submitted to an executor
    */
-  protected Runnable execAsync(final String command) {
-    return () -> {
-      log.debug(STR"Executing async command: \{command}");
-      exec(command);
-    };
-  }
+//  protected Runnable execAsync(final String command) {
+//    return () -> {
+//      log.debug(STR."Executing async command: \{command}");
+//      exec(command);
+//    };
+//  }
   
   /**
    * Submits an asynchronous command for execution using virtual threads.
@@ -276,9 +282,9 @@ public abstract class ContainerCommandLineITSupport
    * @param command the command to execute asynchronously
    * @return a Future representing the pending completion of the command execution
    */
-  protected Future<?> submitExecAsync(final String command) {
-    return VIRTUAL_THREAD_EXECUTOR.submit(execAsync(command));
-  }
+//  protected Future<?> submitExecAsync(final String command) {
+//    return VIRTUAL_THREAD_EXECUTOR.submit(execAsync(command));
+//  }
   
   /**
    * Executes a command asynchronously and returns a CompletableFuture that will be completed
@@ -292,7 +298,7 @@ public abstract class ContainerCommandLineITSupport
    */
   protected CompletableFuture<Optional<List<String>>> execAsyncWithResult(final String command) {
     return CompletableFuture.supplyAsync(() -> {
-      log.debug(STR"Executing async command with result: \{command}");
+      log.debug(STR."Executing async command with result: \{command}");
       return exec(command);
     }, VIRTUAL_THREAD_EXECUTOR);
   }

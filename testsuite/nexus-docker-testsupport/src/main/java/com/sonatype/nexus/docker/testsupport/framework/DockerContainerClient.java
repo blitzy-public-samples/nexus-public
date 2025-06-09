@@ -37,7 +37,7 @@ import org.testcontainers.images.builder.ImageFromDockerfile;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Objects.nonNull;
-import static org.apache.commons.lang.StringUtils.left;
+import static org.apache.commons.lang3.StringUtils.left;
 import static org.sonatype.nexus.common.text.Strings2.notBlank;
 import static org.testcontainers.containers.BindMode.READ_WRITE;
 

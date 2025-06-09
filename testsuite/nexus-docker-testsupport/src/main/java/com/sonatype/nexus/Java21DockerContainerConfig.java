@@ -46,7 +46,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  *     .withJava21JvmArg("XX:+UseStringDeduplication", "")
  *     .build();
  * </pre>
- * 
+ *
  * @since 3.60
  */
 public class Java21DockerContainerConfig
@@ -58,14 +58,14 @@ public class Java21DockerContainerConfig
    * The default value of 16 is a reasonable starting point for most applications.
    */
   private static final String DEFAULT_VIRTUAL_THREAD_PARALLELISM = "16";
-  
+
   /**
    * Default maximum pool size for the Virtual Thread scheduler.
    * This value limits the maximum number of platform threads that can be created to handle virtual threads.
    * The default value of 256 allows for significant scaling while preventing resource exhaustion.
    */
   private static final String DEFAULT_VIRTUAL_THREAD_MAX_POOL_SIZE = "256";
-  
+
   /**
    * Java 21-specific JVM arguments.
    * This map contains JVM argument keys and their values (if any).
@@ -75,12 +75,12 @@ public class Java21DockerContainerConfig
 
   /**
    * Private constructor used by the builder.
-   * 
+   *
    * @param image Docker image name (nullable if dockerfile is provided)
    * @param dockerfile Path to Dockerfile (nullable if image is provided)
    * @param java21JvmArgs Map of Java 21 JVM arguments
    */
-  private Java21DockerContainerConfig(@Nullable final String image, 
+  private Java21DockerContainerConfig(@Nullable final String image,
                                      @Nullable final Path dockerfile,
                                      final Map<String, String> java21JvmArgs) {
     super(image, dockerfile);
@@ -141,6 +141,7 @@ public class Java21DockerContainerConfig
      */
     private Java21Builder(final String image) {
       super(image);
+      //this.delegate = DockerContainerConfig.builder(image);
       // Set default Java 21 JVM arguments
       withZGC()
           .withThreadPinningDetection()
@@ -156,6 +157,7 @@ public class Java21DockerContainerConfig
      */
     private Java21Builder(final Path dockerfile) {
       super(dockerfile);
+      //this.delegate = DockerContainerConfig.builder(dockerfile);
       // Set default Java 21 JVM arguments
       withZGC()
           .withThreadPinningDetection()
@@ -259,6 +261,12 @@ public class Java21DockerContainerConfig
       return this;
     }
 
+    public Java21Builder setJava21JvmArgs(Map<String, String> java21JvmArgs) {
+      this.java21JvmArgs = new HashMap<>(java21JvmArgs);
+      return this;
+    }
+
+
     /**
      * Build the Java21DockerContainerConfig instance.
      *
@@ -276,20 +284,21 @@ public class Java21DockerContainerConfig
     public Java21DockerContainerConfig build() {
       // First build the parent DockerContainerConfig
       DockerContainerConfig parentConfig = super.build();
-      
+
+      Map<String, String> env = parentConfig.getEnv() != null
+              ? new HashMap<>(parentConfig.getEnv())
+              : new HashMap<>();
+
       // Create Java21DockerContainerConfig with the same properties
       Java21DockerContainerConfig config = new Java21DockerContainerConfig(
           parentConfig.getImage(),
           parentConfig.getDockerfile(),
-          this.java21JvmArgs
+          java21JvmArgs
       );
-      
+
       // Copy properties from parent
-      config.pathBinds = parentConfig.getPathBinds();
-      config.exposedPorts = parentConfig.getExposedPorts();
-      config.workingDir = parentConfig.getWorkingDir();
-      config.env = parentConfig.getEnv();
-      
+
+
       // Add Java 21 JVM arguments to environment variables if needed
       if (!java21JvmArgs.isEmpty()) {
         StringBuilder jvmArgs = new StringBuilder();
@@ -302,18 +311,33 @@ public class Java21DockerContainerConfig
             jvmArgs.append("=").append(entry.getValue());
           }
         }
-        
+
         // If JAVA_OPTS already exists, append to it, otherwise create it
-        Map<String, String> env = config.env != null ? new HashMap<>(config.env) : new HashMap<>();
+        //Map<String, String> env = config.env != null ? new HashMap<>(config.env) : new HashMap<>();
         String existingOpts = env.getOrDefault("JAVA_OPTS", "");
         if (!existingOpts.isEmpty()) {
           existingOpts += " ";
         }
         env.put("JAVA_OPTS", existingOpts + jvmArgs.toString());
-        config.env = env;
+        //config.env = e;
       }
-      
-      return config;
+
+      Java21DockerContainerConfig.Java21Builder builder;
+      if (parentConfig.getImage() != null) {
+        builder = Java21DockerContainerConfig.builder(parentConfig.getImage());
+      } else {
+        builder = Java21DockerContainerConfig.builder(parentConfig.getDockerfile());
+      }
+
+      builder.setJava21JvmArgs(java21JvmArgs);
+      builder.withExposedPorts(parentConfig.getExposedPorts().stream()
+              .map(String::valueOf)
+              .toList())
+              .withPathBinds(parentConfig.getPathBinds())
+              .withEnv(env)
+              .withWorkingDir(parentConfig.getWorkingDir());
+
+      return builder.build();
     }
   }
 }

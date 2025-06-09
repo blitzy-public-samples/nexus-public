@@ -57,7 +57,7 @@ public class NginxCommandLineITSupport
    */
   public Optional<List<String>> nginxServiceStart() {
     log.debug("Starting Nginx service");
-    return exec(STR"\{SERVICE_CMD} \{NGINX_CMD} start \{REDIRECT_OUTPUT}");
+    return exec(STR."\{SERVICE_CMD} \{NGINX_CMD} start \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -67,7 +67,7 @@ public class NginxCommandLineITSupport
    */
   public Optional<List<String>> nginxServiceStop() {
     log.debug("Stopping Nginx service");
-    return exec(STR"\{SERVICE_CMD} \{NGINX_CMD} stop \{REDIRECT_OUTPUT}");
+    return exec(STR."\{SERVICE_CMD} \{NGINX_CMD} stop \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -77,7 +77,7 @@ public class NginxCommandLineITSupport
    */
   public Optional<List<String>> nginxServiceRestart() {
     log.debug("Restarting Nginx service");
-    return exec(STR"\{SERVICE_CMD} \{NGINX_CMD} restart \{REDIRECT_OUTPUT}");
+    return exec(STR."\{SERVICE_CMD} \{NGINX_CMD} restart \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -87,7 +87,7 @@ public class NginxCommandLineITSupport
    */
   public Optional<List<String>> nginxServiceStatus() {
     log.debug("Checking Nginx service status");
-    return exec(STR"\{SERVICE_CMD} \{NGINX_CMD} status");
+    return exec(STR."\{SERVICE_CMD} \{NGINX_CMD} status");
   }
 
   /**
@@ -100,7 +100,7 @@ public class NginxCommandLineITSupport
    */
   public CompletableFuture<Optional<List<String>>> nginxServiceStartAsync() {
     log.debug("Starting Nginx service asynchronously");
-    return execAsyncWithResult(STR"\{SERVICE_CMD} \{NGINX_CMD} start \{REDIRECT_OUTPUT}");
+    return execAsyncWithResult(STR."\{SERVICE_CMD} \{NGINX_CMD} start \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -113,7 +113,7 @@ public class NginxCommandLineITSupport
    */
   public CompletableFuture<Optional<List<String>>> nginxServiceStopAsync() {
     log.debug("Stopping Nginx service asynchronously");
-    return execAsyncWithResult(STR"\{SERVICE_CMD} \{NGINX_CMD} stop \{REDIRECT_OUTPUT}");
+    return execAsyncWithResult(STR."\{SERVICE_CMD} \{NGINX_CMD} stop \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -126,7 +126,7 @@ public class NginxCommandLineITSupport
    */
   public CompletableFuture<Optional<List<String>>> nginxServiceRestartAsync() {
     log.debug("Restarting Nginx service asynchronously");
-    return execAsyncWithResult(STR"\{SERVICE_CMD} \{NGINX_CMD} restart \{REDIRECT_OUTPUT}");
+    return execAsyncWithResult(STR."\{SERVICE_CMD} \{NGINX_CMD} restart \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -138,7 +138,7 @@ public class NginxCommandLineITSupport
    */
   public Optional<List<String>> nginxReloadConfig() {
     log.debug("Reloading Nginx configuration");
-    return exec(STR"\{SERVICE_CMD} \{NGINX_CMD} reload \{REDIRECT_OUTPUT}");
+    return exec(STR."\{SERVICE_CMD} \{NGINX_CMD} reload \{REDIRECT_OUTPUT}");
   }
 
   /**
@@ -151,6 +151,6 @@ public class NginxCommandLineITSupport
    */
   public CompletableFuture<Optional<List<String>>> nginxReloadConfigAsync() {
     log.debug("Reloading Nginx configuration asynchronously");
-    return execAsyncWithResult(STR"\{SERVICE_CMD} \{NGINX_CMD} reload \{REDIRECT_OUTPUT}");
+    return execAsyncWithResult(STR."\{SERVICE_CMD} \{NGINX_CMD} reload \{REDIRECT_OUTPUT}");
   }
 }

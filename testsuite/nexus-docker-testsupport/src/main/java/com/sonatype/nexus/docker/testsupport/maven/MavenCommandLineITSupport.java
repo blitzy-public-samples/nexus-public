@@ -119,8 +119,8 @@ public class MavenCommandLineITSupport
   {
     updatePom(directory, repositoryUrl, groupId, artifactId, version);
 
-    String mavenCommand = STR"\{CD}\{directory} && \{MVN}clean install";
-    log.debug(STR"Executing Maven clean install: \{mavenCommand}");
+    String mavenCommand = STR."\{CD}\{directory} && \{MVN}clean install";
+    log.debug(STR."Executing Maven clean install: \{mavenCommand}");
     return exec(mavenCommand);
   }
 
@@ -145,7 +145,8 @@ public class MavenCommandLineITSupport
       final String version)
   {
     return CompletableFuture.supplyAsync(() -> {
-      log.debug(STR"Executing async Maven clean install for \{groupId}:\{artifactId}:\{version}");
+      log.debug(STR."Executing async Maven clean install for \{groupId}:\{artifactId}:\{version}");
+
       return cleanInstall(directory, repositoryUrl, groupId, artifactId, version);
     });
   }
@@ -172,8 +173,8 @@ public class MavenCommandLineITSupport
   {
     updatePom(directory, repositoryUrl, groupId, artifactId, version);
 
-    String mavenCommand = STR"\{CD}\{directory} && \{MVN}clean deploy -Dmaven.test.skip=true";
-    log.debug(STR"Executing Maven deploy: \{mavenCommand}");
+    String mavenCommand = STR."\{CD}\{directory} && \{MVN}clean deploy -Dmaven.test.skip=true";
+    log.debug(STR."Executing Maven deploy: \{mavenCommand}");
     return exec(mavenCommand);
   }
 
@@ -198,7 +199,7 @@ public class MavenCommandLineITSupport
       final String version)
   {
     return CompletableFuture.supplyAsync(() -> {
-      log.debug(STR"Executing async Maven deploy for \{groupId}:\{artifactId}:\{version}");
+      log.debug(STR."Executing async Maven deploy for \{groupId}:\{artifactId}:\{version}");
       return deploy(directory, repositoryUrl, groupId, artifactId, version);
     });
   }
@@ -217,8 +218,8 @@ public class MavenCommandLineITSupport
       final String directory,
       final String mavenArgs)
   {
-    String mavenCommand = STR"\{CD}\{directory} && \{MVN}\{mavenArgs}";
-    log.debug(STR"Executing Maven command: \{mavenCommand}");
+    String mavenCommand = STR."\{CD}\{directory} && \{MVN}\{mavenArgs}";
+    log.debug(STR."Executing Maven command: \{mavenCommand}");
     return exec(mavenCommand);
   }
 
@@ -241,21 +242,21 @@ public class MavenCommandLineITSupport
       final String artifactId,
       final String version)
   {
-    String pomTemplate = STR"\{directory}/pom-template.xml";
-    String pom = STR"\{directory}/pom.xml";
+    String pomTemplate = STR."\{directory}/pom-template.xml";
+    String pom = STR."\{directory}/pom.xml";
 
     // Using string template for improved readability while maintaining the same sed command structure
-    String sedCommand = STR"sed 's/${project.artifactId}/\{artifactId}/g' \{pomTemplate}" +
-        STR"| sed 's/${project.groupId}/\{groupId}/g'" +
-        STR"| sed 's/${project.version}/\{version}/g'" +
-        STR"| sed 's,${deploy.url},\{repositoryUrl},g'" +
-        STR"| sed 's,${site.url},\{repositoryUrl},g'" +
-        STR" > \{pom}";
+    String sedCommand = STR."sed 's/${project.artifactId}/\{artifactId}/g' \{pomTemplate}" +
+        STR."| sed 's/${project.groupId}/\{groupId}/g'" +
+        STR."| sed 's/${project.version}/\{version}/g'" +
+        STR."| sed 's,${deploy.url},\{repositoryUrl},g'" +
+        STR."| sed 's,${site.url},\{repositoryUrl},g'" +
+        STR." > \{pom}";
 
-    log.debug(STR"Updating POM file with coordinates \{groupId}:\{artifactId}:\{version}");
+    log.debug(STR."Updating POM file with coordinates \{groupId}:\{artifactId}:\{version}");
     exec(sedCommand).ifPresent(result -> {
       if (!result.isEmpty()) {
-        log.debug(STR"POM update result: \{result}");
+        log.debug(STR."POM update result: \{result}");
       }
     });
   }

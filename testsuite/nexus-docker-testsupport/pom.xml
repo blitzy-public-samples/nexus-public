@@ -71,7 +71,6 @@
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpclient</artifactId>
       <scope>test</scope>
-      <version>5.3.1</version>
     </dependency>
     
     <!-- JUnit Jupiter (JUnit 5) dependencies -->
@@ -108,7 +107,11 @@
       <version>2.3-groovy-4.0</version>
       <scope>test</scope>
     </dependency>
-
+    <dependency>
+      <groupId>org.eclipse.equinox</groupId>
+      <artifactId>org.eclipse.equinox.region</artifactId>
+      <version>1.2.101.v20150831-1342</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -141,4 +144,18 @@
     </plugins>
   </build>
 
+  <profiles>
+    <profile>
+      <id>groovy-plugins-release</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>groovy-plugins-release</id>
+          <url>https://groovy.jfrog.io/artifactory/plugins-release</url>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
 </project>

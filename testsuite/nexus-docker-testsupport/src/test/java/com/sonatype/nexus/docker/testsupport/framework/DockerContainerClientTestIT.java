@@ -27,11 +27,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+//import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+//import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.goodies.testsupport.group.External;
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.ContainerFetchException;
 
+import static java.lang.StringTemplate.STR;
 import static java.util.UUID.randomUUID;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -138,8 +140,8 @@ public class DockerContainerClientTestIT
    * </p>
    */
   @Test
-  @Tag(Java21TestGroup.NAME)
-  @Tag(VirtualThreadTestGroup.NAME)
+  @Tag("java21")
+  @Tag("virtualthread")
   @Timeout(value = 60)
   public void testConcurrentCommandExecutionWithVirtualThreads() throws Exception {
     // Setup container
@@ -169,7 +171,8 @@ public class DockerContainerClientTestIT
             }
           } catch (Exception e) {
             synchronized (failedCommands) {
-              failedCommands.add(STR."\{command} (Exception: \{e.getMessage()})";
+              failedCommands.add(command + " (Exception: " + e.getMessage() + ")");
+
             }
           } finally {
             latch.countDown();
@@ -194,8 +197,8 @@ public class DockerContainerClientTestIT
    * </p>
    */
   @Test
-  @Tag(Java21TestGroup.NAME)
-  @Tag(VirtualThreadTestGroup.NAME)
+  @Tag("java21")
+  @Tag("virtualthread")
   @Timeout(value = 120)
   public void compareThreadPerformanceForDockerOperations() throws Exception {
     // Setup container
@@ -210,6 +213,8 @@ public class DockerContainerClientTestIT
     long platformThreadTime = measureExecutionTime(() -> {
       try (ExecutorService executor = Executors.newFixedThreadPool(20)) {
         executeCommands(executor, commandCount, command);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
       }
     });
     
@@ -217,6 +222,8 @@ public class DockerContainerClientTestIT
     long virtualThreadTime = measureExecutionTime(() -> {
       try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
         executeCommands(executor, commandCount, command);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
       }
     });
     
@@ -226,8 +233,8 @@ public class DockerContainerClientTestIT
     
     // Virtual threads should generally be more efficient for I/O-bound operations
     // but we don't make this a hard assertion as it depends on the environment
-    assertThat("Virtual threads should handle more concurrent I/O operations efficiently", 
-        virtualThreadTime, lessThan(platformThreadTime * 1.5));
+    assertThat("Virtual threads should handle more concurrent I/O operations efficiently",
+            Double.valueOf(virtualThreadTime), lessThan(Double.valueOf(platformThreadTime * 1.5)));
   }
   
   /**
@@ -235,8 +242,8 @@ public class DockerContainerClientTestIT
    * using virtual threads without exhausting system resources.
    */
   @Test
-  @Tag(Java21TestGroup.NAME)
-  @Tag(VirtualThreadTestGroup.NAME)
+  @Tag("java21")
+  @Tag("virtualthread")
   @Timeout(value = 120)
   public void testVirtualThreadScalability() throws Exception {
     // Setup container
@@ -255,7 +262,7 @@ public class DockerContainerClientTestIT
         CompletableFuture.runAsync(() -> {
           try {
             // Simple echo command with unique index
-            Optional<ExecResult> result = underTest.exec(STR."echo 'Scalability Test \{index}'";
+            Optional<ExecResult> result = underTest.exec("echo 'Scalability Test " + index + "'");
             if (result.isPresent() && result.get().getExitCode() == 0) {
               successCount.incrementAndGet();
             }

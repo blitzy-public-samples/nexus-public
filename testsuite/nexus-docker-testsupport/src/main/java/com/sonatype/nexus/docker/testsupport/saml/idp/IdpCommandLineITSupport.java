@@ -99,14 +99,14 @@ public class IdpCommandLineITSupport
     idpHostPort = getHostTcpPort(IDP_CONTAINER_PORT);
     idpHost = findLocalHostAddress();
 
-    log.info(STR"Awaiting idp server \{idpHost}:\{idpHostPort}");
+    log.info(STR."Awaiting idp server \{idpHost}:\{idpHostPort}");
 
     // Use Awaitility with Java 21 compatibility
     await().atMost(MAX_WAIT_TIME.toMillis(), TimeUnit.MILLISECONDS)
            .pollExecutorService(virtualThreadExecutor)
            .until(this::isIdpServerAvailable);
 
-    log.info(STR"Finished waiting for idp server \{idpHost}:\{idpHostPort}");
+    log.info(STR."Finished waiting for idp server \{idpHost}:\{idpHostPort}");
   }
 
   /**
@@ -130,15 +130,15 @@ public class IdpCommandLineITSupport
       // Using pattern matching to handle different exception types
       return switch(e) {
         case MalformedURLException mue -> {
-          log.debug(STR"Malformed URL while checking IdP server: \{mue.getMessage()}");
+          log.debug(STR."Malformed URL while checking IdP server: \{mue.getMessage()}");
           yield false;
         }
         case java.net.ConnectException ce -> {
-          log.trace(STR"Connection refused while checking IdP server: \{ce.getMessage()}");
+          log.trace(STR."Connection refused while checking IdP server: \{ce.getMessage()}");
           yield false;
         }
         default -> {
-          log.trace(STR"Error checking IdP server availability: \{e.getClass().getSimpleName()}");
+          log.trace(STR."Error checking IdP server availability: \{e.getClass().getSimpleName()}");
           yield false;
         }
       };
@@ -166,7 +166,7 @@ public class IdpCommandLineITSupport
    * @return the IdP server URI
    */
   public URI getIdpUri() {
-    return URI.create(STR"http://\{idpHost}:\{idpHostPort}").normalize();
+    return URI.create(STR."http://\{idpHost}:\{idpHostPort}").normalize();
   }
   
   /**

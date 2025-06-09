@@ -36,13 +36,14 @@ public class DockerContainerConfig
 {
   /**
    * Immutable configuration record for Docker container settings.
-   * 
-   * @param image Docker image name
-   * @param dockerfile Path to Dockerfile
-   * @param exposedPorts List of exposed ports
-   * @param env Environment variables map
-   * @param pathBinds Path bindings map
-   * @param workingDir Working directory
+   *
+   * @param image                Docker image name
+   * @param dockerfile           Path to Dockerfile
+   * @param exposedPorts         List of exposed ports
+   * @param env                  Environment variables map
+   * @param pathBinds            Path bindings map
+   * @param workingDir           Working directory
+   * @param commandLineArguments
    */
   private record ConfigData(
       String image,
@@ -50,13 +51,14 @@ public class DockerContainerConfig
       List<Integer> exposedPorts,
       Map<String, String> env,
       Map<String, String> pathBinds,
-      String workingDir)
+      String workingDir,
+      List<String> commandLineArguments)
   {
   }
   
   private ConfigData configData;
 
-  private DockerContainerConfig(@Nullable final String image, @Nullable final Path dockerfile) {
+  protected DockerContainerConfig(@Nullable final String image, @Nullable final Path dockerfile) {
     checkArgument(!(image == null && dockerfile == null), "Image name or Dockerfile should be presented");
     checkArgument(!(image != null && dockerfile != null), "Image name and Dockerfile should not be presented both");
     
@@ -66,7 +68,7 @@ public class DockerContainerConfig
         new ArrayList<>(),
         new HashMap<>(),
         new HashMap<>(),
-        null);
+        null, new ArrayList<>());
   }
 
   /**
@@ -130,7 +132,7 @@ public class DockerContainerConfig
    * 
    * <p>Provides a fluent API for constructing container configurations.</p>
    */
-  public static final class Builder
+  public static  class Builder
   {
     private String image;
 
@@ -144,11 +146,13 @@ public class DockerContainerConfig
 
     private String workingDir;
 
-    private Builder(final String image) {
+    List<String> commandLineArguments = new ArrayList<>();
+
+    protected Builder(final String image) {
       this.image = checkNotNull(image);
     }
 
-    private Builder(final Path dockerfile) {
+    protected Builder(final Path dockerfile) {
       this.dockerfile = checkNotNull(dockerfile);
     }
 
@@ -205,9 +209,16 @@ public class DockerContainerConfig
           this.exposedPorts,
           this.env,
           this.pathBinds,
-          this.workingDir);
+          this.workingDir,
+              this.commandLineArguments);
       
       return dockerContainerConfig;
     }
+
+    public Builder withCommandLineArguments(final List<String> commandLineArguments) {
+      this.commandLineArguments = new ArrayList<>(commandLineArguments);
+      return this;
+    }
+
   }
 }

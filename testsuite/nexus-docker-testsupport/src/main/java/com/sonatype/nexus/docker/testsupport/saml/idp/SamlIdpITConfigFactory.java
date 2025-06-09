@@ -72,7 +72,12 @@ public class SamlIdpITConfigFactory
    */
   public static DockerContainerConfig createKeycloakConfigFromRecord(final KeycloakConfig config) {
     // Use pattern matching to destructure the record
-    var KeycloakConfig(image, tag, userName, password, portMappingPort) = config;
+
+    String image = config.image();
+    String tag = config.tag();
+    String userName = config.userName();
+    String password = config.password();
+    String portMappingPort = config.portMappingPort();
     
     return DockerContainerConfig.builder(image + ":" + tag)
         .withEnv(Map.of("KEYCLOAK_USER", userName, "KEYCLOAK_PASSWORD", password))

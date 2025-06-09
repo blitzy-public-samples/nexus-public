@@ -31,7 +31,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import com.sonatype.nexus.docker.testsupport.ContainerCommandLineITSupport;
-import com.sonatype.nexus.docker.testsupport.DockerContainerConfig;
+//import com.sonatype.nexus.docker.testsupport.DockerContainerConfig;
+import com.sonatype.nexus.docker.testsupport.framework.DockerContainerClient;
+import com.sonatype.nexus.docker.testsupport.framework.DockerContainerConfig;
 
 import org.testcontainers.containers.Container.ExecResult;
 

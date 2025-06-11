@@ -23,12 +23,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import org.opentest4j.TestAbortedException;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.internal.datastore.DefaultBlobStoreUsageChecker;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.AssetBlob;
 import org.sonatype.nexus.repository.content.facet.ContentFacet;
@@ -37,7 +39,6 @@ import org.sonatype.nexus.repository.content.facet.ContentFacetSupport;
 import org.sonatype.nexus.repository.content.store.AssetBlobStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.test.util.Whitebox;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,7 @@ import org.mockito.Mock;
 
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
+import static org.junit.VirtualThreadExtension.supplyFromVirtualThread;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -303,9 +305,9 @@ public class DefaultBlobStoreUsageCheckerVirtualThreadTest
    * Helper method to check if the current JVM supports Virtual Threads.
    * This is used in the setUp method to skip tests if Virtual Threads are not supported.
    */
-  private void assumeVirtualThreadSupported() {
+  public static void assumeVirtualThreadSupported() {
     if (!isVirtualThreadSupported()) {
-      throw new org.junit.jupiter.api.TestAbortedException("Virtual Threads not supported in this JVM");
+      throw new TestAbortedException("Virtual Threads not supported in this JVM");
     }
   }
 }

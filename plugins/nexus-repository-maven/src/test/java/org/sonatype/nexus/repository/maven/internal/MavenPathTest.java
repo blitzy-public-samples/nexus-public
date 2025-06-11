@@ -48,12 +48,12 @@ class MavenPathTest
     assertThat(mavenPath.getFileName(), equalTo("jetty-io-8.1.16.v20140903.pom"));
     assertThat(mavenPath.getHashType(), nullValue());
     assertThat(mavenPath.getCoordinates(), notNullValue());
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo("org.eclipse.jetty"));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo("jetty-io"));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo("8.1.16.v20140903"));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo(mavenPath.getCoordinates().getVersion()));
-    assertThat(mavenPath.getCoordinates().getClassifier(), nullValue());
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo("pom"));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo("org.eclipse.jetty"));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo("jetty-io"));
+    assertThat(mavenPath.getCoordinates().version(), equalTo("8.1.16.v20140903"));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo(mavenPath.getCoordinates().version()));
+    assertThat(mavenPath.getCoordinates().classifier(), nullValue());
+    assertThat(mavenPath.getCoordinates().extension(), equalTo("pom"));
 
     assertThat(mavenPath.isSubordinate(), is(false));
     MavenPath mavenPathSha1 = mavenPath.hash(HashType.SHA1);
@@ -64,8 +64,8 @@ class MavenPathTest
     MavenPath coordinatesAscSha1 = mavenPath.signature(SignatureType.GPG).hash(HashType.SHA1);
     assertThat(coordinatesAscSha1.getPath(), equalTo(path.substring(1) + ".asc.sha1"));
     assertThat(coordinatesAscSha1.getFileName(), equalTo(mavenPath.getFileName() + ".asc.sha1"));
-    assertThat(coordinatesAscSha1.getCoordinates().getExtension(),
-        equalTo(mavenPath.getCoordinates().getExtension() + ".asc.sha1"));
+    assertThat(coordinatesAscSha1.getCoordinates().extension(),
+        equalTo(mavenPath.getCoordinates().extension() + ".asc.sha1"));
     assertThat(coordinatesAscSha1.isSubordinate(), is(true));
     assertThat(coordinatesAscSha1.subordinateOf().subordinateOf(), equalTo(mavenPath));
     assertThat(coordinatesAscSha1.main(), equalTo(mavenPath));
@@ -73,7 +73,7 @@ class MavenPathTest
     MavenPath coordinates2 = coordinatesAscSha1.subordinateOf().subordinateOf();
     assertThat(coordinates2.getPath(), equalTo(path.substring(1)));
     assertThat(coordinates2.getFileName(), equalTo(mavenPath.getFileName()));
-    assertThat(coordinates2.getCoordinates().getExtension(), equalTo(mavenPath.getCoordinates().getExtension()));
+    assertThat(coordinates2.getCoordinates().extension(), equalTo(mavenPath.getCoordinates().extension()));
     assertThat(coordinates2.isSubordinate(), is(false));
   }
 
@@ -87,12 +87,12 @@ class MavenPathTest
     assertThat(mavenPath.getFileName(), equalTo("jetty-io-8.1.16-20140903.180000-1.pom"));
     assertThat(mavenPath.getHashType(), nullValue());
     assertThat(mavenPath.getCoordinates(), notNullValue());
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo("org.eclipse.jetty"));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo("jetty-io"));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo("8.1.16-20140903.180000-1"));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo("8.1.16-SNAPSHOT"));
-    assertThat(mavenPath.getCoordinates().getClassifier(), nullValue());
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo("pom"));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo("org.eclipse.jetty"));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo("jetty-io"));
+    assertThat(mavenPath.getCoordinates().version(), equalTo("8.1.16-20140903.180000-1"));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo("8.1.16-SNAPSHOT"));
+    assertThat(mavenPath.getCoordinates().classifier(), nullValue());
+    assertThat(mavenPath.getCoordinates().extension(), equalTo("pom"));
 
     assertThat(mavenPath.isSubordinate(), is(false));
     MavenPath pathSha1 = mavenPath.hash(HashType.SHA1);
@@ -103,8 +103,8 @@ class MavenPathTest
     MavenPath coordinatesAscSha1 = mavenPath.signature(SignatureType.GPG).hash(HashType.SHA1);
     assertThat(coordinatesAscSha1.getPath(), equalTo(path.substring(1) + ".asc.sha1"));
     assertThat(coordinatesAscSha1.getFileName(), equalTo(mavenPath.getFileName() + ".asc.sha1"));
-    assertThat(coordinatesAscSha1.getCoordinates().getExtension(),
-        equalTo(mavenPath.getCoordinates().getExtension() + ".asc.sha1"));
+    assertThat(coordinatesAscSha1.getCoordinates().extension(),
+        equalTo(mavenPath.getCoordinates().extension() + ".asc.sha1"));
     assertThat(coordinatesAscSha1.isSubordinate(), is(true));
     assertThat(coordinatesAscSha1.subordinateOf().subordinateOf(), equalTo(mavenPath));
     assertThat(coordinatesAscSha1.main(), equalTo(mavenPath));
@@ -112,7 +112,7 @@ class MavenPathTest
     MavenPath coordinates2 = coordinatesAscSha1.subordinateOf().subordinateOf();
     assertThat(coordinates2.getPath(), equalTo(path.substring(1)));
     assertThat(coordinates2.getFileName(), equalTo(mavenPath.getFileName()));
-    assertThat(coordinates2.getCoordinates().getExtension(), equalTo(mavenPath.getCoordinates().getExtension()));
+    assertThat(coordinates2.getCoordinates().extension(), equalTo(mavenPath.getCoordinates().extension()));
     assertThat(coordinates2.isSubordinate(), is(false));
   }
 
@@ -126,12 +126,12 @@ class MavenPathTest
     assertThat(mavenPath.getFileName(),
         equalTo("maven-repository-metadata-3.3.0-20150311.160242-1.jar.sha1"));
     assertThat(mavenPath.getHashType(), equalTo(HashType.SHA1));
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo("org.apache.maven"));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo("maven-repository-metadata"));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo("3.3.0-20150311.160242-1"));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo("3.3.0-SNAPSHOT"));
-    assertThat(mavenPath.getCoordinates().getClassifier(), nullValue());
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo("jar.sha1"));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo("org.apache.maven"));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo("maven-repository-metadata"));
+    assertThat(mavenPath.getCoordinates().version(), equalTo("3.3.0-20150311.160242-1"));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo("3.3.0-SNAPSHOT"));
+    assertThat(mavenPath.getCoordinates().classifier(), nullValue());
+    assertThat(mavenPath.getCoordinates().extension(), equalTo("jar.sha1"));
 
     assertThat(mavenPath.isSubordinate(), is(true));
     MavenPath main = mavenPath.main();
@@ -142,8 +142,8 @@ class MavenPathTest
     MavenPath coordinatesAscSha1 = mavenPath.main().signature(SignatureType.GPG).hash(HashType.SHA1);
     assertThat(coordinatesAscSha1.getPath(), equalTo(mavenPath.main().getPath() + ".asc.sha1"));
     assertThat(coordinatesAscSha1.getFileName(), equalTo(mavenPath.main().getFileName() + ".asc.sha1"));
-    assertThat(coordinatesAscSha1.getCoordinates().getExtension(),
-        equalTo(mavenPath.main().getCoordinates().getExtension() + ".asc.sha1"));
+    assertThat(coordinatesAscSha1.getCoordinates().extension(),
+        equalTo(mavenPath.main().getCoordinates().extension() + ".asc.sha1"));
     assertThat(coordinatesAscSha1.isSubordinate(), is(true));
     assertThat(coordinatesAscSha1.subordinateOf().subordinateOf(), equalTo(mavenPath.subordinateOf()));
     assertThat(coordinatesAscSha1.main(), equalTo(mavenPath.main()));
@@ -160,12 +160,12 @@ class MavenPathTest
     assertThat(mavenPath.getFileName(),
         equalTo("maven-repository-metadata-3.3.0-20150311.160242-1.pom"));
     assertThat(mavenPath.getHashType(), nullValue());
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo("org.apache.maven"));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo("maven-repository-metadata"));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo("3.3.0-20150311.160242-1"));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo("3.3.0-SNAPSHOT"));
-    assertThat(mavenPath.getCoordinates().getClassifier(), nullValue());
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo("pom"));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo("org.apache.maven"));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo("maven-repository-metadata"));
+    assertThat(mavenPath.getCoordinates().version(), equalTo("3.3.0-20150311.160242-1"));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo("3.3.0-SNAPSHOT"));
+    assertThat(mavenPath.getCoordinates().classifier(), nullValue());
+    assertThat(mavenPath.getCoordinates().extension(), equalTo("pom"));
     assertThat(mavenPath.isSubordinate(), is(false));
   }
 
@@ -188,12 +188,12 @@ class MavenPathTest
     assertThat(mavenPath.getFileName(),
         equalTo("maven-repository-metadata-3.3.0-20150311.160242-1.jar"));
     assertThat(mavenPath.getHashType(), nullValue());
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo("org.apache.maven"));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo("maven-repository-metadata"));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo("3.3.0-20150311.160242-1"));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo("3.3.0-SNAPSHOT"));
-    assertThat(mavenPath.getCoordinates().getClassifier(), nullValue());
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo("jar"));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo("org.apache.maven"));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo("maven-repository-metadata"));
+    assertThat(mavenPath.getCoordinates().version(), equalTo("3.3.0-20150311.160242-1"));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo("3.3.0-SNAPSHOT"));
+    assertThat(mavenPath.getCoordinates().classifier(), nullValue());
+    assertThat(mavenPath.getCoordinates().extension(), equalTo("jar"));
     assertThat(mavenPath.isSubordinate(), is(false));
   }
 
@@ -208,12 +208,12 @@ class MavenPathTest
     assertThat(mavenPath.getFileName(),
         equalTo("maven-repository-metadata-3.3.0-20150311.160242-1-javadoc.jar"));
     assertThat(mavenPath.getHashType(), nullValue());
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo("org.apache.maven"));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo("maven-repository-metadata"));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo("3.3.0-20150311.160242-1"));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo("3.3.0-SNAPSHOT"));
-    assertThat(mavenPath.getCoordinates().getClassifier(), equalTo("javadoc"));
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo("jar"));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo("org.apache.maven"));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo("maven-repository-metadata"));
+    assertThat(mavenPath.getCoordinates().version(), equalTo("3.3.0-20150311.160242-1"));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo("3.3.0-SNAPSHOT"));
+    assertThat(mavenPath.getCoordinates().classifier(), equalTo("javadoc"));
+    assertThat(mavenPath.getCoordinates().extension(), equalTo("jar"));
     assertThat(mavenPath.isSubordinate(), is(false));
   }
 }

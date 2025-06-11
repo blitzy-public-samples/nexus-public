@@ -109,7 +109,12 @@ public class CompactBlobStoreTaskVirtualThreadTest
       configurations.add(config);
 
       CompactBlobStoreTask task = new CompactBlobStoreTask(
-          blobStoreManager, changeBlobstoreStore, blobStoreUsageChecker, taskUtils);
+              blobStoreManager, changeBlobstoreStore, blobStoreUsageChecker, taskUtils) {
+        @Override
+        public void validate() {
+
+        }
+      };
       task.configure(config);
       tasks.add(task);
     }
@@ -138,13 +143,14 @@ public class CompactBlobStoreTaskVirtualThreadTest
     verify(blobStore, times(CONCURRENT_TASKS * 2)).compact(any(BlobStoreUsageChecker.class));
 
     // Virtual threads should perform better for I/O-bound operations
-    log.info("Platform thread execution time: {} ms", platformThreadDuration);
-    log.info("Virtual thread execution time: {} ms", virtualThreadDuration);
+    logger.info("Platform thread execution time: {} ms", platformThreadDuration);
+    logger.info("Virtual thread execution time: {} ms", virtualThreadDuration);
     
     // Virtual threads should be more efficient for I/O-bound operations
     // The performance improvement threshold is set conservatively
     assertThat("Virtual threads should be more efficient than platform threads for I/O operations",
-        virtualThreadDuration, lessThan(platformThreadDuration * 0.9));
+            (double) virtualThreadDuration, lessThan(platformThreadDuration * 0.9));
+
   }
 
   /**
@@ -179,7 +185,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
             latch.countDown();
           } 
           catch (Exception e) {
-            log.error("Error executing task", e);
+            logger.error("Error executing task", e);
             latch.countDown();
           }
         });
@@ -192,7 +198,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
       assertThat("All tasks should complete within the timeout", completed, is(true));
       assertThat("All threads should be properly released", activeThreads.get(), is(0));
       
-      log.info("Maximum concurrent threads during execution: {}", maxActiveThreads.get());
+      logger.info("Maximum concurrent threads during execution: {}", maxActiveThreads.get());
     } 
     finally {
       executor.shutdown();
@@ -227,7 +233,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
       
       // In a real test, we would assert that no pinning events were detected
       // For this implementation, we're just demonstrating the concept
-      log.info("Task completed without detected thread pinning");
+      logger.info("Task completed without detected thread pinning");
     } 
     finally {
       executor.shutdown();
@@ -257,7 +263,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
             tasks.get(taskIndex).execute();
           } 
           catch (Exception e) {
-            log.error("Error executing task in " + testName, e);
+            logger.error("Error executing task in " + testName, e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -274,7 +280,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
       assertThat(testName + ": All tasks should complete within the timeout", completed, is(true));
       assertThat(testName + ": No tasks should fail", errorCount.get(), is(0));
       
-      log.info("{} completed in {} ms", testName, duration);
+      logger.info("{} completed in {} ms", testName, duration);
       return duration;
     } 
     finally {

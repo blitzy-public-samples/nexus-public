@@ -131,12 +131,12 @@ public class Maven2MavenPathParserMxTest
     assertThat(mavenPath.getHashType(), equalTo(hashType));
     assertThat(mavenPath.getCoordinates(), notNullValue());
     assertThat(mavenPath.getCoordinates().isSnapshot(), equalTo(snapshot));
-    assertThat(mavenPath.getCoordinates().getGroupId(), equalTo(groupId));
-    assertThat(mavenPath.getCoordinates().getArtifactId(), equalTo(artifactId));
-    assertThat(mavenPath.getCoordinates().getVersion(), equalTo(version));
-    assertThat(mavenPath.getCoordinates().getBaseVersion(), equalTo(baseVersion));
-    assertThat(mavenPath.getCoordinates().getClassifier(), equalTo(classifier));
-    assertThat(mavenPath.getCoordinates().getExtension(), equalTo(extension));
-    assertThat(mavenPath.getCoordinates().getSignatureType(), equalTo(signatureType));
+    assertThat(mavenPath.getCoordinates().groupId(), equalTo(groupId));
+    assertThat(mavenPath.getCoordinates().artifactId(), equalTo(artifactId));
+    assertThat(mavenPath.getCoordinates().version(), equalTo(version));
+    assertThat(mavenPath.getCoordinates().baseVersion(), equalTo(baseVersion));
+    assertThat(mavenPath.getCoordinates().classifier(), equalTo(classifier));
+    assertThat(mavenPath.getCoordinates().extension(), equalTo(extension));
+    assertThat(mavenPath.getCoordinates().signatureType(), equalTo(signatureType));
   }
 }

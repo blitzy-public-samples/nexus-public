@@ -126,11 +126,11 @@ class MavenVariableResolverAdapterTest
     // Use Java 21 pattern matching for instanceof to extract values directly
     if (testObject instanceof Coordinates coords) {
       // With pattern matching, we can directly use the extracted variable
-      assertThat(coords.getGroupId(), is("org.junit.jupiter"));
-      assertThat(coords.getArtifactId(), is("junit-jupiter"));
-      assertThat(coords.getVersion(), is("5.10.1"));
-      assertThat(coords.getClassifier(), is("api"));
-      assertThat(coords.getExtension(), is(".jar"));
+      assertThat(coords.groupId(), is("org.junit.jupiter"));
+      assertThat(coords.artifactId(), is("junit-jupiter"));
+      assertThat(coords.version(), is("5.10.1"));
+      assertThat(coords.classifier(), is("api"));
+      assertThat(coords.extension(), is(".jar"));
     } else {
       // This should not happen in this test
       throw new AssertionError("testObject should be an instance of Coordinates");
@@ -150,9 +150,9 @@ class MavenVariableResolverAdapterTest
     
     // Test with coordinates object
     String coordsResult = switch (coordsObject) {
-      case Coordinates c when c.getGroupId().equals("org.mockito") ->
-        "Found Mockito coordinates: " + c.getArtifactId() + "-" + c.getVersion();
-      case Coordinates c -> "Found other coordinates: " + c.getArtifactId();
+      case Coordinates c when c.groupId().equals("org.mockito") ->
+        "Found Mockito coordinates: " + c.artifactId() + "-" + c.version();
+      case Coordinates c -> "Found other coordinates: " + c.artifactId();
       case String s -> "Found string: " + s;
       default -> "Unknown object type";
     };
@@ -161,7 +161,7 @@ class MavenVariableResolverAdapterTest
     
     // Test with string object
     String stringResult = switch (stringObject) {
-      case Coordinates c -> "Found coordinates: " + c.getArtifactId();
+      case Coordinates c -> "Found coordinates: " + c.artifactId();
       case String s -> "Found string: " + s;
       default -> "Unknown object type";
     };

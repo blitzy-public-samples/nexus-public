@@ -91,7 +91,7 @@ public class MavenApiRepositoryAdapterVirtualThreadTest
 
     MavenHostedApiRepository hostedRepository = (MavenHostedApiRepository) underTest.adapt(repository);
     assertRepository(hostedRepository, "hosted", true);
-    assertThat(hostedRepository.getMaven().getLayoutPolicy(), is("STRICT"));
+    assertThat(hostedRepository.getMaven().layoutPolicy(), is("STRICT"));
     assertThat(hostedRepository.getMaven().getVersionPolicy(), is("MIXED"));
     assertThat(hostedRepository.getMaven().getContentDisposition(), is("INLINE"));
     // Check fields are populated, actual values validated with SimpleApiRepositoryAdapterTest

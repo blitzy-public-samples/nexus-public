@@ -109,9 +109,9 @@ public class Maven2ComponentDAOTest
       Set<GAV> gavsWithSnaphots = dao.findGavsWithSnaphots(repositoryId, 2);
       assertThat(gavsWithSnaphots.size(), is(1));
       GAV gav = gavsWithSnaphots.stream().findFirst().get();
-      assertThat(gav.group, is("group"));
-      assertThat(gav.name, is("artifact"));
-      assertThat(gav.baseVersion, is("1.0.0-SNAPSHOT"));
+      assertThat(gav.group(), is("group"));
+      assertThat(gav.name(), is("artifact"));
+      assertThat(gav.baseVersion(), is("1.0.0-SNAPSHOT"));
     }
   }
 

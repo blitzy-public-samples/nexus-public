@@ -19,7 +19,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.content.maven.MavenContentFacet;
 import org.sonatype.nexus.content.maven.store.GAV;
 import org.sonatype.nexus.content.maven.store.Maven2ComponentData;
@@ -37,12 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -67,9 +63,13 @@ public class RemoveSnapshotsPatternMatchingTest
   @BeforeEach
   void setup() {
     underTest = new RemoveSnapshotsFacetImpl(new GroupType());
-    underTest.attach(repository);
+      try {
+          underTest.attach(repository);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
 
-    when(repository.facet(MavenContentFacet.class)).thenReturn(mavenContentFacet);
+      when(repository.facet(MavenContentFacet.class)).thenReturn(mavenContentFacet);
   }
 
   /**
@@ -79,8 +79,8 @@ public class RemoveSnapshotsPatternMatchingTest
   void testFindSnapshotCandidatesWithPatternMatchingForSwitch() {
     // Setup test data
     Set<GAV> expectedGavs = Set.of(
-        new GAV("group1", "artifact1", "1.0-SNAPSHOT"),
-        new GAV("group2", "artifact2", "2.0-SNAPSHOT")
+        new GAV("group1", "artifact1", "1.0-SNAPSHOT",0),
+        new GAV("group2", "artifact2", "2.0-SNAPSHOT",0)
     );
 
     // Mock the facet behavior
@@ -95,10 +95,10 @@ public class RemoveSnapshotsPatternMatchingTest
     // Use pattern matching for switch to validate GAV objects
     for (GAV gav : result) {
       switch (gav) {
-        case GAV g when g.group.equals("group1") && g.name.equals("artifact1") ->
-            assertThat(g.baseVersion, is("1.0-SNAPSHOT"));
-        case GAV g when g.group.equals("group2") && g.name.equals("artifact2") ->
-            assertThat(g.baseVersion, is("2.0-SNAPSHOT"));
+        case GAV g when g.group().equals("group1") && g.name().equals("artifact1") ->
+            assertThat(g.baseVersion(), is("1.0-SNAPSHOT"));
+        case GAV g when g.group().equals("group2") && g.name().equals("artifact2") ->
+            assertThat(g.baseVersion(), is("2.0-SNAPSHOT"));
         default -> throw new AssertionError("Unexpected GAV: " + gav);
       }
     }
@@ -137,12 +137,16 @@ public class RemoveSnapshotsPatternMatchingTest
     // Use record patterns to extract and validate component data
     for (Maven2ComponentData component : result) {
       // Using record pattern to destructure the component
-      if (component instanceof Maven2ComponentData(var group, var name, var version, var assets, var lastUpdated)) {
+      if (component instanceof Maven2ComponentData maven2ComponentData) {
         // Verify it's one of the old components
-        assertThat(version, is("1.0-20230101.123456-1").or(is("1.0-20230201.123456-2")));
-        assertThat(group, is("group1"));
-        assertThat(name, is("artifact1"));
-        assertThat(lastUpdated.isBefore(now.minusDays(30)), is(true));
+        assertThat(maven2ComponentData.version(),
+                anyOf(
+                        is("1.0-20230101.123456-1"),
+                        is("1.0-20230201.123456-2")
+                ));
+
+        assertThat(maven2ComponentData.name(), is("artifact1"));
+        assertThat(maven2ComponentData.lastUpdated().isBefore(now.minusDays(30)), is(true));
       }
     }
 
@@ -228,9 +232,8 @@ public class RemoveSnapshotsPatternMatchingTest
       OffsetDateTime lastUpdated) 
   {
     Maven2ComponentData component = mock(Maven2ComponentData.class);
-    when(component.group()).thenReturn(group);
     when(component.name()).thenReturn(name);
-    when(component.baseVersion()).thenReturn(baseVersion);
+    when(component.getBaseVersion()).thenReturn(baseVersion);
     when(component.version()).thenReturn(version);
     when(component.lastUpdated()).thenReturn(lastUpdated);
     

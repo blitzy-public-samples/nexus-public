@@ -45,7 +45,7 @@ public class DeleteBlobstoreTempFilesTask
   }
 
   @Override
-  protected Object execute() throws Exception {
+  public Object execute() throws Exception {
     String blobStoreName = getBlobStoreField();
     BlobStore blobStore = blobStoreManager.get(blobStoreName);
     

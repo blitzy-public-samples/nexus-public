@@ -87,7 +87,7 @@ public class RestoreMetadataTask
 
   private final RepositoryManager repositoryManager;
 
-  private final Map<String, RestoreBlobStrategy> restoreBlobStrategies;
+  protected final Map<String, RestoreBlobStrategy> restoreBlobStrategies;
 
   private final Map<String, IntegrityCheckStrategy> integrityCheckStrategies;
 
@@ -138,7 +138,7 @@ public class RestoreMetadataTask
   }
 
   @VisibleForTesting
-  void checkForConflicts() {
+  public void checkForConflicts() {
     String blobStoreName = checkNotNull(getConfiguration().getString(BLOB_STORE_NAME_FIELD_ID));
 
     taskUtils.checkForConflictingTasks(getId(), getName(), asList("repository.move"), ImmutableMap
@@ -161,7 +161,7 @@ public class RestoreMetadataTask
   }
 
   @Override
-  protected Void execute() throws Exception {
+  public Void execute() throws Exception {
     checkForConflicts();
 
     String blobStoreId = checkNotNull(getConfiguration().getString(BLOB_STORE_NAME_FIELD_ID));

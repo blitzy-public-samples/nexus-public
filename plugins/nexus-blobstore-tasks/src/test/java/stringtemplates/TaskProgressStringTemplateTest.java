@@ -26,6 +26,8 @@ import org.junit.jupiter.api.Test;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
+import org.sonatype.nexus.scheduling.CurrentState;
+import org.sonatype.nexus.scheduling.ExternalTaskState;
 import org.sonatype.nexus.scheduling.TaskInfo;
 import org.sonatype.nexus.scheduling.TaskState;
 
@@ -48,8 +50,7 @@ public class TaskProgressStringTemplateTest
     metrics = mock(BlobStoreMetrics.class);
     taskInfo = mock(TaskInfo.class);
     
-    when(blobStore.getBlobStoreMetrics()).thenReturn(metrics);
-    when(blobStore.getBlobStoreName()).thenReturn(BLOB_STORE_NAME);
+    when(blobStore.getBlobStoreConfiguration().getName()).thenReturn(BLOB_STORE_NAME);
   }
   
   /**
@@ -85,7 +86,9 @@ public class TaskProgressStringTemplateTest
     
     when(metrics.getBlobCount()).thenReturn(blobCount);
     when(metrics.getTotalSize()).thenReturn(totalSize);
-    when(taskInfo.getCurrentState()).thenReturn(TaskState.RUNNING);
+    CurrentState localState = mock(CurrentState.class);
+    when(localState.getState()).thenReturn(TaskState.RUNNING);
+    when(taskInfo.getCurrentState()).thenReturn(localState);
     
     // Create status update using String Templates
     String statusUpdate = STR."Task status: \{status}, processing blob store \{BLOB_STORE_NAME} " +

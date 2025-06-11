@@ -27,11 +27,11 @@ import java.util.function.Predicate;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.search.ComponentSearchResult;
 import org.sonatype.nexus.repository.search.sql.SearchResult;
-import org.sonatype.nexus.thread.Java21TestGroup;
-import org.sonatype.nexus.thread.VirtualThreadTestGroup;
 
 import org.junit.experimental.categories.Category;
 import org.junit.jupiter.api.BeforeEach;

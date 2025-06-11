@@ -408,7 +408,7 @@ public class DefaultBlobStoreUsageCheckerPatternMatchingTest
     
     // Instead, we'll use traditional pattern matching
     if (blobRef instanceof BlobRef br) {
-      assertThat(br.getNodeId(), equalTo(NODE_ID));
+      assertThat(br.getNode(), equalTo(NODE_ID));
       assertThat(br.getStore(), equalTo(DEFAULT));
       assertThat(br.getBlobId(), equalTo(BLOB_ID.asUniqueString()));
     }

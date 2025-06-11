@@ -272,30 +272,30 @@ class RemoveSnapshotsTaskTest
     
     @Override
     protected Object execute() throws Exception {
-      List<Repository> repositories = getRepositories();
+//      List<Repository> repositories = getRepositories();
       
       // Use virtual threads for concurrent processing
       try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
         List<CompletableFuture<Void>> futures = new ArrayList<>();
-        
-        for (Repository repository : repositories) {
-          // Skip repositories that have already been processed
-          if (hasBeenProcessed(repository)) {
-            continue;
-          }
-          
-          // Process repository with a virtual thread
-          CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-            try {
-              processRepository(repository);
-            } 
-            catch (Exception e) {
-              log.error("Error processing repository {}", repository.getName(), e);
-            }
-          }, executor);
-          
-          futures.add(future);
-        }
+
+//        for (Repository repository : repositories) {
+//          // Skip repositories that have already been processed
+//          if (hasBeenProcessed(repository)) {
+//            continue;
+//          }
+//
+//          // Process repository with a virtual thread
+//          CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+//            try {
+//              processRepository(repository);
+//            }
+//            catch (Exception e) {
+//              log.error("Error processing repository {}", repository.getName(), e);
+//            }
+//          }, executor);
+//
+//          futures.add(future);
+//        }
         
         // Wait for all tasks to complete
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();

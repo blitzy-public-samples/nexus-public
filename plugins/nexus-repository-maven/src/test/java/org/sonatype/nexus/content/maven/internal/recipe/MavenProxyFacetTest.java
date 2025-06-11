@@ -130,7 +130,7 @@ class MavenProxyFacetTest
               }
             } catch (Exception e) {
               // Log any exceptions
-              log.error("Error in virtual thread task", e);
+              logger.error("Error in virtual thread task", e);
             } finally {
               latch.countDown();
             }

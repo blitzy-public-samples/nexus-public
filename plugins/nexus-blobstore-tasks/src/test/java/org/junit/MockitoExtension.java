@@ -35,8 +35,6 @@ import org.mockito.MockitoAnnotations;
 import org.mockito.MockitoSession;
 import org.mockito.Spy;
 import org.mockito.exceptions.base.MockitoException;
-import org.mockito.internal.util.reflection.FieldSetter;
-import org.mockito.junit.MockitoJUnitRunner;
 import org.mockito.quality.Strictness;
 
 /**
@@ -108,7 +106,7 @@ public class MockitoExtension implements BeforeEachCallback, AfterEachCallback, 
     @Override
     public void beforeEach(final ExtensionContext context) throws Exception {
         Strictness strictness = getStrictness(context);
-        MockitoSession session = MockitoAnnotations.openMocks(context.getRequiredTestInstance());
+        AutoCloseable session = MockitoAnnotations.openMocks(context.getRequiredTestInstance());
         getStore(context).put(MOCKITO_SESSION_KEY, session);
     }
 

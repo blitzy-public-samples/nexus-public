@@ -25,6 +25,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.mockito.Mockito;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
@@ -93,8 +94,11 @@ public class CompactBlobStoreTaskVirtualThreadTest
     configuration.setString(".name", TASK_NAME);
     configuration.setTypeId(TYPE_ID);
     configuration.setId(TASK_NAME);
-
-    underTest = new CompactBlobStoreTask(blobStoreManager, changeBlobstoreStore, blobStoreUsageChecker, taskUtils);
+    underTest = Mockito.mock(CompactBlobStoreTask.class,
+            Mockito.withSettings()
+                    .useConstructor(blobStoreManager, changeBlobstoreStore,
+                            blobStoreUsageChecker, taskUtils)
+                    .defaultAnswer(Mockito.CALLS_REAL_METHODS));
     when(blobStoreManager.get(BLOBSTORE_NAME)).thenReturn(blobStore);
   }
 
@@ -147,7 +151,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
         latch.countDown();
         return null;
       }
-    }).when(blobStore).compact();
+    }).when(blobStore).compact(null);
     
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
@@ -173,7 +177,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
     
     // Verify the task executed correctly
     verify(blobStoreManager).get(BLOBSTORE_NAME);
-    verify(blobStore).compact();
+    verify(blobStore).compact(any(BlobStoreUsageChecker.class));
   }
 
   /**
@@ -203,7 +207,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
         completedTasks.incrementAndGet();
         return null;
       }
-    }).when(blobStore).compact();
+    }).when(blobStore).compact(any(BlobStoreUsageChecker.class));
     
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
@@ -219,9 +223,11 @@ public class CompactBlobStoreTaskVirtualThreadTest
         futures.put(taskId, executor.submit(() -> {
           try {
             // Create a new task for each execution to avoid conflicts
-            CompactBlobStoreTask task = new CompactBlobStoreTask(
-                blobStoreManager, changeBlobstoreStore, blobStoreUsageChecker, taskUtils);
-            
+            CompactBlobStoreTask task = Mockito.mock(CompactBlobStoreTask.class,
+                    Mockito.withSettings()
+                            .useConstructor(blobStoreManager, changeBlobstoreStore,
+                                    blobStoreUsageChecker, taskUtils)
+                            .defaultAnswer(Mockito.CALLS_REAL_METHODS));
             TaskConfiguration config = new TaskConfiguration();
             config.setString(BLOB_STORE_NAME_FIELD_ID, BLOBSTORE_NAME);
             config.setString(".name", TASK_NAME + "-" + taskId);
@@ -246,7 +252,7 @@ public class CompactBlobStoreTaskVirtualThreadTest
     // Verify all tasks completed successfully
     assertEquals("Not all tasks completed", concurrentTasks, completedTasks.get());
     verify(blobStoreManager, times(concurrentTasks)).get(BLOBSTORE_NAME);
-    verify(blobStore, times(concurrentTasks)).compact();
+    verify(blobStore, times(concurrentTasks)).compact(any(BlobStoreUsageChecker.class));
   }
 
   /**

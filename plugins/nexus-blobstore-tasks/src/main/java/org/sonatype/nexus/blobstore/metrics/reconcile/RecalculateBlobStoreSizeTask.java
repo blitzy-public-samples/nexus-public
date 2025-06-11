@@ -66,7 +66,7 @@ public class RecalculateBlobStoreSizeTask
   }
 
   @Override
-  protected void execute(final BlobStore blobStore) {
+  public void execute(final BlobStore blobStore) {
     // Using DateTime for compatibility with BlobMetrics API
     // TODO: Consider migrating to java.time.Instant when BlobMetrics API is updated
     DateTime currentDate = DateTime.now();

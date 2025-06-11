@@ -216,10 +216,10 @@ class DefaultBlobStoreUsageCheckerPatternMatchingTest
               case ContentFacet content -> {
                 // Create a BlobRef for the blob
                 String storeName = store.getBlobStoreConfiguration().getName();
-                BlobRef blobRef = new BlobRef(content.nodeName(), storeName, blobId.asUniqueString());
+                BlobRef blobRef = new BlobRef(storeName, blobId.asUniqueString());
                 
                 // Check if the blob is referenced
-                Optional<AssetBlob> assetBlobOptional = content.stores().assetBlobStore.readAssetBlob(blobRef);
+                Optional<AssetBlob> assetBlobOptional = contentFacet.stores().assetBlobStore.readAssetBlob(blobRef);
                 yield switch (assetBlobOptional) {
                   case Optional<AssetBlob> opt when opt.isPresent() -> true;
                   default -> false;
@@ -274,10 +274,10 @@ class DefaultBlobStoreUsageCheckerPatternMatchingTest
 
     // Create a BlobRef for the blob
     String storeName = store.getBlobStoreConfiguration().getName();
-    BlobRef blobRef = new BlobRef(content.nodeName(), storeName, blobId.asUniqueString());
+    BlobRef blobRef = new BlobRef(storeName, blobId.asUniqueString());
 
     // Check if the blob is referenced
-    Optional<AssetBlob> assetBlobOptional = content.stores().assetBlobStore.readAssetBlob(blobRef);
+    Optional<AssetBlob> assetBlobOptional = contentFacet.stores().assetBlobStore.readAssetBlob(blobRef);
     return assetBlobOptional.isPresent();
   }
   

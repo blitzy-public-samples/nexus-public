@@ -56,12 +56,7 @@ import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.blobstore.common.BlobStoreTaskSupport.ALL;
 import static org.sonatype.nexus.blobstore.common.BlobStoreTaskSupport.BLOBSTORE_NAME_FIELD_ID;
 
@@ -110,7 +105,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
     long platformThreadEndTime = System.nanoTime();
     long platformThreadDuration = TimeUnit.NANOSECONDS.toMillis(platformThreadEndTime - platformThreadStartTime);
     
-    log.info("Platform thread execution time for {} blobs: {} ms", 
+    logger.info("Platform thread execution time for {} blobs: {} ms",
         LARGE_BLOB_COUNT, platformThreadDuration);
 
     // Reset mocks for virtual thread test
@@ -137,7 +132,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
     long virtualThreadEndTime = System.nanoTime();
     long virtualThreadDuration = TimeUnit.NANOSECONDS.toMillis(virtualThreadEndTime - virtualThreadStartTime);
     
-    log.info("Virtual thread execution time for {} blobs: {} ms", 
+    logger.info("Virtual thread execution time for {} blobs: {} ms",
         LARGE_BLOB_COUNT, virtualThreadDuration);
     
     // Virtual threads should provide better or comparable performance for I/O-bound operations
@@ -188,23 +183,27 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
     AtomicInteger currentConcurrentExecutions = new AtomicInteger(0);
     
     // Replace the execute method to track concurrency
-    when(underTest.execute(any(BlobStore.class))).thenAnswer(invocation -> {
+    doAnswer(invocation -> {
       BlobStore blobStore = invocation.getArgument(0);
       int current = currentConcurrentExecutions.incrementAndGet();
       int max = maxConcurrentExecutions.get();
       if (current > max) {
         maxConcurrentExecutions.set(current);
       }
-      
+
       // Simulate some processing time to increase chance of concurrency
       Thread.sleep(50);
-      
-      // Call the real method
-      invocation.callRealMethod();
-      
-      currentConcurrentExecutions.decrementAndGet();
+
+      try {
+        invocation.callRealMethod();
+      } finally {
+        currentConcurrentExecutions.decrementAndGet();
+      }
+
       return null;
-    });
+    }).when(underTest).execute(any(BlobStore.class));
+
+
 
     // Execute the task
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
@@ -227,7 +226,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
     verify(underTest, times(CONCURRENT_BLOBSTORES)).execute(any(BlobStore.class));
     
     // Log the maximum concurrency achieved
-    log.info("Maximum concurrent blob store executions: {}", maxConcurrentExecutions.get());
+    logger.info("Maximum concurrent blob store executions: {}", maxConcurrentExecutions.get());
     
     virtualExecutor.shutdown();
   }
@@ -264,7 +263,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
         } 
         catch (Exception e) {
           errorCount.incrementAndGet();
-          log.error("Error executing task", e);
+          logger.error("Error executing task", e);
         } 
         finally {
           latch.countDown();
@@ -312,7 +311,11 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
     // Execute the task and expect a MultipleFailuresException
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       underTest.configure(configuration);
-      underTest.call(); // This should throw an exception
+        try {
+            underTest.call(); // This should throw an exception
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }, virtualExecutor);
     
     // Verify that the expected exception is thrown
@@ -386,8 +389,8 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
     long memoryUsed = memoryAfter - memoryBefore;
     
     // Log resource utilization metrics
-    log.info("Execution time: {} ms", executionTime);
-    log.info("Memory used: {} bytes", memoryUsed);
+    logger.info("Execution time: {} ms", executionTime);
+    logger.info("Memory used: {} bytes", memoryUsed);
     
     // Verify that all blob stores were processed
     verify(underTest, times(5)).execute(any(BlobStore.class));

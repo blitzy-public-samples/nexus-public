@@ -469,9 +469,10 @@ class RestoreMetadataTaskRecordPatternTest
     // Use guarded record pattern to filter tasks
     int restoreTaskCount = 0;
     for (TaskInfo task : new TaskInfo[] {task1, task2, task3}) {
-      if (task instanceof TaskInfo(String name, String type, boolean enabled) 
-          when type.equals("restore") && enabled) {
-        restoreTaskCount++;
+      if (task instanceof TaskInfo tinfo){
+        if(tinfo.type().equals("restore") && tinfo.enabled()){
+          restoreTaskCount++;
+        }
       }
     }
     

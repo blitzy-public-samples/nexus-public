@@ -91,13 +91,14 @@ public class MavenHostedRecipeTest
     switch (recipe) {
       case MavenHostedRecipe r when r.getFormat() instanceof Maven2Format -> {
         // This is the expected case - Maven2Format is correctly configured
-        verify(mavenHostedRepository).attach(mavenHostedIndexFacet);
+          try {
+              verify(mavenHostedRepository).attach(mavenHostedIndexFacet);
+          } catch (Exception e) {
+              throw new RuntimeException(e);
+          }
       }
-      case MavenHostedRecipe r -> {
         // This would be unexpected - the recipe should have Maven2Format
-        throw new AssertionError("Recipe has unexpected format: " + r.getFormat());
-      }
-      default -> throw new AssertionError("Unexpected recipe type: " + recipe.getClass());
+        default -> throw new AssertionError("Unexpected recipe type: " + recipe.getClass());
     }
   }
 }

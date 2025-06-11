@@ -115,10 +115,10 @@ class MavenAttributesHelperTest
     verify(componentStore, only()).updateBaseVersion(componentDataValueCaptor.capture());
 
     Maven2ComponentData componentData = componentDataValueCaptor.getValue();
-    assertEquals(coordinates.getGroupId(), componentData.namespace());
-    assertEquals(coordinates.getArtifactId(), componentData.name());
-    assertEquals(coordinates.getVersion(), componentData.version());
-    assertEquals(coordinates.getBaseVersion(), componentData.getBaseVersion());
+    assertEquals(coordinates.groupId(), componentData.namespace());
+    assertEquals(coordinates.artifactId(), componentData.name());
+    assertEquals(coordinates.version(), componentData.version());
+    assertEquals(coordinates.baseVersion(), componentData.getBaseVersion());
 
     assertGroupArtifactVersionSet(5, attributesValueCaptor.getValue());
   }
@@ -132,8 +132,8 @@ class MavenAttributesHelperTest
     verify(fluentAsset).attributes(eq(OVERLAY), eq(NAME), attributesValueCaptor.capture());
     Map<String, String> map = attributesValueCaptor.getValue();
     assertGroupArtifactVersionSet(6, map);
-    assertThat(map, hasEntry(P_CLASSIFIER, coordinates.getClassifier()));
-    assertThat(map, hasEntry(P_VERSION, coordinates.getVersion()));
+    assertThat(map, hasEntry(P_CLASSIFIER, coordinates.classifier()));
+    assertThat(map, hasEntry(P_VERSION, coordinates.version()));
   }
 
   @Test
@@ -227,10 +227,10 @@ class MavenAttributesHelperTest
 
   private void assertGroupArtifactVersionSet(final int mapSize, final Map<String, String> map) {
     assertThat(map.size(), is(mapSize));
-    assertThat(map, hasEntry(P_GROUP_ID, coordinates.getGroupId()));
-    assertThat(map, hasEntry(P_ARTIFACT_ID, coordinates.getArtifactId()));
-    assertThat(map, hasEntry(P_VERSION, coordinates.getVersion()));
-    assertThat(map, hasEntry(P_BASE_VERSION, coordinates.getBaseVersion()));
+    assertThat(map, hasEntry(P_GROUP_ID, coordinates.groupId()));
+    assertThat(map, hasEntry(P_ARTIFACT_ID, coordinates.artifactId()));
+    assertThat(map, hasEntry(P_VERSION, coordinates.version()));
+    assertThat(map, hasEntry(P_BASE_VERSION, coordinates.baseVersion()));
   }
 
   private void mockModel() {
@@ -241,16 +241,16 @@ class MavenAttributesHelperTest
 
   private NestedAttributesMap aNestedAttributesMap() {
     Map<String, Object> map = new HashMap<>();
-    map.put(P_GROUP_ID, coordinates.getGroupId());
-    map.put(P_ARTIFACT_ID, coordinates.getArtifactId());
-    map.put(P_VERSION, coordinates.getVersion());
-    map.put(P_BASE_VERSION, coordinates.getBaseVersion());
+    map.put(P_GROUP_ID, coordinates.groupId());
+    map.put(P_ARTIFACT_ID, coordinates.artifactId());
+    map.put(P_VERSION, coordinates.version());
+    map.put(P_BASE_VERSION, coordinates.baseVersion());
     return new NestedAttributesMap(NAME, map);
   }
 
   private void mockComponent() {
-    when(fluentComponent.namespace()).thenReturn(coordinates.getGroupId());
-    when(fluentComponent.name()).thenReturn(coordinates.getArtifactId());
-    when(fluentComponent.version()).thenReturn(coordinates.getVersion());
+    when(fluentComponent.namespace()).thenReturn(coordinates.groupId());
+    when(fluentComponent.name()).thenReturn(coordinates.artifactId());
+    when(fluentComponent.version()).thenReturn(coordinates.version());
   }
 }

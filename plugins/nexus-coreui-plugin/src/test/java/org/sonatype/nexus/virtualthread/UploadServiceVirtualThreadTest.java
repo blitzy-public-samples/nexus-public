@@ -34,14 +34,14 @@ import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.upload.UploadDefinition;
 import org.sonatype.nexus.repository.upload.UploadManager;
 import org.sonatype.nexus.repository.upload.UploadResponse;
-import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.sonatype.nexus.testcommon.virtualthread.ThreadPinningDetector;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -92,9 +92,6 @@ public class UploadServiceVirtualThreadTest
   private Repository repository;
 
   @Mock
-  private Repository.Format format;
-
-  @Mock
   private HttpServletRequest request;
 
   private UploadService uploadService;
@@ -116,12 +113,15 @@ public class UploadServiceVirtualThreadTest
 
     // Setup common mocks
     when(repositoryManager.get(REPOSITORY_NAME)).thenReturn(repository);
-    when(repository.getFormat()).thenReturn(format);
-    
+
     // Setup mock for uploadManager.handle to return a response with asset paths
     UploadResponse uploadResponse = Mockito.mock(UploadResponse.class);
     when(uploadResponse.getAssetPaths()).thenReturn(List.of("/path/to/asset"));
-    when(uploadManager.handle(any(Repository.class), any(HttpServletRequest.class))).thenReturn(uploadResponse);
+      try {
+          when(uploadManager.handle(any(Repository.class), any(HttpServletRequest.class))).thenReturn(uploadResponse);
+      } catch (IOException e) {
+          throw new RuntimeException(e);
+      }
   }
 
   @AfterEach
@@ -173,7 +173,6 @@ public class UploadServiceVirtualThreadTest
   @Test
   void testConcurrentUploadsWithVirtualThreads() throws Exception {
     // Setup format mock to return a non-NPM format
-    when(format.getValue()).thenReturn(MAVEN_FORMAT);
 
     // Create a latch to wait for all threads to complete
     CountDownLatch latch = new CountDownLatch(CONCURRENT_UPLOADS);
@@ -188,7 +187,7 @@ public class UploadServiceVirtualThreadTest
           assertEquals("/path/to/asset", result);
         } 
         catch (IOException e) {
-          log.error("Error in virtual thread {}: {}", index, e.getMessage(), e);
+          logger.error("Error in virtual thread {}: {}", index, e.getMessage(), e);
           throw new RuntimeException(e);
         } 
         finally {
@@ -210,9 +209,6 @@ public class UploadServiceVirtualThreadTest
    */
   @Test
   void testNpmRepositoryCacheInvalidationWithVirtualThreads() throws Exception {
-    // Setup format mock to return NPM format
-    when(format.getValue()).thenReturn(NPM_FORMAT);
-    
     // Setup mock for repository groups
     List<String> groupRepoNames = Arrays.asList("group1", "group2");
     when(repositoryManager.findContainingGroups(REPOSITORY_NAME)).thenReturn(groupRepoNames);
@@ -257,7 +253,7 @@ public class UploadServiceVirtualThreadTest
   @Test
   void testCreateSearchTermWithVirtualThreads() throws Exception {
     // Create a list of test paths
-    List<String> testCases = List.of(
+    List<List<String>> testCases = List.of(
         List.of("/path/to/asset1", "/path/to/asset2"),
         List.of("/path/to/asset1", "/path/to/different/asset2"),
         List.of("/single/path"),
@@ -301,9 +297,7 @@ public class UploadServiceVirtualThreadTest
    */
   @Test
   void testLargeFileUploadsWithVirtualThreads() throws Exception {
-    // Setup format mock to return a non-NPM format
-    when(format.getValue()).thenReturn(MAVEN_FORMAT);
-    
+
     // Setup mock for uploadManager.handle to simulate a time-consuming I/O operation
     UploadResponse uploadResponse = Mockito.mock(UploadResponse.class);
     when(uploadResponse.getAssetPaths()).thenReturn(List.of("/path/to/large/asset"));

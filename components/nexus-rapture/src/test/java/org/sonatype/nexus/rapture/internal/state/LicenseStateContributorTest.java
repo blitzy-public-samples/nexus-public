@@ -14,12 +14,7 @@ package org.sonatype.nexus.rapture.internal.state;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 import org.sonatype.nexus.common.app.ApplicationLicense;
 
@@ -57,7 +52,8 @@ public class LicenseStateContributorTest
   public void testGetState_withExpirationDate_yesterday() {
     Date expirationDateYesterday = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
     Map<String, Object> attributes = mockLicenseAttributes(expirationDateYesterday);
-    when(applicationLicense.getAttributes()).thenReturn(attributes);
+
+    when(applicationLicense.getAttributes()).thenReturn((SequencedMap<String, Object>) attributes);
 
     Map<String, Object> state = licenseStateContributor.getState();
     LicenseXO licenseXO = (LicenseXO) Objects.requireNonNull(state).get("license");
@@ -73,7 +69,8 @@ public class LicenseStateContributorTest
   public void testGetState_withExpirationDate_25hours_from_now() {
     Date expirationDateTomorrow = Date.from(Instant.now().plus(1, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS));
     Map<String, Object> attributes = mockLicenseAttributes(expirationDateTomorrow);
-    when(applicationLicense.getAttributes()).thenReturn(attributes);
+
+    when(applicationLicense.getAttributes()).thenReturn((SequencedMap<String, Object>) attributes);
 
     Map<String, Object> state = licenseStateContributor.getState();
     LicenseXO licenseXO = (LicenseXO) Objects.requireNonNull(state).get("license");
@@ -89,7 +86,7 @@ public class LicenseStateContributorTest
   public void testGetState_withExpirationDate_less_than_24_hours_from_now() {
     Date expirationDateLessThan1Day = Date.from(Instant.now().plus(23, ChronoUnit.HOURS));
     Map<String, Object> attributes = mockLicenseAttributes(expirationDateLessThan1Day);
-    when(applicationLicense.getAttributes()).thenReturn(attributes);
+    when(applicationLicense.getAttributes()).thenReturn((SequencedMap<String, Object>) attributes);
 
     Map<String, Object> state = licenseStateContributor.getState();
     LicenseXO licenseXO = (LicenseXO) Objects.requireNonNull(state).get("license");
@@ -104,7 +101,7 @@ public class LicenseStateContributorTest
   @Test
   public void testGetState_withoutExpirationDate() {
     Map<String, Object> attributes = mockLicenseAttributes(null);
-    when(applicationLicense.getAttributes()).thenReturn(attributes);
+    when(applicationLicense.getAttributes()).thenReturn((SequencedMap<String, Object>) attributes);
 
     Map<String, Object> state = licenseStateContributor.getState();
     LicenseXO licenseXO = (LicenseXO) Objects.requireNonNull(state).get("license");

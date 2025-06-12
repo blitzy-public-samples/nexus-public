@@ -24,6 +24,8 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.nexus.blobstore.BlobStoreDescriptor;
 import org.sonatype.nexus.blobstore.BlobStoreDescriptorProvider;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
@@ -34,19 +36,19 @@ import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 import org.sonatype.nexus.blobstore.api.tasks.BlobStoreTaskService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuota;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 import org.sonatype.nexus.coreui.BlobStoreComponent;
 import org.sonatype.nexus.coreui.BlobStoreXO;
 import org.sonatype.nexus.repository.blobstore.BlobStoreConfigurationStore;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.security.RepositoryPermissionChecker;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import static java.lang.Math.pow;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -67,6 +69,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 public class BlobStoreComponentVirtualThreadTest extends VirtualThreadTestSupport
 {
+  private static final Logger log = LoggerFactory.getLogger(BlobStoreComponentVirtualThreadTest.class);
   @Mock
   private BlobStoreManager blobStoreManager;
 
@@ -317,6 +320,18 @@ public class BlobStoreComponentVirtualThreadTest extends VirtualThreadTestSuppor
     }
   }
 
+  private void log(String s, Exception e) {
+    log.error(s, e);
+  }
+
+  public boolean isCurrentThreadVirtual() {
+    return Thread.currentThread().isVirtual();
+  }
+  public void assertCurrentThreadIsVirtual() {
+    if (!isCurrentThreadVirtual()) {
+      throw new AssertionError("Current thread is not a Virtual Thread: " + Thread.currentThread());
+    }
+  }
   /**
    * Tests high concurrency performance with Virtual Threads for mixed blob store operations.
    * This test verifies that the BlobStoreComponent can handle a large number of concurrent
@@ -398,11 +413,19 @@ public class BlobStoreComponentVirtualThreadTest extends VirtualThreadTestSuppor
     BlobStore blobStore = mock(BlobStore.class);
     when(blobStore.getBlobStoreConfiguration()).thenReturn(config);
     when(blobStore.getMetrics()).thenReturn(mock(BlobStoreMetrics.class));
-    
-    when(blobStoreManager.create(any(BlobStoreConfiguration.class))).thenReturn(blobStore);
-    when(blobStoreManager.get("test-blob-store")).thenReturn(blobStore);
-    when(blobStoreManager.update(any(BlobStoreConfiguration.class))).thenReturn(blobStore);
-    when(blobStoreManager.newConfiguration()).thenReturn(new MockBlobStoreConfiguration());
+
+      try {
+          when(blobStoreManager.create(any(BlobStoreConfiguration.class))).thenReturn(blobStore);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+      when(blobStoreManager.get("test-blob-store")).thenReturn(blobStore);
+      try {
+          when(blobStoreManager.update(any(BlobStoreConfiguration.class))).thenReturn(blobStore);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+      when(blobStoreManager.newConfiguration()).thenReturn(new MockBlobStoreConfiguration());
     when(blobStoreManager.getByName()).thenReturn(Collections.singletonMap("test-blob-store", blobStore));
     
     // Setup for read types operation

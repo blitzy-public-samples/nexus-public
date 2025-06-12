@@ -181,8 +181,8 @@ public class BlobStoreComponentTest
 
     PathSeparatorXO defaultWorkDirectory = underTest.defaultWorkDirectory();
 
-    assertThat(new File(defaultWorkDirectory.getPath()), is(blobDirectory));
-    assertThat(defaultWorkDirectory.getFileSeparator(), is(File.separator));
+    assertThat(new File(defaultWorkDirectory.path()), is(blobDirectory));
+    assertThat(defaultWorkDirectory.fileSeparator(), is(File.separator));
   }
 
   @Test
@@ -404,7 +404,7 @@ public class BlobStoreComponentTest
       
       // Virtual threads should be more efficient for I/O-bound operations
       // This is a soft assertion as the actual performance depends on the environment
-      log.info("Virtual thread duration: {} ns, Platform thread duration: {} ns", 
+      logger.info("Virtual thread duration: {} ns, Platform thread duration: {} ns",
           virtualDuration, platformDuration);
       
       // In most cases, virtual threads should be faster for this I/O-bound workload
@@ -412,7 +412,7 @@ public class BlobStoreComponentTest
       // and only assert if virtual threads are significantly slower
       if (virtualDuration > platformDuration * 1.5) {
         assertThat("Virtual threads should not be significantly slower than platform threads",
-            virtualDuration, lessThan(platformDuration * 1.5));
+                (double) virtualDuration, lessThan(platformDuration * 1.5));
       }
     } 
     finally {

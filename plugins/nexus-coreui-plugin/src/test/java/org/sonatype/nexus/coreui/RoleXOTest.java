@@ -21,6 +21,7 @@ import javax.servlet.ServletContext;
 import javax.validation.ConstraintViolation;
 import javax.validation.Validator;
 
+import org.mockito.Mock;
 import org.sonatype.goodies.testsupport.inject.InjectedTestSupport;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.event.EventManager;
@@ -50,6 +51,9 @@ public class RoleXOTest
   @TempDir
   Path tempDir;
 
+  @Mock
+  RoleXO roleXO;
+
   @Override
   public void configure(final Binder binder) {
     super.configure(binder);
@@ -73,10 +77,9 @@ public class RoleXOTest
 
   @Test
   void validationShouldSucceedWithValidRole() {
-    RoleXO roleXO = new RoleXO();
-    roleXO.setId("test");
-    roleXO.setName("test");
-    roleXO.setRoles(Collections.singleton("test2"));
+    when(roleXO.id()).thenReturn("test");
+    when(roleXO.name()).thenReturn("test");
+    when(roleXO.roles()).thenReturn(Collections.singleton("test2"));
 
     Set<ConstraintViolation<Object>> errors = validator.validate(roleXO);
 
@@ -85,11 +88,9 @@ public class RoleXOTest
 
   @Test
   void validationShouldFailWhenRoleIncludesSelf() {
-    RoleXO roleXO = new RoleXO();
-    roleXO.setId("test");
-    roleXO.setName("test");
-    roleXO.setRoles(Collections.singleton("test"));
-
+    when(roleXO.id()).thenReturn("test");
+    when(roleXO.name()).thenReturn("test");
+    when(roleXO.roles()).thenReturn(Collections.singleton("test"));
     Set<ConstraintViolation<Object>> errors = validator.validate(roleXO);
 
     assertThat(errors.size(), is(1));

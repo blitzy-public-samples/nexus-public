@@ -26,11 +26,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
+import jakarta.annotation.Nullable;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+import jakarta.inject.Singleton;
 import jakarta.validation.Valid;
 import jakarta.validation.Validator;
 import jakarta.validation.constraints.NotEmpty;
@@ -466,7 +466,7 @@ public class TaskComponent
   }
 
   @VisibleForTesting
-  void validateState(final String taskId, final TaskInfo taskInfo) {
+  public void validateState(final String taskId, final TaskInfo taskInfo) {
     if (taskInfo == null) {
       throw new NotFoundException(String.format("Task with id '%s' not found", taskId));
     }
@@ -478,7 +478,7 @@ public class TaskComponent
   }
 
   @VisibleForTesting
-  void validateScriptUpdate(final TaskInfo task, final TaskXO update) {
+  public void validateScriptUpdate(final TaskInfo task, final TaskXO update) {
     String originalSource = task.getConfiguration().getString("source");
     String updateSource = update.getProperties().get("source");
 

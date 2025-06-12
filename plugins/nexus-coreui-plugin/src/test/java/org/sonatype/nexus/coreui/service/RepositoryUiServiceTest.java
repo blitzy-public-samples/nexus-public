@@ -12,13 +12,7 @@
  */
 package org.sonatype.nexus.coreui.service;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
@@ -157,19 +151,19 @@ public class RepositoryUiServiceTest
     List<RepositoryReferenceXO> result =
         RepositoryUiService.filterForAutocomplete(storeLoadParameters, repositories);
     assertThat(result, hasSize(2));
-    assertThat(result.get(0).getName(), is("nuget-proxy"));
-    assertThat(result.get(1).getName(), is("nuget-hosted"));
+    assertThat(result.get(0).getBlobStoreName(), is("nuget-proxy"));
+    assertThat(result.get(1).getBlobStoreName(), is("nuget-hosted"));
   }
 
   @Test
   public void updateShouldSetRoutingRule() throws Exception {
-    when(repositoryXO.getName()).thenReturn("test");
-    when(repositoryXO.getFormat()).thenReturn("format");
+    when(repositoryXO.name()).thenReturn("test");
+    when(repositoryXO.format()).thenReturn("format");
 
     Map<String, Map<String, Object>> testAttributes = new HashMap<>();
-    when(repositoryXO.getOnline()).thenReturn(true);
-    when(repositoryXO.getRoutingRuleId()).thenReturn("test");
-    when(repositoryXO.getAttributes()).thenReturn(testAttributes);
+    when(repositoryXO.online()).thenReturn(true);
+    when(repositoryXO.routingRuleId()).thenReturn("test");
+    when(repositoryXO.attributes()).thenReturn((SequencedMap<String, Map<String, Object>>) testAttributes);
 
     underTest.update(repositoryXO);
 
@@ -180,13 +174,13 @@ public class RepositoryUiServiceTest
 
   @Test
   public void updateShouldClearRoutingRule() throws Exception {
-    when(repositoryXO.getName()).thenReturn("test");
-    when(repositoryXO.getFormat()).thenReturn("format");
+    when(repositoryXO.name()).thenReturn("test");
+    when(repositoryXO.format()).thenReturn("format");
 
     Map<String, Map<String, Object>> testAttributes = new HashMap<>();
-    when(repositoryXO.getOnline()).thenReturn(true);
-    when(repositoryXO.getRoutingRuleId()).thenReturn(null);
-    when(repositoryXO.getAttributes()).thenReturn(testAttributes);
+    when(repositoryXO.online()).thenReturn(true);
+    when(repositoryXO.routingRuleId()).thenReturn(null);
+    when(repositoryXO.attributes()).thenReturn((SequencedMap<String, Map<String, Object>>) testAttributes);
 
     underTest.update(repositoryXO);
 
@@ -210,10 +204,10 @@ public class RepositoryUiServiceTest
     List<RepositoryXO> repos = underTest.read();
     Assertions.assertEquals(1, repos.size());
     RepositoryXO repoXo = repos.get(0);
-    Assertions.assertEquals(repoName, repoXo.getName());
-    Assertions.assertEquals(Long.valueOf(123456), repoXo.getSize());
-    Assertions.assertEquals("maven2", repoXo.getFormat());
-    Assertions.assertEquals("hosted", repoXo.getType());
+    Assertions.assertEquals(repoName, repoXo.name());
+    Assertions.assertEquals(Long.valueOf(123456), repoXo.size());
+    Assertions.assertEquals("maven2", repoXo.format());
+    Assertions.assertEquals("hosted", repoXo.type());
   }
 
   @Test
@@ -228,21 +222,20 @@ public class RepositoryUiServiceTest
 
     for (Configuration repoConfiguration : repoConfigurations) {
       RepositoryReferenceXO reference = result.stream()
-          .filter(value -> Objects.equals(repoConfiguration.getRepositoryName(), value.getName()))
+          .filter(value -> Objects.equals(repoConfiguration.getRepositoryName(), value.getBlobStoreName()))
           .findAny()
           .orElseThrow(() -> new AssertionError(
               String.format("Repository %s not found in results", repoConfiguration.getRepositoryName())));
       Recipe recipe = recipes.get(repoConfiguration.getRecipeName());
 
-      assertThat(reference.getId(), is(repoConfiguration.getRepositoryName()));
       assertThat(reference.getFormat(), is(recipe.getFormat().getValue()));
       assertThat(reference.getBlobStoreName(), is(getAttribute(repoConfiguration, "storage.blobStoreName")));
       assertThat(reference.getVersionPolicy(), is(getAttribute(repoConfiguration, "maven.versionPolicy")));
       assertThat(reference.getType(), is(recipe.getType().getValue()));
       assertThat(reference.getUrl(),
           is(String.format("%s/repository/%s/", BaseUrlHolder.get(), repoConfiguration.getRepositoryName())));
-      assertThat(reference.getStatus().getRepositoryName(), is(repoConfiguration.getRepositoryName()));
-      assertThat(reference.getStatus().isOnline(), is(repoConfiguration.isOnline()));
+      assertThat(reference.getStatus().repositoryName(), is(repoConfiguration.getRepositoryName()));
+      assertThat(reference.getStatus().online(), is(repoConfiguration.isOnline()));
     }
   }
 
@@ -286,11 +279,11 @@ public class RepositoryUiServiceTest
 
   private List<RepositoryReferenceXO> getTestRepositories() {
     RepositoryReferenceXO nugetRepoProxy = mock(RepositoryReferenceXO.class);
-    when(nugetRepoProxy.getName()).thenReturn("nuget-proxy");
+    when(nugetRepoProxy.getBlobStoreName()).thenReturn("nuget-proxy");
     RepositoryReferenceXO nugetRepoHosted = mock(RepositoryReferenceXO.class);
-    when(nugetRepoHosted.getName()).thenReturn("nuget-hosted");
+    when(nugetRepoHosted.getBlobStoreName()).thenReturn("nuget-hosted");
     RepositoryReferenceXO mavenRepoHosted = mock(RepositoryReferenceXO.class);
-    when(mavenRepoHosted.getName()).thenReturn("maven-hosted");
+    when(mavenRepoHosted.getBlobStoreName()).thenReturn("maven-hosted");
     List<RepositoryReferenceXO> repositories = new ArrayList<>();
     repositories.add(nugetRepoProxy);
     repositories.add(nugetRepoHosted);

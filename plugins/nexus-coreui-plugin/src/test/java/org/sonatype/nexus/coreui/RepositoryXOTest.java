@@ -16,11 +16,7 @@ import com.google.inject.Guice;
 
 import javax.validation.ConstraintViolation;
 import javax.validation.Validator;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -30,6 +26,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import org.mockito.Mock;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.validation.ValidationModule;
 import org.sonatype.nexus.validation.group.Create;
@@ -37,11 +34,14 @@ import org.sonatype.nexus.validation.group.Create;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.when;
 
 public class RepositoryXOTest
     extends TestSupport
 {
   private Validator validator;
+  @Mock
+  private RepositoryXO repositoryXO;
 
   @BeforeEach
   public void setup() {
@@ -52,9 +52,13 @@ public class RepositoryXOTest
 
   @Test
   public void nameShouldBeRequired() {
-    RepositoryXO repositoryXO = new RepositoryXO();
-    repositoryXO.setAttributes(Map.of("any", Map.of("any", "any")));
-    repositoryXO.setOnline(true);
+    SequencedMap<String, Map<String, Object>> attributes =
+            new LinkedHashMap<>();
+    attributes.put("any", Map.of("any", "any"));
+
+    when(repositoryXO.attributes()).thenReturn(attributes);
+    when(repositoryXO.online()).thenReturn(true);
+
     Set<ConstraintViolation<RepositoryXO>> violations = validator.validate(repositoryXO);
     assertThat(violations.size(), is(1));
     assertThat(violations.iterator().next().getPropertyPath().toString(), is("name"));
@@ -62,11 +66,13 @@ public class RepositoryXOTest
 
   @ParameterizedTest
   @MethodSource("invalidAttributes")
-  public void attributesShouldBeRequiredAndNonEmpty(Map<String, Map<String, Object>> attributes) {
-    RepositoryXO repositoryXO = new RepositoryXO();
-    repositoryXO.setName("foo");
-    repositoryXO.setOnline(true);
-    repositoryXO.setAttributes(attributes);
+  public void attributesShouldBeRequiredAndNonEmpty(Map<String, Map<String, Object>> attributesMap) {
+      SequencedMap<String, Map<String, Object>> attributes =
+              new LinkedHashMap<>(attributesMap);
+
+    when(repositoryXO.attributes()).thenReturn(attributes);
+    when(repositoryXO.online()).thenReturn(true);
+    when(repositoryXO.name()).thenReturn("foo");
 
     Set<ConstraintViolation<RepositoryXO>> violations = validator.validate(repositoryXO);
     assertThat(violations.size(), is(1));
@@ -83,10 +89,13 @@ public class RepositoryXOTest
   @ParameterizedTest
   @MethodSource("invalidNames")
   public void nameShouldNotValidate(String name) {
-    RepositoryXO repositoryXO = new RepositoryXO();
-    repositoryXO.setName(name);
-    repositoryXO.setOnline(true);
-    repositoryXO.setAttributes(Map.of("any", Map.of("any", "any")));
+    SequencedMap<String, Map<String, Object>> attributes =
+            new LinkedHashMap<>();
+    attributes.put("any", Map.of("any", "any"));
+
+    when(repositoryXO.attributes()).thenReturn(attributes);
+    when(repositoryXO.online()).thenReturn(true);
+    when(repositoryXO.name()).thenReturn(name);
     Set<ConstraintViolation<RepositoryXO>> violations = validator.validate(repositoryXO);
     assertThat(violations.size(), is(1));
     assertThat(violations.iterator().next().getPropertyPath().toString(), is("name"));
@@ -105,10 +114,13 @@ public class RepositoryXOTest
   @ParameterizedTest
   @MethodSource("validNames")
   public void nameShouldBeValid(String name) {
-    RepositoryXO repositoryXO = new RepositoryXO();
-    repositoryXO.setName(name);
-    repositoryXO.setOnline(true);
-    repositoryXO.setAttributes(Map.of("any", Map.of("any", "any")));
+    SequencedMap<String, Map<String, Object>> attributes =
+            new LinkedHashMap<>();
+    attributes.put("any", Map.of("any", "any"));
+
+    when(repositoryXO.attributes()).thenReturn(attributes);
+    when(repositoryXO.online()).thenReturn(true);
+    when(repositoryXO.name()).thenReturn(name);
     Set<ConstraintViolation<RepositoryXO>> violations = validator.validate(repositoryXO);
     assertThat(violations.isEmpty(), is(true));
   }
@@ -125,14 +137,18 @@ public class RepositoryXOTest
 
   @Test
   public void recipeFieldShouldOnlyBeRequiredOnCreation() {
-    RepositoryXO repositoryXO = new RepositoryXO();
-    repositoryXO.setName("bob");
-    repositoryXO.setAttributes(Map.of("any", Map.of("any", "any")));
+    SequencedMap<String, Map<String, Object>> attributes =
+            new LinkedHashMap<>();
+    attributes.put("any", Map.of("any", "any"));
+
+    when(repositoryXO.attributes()).thenReturn(attributes);
+
+    when(repositoryXO.name()).thenReturn("bob");
     Set<ConstraintViolation<RepositoryXO>> violations = validator.validate(repositoryXO, Create.class);
     assertThat(violations.size(), is(1));
     assertThat(violations.iterator().next().getPropertyPath().toString(), is("recipe"));
 
-    repositoryXO.setRecipe("any");
+    when(repositoryXO.recipe()).thenReturn("any");
     violations = validator.validate(repositoryXO, Create.class);
     assertThat(violations.isEmpty(), is(true));
   }
@@ -140,11 +156,14 @@ public class RepositoryXOTest
   @ParameterizedTest
   @MethodSource("nonUniqueNames")
   public void nameShouldBeValidatedAsCaseInsensitivelyUniqueOnCreation(String repoName) {
-    RepositoryXO repositoryXO = new RepositoryXO();
-    repositoryXO.setAttributes(Map.of("any", Map.of()));
-    repositoryXO.setOnline(true);
-    repositoryXO.setRecipe("any");
-    repositoryXO.setName(repoName);
+    SequencedMap<String, Map<String, Object>> attributes =
+            new LinkedHashMap<>();
+    attributes.put("any", Map.of("any", Map.of()));
+
+    when(repositoryXO.attributes()).thenReturn(attributes);
+    when(repositoryXO.name()).thenReturn(repoName);
+    when(repositoryXO.online()).thenReturn(true);
+    when(repositoryXO.recipe()).thenReturn("any");
 
     Set<ConstraintViolation<RepositoryXO>> violations = validator.validate(repositoryXO, Create.class);
     assertThat(violations.size(), is(1));

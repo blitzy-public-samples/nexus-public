@@ -14,6 +14,8 @@ package org.sonatype.nexus.java21;
 
 import java.util.Map;
 
+import org.apache.shiro.authz.Permission;
+import org.apache.shiro.authz.permission.WildcardPermission;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -132,16 +134,19 @@ public class PatternMatchingTest extends TestSupport
   void testGuardedPatternsForPermissionEvaluation() {
     // Mock privileges
     Privilege adminPrivilege = mock(Privilege.class);
+    Permission permission = new WildcardPermission("nexus:*:*");
     when(adminPrivilege.getType()).thenReturn("application");
-    when(adminPrivilege.getPermission()).thenReturn("nexus:*:*");
+    when(adminPrivilege.getPermission()).thenReturn(permission);
     
     Privilege readPrivilege = mock(Privilege.class);
     when(readPrivilege.getType()).thenReturn("repository-view");
-    when(readPrivilege.getPermission()).thenReturn("nexus:repository-view:*:read");
+    Permission readPermission = new WildcardPermission("nexus:repository-view:*:read");
+    when(readPrivilege.getPermission()).thenReturn(readPermission);
     
     Privilege invalidPrivilege = mock(Privilege.class);
     when(invalidPrivilege.getType()).thenReturn("unknown");
-    when(invalidPrivilege.getPermission()).thenReturn("invalid");
+    Permission invalidPermission = new WildcardPermission("invalid");
+    when(invalidPrivilege.getPermission()).thenReturn(invalidPermission);
     
     // Test admin privilege evaluation with guarded pattern
     String adminResult = permissionEvaluator.evaluatePermission(adminPrivilege);
@@ -230,12 +235,12 @@ public class PatternMatchingTest extends TestSupport
     public String evaluatePermission(Privilege privilege) {
       return switch (privilege) {
         case null -> "No Access";
-        case Privilege p when "application".equals(p.getType()) && p.getPermission().contains("nexus:*:*") -> "Admin Access";
-        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().contains(":read") -> "Read Access";
-        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().contains(":browse") -> "Browse Access";
-        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().contains(":add") -> "Add Access";
-        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().contains(":edit") -> "Edit Access";
-        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().contains(":delete") -> "Delete Access";
+        case Privilege p when "application".equals(p.getType()) && p.getPermission().implies(new WildcardPermission("nexus:*:*")) -> "Admin Access";
+        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().implies(new WildcardPermission((":read"))) -> "Read Access";
+        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().implies(new WildcardPermission((":browse"))) -> "Browse Access";
+        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().implies(new WildcardPermission((":add"))) -> "Add Access";
+        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().implies(new WildcardPermission((":edit"))) -> "Edit Access";
+        case Privilege p when "repository-view".equals(p.getType()) && p.getPermission().implies(new WildcardPermission((":delete"))) -> "Delete Access";
         default -> "Unknown Access";
       };
     }

@@ -87,24 +87,24 @@ public class DataStoreComponentTest
   public void readingDatabaseShouldReturnAllDataStores() {
     List<DataStoreXO> dataStores = underTest.read();
     assertThat(dataStores, hasSize(2));
-    assertThat(dataStores.get(0).getName(), is("content"));
-    assertThat(dataStores.get(1).getName(), is("config"));
+    assertThat(dataStores.get(0).name(), is("content"));
+    assertThat(dataStores.get(1).name(), is("config"));
     
     // Alternative assertion style using JUnit Jupiter
     assertEquals(2, dataStores.size(), "Should return two data stores");
-    assertEquals("content", dataStores.get(0).getName(), "First data store should be 'content'");
-    assertEquals("config", dataStores.get(1).getName(), "Second data store should be 'config'");
+    assertEquals("content", dataStores.get(0).name(), "First data store should be 'content'");
+    assertEquals("config", dataStores.get(1).name(), "Second data store should be 'config'");
   }
 
   @Test
   public void readingH2DatabaseShouldReturnOnlyH2DataStores() {
     List<DataStoreXO> dataStores = underTest.readH2();
     assertThat(dataStores, hasSize(1));
-    assertThat(dataStores.get(0).getName(), is("content"));
+    assertThat(dataStores.get(0).name(), is("content"));
     
     // Alternative assertion style using JUnit Jupiter
     assertEquals(1, dataStores.size(), "Should return only one H2 data store");
-    assertEquals("content", dataStores.get(0).getName(), "H2 data store should be 'content'");
+    assertEquals("content", dataStores.getFirst().name(), "H2 data store should be 'content'");
   }
   
   @Test

@@ -25,20 +25,13 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import javax.inject.Provider;
-import javax.validation.Validator;
+import jakarta.inject.Provider;
+import jakarta.validation.Validator;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.coreui.TaskComponent;
 import org.sonatype.nexus.coreui.TaskXO;
-import org.sonatype.nexus.scheduling.CurrentState;
-import org.sonatype.nexus.scheduling.ExternalTaskState;
-import org.sonatype.nexus.scheduling.TaskConfiguration;
-import org.sonatype.nexus.scheduling.TaskDescriptor;
-import org.sonatype.nexus.scheduling.TaskFactory;
-import org.sonatype.nexus.scheduling.TaskInfo;
-import org.sonatype.nexus.scheduling.TaskScheduler;
-import org.sonatype.nexus.scheduling.TaskState;
+import org.sonatype.nexus.scheduling.*;
 import org.sonatype.nexus.scheduling.schedule.Manual;
 import org.sonatype.nexus.scheduling.schedule.Schedule;
 import org.sonatype.nexus.scheduling.schedule.ScheduleFactory;
@@ -124,7 +117,6 @@ public class TaskComponentVirtualThreadTest
     taskConfiguration.setName("Test Task");
     taskConfiguration.setTypeId("test-task");
     taskConfiguration.setExposed(true);
-    when(taskFactory.createTaskConfigurationInstance(anyString())).thenReturn(taskConfiguration);
 
     // Set up mock task info
     TaskInfo taskInfo = mock(TaskInfo.class);
@@ -170,7 +162,7 @@ public class TaskComponentVirtualThreadTest
             createdTasks.put(result.getId(), result);
           } 
           catch (Exception e) {
-            log.error("Error creating task", e);
+            logger.error("Error creating task", e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -336,7 +328,7 @@ public class TaskComponentVirtualThreadTest
             }
           } 
           catch (Exception e) {
-            log.error("Error reading tasks", e);
+            logger.error("Error reading tasks", e);
             hasErrors.set(true);
           } 
           finally {
@@ -393,7 +385,6 @@ public class TaskComponentVirtualThreadTest
     
     when(scheduler.getTaskById("test-task-id")).thenReturn(taskInfo);
     when(scheduler.toExternalTaskState(taskInfo)).thenReturn(externalState);
-    when(taskFactory.createTaskConfigurationInstance("test-task")).thenReturn(taskConfiguration);
     when(scheduler.scheduleTask(any(TaskConfiguration.class), any(Schedule.class))).thenReturn(taskInfo);
 
     // Create a virtual thread factory
@@ -425,7 +416,7 @@ public class TaskComponentVirtualThreadTest
             assertEquals("test-task-id", result.getId());
           } 
           catch (Exception e) {
-            log.error("Error updating task", e);
+            logger.error("Error updating task", e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -475,7 +466,7 @@ public class TaskComponentVirtualThreadTest
             component.remove("test-task-id");
           } 
           catch (Exception e) {
-            log.error("Error removing task", e);
+            logger.error("Error removing task", e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -526,7 +517,7 @@ public class TaskComponentVirtualThreadTest
             component.run("test-task-id");
           } 
           catch (Exception e) {
-            log.error("Error running task", e);
+            logger.error("Error running task", e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -573,7 +564,7 @@ public class TaskComponentVirtualThreadTest
             component.stop("test-task-id");
           } 
           catch (Exception e) {
-            log.error("Error stopping task", e);
+            logger.error("Error stopping task", e);
             errorCount.incrementAndGet();
           } 
           finally {
@@ -631,7 +622,7 @@ public class TaskComponentVirtualThreadTest
             assertThat(taskTypes, hasSize(5));
           } 
           catch (Exception e) {
-            log.error("Error reading task types", e);
+            logger.error("Error reading task types", e);
             hasErrors.set(true);
           } 
           finally {

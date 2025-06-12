@@ -46,13 +46,12 @@ public class FreezeComponentTest
   public void readShouldReturnFreezeStatus() throws Exception {
     when(freezeService.isFrozen()).thenReturn(true);
     FreezeStatusXO freezeStatusXO = underTest.read();
-    assertThat(freezeStatusXO.isFrozen(), is(true));
+    assertThat(freezeStatusXO.frozen(), is(true));
   }
 
   @Test
   public void updateShouldCancelFreezeWhenStatusIsFalse() throws Exception {
-    FreezeStatusXO freezeStatusXO = new FreezeStatusXO();
-    freezeStatusXO.setFrozen(false);
+    FreezeStatusXO freezeStatusXO = new FreezeStatusXO(false);
 
     underTest.update(freezeStatusXO);
 
@@ -61,8 +60,7 @@ public class FreezeComponentTest
 
   @Test
   public void updateShouldRequestFreezeWhenStatusIsTrue() throws Exception {
-    FreezeStatusXO freezeStatusXO = new FreezeStatusXO();
-    freezeStatusXO.setFrozen(true);
+    FreezeStatusXO freezeStatusXO = new FreezeStatusXO(true);
 
     underTest.update(freezeStatusXO);
 

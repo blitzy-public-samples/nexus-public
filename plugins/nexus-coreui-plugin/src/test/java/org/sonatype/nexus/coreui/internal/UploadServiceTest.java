@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.fest.assertions.api.Assertions;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
@@ -37,7 +38,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -82,7 +82,7 @@ public class UploadServiceTest
     NullPointerException exception = assertThrows(NullPointerException.class, () -> {
       component.upload("foo", request);
     });
-    assertThat(exception.getMessage()).isEqualTo("Specified repository is missing");
+    Assertions.assertThat(exception.getMessage()).isEqualTo("Specified repository is missing");
   }
 
   @Test
@@ -90,7 +90,7 @@ public class UploadServiceTest
     Format format = mock(Format.class);
     when(repo.getFormat()).thenReturn(format);
     when(format.getValue()).thenReturn(null);
-    assertThat(component.upload(REPO_NAME, request)).isEqualTo("foo");
+    Assertions.assertThat(component.upload(REPO_NAME, request)).isEqualTo("foo");
   }
 
   @Test
@@ -98,7 +98,7 @@ public class UploadServiceTest
     Format format = mock(Format.class);
     when(repo.getFormat()).thenReturn(format);
     when(format.getValue()).thenReturn("npm");
-    assertThat(component.upload(REPO_NAME, request)).isEqualTo("foo");
+    Assertions.assertThat(component.upload(REPO_NAME, request)).isEqualTo("foo");
     verify(repositoryManager).findContainingGroups(REPO_NAME);
   }
 
@@ -107,7 +107,7 @@ public class UploadServiceTest
     String result = component
         .createSearchTerm(Arrays.asList("foo-x.z/bar/bar", "foo-x.z/bar/foo", "foo-x.z/bar/foo/bar"));
 
-    assertThat(result).isEqualTo("foo-x.z/bar");
+    Assertions.assertThat(result).isEqualTo("foo-x.z/bar");
   }
   
   @Test
@@ -145,7 +145,7 @@ public class UploadServiceTest
       latch.await(30, TimeUnit.SECONDS);
       
       // Verify results
-      assertThat(successCount.get()).isEqualTo(taskCount);
+      Assertions.assertThat(successCount.get()).isEqualTo(taskCount);
     } finally {
       executor.shutdown();
     }

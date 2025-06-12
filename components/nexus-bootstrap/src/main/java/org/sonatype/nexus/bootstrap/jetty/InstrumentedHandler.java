@@ -14,8 +14,10 @@ package org.sonatype.nexus.bootstrap.jetty;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
-import io.dropwizard.metrics.jetty12.ee10.InstrumentedEE10Handler;
+//import io.dropwizard.metrics.jetty12.ee10.InstrumentedEE10Handler;
 import org.eclipse.jetty.server.Handler;
+
+
 
 /**
  * Extension of {@link io.dropwizard.metrics.jetty12.ee10.InstrumentedEE10Handler} for Jetty 12.0.5 that integrates with
@@ -24,7 +26,7 @@ import org.eclipse.jetty.server.Handler;
  * @since 3.0
  */
 public final class InstrumentedHandler
-    extends InstrumentedEE10Handler
+    extends io.dropwizard.metrics.jetty11.InstrumentedHandler
 {
   /**
    * Creates a new instrumented handler that wraps the given handler and uses the Nexus shared metrics registry.

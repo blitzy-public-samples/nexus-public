@@ -172,6 +172,15 @@
       <artifactId>JUnitParams</artifactId>
       <scope>test</scope>
     </dependency>
+      <dependency>
+          <groupId>org.eclipse.jetty</groupId>
+          <artifactId>jetty-server</artifactId>
+      </dependency>
+    <dependency>
+      <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-jetty11</artifactId>
+      <version>4.2.19</version> <!-- Latest stable 4.x version -->
+    </dependency>
 
   </dependencies>
 

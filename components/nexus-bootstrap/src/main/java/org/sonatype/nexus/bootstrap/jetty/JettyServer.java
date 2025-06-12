@@ -12,35 +12,27 @@
  */
 package org.sonatype.nexus.bootstrap.jetty;
 
-import java.io.FileInputStream;
-import java.net.URL;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import javax.annotation.Nullable;
-
-import org.sonatype.nexus.bootstrap.internal.PropertyMap;
-import org.sonatype.nexus.bootstrap.internal.ShutdownHelper;
-
+import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.ee10.servlet.ServletContextHandler; 
 import org.eclipse.jetty.util.component.LifeCycle;
-import org.eclipse.jetty.util.resource.PathResource;
 import org.eclipse.jetty.util.resource.Resource;
 import org.eclipse.jetty.util.resource.ResourceFactory;
 import org.eclipse.jetty.xml.XmlConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.sonatype.nexus.bootstrap.internal.PropertyMap;
+import org.sonatype.nexus.bootstrap.internal.ShutdownHelper;
+
+import javax.annotation.Nullable;
+import java.io.FileInputStream;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Jetty server.
@@ -153,12 +145,12 @@ public class JettyServer
     XmlConfiguration last = null;
     for (String arg : args) {
       //URL url = Resource.newResource(arg).getURL();
-      Resource url = ResourceFactory.root().newResource(arg);
+      Resource url = Resource.newResource(arg);
 
-      if (url.getFileName().toLowerCase(Locale.ENGLISH).endsWith(".properties")) {
+      if (url.getName().toLowerCase(Locale.ENGLISH).endsWith(".properties")) {
         log.info("Loading properties: {}", url);
         
-        props.load(new FileInputStream(url.getPath().toFile()));
+        props.load(new FileInputStream(url.getFile()));
       }
       else {
         log.info("Applying configuration: {}", url);

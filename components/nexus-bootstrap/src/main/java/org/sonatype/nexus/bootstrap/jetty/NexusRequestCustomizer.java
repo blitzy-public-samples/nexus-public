@@ -66,7 +66,7 @@ public class NexusRequestCustomizer
     this.dockerBehindReverseProxyTokenRequestPattern = initDockerBehindReverseProxyTokenRequestPattern();
   }
   
-  @Override
+  //@Override
   public Request customize(Request request, HttpFields.Mutable responseHeaders) {
 	  // TODO: FIXME
 	  return request;
@@ -109,7 +109,7 @@ public class NexusRequestCustomizer
 
     if (isJettyPort(connector)) {
     	
-      String repositoryName = DockerSubdomainRepositoryMapping.get(request.getHeaders().get("Host"));
+      String repositoryName = DockerSubdomainRepositoryMapping.get(request.getHeader("Host"));
       if (repositoryName != null) {
         String dockerLocation = extractDockerLocation(request);
         log.debug(STR."For \{repositoryName} dockerLocation \{dockerLocation}");
@@ -131,11 +131,11 @@ public class NexusRequestCustomizer
     HttpURI uri = request.getHttpURI();
 
     // Prefer proxy forwarded headers, fall back to what we know about the request
-    String scheme = Optional.ofNullable(request.getHeaders().get("X-Forwarded-Proto"))
+    String scheme = Optional.ofNullable(request.getHeader("X-Forwarded-Proto"))
         .orElseGet(uri::getScheme);
-    String host = Optional.ofNullable(request.getHeaders().get("X-Forwarded-Host"))
+    String host = Optional.ofNullable(request.getHeader("X-Forwarded-Host"))
         .orElseGet(uri::getHost);
-    int port = Optional.ofNullable(request.getHeaders().get("X-Forwarded-Port"))
+    int port = Optional.ofNullable(request.getHeader("X-Forwarded-Port"))
         .map(Integer::valueOf)
         .orElseGet(uri::getPort);
 

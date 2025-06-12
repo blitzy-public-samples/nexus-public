@@ -77,7 +77,7 @@ public final class InstrumentedConnectionFactory
   /**
    * A decorator for Connection that times the duration of the connection.
    */
-  private static class InstrumentedConnection implements Connection {
+  private static  class InstrumentedConnection implements Connection {
     private final Connection delegate;
     private final Timer.Context context;
 
@@ -95,7 +95,12 @@ public final class InstrumentedConnectionFactory
       }
     }
 
-    @Override
+      @Override
+      public boolean onIdleExpired() {
+          return false;
+      }
+
+      @Override
     public EndPoint getEndPoint() {
       return delegate.getEndPoint();
     }
@@ -122,7 +127,7 @@ public final class InstrumentedConnectionFactory
 		
 	}
 
-	@Override
+	//@Override
 	public boolean onIdleExpired(TimeoutException timeoutException) {
 		// TODO Auto-generated method stub
 		return false;

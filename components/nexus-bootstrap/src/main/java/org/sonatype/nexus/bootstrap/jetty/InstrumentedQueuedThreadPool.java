@@ -12,10 +12,14 @@
  */
 package org.sonatype.nexus.bootstrap.jetty;
 
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.util.thread.ThreadPool;
 
 /**
  * Extension of {@link com.codahale.metrics.jetty12.InstrumentedQueuedThreadPool} that provides
@@ -42,6 +46,48 @@ public final class InstrumentedQueuedThreadPool
     super(registry);
     // Configure Virtual Thread support for I/O-bound operations
     // Platform threads are maintained for CPU-bound operations by default
-    setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    // commenting due to virtual thread issue currently in jetty 11
+    //setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    VirtualThreadPool virtualThreadPool = new VirtualThreadPool();
+    Server server = new Server(virtualThreadPool);
+  }
+
+  public final class VirtualThreadPool implements ThreadPool {
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+
+    //@Override
+    public boolean dispatch(Runnable job) {
+      executor.submit(job);
+      return true;
+    }
+
+    @Override
+    public void join() throws InterruptedException {
+      executor.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
+    }
+
+    @Override
+    public int getThreads() {
+      return -1; // Virtual threads are unbounded
+    }
+
+    @Override
+    public int getIdleThreads() {
+      return -1;
+    }
+
+    @Override
+    public boolean isLowOnThreads() {
+      return false;
+    }
+
+    public void shutdown() {
+      executor.shutdown();
+    }
+
+    @Override
+    public void execute(Runnable command) {
+      // Use the executor to run the command
+    }
   }
 }

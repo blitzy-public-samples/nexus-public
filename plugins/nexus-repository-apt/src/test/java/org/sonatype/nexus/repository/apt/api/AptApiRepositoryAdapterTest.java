@@ -67,14 +67,14 @@ public class AptApiRepositoryAdapterTest
 
     AptHostedApiRepository hostedRepository = (AptHostedApiRepository) underTest.adapt(repository);
     assertRepository(hostedRepository, "hosted", true);
-    assertThat(hostedRepository.getApt().getDistribution(), is("bionic"));
+    assertThat(hostedRepository.getApt().distribution(), is("bionic"));
     assertThat(hostedRepository.getAptSigning(), nullValue());
 
     // only include public key if it is encrypted
     repository.getConfiguration().attributes("aptSigning").set("passphrase", "mypass");
     hostedRepository = (AptHostedApiRepository) underTest.adapt(repository);
-    assertThat(hostedRepository.getAptSigning().getKeypair(), is("asdf"));
-    assertThat(hostedRepository.getAptSigning().getPassphrase(), nullValue());
+    assertThat(hostedRepository.getAptSigning().keypair(), is("asdf"));
+    assertThat(hostedRepository.getAptSigning().passphrase(), nullValue());
   }
 
   @Test
@@ -83,8 +83,8 @@ public class AptApiRepositoryAdapterTest
 
     AptProxyApiRepository proxyRepository = (AptProxyApiRepository) underTest.adapt(repository);
     assertRepository(proxyRepository, "proxy", true);
-    assertThat(proxyRepository.getApt().getDistribution(), is("bionic"));
-    assertThat(proxyRepository.getApt().getFlat(), is(true));
+    assertThat(proxyRepository.getApt().distribution(), is("bionic"));
+    assertThat(proxyRepository.getApt().flat(), is(true));
   }
 
   private static void assertRepository(

@@ -34,7 +34,7 @@ import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.script.plugin.internal.ScriptDAO;
 import org.sonatype.nexus.script.plugin.internal.ScriptData;
 import org.sonatype.nexus.testdb.DataSessionRule;
-import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -177,23 +177,23 @@ public class ScriptDAOVirtualThreadTest
           // Verify script was created
           Script read = dao.read(scriptName).orElse(null);
           if (read == null || !read.getName().equals(scriptName)) {
-            log.error("Failed to read script {} after creation", scriptName);
+            logger.error("Failed to read script {} after creation", scriptName);
             errorCount.incrementAndGet();
           }
           
           // Update script
-          script.setContent("log.info('Updated Virtual Thread Script " + index + "')");
+          script.setContent("logger.info('Updated Virtual Thread Script " + index + "')");
           dao.update(script);
           
           // Verify update
           Script updated = dao.read(scriptName).orElse(null);
           if (updated == null || !updated.getContent().contains("Updated")) {
-            log.error("Failed to update script {}", scriptName);
+            logger.error("Failed to update script {}", scriptName);
             errorCount.incrementAndGet();
           }
         } 
         catch (Exception e) {
-          log.error("Error in virtual thread operation for script {}", scriptName, e);
+          logger.error("Error in virtual thread operation for script {}", scriptName, e);
           errorCount.incrementAndGet();
         } 
         finally {
@@ -230,12 +230,12 @@ public class ScriptDAOVirtualThreadTest
           
           // Verify deletion
           if (dao.read(name).isPresent()) {
-            log.error("Failed to delete script {}", name);
+            logger.error("Failed to delete script {}", name);
             deleteErrorCount.incrementAndGet();
           }
         } 
         catch (Exception e) {
-          log.error("Error deleting script {}", name, e);
+          logger.error("Error deleting script {}", name, e);
           deleteErrorCount.incrementAndGet();
         } 
         finally {
@@ -262,7 +262,7 @@ public class ScriptDAOVirtualThreadTest
     // Create initial script
     ScriptData initialScript = new ScriptData();
     initialScript.setName("transaction-test");
-    initialScript.setContent("log.info('Initial content')");
+    initialScript.setContent("logger.info('Initial content')");
     dao.create(initialScript);
     
     int threadCount = 10;
@@ -285,7 +285,7 @@ public class ScriptDAOVirtualThreadTest
             // Update with thread-specific content
             ScriptData updateData = new ScriptData();
             updateData.setName(script.getName());
-            updateData.setContent("log.info('Updated by thread " + index + "')");
+            updateData.setContent("logger.info('Updated by thread " + index + "')");
             
             // Attempt to update
             dao.update(updateData);
@@ -296,7 +296,7 @@ public class ScriptDAOVirtualThreadTest
         } 
         catch (Exception e) {
           // Expected that some threads may fail due to concurrent modification
-          log.debug("Expected concurrent modification in thread {}", index, e);
+          logger.debug("Expected concurrent modification in thread {}", index, e);
         } 
         finally {
           completionLatch.countDown();

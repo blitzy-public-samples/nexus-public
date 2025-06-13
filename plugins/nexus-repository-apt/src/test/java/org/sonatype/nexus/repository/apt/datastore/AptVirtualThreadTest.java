@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.apt.datastore.internal.browse.AptBrowseNodeGenerator;
 import org.sonatype.nexus.repository.browse.node.BrowsePath;
 import org.sonatype.nexus.repository.content.store.AssetData;
@@ -106,14 +106,14 @@ public class AptVirtualThreadTest
             
             // Verify the result is correct
             if (paths.size() != 3) {
-              log.error("Incorrect number of browse paths: {}", paths.size());
+              logger.error("Incorrect number of browse paths: {}", paths.size());
               hasErrors.set(true);
             }
             
             completedOperations.incrementAndGet();
           }
           catch (Exception e) {
-            log.error("Error in virtual thread operation", e);
+            logger.error("Error in virtual thread operation", e);
             hasErrors.set(true);
           }
           finally {
@@ -182,14 +182,14 @@ public class AptVirtualThreadTest
             
             // Verify the result is correct
             if (paths.size() != 6) {
-              log.error("Incorrect number of browse paths: {}", paths.size());
+              logger.error("Incorrect number of browse paths: {}", paths.size());
               hasErrors.set(true);
             }
             
             completedOperations.incrementAndGet();
           }
           catch (Exception e) {
-            log.error("Error in virtual thread operation", e);
+            logger.error("Error in virtual thread operation", e);
             hasErrors.set(true);
           }
           finally {
@@ -260,7 +260,7 @@ public class AptVirtualThreadTest
                 
                 // Verify the result is correct
                 if (paths.size() != 3) {
-                  log.error("Incorrect number of browse paths: {}", paths.size());
+                  logger.error("Incorrect number of browse paths: {}", paths.size());
                   hasErrors.set(true);
                 }
                 
@@ -269,7 +269,7 @@ public class AptVirtualThreadTest
               }
             }
             catch (Exception e) {
-              log.error("Error in virtual thread operation", e);
+              logger.error("Error in virtual thread operation", e);
               hasErrors.set(true);
             }
             finally {
@@ -318,11 +318,11 @@ public class AptVirtualThreadTest
     
     // Run the test with platform threads
     long platformThreadTime = measureExecutionTime(platformThreadFactory, operationCount);
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
+    logger.info("Platform thread execution time: {} ms", platformThreadTime);
     
     // Run the test with virtual threads
     long virtualThreadTime = measureExecutionTime(virtualThreadFactory, operationCount);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    logger.info("Virtual thread execution time: {} ms", virtualThreadTime);
     
     // Verify that virtual threads perform better than platform threads for high concurrency
     assertThat("Virtual threads should be faster than platform threads for high concurrency", 
@@ -346,11 +346,11 @@ public class AptVirtualThreadTest
     
     // Measure memory usage with platform threads
     long platformThreadMemory = measureMemoryUsage(platformThreadFactory, operationCount);
-    log.info("Platform thread memory usage: {} bytes", platformThreadMemory);
+    logger.info("Platform thread memory usage: {} bytes", platformThreadMemory);
     
     // Measure memory usage with virtual threads
     long virtualThreadMemory = measureMemoryUsage(virtualThreadFactory, operationCount);
-    log.info("Virtual thread memory usage: {} bytes", virtualThreadMemory);
+    logger.info("Virtual thread memory usage: {} bytes", virtualThreadMemory);
     
     // Verify that virtual threads use less memory than platform threads
     assertThat("Virtual threads should use less memory than platform threads", 
@@ -391,7 +391,7 @@ public class AptVirtualThreadTest
             browseNodeGenerator.computeAssetPaths(asset);
           }
           catch (Exception e) {
-            log.error("Error in thread operation", e);
+            logger.error("Error in thread operation", e);
             hasErrors.set(true);
           }
           finally {
@@ -465,7 +465,7 @@ public class AptVirtualThreadTest
             Thread.sleep(10);
           }
           catch (Exception e) {
-            log.error("Error in thread operation", e);
+            logger.error("Error in thread operation", e);
           }
           finally {
             latch.countDown();

@@ -20,8 +20,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.apt.internal.debian.DebianVersion;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -140,8 +138,8 @@ public class AptVirtualThreadTest
         });
         
         // Log the results for analysis
-        log.info("Platform thread execution time: {} ms", platformThreadTime);
-        log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+        logger.info("Platform thread execution time: {} ms", platformThreadTime);
+        logger.info("Virtual thread execution time: {} ms", virtualThreadTime);
         
         // Virtual threads should generally be more efficient for I/O-bound operations
         // but we don't make a hard assertion as it depends on the test environment
@@ -185,7 +183,7 @@ public class AptVirtualThreadTest
             // We don't expect all tasks to complete in this short time frame,
             // but we want to see how many did complete to assess pinning
             long completedTasks = operationCount - latch.getCount();
-            log.info("Completed {} out of {} tasks in 2 seconds", completedTasks, operationCount);
+            logger.info("Completed {} out of {} tasks in 2 seconds", completedTasks, operationCount);
             
             // If a significant number of tasks completed, we can infer minimal pinning
             // This is a heuristic rather than a precise measurement

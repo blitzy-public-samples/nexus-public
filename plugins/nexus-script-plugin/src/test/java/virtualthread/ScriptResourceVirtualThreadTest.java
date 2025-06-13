@@ -31,7 +31,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import javax.ws.rs.NotFoundException;
 import javax.ws.rs.WebApplicationException;
@@ -103,7 +106,9 @@ public class ScriptResourceVirtualThreadTest
     AtomicReference<List<ScriptXO>> result = new AtomicReference<>();
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        result.set(Thread.startVirtualThread(() -> underTest.browse()).join());
+        FutureTask<List<ScriptXO>> task = new FutureTask<>(() -> underTest.browse());
+        Thread.startVirtualThread(task);
+        result.set(task.get());
       }
       catch (Exception e) {
         throw new RuntimeException(e);
@@ -141,7 +146,9 @@ public class ScriptResourceVirtualThreadTest
     AtomicReference<ScriptXO> result = new AtomicReference<>();
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        result.set(Thread.startVirtualThread(() -> underTest.read(scriptName)).join());
+        FutureTask<ScriptXO> task = new FutureTask<>(() -> underTest.read(scriptName));
+        Thread.startVirtualThread(task);
+        result.set(task.get());
       }
       catch (Exception e) {
         throw new RuntimeException(e);
@@ -201,7 +208,6 @@ public class ScriptResourceVirtualThreadTest
       try {
         Thread.startVirtualThread(() -> {
           underTest.add(scriptXO);
-          return null;
         }).join();
       }
       catch (Exception e) {
@@ -231,7 +237,6 @@ public class ScriptResourceVirtualThreadTest
       try {
         Thread.startVirtualThread(() -> {
           underTest.add(scriptXO);
-          return null;
         }).join();
       }
       catch (Exception e) {
@@ -263,7 +268,6 @@ public class ScriptResourceVirtualThreadTest
       try {
         Thread.startVirtualThread(() -> {
           underTest.edit(scriptName, scriptXO);
-          return null;
         }).join();
       }
       catch (Exception e) {
@@ -294,7 +298,6 @@ public class ScriptResourceVirtualThreadTest
       try {
         Thread.startVirtualThread(() -> {
           underTest.delete(scriptName);
-          return null;
         }).join();
       }
       catch (Exception e) {
@@ -329,7 +332,9 @@ public class ScriptResourceVirtualThreadTest
     AtomicReference<ScriptResultXO> result = new AtomicReference<>();
     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
       try {
-        result.set(Thread.startVirtualThread(() -> underTest.run(scriptName, scriptArgs)).join());
+        FutureTask<ScriptResultXO> task = new FutureTask<>(() -> underTest.run(scriptName, scriptArgs));
+        Thread.startVirtualThread(task);
+        result.set(task.get());
       }
       catch (Exception e) {
         throw new RuntimeException(e);
@@ -411,7 +416,9 @@ public class ScriptResourceVirtualThreadTest
     // Execute multiple operations concurrently in virtual threads
     CompletableFuture<List<ScriptXO>> browseFuture = CompletableFuture.supplyAsync(() -> {
       try {
-        return Thread.startVirtualThread(() -> underTest.browse()).join();
+        FutureTask<List<ScriptXO>> task = new FutureTask<>(() -> underTest.browse());
+        Thread.startVirtualThread(task);
+        return task.get();
       }
       catch (Exception e) {
         throw new RuntimeException(e);
@@ -420,21 +427,24 @@ public class ScriptResourceVirtualThreadTest
 
     CompletableFuture<ScriptXO> readFuture = CompletableFuture.supplyAsync(() -> {
       try {
-        return Thread.startVirtualThread(() -> underTest.read(scriptName)).join();
-      }
-      catch (Exception e) {
+        FutureTask<ScriptXO> task = new FutureTask<>(() -> underTest.read(scriptName));
+        Thread.startVirtualThread(task);
+        return task.get();
+      } catch (Exception e) {
         throw new RuntimeException(e);
       }
     });
 
     CompletableFuture<ScriptResultXO> runFuture = CompletableFuture.supplyAsync(() -> {
       try {
-        return Thread.startVirtualThread(() -> underTest.run(scriptName, "args")).join();
-      }
-      catch (Exception e) {
+        FutureTask<ScriptResultXO> task = new FutureTask<>(() -> underTest.run(scriptName, "args"));
+        Thread.startVirtualThread(task);
+        return task.get();
+      } catch (Exception e) {
         throw new RuntimeException(e);
       }
     });
+
 
     // Wait for all operations to complete
     CompletableFuture<Void> allFutures = CompletableFuture.allOf(browseFuture, readFuture, runFuture);

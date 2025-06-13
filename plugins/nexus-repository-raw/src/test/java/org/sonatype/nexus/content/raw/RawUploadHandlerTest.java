@@ -23,8 +23,6 @@ import java.util.concurrent.Executors; // Java 21 provides newVirtualThreadPerTa
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.content.fluent.FluentBlobs;
 import org.sonatype.nexus.repository.importtask.ImportFileConfiguration;
 import org.sonatype.nexus.repository.raw.RawUploadHandlerTestSupport;

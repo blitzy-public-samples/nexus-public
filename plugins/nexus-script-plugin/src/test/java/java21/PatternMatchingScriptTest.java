@@ -48,13 +48,28 @@ public class PatternMatchingScriptTest
     }
 
     @Override
+    public void setName(String name) {
+
+    }
+
+    @Override
     public String getType() {
       return type;
     }
 
     @Override
+    public void setType(String type) {
+
+    }
+
+    @Override
     public String getContent() {
       return content;
+    }
+
+    @Override
+    public void setContent(String content) {
+
     }
   }
 

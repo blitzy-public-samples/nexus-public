@@ -173,7 +173,7 @@ public class StringTemplateScriptOutputTest
   void testCustomTemplateProcessor() {
     // Define a simple custom template processor for script output
     // This processor adds timestamps to each line of script output
-    var timestampProcessor = new StringTemplate.Processor<String>() {
+    var timestampProcessor = new StringTemplate.Processor<String, RuntimeException>() {
       @Override
       public String process(StringTemplate template) {
         StringBuilder result = new StringBuilder();

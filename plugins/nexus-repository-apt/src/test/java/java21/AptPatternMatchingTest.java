@@ -30,12 +30,12 @@ import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.Type;
 import org.sonatype.nexus.repository.apt.AptFormat;
-import org.sonatype.nexus.repository.apt.api.AptApiRepository;
 import org.sonatype.nexus.repository.apt.api.AptApiRepositoryAdapter;
 import org.sonatype.nexus.repository.apt.api.AptHostedApiRepository;
 import org.sonatype.nexus.repository.apt.api.AptProxyApiRepository;
 import org.sonatype.nexus.repository.config.Configuration;
 import org.sonatype.nexus.repository.manager.internal.RepositoryImpl;
+import org.sonatype.nexus.repository.rest.api.model.AbstractApiRepository;
 import org.sonatype.nexus.repository.routing.RoutingRuleStore;
 import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.types.HostedType;
@@ -73,18 +73,18 @@ public class AptPatternMatchingTest extends TestSupport
     Repository groupRepo = createRepository(new GroupType(), "jammy", null, null, null);
     
     // Traditional approach with explicit type checking and casting
-    AptApiRepository hostedApiRepo = adapter.adapt(hostedRepo);
+    AbstractApiRepository hostedApiRepo = adapter.adapt(hostedRepo);
     if (hostedApiRepo instanceof AptHostedApiRepository) {
       AptHostedApiRepository hosted = (AptHostedApiRepository) hostedApiRepo;
-      assertThat(hosted.getApt().getDistribution(), is("bionic"));
-      assertThat(hosted.getAptSigning().getKeypair(), is("keypair-data"));
+      assertThat(hosted.getApt().distribution(), is("bionic"));
+      assertThat(hosted.getAptSigning().keypair(), is("keypair-data"));
     }
-    
-    AptApiRepository proxyApiRepo = adapter.adapt(proxyRepo);
+
+    AbstractApiRepository proxyApiRepo = adapter.adapt(proxyRepo);
     if (proxyApiRepo instanceof AptProxyApiRepository) {
       AptProxyApiRepository proxy = (AptProxyApiRepository) proxyApiRepo;
-      assertThat(proxy.getApt().getDistribution(), is("focal"));
-      assertThat(proxy.getApt().getFlat(), is(true));
+      assertThat(proxy.getApt().distribution(), is("focal"));
+      assertThat(proxy.getApt().flat(), is(true));
     }
   }
 
@@ -100,18 +100,18 @@ public class AptPatternMatchingTest extends TestSupport
     Repository groupRepo = createRepository(new GroupType(), "jammy", null, null, null);
     
     // Java 21 pattern matching approach - combines type checking and variable declaration
-    AptApiRepository hostedApiRepo = adapter.adapt(hostedRepo);
+    AbstractApiRepository hostedApiRepo = adapter.adapt(hostedRepo);
     if (hostedApiRepo instanceof AptHostedApiRepository hosted) {
       // No explicit cast needed - 'hosted' is already the correct type
-      assertThat(hosted.getApt().getDistribution(), is("bionic"));
-      assertThat(hosted.getAptSigning().getKeypair(), is("keypair-data"));
+      assertThat(hosted.getApt().distribution(), is("bionic"));
+      assertThat(hosted.getAptSigning().keypair(), is("keypair-data"));
     }
-    
-    AptApiRepository proxyApiRepo = adapter.adapt(proxyRepo);
+
+    AbstractApiRepository proxyApiRepo = adapter.adapt(proxyRepo);
     if (proxyApiRepo instanceof AptProxyApiRepository proxy) {
       // No explicit cast needed - 'proxy' is already the correct type
-      assertThat(proxy.getApt().getDistribution(), is("focal"));
-      assertThat(proxy.getApt().getFlat(), is(true));
+      assertThat(proxy.getApt().distribution(), is("focal"));
+      assertThat(proxy.getApt().flat(), is(true));
     }
   }
 
@@ -123,17 +123,17 @@ public class AptPatternMatchingTest extends TestSupport
   public void testPatternMatchingWithConditional() throws Exception {
     Repository hostedRepo = createRepository(new HostedType(), "bionic", "keypair-data", "passphrase", null);
     Repository proxyRepo = createRepository(new ProxyType(), "focal", null, null, true);
-    
-    AptApiRepository hostedApiRepo = adapter.adapt(hostedRepo);
-    AptApiRepository proxyApiRepo = adapter.adapt(proxyRepo);
+
+    AbstractApiRepository hostedApiRepo = adapter.adapt(hostedRepo);
+    AbstractApiRepository proxyApiRepo = adapter.adapt(proxyRepo);
     
     // Pattern matching with conditional AND - pattern variable is in scope on right side
     if (hostedApiRepo instanceof AptHostedApiRepository hosted && hosted.getAptSigning() != null) {
-      assertThat(hosted.getAptSigning().getKeypair(), is("keypair-data"));
+      assertThat(hosted.getAptSigning().keypair(), is("keypair-data"));
     }
     
-    if (proxyApiRepo instanceof AptProxyApiRepository proxy && proxy.getApt().getFlat()) {
-      assertThat(proxy.getApt().getDistribution(), is("focal"));
+    if (proxyApiRepo instanceof AptProxyApiRepository proxy && proxy.getApt().flat()) {
+      assertThat(proxy.getApt().distribution(), is("focal"));
     }
   }
 
@@ -146,17 +146,17 @@ public class AptPatternMatchingTest extends TestSupport
     Object repoObject = adapter.adapt(hostedRepo);
     
     // Nested pattern matching - first check if it's an AptApiRepository, then check specific type
-    if (repoObject instanceof AptApiRepository apiRepo) {
+    if (repoObject instanceof AbstractApiRepository apiRepo) {
       if (apiRepo instanceof AptHostedApiRepository hosted) {
-        assertThat(hosted.getApt().getDistribution(), is("bionic"));
-        assertThat(hosted.getAptSigning().getKeypair(), is("keypair-data"));
+        assertThat(hosted.getApt().distribution(), is("bionic"));
+        assertThat(hosted.getAptSigning().keypair(), is("keypair-data"));
       }
     }
     
     // More concise approach with a single pattern match
     if (repoObject instanceof AptHostedApiRepository hosted) {
-      assertThat(hosted.getApt().getDistribution(), is("bionic"));
-      assertThat(hosted.getAptSigning().getKeypair(), is("keypair-data"));
+      assertThat(hosted.getApt().distribution(), is("bionic"));
+      assertThat(hosted.getAptSigning().keypair(), is("keypair-data"));
     }
   }
 

@@ -170,8 +170,8 @@ public class AptVirtualThreadTest
     long avgPlatformThreadTime = platformThreadTime / BENCHMARK_ITERATIONS;
     long avgVirtualThreadTime = virtualThreadTime / BENCHMARK_ITERATIONS;
     
-    log.info("Average time with platform threads: {} ms", avgPlatformThreadTime);
-    log.info("Average time with virtual threads: {} ms", avgVirtualThreadTime);
+    logger.info("Average time with platform threads: {} ms", avgPlatformThreadTime);
+    logger.info("Average time with virtual threads: {} ms", avgVirtualThreadTime);
     
     // Virtual threads should be faster for I/O-bound operations with high concurrency
     assertThat("Virtual threads should outperform platform threads for I/O-bound operations",
@@ -213,7 +213,7 @@ public class AptVirtualThreadTest
     
     // We're not asserting specific outcomes here as thread pinning detection
     // is primarily observed through JVM logs when -Djdk.tracePinnedThreads is enabled
-    log.info("Completed thread pinning detection test. Check JVM logs for pinning events.");
+    logger.info("Completed thread pinning detection test. Check JVM logs for pinning events.");
     
     // Ensure no exceptions occurred during the test
     assertThat("No exceptions should occur during thread pinning test", exceptions.isEmpty(), is(true));
@@ -281,8 +281,8 @@ public class AptVirtualThreadTest
     double memoryPerVirtualThread = (double) virtualThreadMemory / threadCount;
     double memoryPerPlatformThread = (double) platformThreadMemory / platformThreadCount;
     
-    log.info("Memory per virtual thread: {} bytes", memoryPerVirtualThread);
-    log.info("Memory per platform thread: {} bytes", memoryPerPlatformThread);
+    logger.info("Memory per virtual thread: {} bytes", memoryPerVirtualThread);
+    logger.info("Memory per platform thread: {} bytes", memoryPerPlatformThread);
     
     // Virtual threads should use significantly less memory per thread
     assertThat("Virtual threads should use less memory per thread",

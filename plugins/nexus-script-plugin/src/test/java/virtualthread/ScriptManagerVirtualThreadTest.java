@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.StreamSupport;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.event.EventManager;
@@ -89,7 +90,7 @@ public class ScriptManagerVirtualThreadTest
 
     Thread.startVirtualThread(() -> {
       try {
-        result.set(List.copyOf(underTest.browse()));
+        result.set(List.copyOf(StreamSupport.stream(underTest.browse().spliterator(), false).toList()));
         latch.countDown();
       }
       catch (Exception e) {
@@ -383,10 +384,11 @@ public class ScriptManagerVirtualThreadTest
     AtomicReference<Boolean> result = new AtomicReference<>();
     CountDownLatch latch = new CountDownLatch(1);
 
+    CountDownLatch finalLatch = latch;
     Thread.startVirtualThread(() -> {
       try {
         result.set(underTest.isEnabled());
-        latch.countDown();
+        finalLatch.countDown();
       }
       catch (Exception e) {
         fail("Exception in virtual thread: " + e.getMessage());
@@ -407,10 +409,11 @@ public class ScriptManagerVirtualThreadTest
     latch = new CountDownLatch(1);
     result.set(null);
 
+    CountDownLatch finalLatch1 = latch;
     Thread.startVirtualThread(() -> {
       try {
         result.set(underTest.isEnabled());
-        latch.countDown();
+        finalLatch1.countDown();
       }
       catch (Exception e) {
         fail("Exception in virtual thread: " + e.getMessage());

@@ -25,10 +25,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.StreamSupport;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.script.ScriptManager;
 
@@ -90,13 +91,28 @@ public class Java21FeaturesTest
       }
 
       @Override
+      public void setName(String name) {
+
+      }
+
+      @Override
       public String getType() {
         return type;
       }
 
       @Override
+      public void setType(String type) {
+
+      }
+
+      @Override
       public String getContent() {
         return content;
+      }
+
+      @Override
+      public void setContent(String content) {
+
       }
     };
   }
@@ -172,10 +188,10 @@ public class Java21FeaturesTest
     // Test pattern matching in switch
     for (Object obj : List.of(groovyScript, jsScript, plainString, number, null)) {
       String result = switch (obj) {
-        case ScriptInfo(var name, "groovy", var content) -> 
-            "Groovy script: " + name + " with content length: " + content.length();
-        case ScriptInfo(var name, "javascript", var content) -> 
-            "JavaScript script: " + name + " with content length: " + content.length();
+        case ScriptInfo info when "groovy".equals(info.type()) ->
+                "Groovy script: " + info.name() + " with content length: " + info.content().length();
+        case ScriptInfo info when "javascript".equals(info.type()) ->
+                "JavaScript script: " + info.name() + " with content length: " + info.content().length();
         case String s -> "String with length: " + s.length();
         case Integer i -> "Integer with value: " + i;
         case null -> "Null object";
@@ -264,7 +280,7 @@ public class Java21FeaturesTest
         executor.submit(() -> {
           try {
             // Simulate script browsing operation
-            List<Script> scripts = scriptManager.browse();
+            Iterable<Script> scripts = scriptManager.browse();
             scripts.forEach(script -> 
                 scriptNameCounts.compute(script.getName(), (k, v) -> (v == null) ? 1 : v + 1));
           } catch (Exception e) {
@@ -312,8 +328,8 @@ public class Java21FeaturesTest
     Duration virtualDuration = Duration.between(virtualStart, Instant.now());
     
     // Log performance results
-    log.info("Platform threads execution time: {} ms", platformDuration.toMillis());
-    log.info("Virtual threads execution time: {} ms", virtualDuration.toMillis());
+    logger.info("Platform threads execution time: {} ms", platformDuration.toMillis());
+    logger.info("Virtual threads execution time: {} ms", virtualDuration.toMillis());
     
     // For high concurrency operations, virtual threads should generally be more efficient
     // However, for this simple test, we're just verifying both complete successfully
@@ -337,11 +353,11 @@ public class Java21FeaturesTest
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
           // Simulate some work with script operations
           try {
-            List<Script> scripts = scriptManager.browse();
+            Iterable<Script> scripts = scriptManager.browse();
             // Simulate some processing
             Thread.sleep(10); // Small delay to simulate work
             // Do something with the scripts
-            int count = scripts.size();
+            int count = (int) StreamSupport.stream(scripts.spliterator(), false).count();
             if (count <= 0) {
               throw new IllegalStateException("No scripts found");
             }
@@ -387,16 +403,17 @@ public class Java21FeaturesTest
           .map(script -> CompletableFuture.supplyAsync(() -> {
             // Use pattern matching in switch
             String result = switch (script) {
-              case ScriptInfo(var name, "groovy", var content) -> {
+              case ScriptInfo info when "groovy".equals(info.type()) -> {
                 typeCount.compute("groovy", (k, v) -> (v == null) ? 1 : v + 1);
-                yield STR."Processed Groovy script: \{name} with content: \{content}";
+                yield STR."Processed Groovy script: \{info.name()} with content: \{info.content()}";
               }
-              case ScriptInfo(var name, "javascript", var content) -> {
+              case ScriptInfo info when "javascript".equals(info.type()) -> {
                 typeCount.compute("javascript", (k, v) -> (v == null) ? 1 : v + 1);
-                yield STR."Processed JavaScript script: \{name} with content: \{content}";
+                yield STR."Processed JavaScript script: \{info.name()} with content: \{info.content()}";
               }
               default -> "Unknown script type";
             };
+
             return result;
           }, executor))
           .toList();

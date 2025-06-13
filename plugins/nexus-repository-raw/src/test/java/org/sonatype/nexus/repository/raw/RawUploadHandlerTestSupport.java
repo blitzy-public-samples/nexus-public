@@ -151,7 +151,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Not authorized for requested path '" + path("org/apache/maven/foo.jar") + "'"));
   }
 
@@ -170,7 +170,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Path is not allowed to have '.' or '..' segments: '" + path("./foo.jar") + "'"));
   }
 
@@ -189,7 +189,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Path is not allowed to have '.' or '..' segments: '" + path("../foo.jar") + "'"));
   }
 
@@ -208,7 +208,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Path is not allowed to have '.' or '..' segments: '" + path("foo/../foo.jar") + "'"));
   }
 
@@ -227,7 +227,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Path is not allowed to have '.' or '..' segments: '" + path("foo/.") + "'"));
   }
 
@@ -246,7 +246,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Path is not allowed to have '.' or '..' segments: '" + path("foo/..") + "'"));
   }
 
@@ -265,7 +265,7 @@ public abstract class RawUploadHandlerTestSupport
     });
     
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Path is not allowed to have '.' or '..' segments: '" + path("foo/foo/../../foo.jar") + "'"));
   }
 

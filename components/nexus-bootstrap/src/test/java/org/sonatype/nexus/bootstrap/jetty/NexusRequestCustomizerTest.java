@@ -63,7 +63,7 @@ public class NexusRequestCustomizerTest
   @BeforeEach
   public void setUp() {
     underTest = new NexusRequestCustomizer("", 8081, 8443);
-    when(request.getHeaders().get("Host")).thenReturn("test");
+    when(request.getHeader("Host")).thenReturn("test");
     when(request.getHttpURI()).thenReturn(httpURI);
   }
 
@@ -94,19 +94,19 @@ public class NexusRequestCustomizerTest
 
     underTest.customize(connector, httpConfig, request);
 
-    verify(request, never()).getHeaders().get("Host");
+    verify(request, never()).getHeader("Host");
 
     when(connector.getLocalPort()).thenReturn(8081);
 
     underTest.customize(connector, httpConfig, request);
 
-    verify(request).getHeaders().get("Host");
+    verify(request).getHeaders("Host");
 
     when(connector.getLocalPort()).thenReturn(8443);
 
     underTest.customize(connector, httpConfig, request);
 
-    verify(request, times(2)).getHeaders().get("Host");
+    verify(request, times(2)).getHeaders("Host");
   }
 
   @ParameterizedTest

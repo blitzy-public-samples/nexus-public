@@ -54,6 +54,10 @@ import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.MINUTES;
@@ -146,7 +150,7 @@ public class S3BlobStoreStressTest
   private BucketManager bucketManager;
 
   @Mock
-  private AmazonS3 s3;
+  private S3Client s3;
 
   private S3BlobStore blobStore;
 
@@ -193,7 +197,13 @@ public class S3BlobStoreStressTest
    */
   private void mockS3Operations() {
     // Mock object existence check
-    when(s3.doesObjectExist(anyString(), anyString())).thenReturn(false);
+    HeadObjectRequest headObjectRequest = HeadObjectRequest.builder()
+            .bucket(anyString())
+            .key(anyString())
+            .build();
+
+    when(s3.headObject(any(HeadObjectRequest.class)))
+            .thenThrow(S3Exception.builder().statusCode(404).message("Not Found").build());
 
     // Mock object creation
     doAnswer(invocation -> {
@@ -208,7 +218,7 @@ public class S3BlobStoreStressTest
       memoryUsageBytes.addAndGet(content.length);
 
       return null;
-    }).when(s3).putObject(anyString(), anyString(), any(InputStream.class), any(ObjectMetadata.class));
+    }).when(s3).putObject(any(PutObjectRequest.class), any(RequestBody.class));
 
     // Mock uploader for larger objects
     doAnswer(invocation -> {
@@ -223,7 +233,7 @@ public class S3BlobStoreStressTest
       memoryUsageBytes.addAndGet(content.length);
 
       return null;
-    }).when(uploader).upload(any(InputStream.class), anyString(), anyString(), any(ObjectMetadata.class));
+    }).when(uploader).upload(any(AmazonS3.class), anyString(), anyString(), any(InputStream.class));
 
     // Mock object retrieval
     doAnswer(invocation -> {
@@ -232,7 +242,7 @@ public class S3BlobStoreStressTest
 
       byte[] content = blobContentStore.get(key);
       if (content == null) {
-        throw new BlobStoreException("Object not found: " + key);
+        throw new BlobStoreException("Object not found: " + key,null);
       }
 
       S3Object s3Object = mock(S3Object.class);
@@ -241,20 +251,25 @@ public class S3BlobStoreStressTest
       when(s3Object.getObjectContent()).thenReturn(s3InputStream);
 
       return s3Object;
-    }).when(s3).getObject(anyString(), anyString());
+    }).when(s3.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)));
+
 
     // Mock object deletion
     doAnswer(invocation -> {
-      String bucket = invocation.getArgument(0);
-      String key = invocation.getArgument(1);
+      DeleteObjectRequest request = invocation.getArgument(0);
+
+      String bucket = request.bucket();
+      String key = request.key();
 
       byte[] content = blobContentStore.remove(key);
       if (content != null) {
         memoryUsageBytes.addAndGet(-content.length);
       }
 
-      return null;
-    }).when(s3).deleteObject(anyString(), anyString());
+      // DeleteObjectResponse is the return type, you can return a mocked or default instance:
+      return DeleteObjectResponse.builder().build();
+    }).when(s3).deleteObject(any(DeleteObjectRequest.class));
+
   }
 
   /**

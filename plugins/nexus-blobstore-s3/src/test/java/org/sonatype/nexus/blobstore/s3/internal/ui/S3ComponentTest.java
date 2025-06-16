@@ -117,8 +117,8 @@ public class S3ComponentTest
    */
   private void assertEncryptionType(final S3EncryptionTypeXO encryptionType, final int order, final String id,
                                     final String name) {
-    assertThat(encryptionType.getOrder(), is(order));
-    assertThat(encryptionType.getId(), is(id));
-    assertThat(encryptionType.getName(), is(name));
+    assertThat(encryptionType.order(), is(order));
+    assertThat(encryptionType.id(), is(id));
+    assertThat(encryptionType.name(), is(name));
   }
 }

@@ -86,7 +86,7 @@ class ProducerConsumerUploaderTest
     when(multiPartUpload.time()).thenReturn(context);
     when(registry.timer("org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.uploader.multiPartUpload")).thenReturn(multiPartUpload);
 
-    producerConsumerUploader = new ProducerConsumerUploader(100, 4, registry);
+    producerConsumerUploader = new ProducerConsumerUploader(100, registry);
     producerConsumerUploader.start();
   }
 

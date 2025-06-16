@@ -18,20 +18,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import com.amazonaws.services.s3.model.*;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.model.AmazonS3Exception;
-import com.amazonaws.services.s3.model.BucketLifecycleConfiguration;
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration.Rule;
 import com.amazonaws.services.s3.model.BucketLifecycleConfiguration.Transition;
-import com.amazonaws.services.s3.model.ListObjectsRequest;
-import com.amazonaws.services.s3.model.ObjectListing;
-import com.amazonaws.services.s3.model.S3ObjectSummary;
-import com.amazonaws.services.s3.model.StorageClass;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleAndOperator;
 import com.amazonaws.services.s3.model.lifecycle.LifecycleFilter;
 import com.amazonaws.services.s3.model.lifecycle.LifecyclePrefixPredicate;
@@ -270,9 +265,9 @@ class BucketManagerTest
 
   @Test
   void deleteStorageLocationRemovesBucketIfEmpty() {
-    ObjectListing listingMock = mock(ObjectListing.class);
-    when(listingMock.getObjectSummaries()).thenReturn(new ArrayList<>());
-    when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(listingMock);
+    ListObjectsV2Result listingMock = mock(ListObjectsV2Result.class);
+    when(listingMock.getObjectSummaries()).thenReturn(new ArrayList<S3ObjectSummary>());
+    when(s3.listObjects(anyString(), anyString())).thenReturn(listingMock);
     underTest.setS3(s3);
 
     BlobStoreConfiguration cfg = new MockBlobStoreConfiguration();
@@ -287,9 +282,9 @@ class BucketManagerTest
 
   @Test
   void deleteStorageLocationDoesNotRemoveBucketIfNotEmpty() {
-    ObjectListing listingMock = mock(ObjectListing.class);
+    ListObjectsV2Result listingMock = mock(ListObjectsV2Result.class);
     when(listingMock.getObjectSummaries()).thenReturn(ImmutableList.of(new S3ObjectSummary()));
-    when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(listingMock);
+    when(s3.listObjects(anyString(), anyString())).thenReturn(listingMock);
     when(s3.getBucketLifecycleConfiguration(anyString())).thenReturn(mock(BucketLifecycleConfiguration.class));
     underTest.setS3(s3);
 
@@ -329,9 +324,9 @@ class BucketManagerTest
   void onlyRemoveNxrmManagedLifeCyclesFromTheBucket(
       List<Rule> rules, int deleteLifeCycleCallCount, int setLifeCycleCallCount
   ) {
-    ObjectListing listingMock = mock(ObjectListing.class);
+    ListObjectsV2Result listingMock = mock(ListObjectsV2Result.class);
     when(listingMock.getObjectSummaries()).thenReturn(ImmutableList.of(new S3ObjectSummary()));
-    when(s3.listObjects(any(ListObjectsRequest.class))).thenReturn(listingMock);
+    when(s3.listObjects(anyString(), anyString())).thenReturn(listingMock);
     BucketLifecycleConfiguration lifeCycleCfg = mock(BucketLifecycleConfiguration.class);
     when(lifeCycleCfg.getRules()).thenReturn(rules);
     when(s3.getBucketLifecycleConfiguration(anyString())).thenReturn(lifeCycleCfg);

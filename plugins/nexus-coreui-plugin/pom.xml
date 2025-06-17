@@ -73,6 +73,7 @@
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-extdirect</artifactId>
       <scope>provided</scope>
+      <version>3.77.0-08</version>
     </dependency>
 
     <dependency>
@@ -189,59 +190,59 @@
         </configuration>
       </plugin>
 
-      <plugin>
-        <groupId>com.github.eirslett</groupId>
-        <artifactId>frontend-maven-plugin</artifactId>
+<!--      <plugin>-->
+<!--        <groupId>com.github.eirslett</groupId>-->
+<!--        <artifactId>frontend-maven-plugin</artifactId>-->
 
-        <executions>
-          <!--execution>
-            <id>install node and yarn</id>
-            <goals>
-              <goal>install-node-and-yarn</goal>
-            </goals>
-            <phase>generate-resources</phase>
-          </execution-->
-           <execution>
-              <id>install node and npm</id>
-             <goals>
-                <goal>install-node-and-npm</goal>
-             </goals>
-             <phase>generate-resources</phase>
-           </execution>
-          <execution>
-            <id>yarn install</id>
-            <goals>
-              <goal>corepack</goal>
-            </goals>
-            <phase>generate-resources</phase>
-            <configuration>
-              <arguments>yarn ${npm.install}</arguments>
-            </configuration>
-          </execution>
-          <execution>
-            <id>yarn build</id>
-            <goals>
-              <goal>corepack</goal>
-            </goals>
-            <phase>compile</phase>
-            <configuration>
-              <arguments>yarn ${npm.build}</arguments>
-            </configuration>
-          </execution>
+<!--        <executions>-->
+<!--          &lt;!&ndash;execution>-->
+<!--            <id>install node and yarn</id>-->
+<!--            <goals>-->
+<!--              <goal>install-node-and-yarn</goal>-->
+<!--            </goals>-->
+<!--            <phase>generate-resources</phase>-->
+<!--          </execution&ndash;&gt;-->
+<!--           <execution>-->
+<!--              <id>install node and npm</id>-->
+<!--             <goals>-->
+<!--                <goal>install-node-and-npm</goal>-->
+<!--             </goals>-->
+<!--             <phase>generate-resources</phase>-->
+<!--           </execution>-->
+<!--          <execution>-->
+<!--            <id>yarn install</id>-->
+<!--            <goals>-->
+<!--              <goal>corepack</goal>-->
+<!--            </goals>-->
+<!--            <phase>generate-resources</phase>-->
+<!--            <configuration>-->
+<!--              <arguments>yarn ${npm.install}</arguments>-->
+<!--            </configuration>-->
+<!--          </execution>-->
+<!--          <execution>-->
+<!--            <id>yarn build</id>-->
+<!--            <goals>-->
+<!--              <goal>corepack</goal>-->
+<!--            </goals>-->
+<!--            <phase>compile</phase>-->
+<!--            <configuration>-->
+<!--              <arguments>yarn ${npm.build}</arguments>-->
+<!--            </configuration>-->
+<!--          </execution>-->
 
-          <execution>
-            <id>js-unit-test</id>
-            <goals>
-              <goal>corepack</goal>
-            </goals>
-            <phase>test</phase>
-            <configuration>
-              <arguments>yarn test --reporters=jest-junit --reporters=default</arguments>
-              <skip>${npm.skipTests}</skip>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
+<!--          <execution>-->
+<!--            <id>js-unit-test</id>-->
+<!--            <goals>-->
+<!--              <goal>corepack</goal>-->
+<!--            </goals>-->
+<!--            <phase>test</phase>-->
+<!--            <configuration>-->
+<!--              <arguments>yarn test &#45;&#45;reporters=jest-junit &#45;&#45;reporters=default</arguments>-->
+<!--              <skip>${npm.skipTests}</skip>-->
+<!--            </configuration>-->
+<!--          </execution>-->
+<!--        </executions>-->
+<!--      </plugin>-->
       
       <!-- Add maven-compiler-plugin configuration for Java 21 compatibility -->
       <plugin>

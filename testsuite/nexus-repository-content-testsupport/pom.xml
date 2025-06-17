@@ -27,14 +27,28 @@
   <name>${project.groupId}:${project.artifactId}</name>
   <packaging>bundle</packaging>
 
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
   <dependencies>
-    <!--
-    Dependencies provided by the Nexus container
-    -->
+
+    <!-- Nexus provided dependencies -->
     <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-pax-exam</artifactId>
       <scope>provided</scope>
+    </dependency>
+
+    <!-- https://mvnrepository.com/artifact/org.ops4j.pax.exam/pax-exam -->
+    <dependency>
+      <groupId>org.ops4j.pax.exam</groupId>
+      <artifactId>pax-exam</artifactId>
+      <version>4.14.0</version>
     </dependency>
 
     <dependency>
@@ -86,16 +100,11 @@
     </dependency>
 
     <dependency>
-      <groupId>org.sonatype.nexus.testsuite</groupId>
-      <artifactId>nexus-virtual-thread-testsupport</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-
-    <dependency>
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-rest-client</artifactId>
     </dependency>
 
+    <!-- Third-party dependencies -->
     <dependency>
       <groupId>org.apache.ant</groupId>
       <artifactId>ant</artifactId>
@@ -107,15 +116,9 @@
     </dependency>
 
     <dependency>
-      <groupId>org.apache.httpcomponents</groupId>
-      <artifactId>httpmime</artifactId>
-      <version>5.3.1</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.httpcomponents</groupId>
-      <artifactId>httpclient</artifactId>
-      <version>5.3.1</version>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
+      <version>5.5</version>
     </dependency>
 
     <dependency>
@@ -173,8 +176,8 @@
       <groupId>com.google.code.gson</groupId>
       <artifactId>gson</artifactId>
     </dependency>
-    
-    <!-- JUnit Jupiter dependencies for Java 21 compatibility -->
+
+    <!-- Test frameworks -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
@@ -206,29 +209,15 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <dependencies>
-          <dependency>
-            <groupId>org.codehaus.groovy</groupId>
-            <artifactId>groovy-eclipse-compiler</artifactId>
-            <version>4.8.0</version>
-          </dependency>
-          <dependency>
-            <groupId>org.codehaus.groovy</groupId>
-            <artifactId>groovy-eclipse-batch</artifactId>
-            <version>4.0.9-01</version>
-          </dependency>
-        </dependencies>
         <configuration>
-          <source>${maven.compiler.source}</source>
-          <target>${maven.compiler.target}</target>
           <release>21</release>
-          <compilerId>groovy-eclipse-compiler</compilerId>
           <compilerArgs>
             <arg>--enable-preview</arg>
           </compilerArgs>
         </configuration>
       </plugin>
 
+      <!-- Javadoc plugin -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-javadoc-plugin</artifactId>
@@ -272,5 +261,20 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>groovy-plugins-release</id>
+      <activation>
+        <activeByDefault>true</activeByDefault>
+      </activation>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>groovy-plugins-release</id>
+          <url>https://groovy.jfrog.io/artifactory/plugins-release</url>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
 
 </project>

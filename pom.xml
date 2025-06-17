@@ -1584,7 +1584,7 @@ owners.
 							<dependency>
 								<groupId>org.codehaus.groovy</groupId>
 								<artifactId>groovy-eclipse-batch</artifactId>
-								<version>3.0.13-02</version>
+								<version>3.0.8-01</version>
 							</dependency>
 						</dependencies>
 					</plugin>
@@ -1671,7 +1671,7 @@ owners.
 							<dependency>
 								<groupId>org.codehaus.groovy</groupId>
 								<artifactId>groovy-eclipse-batch</artifactId>
-								<version>3.0.13-02</version>
+								<version>4.0.26-01</version>
 							</dependency>
 						</dependencies>
 						<configuration>

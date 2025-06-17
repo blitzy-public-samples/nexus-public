@@ -125,7 +125,7 @@ public class RawITSupport
   protected ThreadFactory createPlatformThreadFactory(final String namePrefix) {
     AtomicInteger counter = new AtomicInteger();
     return r -> {
-      Thread t = Thread.ofPlatform().name(namePrefix + "-" + counter.incrementAndGet()).build();
+      Thread t = Thread.ofPlatform().name(namePrefix + "-" + counter.incrementAndGet()).unstarted(r);
       t.setDaemon(true);
       return t;
     };

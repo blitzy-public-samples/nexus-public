@@ -84,12 +84,12 @@ owners.
 			<type>xml</type>
 		</dependency>
 
-		<dependency>
-			<groupId>org.sonatype.nexus.assemblies</groupId>
-			<artifactId>nexus-startup-feature</artifactId>
-			<classifier>features</classifier>
-			<type>xml</type>
-		</dependency>
+<!--		<dependency>-->
+<!--			<groupId>org.sonatype.nexus.assemblies</groupId>-->
+<!--			<artifactId>nexus-startup-feature</artifactId>-->
+<!--			<classifier>features</classifier>-->
+<!--			<type>xml</type>-->
+<!--		</dependency>-->
 
 		<!-- override to exclude sshd-osgi from dependency list -->
 		<dependency>
@@ -220,6 +220,9 @@ owners.
 								<feature>system</feature>
 								<feature>nexus-startup-feature</feature>
 							</startupFeatures>
+							<blacklistedFeatures>
+								<feature>pax-url-wrap</feature>
+							</blacklistedFeatures>
 							<bootFeatures>
 								<feature>nexus-boot-feature</feature>
 							</bootFeatures>

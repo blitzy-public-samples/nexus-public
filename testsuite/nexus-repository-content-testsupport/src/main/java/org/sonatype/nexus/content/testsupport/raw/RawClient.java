@@ -190,7 +190,7 @@ public class RawClient
    * This includes shutting down the Virtual Thread executor service.
    */
   @Override
-  public void close() throws IOException {
+  public void close() {
     try {
       virtualThreadExecutor.close();
     }

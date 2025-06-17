@@ -20,6 +20,6 @@
     <!--
     Add slf4j to dependencies of Jetty
     -->
-    <bundle>wrap:${mvn:jetty-util}$overwrite=merge&amp;Import-Package=org.slf4j,*</bundle>
+    <bundle>wrap:${mvn:jetty-util}$overwrite=merge&amp;Import-Package=org.slf4j,javax.annotation,*</bundle>
   </feature>
 </features>

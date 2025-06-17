@@ -35,7 +35,7 @@ import static com.google.common.base.Preconditions.checkNotNull
  */
 @Slf4j
 @CompileStatic
-class RepositoryRule
+public class RepositoryRule
     extends ExternalResource
     implements RawRepoRecipes, MavenRepoRecipes, DockerRepoRecipes, YumRepoRecipes
 {

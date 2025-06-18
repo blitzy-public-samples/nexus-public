@@ -26,6 +26,8 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.concurrent.ConcurrentRunner;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
@@ -46,6 +48,7 @@ import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
 
 import com.google.common.base.Objects;
@@ -89,6 +92,8 @@ public class FileBlobStoreConcurrencyIT
 
   private FileBlobStore underTest;
 
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreConcurrencyIT.class);
+
   @Mock
   private DatastoreFileBlobStoreMetricsService metricsStore;
 
@@ -126,8 +131,9 @@ public class FileBlobStoreConcurrencyIT
     final BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.attributes(FileBlobStore.CONFIG_KEY).set(FileBlobStore.PATH_KEY, root.toString());
 
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     blobStoreQuotaUsageChecker = spy(
-        new BlobStoreQuotaUsageChecker(new PeriodicJobServiceImpl(), QUOTA_CHECK_INTERVAL, quotaService));
+        new BlobStoreQuotaUsageChecker(periodicJobService, QUOTA_CHECK_INTERVAL, quotaService));
 
     this.underTest = new FileBlobStore(content, new DefaultBlobIdLocationResolver(true), new SimpleFileOperations(),
         metricsStore, config, applicationDirectories, nodeAccess, dryRunPrefix, reconciliationLogger, 0L,
@@ -208,20 +214,24 @@ public class FileBlobStoreConcurrencyIT
     log.info("Running concurrency test with {} threads", threadType);
     
     final ConcurrentRunner runner = new ConcurrentRunner(numberOfIterations, timeoutMinutes * 60);
-    runner.setThreadFactory(threadFactory);
+   // runner.setThreadFactory(threadFactory);
     
     // Start timing
     Stopwatch stopwatch = Stopwatch.createStarted();
 
     runner.addTask(numberOfCreators, () -> {
-      final byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
-      random.nextBytes(data);
-      final Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
+              Thread thread = threadFactory.newThread(() -> {
+                final byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
+                random.nextBytes(data);
+                final Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
 
-      blobIdsInTheStore.add(blob.getId());
-    });
+                blobIdsInTheStore.add(blob.getId());
+              });
+              thread.start();
+            });
 
     runner.addTask(numberOfReaders, () -> {
+      Thread thread = threadFactory.newThread(() ->{
       final BlobId blobId = blobIdsInTheStore.peek();
 
       log("Attempting to read " + blobId);
@@ -243,10 +253,15 @@ public class FileBlobStoreConcurrencyIT
         checkState(deletedIds.contains(e.getBlobId()));
         // This is normal operation if another thread deletes your blob after you obtain a Blob reference
         log("Concurrent deletion suspected while calling blob.getInputStream().", e);
+      } catch (IOException | NoSuchAlgorithmException e) {
+          throw new RuntimeException(e);
       }
+      });
+      thread.start();
     });
 
     runner.addTask(numberOfDeleters, () -> {
+      Thread thread = threadFactory.newThread(() ->{
       final BlobId blobId = blobIdsInTheStore.poll();
       if (blobId == null) {
         log("deleter: null blob id");
@@ -268,6 +283,8 @@ public class FileBlobStoreConcurrencyIT
         blobIdsInTheStore.add(blobId);
       }
     });
+        thread.start();
+        });
 
     runner.addTask(numberOfCompactors, () -> underTest.compact(null));
 

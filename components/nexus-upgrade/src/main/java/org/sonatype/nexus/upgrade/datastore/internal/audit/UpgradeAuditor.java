@@ -14,9 +14,9 @@ package org.sonatype.nexus.upgrade.datastore.internal.audit;
 
 import java.util.Map;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.audit.AuditData;
 import org.sonatype.nexus.audit.AuditorSupport;

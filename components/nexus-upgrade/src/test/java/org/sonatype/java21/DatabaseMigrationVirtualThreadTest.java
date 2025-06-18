@@ -28,8 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.content.testsuite.groups.PostgresTestGroup;
 import org.sonatype.nexus.testdb.DataSessionRule;
-import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
-import org.sonatype.nexus.testsuite.testsupport.VirtualThreadTestGroup;
+import org.sonatype.java21.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.upgrade.datastore.DatabaseMigrationStep;
 
 import org.junit.jupiter.api.AfterEach;
@@ -214,7 +214,7 @@ public class DatabaseMigrationVirtualThreadTest
           migration.migrate(conn);
           conn.commit();
         } catch (Exception e) {
-          log.error("Migration failed", e);
+          logger.error("Migration failed", e);
         }
       });
     }

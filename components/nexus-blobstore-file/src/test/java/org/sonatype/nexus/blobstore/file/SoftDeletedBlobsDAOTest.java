@@ -19,6 +19,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.file.store.SoftDeletedBlobsData;
 import org.sonatype.nexus.blobstore.file.store.internal.SoftDeletedBlobsDAO;
@@ -51,6 +53,8 @@ public class SoftDeletedBlobsDAOTest
   private SoftDeletedBlobsDAO dao;
 
   private static final String FAKE_BLOB_STORE_NAME = "fakeBlobStore";
+
+  private static final Logger log = LoggerFactory.getLogger(SoftDeletedBlobsDAOTest.class);
 
   @BeforeEach
   public void setup() {

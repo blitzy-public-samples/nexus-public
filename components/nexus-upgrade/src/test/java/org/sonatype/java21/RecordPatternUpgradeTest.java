@@ -15,7 +15,7 @@ package org.sonatype.java21;
 import java.util.List;
 import java.util.Optional;
 
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.java21.Java21TestGroup;
 import org.sonatype.nexus.common.upgrade.Upgrade;
 import org.sonatype.nexus.common.upgrade.Upgrades;
 

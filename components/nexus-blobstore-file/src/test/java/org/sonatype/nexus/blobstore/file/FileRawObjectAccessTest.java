@@ -28,6 +28,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
@@ -52,6 +54,8 @@ public class FileRawObjectAccessTest
 
   @TempDir
   public Path temporaryFolder;
+
+  private static final Logger log = LoggerFactory.getLogger(FileRawObjectAccessTest.class);
 
   @BeforeEach
   public void initBlobStore() {

@@ -156,6 +156,8 @@
               <compilerArgs>--enable-preview</compilerArgs>
               <testExcludes>
                 <exclude>**/virtualthread/**/*.java</exclude>
+                <exclude>**/java21/*.java</exclude>
+                <exclude>**/*VirtualThread*.java</exclude>
               </testExcludes>
             </configuration>
           </execution>

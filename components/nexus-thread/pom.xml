@@ -216,6 +216,8 @@ owners.
 							<compilerArgs>--enable-preview</compilerArgs>
 							<testExcludes>
 								<exclude>**/virtualthread/**/*.java</exclude>
+								<exclude>**/java21/*.java</exclude>
+								<exclude>**/*VirtualThread*.java</exclude>
 								<exclude>org/sonatype/nexus/thread/NexusScheduledExecutorServiceTest.java</exclude>
 								<exclude>org/sonatype/nexus/thread/SubjectAwareVirtualThreadExecutorServiceTest.java</exclude>
 								<exclude>org/sonatype/nexus/thread/ThreadPinningDetectionTest.java</exclude>

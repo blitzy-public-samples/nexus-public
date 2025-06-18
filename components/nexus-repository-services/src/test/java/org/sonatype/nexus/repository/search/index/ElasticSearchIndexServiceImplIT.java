@@ -31,12 +31,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+import org.elasticsearch.node.Node;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.common.node.NodeAccess;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.elasticsearch.internal.ClientProvider;
 import org.sonatype.nexus.elasticsearch.internal.NodeProvider;
 import org.sonatype.nexus.repository.Format;
@@ -147,7 +148,13 @@ public class ElasticSearchIndexServiceImplIT
     System.setProperty("testdir", new File(BASEDIR, "target/test-node").getPath());
 
     NodeProvider nodeProvider = new NodeProvider(directories, nodeAccess, null, null);
-    ClientProvider clientProvider = new ClientProvider(nodeProvider);
+    javax.inject.Provider<Node> provider = new javax.inject.Provider<Node>() {
+      @Override
+      public Node get() {
+        return nodeProvider.get(); // or however you get the Node
+      }
+    };
+    ClientProvider clientProvider = new ClientProvider(provider);
 
     IndexNamingPolicy indexNamingPolicy = new HashedNamingPolicy();
 

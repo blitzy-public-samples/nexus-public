@@ -107,11 +107,11 @@ public class SimpleApiRepositoryAdapterTest
     SimpleApiGroupRepository groupRepository = (SimpleApiGroupRepository) underTest.adapt(repository);
     assertRepository(groupRepository, "group", true);
     assertThat(groupRepository.getGroup().getMemberNames(), contains("a", "b"));
-    assertThat(groupRepository.getStorage().getStrictContentTypeValidation(), is(true));
+    assertThat(groupRepository.getStorage().strictContentTypeValidation(), is(true));
     setStorageAttributes(repository, "default", /* non-default */ false, null);
     groupRepository = (SimpleApiGroupRepository) underTest.adapt(repository);
-    assertThat(groupRepository.getStorage().getBlobStoreName(), is("default"));
-    assertThat(groupRepository.getStorage().getStrictContentTypeValidation(), is(false));
+    assertThat(groupRepository.getStorage().blobStoreName(), is("default"));
+    assertThat(groupRepository.getStorage().strictContentTypeValidation(), is(false));
   }
 
   @Test
@@ -121,16 +121,16 @@ public class SimpleApiRepositoryAdapterTest
 
     SimpleApiHostedRepository hostedRepository = (SimpleApiHostedRepository) underTest.adapt(repository);
     assertRepository(hostedRepository, "hosted", true);
-    assertThat(hostedRepository.getStorage().getStrictContentTypeValidation(), is(true));
+    assertThat(hostedRepository.getStorage().strictContentTypeValidation(), is(true));
     assertThat(hostedRepository.getStorage().getWritePolicy(), is("ALLOW"));
-    assertThat(hostedRepository.getComponent().getProprietaryComponents(), is(true));
+    assertThat(hostedRepository.getComponent().proprietaryComponents(), is(true));
 
     // set some values
     setStorageAttributes(repository, "default", /* non-default */ false, "DENY");
     hostedRepository = (SimpleApiHostedRepository) underTest.adapt(repository);
 
-    assertThat(hostedRepository.getStorage().getBlobStoreName(), is("default"));
-    assertThat(hostedRepository.getStorage().getStrictContentTypeValidation(), is(false));
+    assertThat(hostedRepository.getStorage().blobStoreName(), is("default"));
+    assertThat(hostedRepository.getStorage().strictContentTypeValidation(), is(false));
     assertThat(hostedRepository.getStorage().getWritePolicy(), is("DENY"));
   }
 
@@ -152,9 +152,9 @@ public class SimpleApiRepositoryAdapterTest
     SimpleApiProxyRepository proxyRepository = (SimpleApiProxyRepository) underTest.adapt(repository);
     assertRepository(proxyRepository, "proxy", true);
 
-    assertThat(proxyRepository.getProxy().getContentMaxAge(), is(1440));
-    assertThat(proxyRepository.getProxy().getMetadataMaxAge(), is(1440));
-    assertThat(proxyRepository.getProxy().getRemoteUrl(), is("https://repo1.maven.org/maven2/"));
+    assertThat(proxyRepository.getProxy().contentMaxAge(), is(1440));
+    assertThat(proxyRepository.getProxy().metadataMaxAge(), is(1440));
+    assertThat(proxyRepository.getProxy().remoteUrl(), is("https://repo1.maven.org/maven2/"));
     assertThat(proxyRepository.getHttpClient().getAutoBlock(), is(false));
     assertThat(proxyRepository.getHttpClient().getBlocked(), is(false));
 
@@ -171,8 +171,8 @@ public class SimpleApiRepositoryAdapterTest
 
     proxyRepository = (SimpleApiProxyRepository) underTest.adapt(repository);
 
-    assertThat(proxyRepository.getProxy().getContentMaxAge(), is(1000));
-    assertThat(proxyRepository.getProxy().getMetadataMaxAge(), is(1000));
+    assertThat(proxyRepository.getProxy().contentMaxAge(), is(1000));
+    assertThat(proxyRepository.getProxy().metadataMaxAge(), is(1000));
     assertThat(proxyRepository.getHttpClient().getAutoBlock(), is(true));
     assertThat(proxyRepository.getHttpClient().getBlocked(), is(true));
   }
@@ -182,8 +182,8 @@ public class SimpleApiRepositoryAdapterTest
     Repository repository = createRepository(new ProxyType());
 
     SimpleApiProxyRepository proxyRepository = (SimpleApiProxyRepository) underTest.adapt(repository);
-    assertThat(proxyRepository.getNegativeCache().getEnabled(), is(true));
-    assertThat(proxyRepository.getNegativeCache().getTimeToLive(), is(Time.hours(24).toMinutesI()));
+    assertThat(proxyRepository.getNegativeCache().enabled(), is(true));
+    assertThat(proxyRepository.getNegativeCache().timeToLive(), is(Time.hours(24).toMinutesI()));
 
     // Test specified values
     modifyConfiguration(repository, configuration -> {
@@ -193,8 +193,8 @@ public class SimpleApiRepositoryAdapterTest
     });
 
     proxyRepository = (SimpleApiProxyRepository) underTest.adapt(repository);
-    assertThat(proxyRepository.getNegativeCache().getEnabled(), is(false));
-    assertThat(proxyRepository.getNegativeCache().getTimeToLive(), is(23));
+    assertThat(proxyRepository.getNegativeCache().enabled(), is(false));
+    assertThat(proxyRepository.getNegativeCache().timeToLive(), is(23));
   }
 
   @Test
@@ -225,8 +225,8 @@ public class SimpleApiRepositoryAdapterTest
 
     SimpleApiProxyRepository proxyRepository = (SimpleApiProxyRepository) underTest.adapt(repository);
 
-    assertThat(proxyRepository.getStorage().getBlobStoreName(), is("default"));
-    assertThat(proxyRepository.getStorage().getStrictContentTypeValidation(), is(false));
+    assertThat(proxyRepository.getStorage().blobStoreName(), is("default"));
+    assertThat(proxyRepository.getStorage().strictContentTypeValidation(), is(false));
   }
 
   @Test
@@ -329,7 +329,7 @@ public class SimpleApiRepositoryAdapterTest
             // Verify the adaptation worked correctly
             if (!hostedRepository.getName().equals("my-repo") || 
                 !hostedRepository.getType().equals("hosted") ||
-                !hostedRepository.getComponent().getProprietaryComponents()) {
+                !hostedRepository.getComponent().proprietaryComponents()) {
               errorCount.incrementAndGet();
             }
           } catch (Exception e) {
@@ -403,11 +403,11 @@ public class SimpleApiRepositoryAdapterTest
       final Integer timeout,
       final String uaSuffix)
   {
-    assertThat(connection.getEnableCircularRedirects(), is(enableCircularRedirects));
-    assertThat(connection.getEnableCookies(), is(enableCookies));
-    assertThat(connection.getRetries(), is(retries));
-    assertThat(connection.getTimeout(), is(timeout));
-    assertThat(connection.getUserAgentSuffix(), is(uaSuffix));
+    assertThat(connection.enableCircularRedirects(), is(enableCircularRedirects));
+    assertThat(connection.enableCookies(), is(enableCookies));
+    assertThat(connection.retries(), is(retries));
+    assertThat(connection.timeout(), is(timeout));
+    assertThat(connection.userAgentSuffix(), is(uaSuffix));
   }
 
   private static Repository createRepository(final Type type) throws Exception {
@@ -468,7 +468,7 @@ public class SimpleApiRepositoryAdapterTest
     });
 
     restRepository = underTest.adapt(repository);
-    assertThat(cleanupFn.apply(restRepository).getPolicyNames(), contains("policy-a"));
+    assertThat(cleanupFn.apply(restRepository).policyNames(), contains("policy-a"));
   }
 
   private static void modifyConfiguration(

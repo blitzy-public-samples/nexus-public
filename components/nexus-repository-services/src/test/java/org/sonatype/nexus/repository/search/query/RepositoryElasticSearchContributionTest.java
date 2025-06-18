@@ -19,8 +19,7 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.group.GroupFacet;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
-import org.sonatype.nexus.test.Java21TestGroup;
-
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.junit.experimental.categories.Category;
 
 import org.elasticsearch.index.query.BoolQueryBuilder;

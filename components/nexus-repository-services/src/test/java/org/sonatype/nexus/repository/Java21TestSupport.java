@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import org.junit.jupiter.api.Assertions;
 
@@ -268,7 +268,7 @@ public class Java21TestSupport
     
     // Note: This is a simplified check. In a real implementation, you would use JFR events
     // or the jdk.tracePinnedThreads JVM flag to detect actual pinning.
-    log.info("Thread execution completed - no pinning detected through simplified check");
+    logger.info("Thread execution completed - no pinning detected through simplified check");
   }
   
   /**
@@ -308,8 +308,8 @@ public class Java21TestSupport
     }
     long virtualDuration = System.nanoTime() - virtualStart;
     
-    log.info("Platform thread duration: {} ns", platformDuration);
-    log.info("Virtual thread duration: {} ns", virtualDuration);
+    logger.info("Platform thread duration: {} ns", platformDuration);
+    logger.info("Virtual thread duration: {} ns", virtualDuration);
     
     return virtualDuration < platformDuration;
   }

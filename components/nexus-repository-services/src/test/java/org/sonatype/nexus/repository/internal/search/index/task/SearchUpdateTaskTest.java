@@ -109,9 +109,9 @@ public class SearchUpdateTaskTest
     when(proxyRepository.getName()).thenReturn("proxy-repo");
     when(hostedRepository.getName()).thenReturn("hosted-repo");
     when(groupRepository.getName()).thenReturn("group-repo");
-    when(proxyRepository.getType()).thenReturn("proxy");
-    when(hostedRepository.getType()).thenReturn("hosted");
-    when(groupRepository.getType()).thenReturn("group");
+    when(proxyRepository.getType().getValue()).thenReturn("proxy");
+    when(hostedRepository.getType().getValue()).thenReturn("hosted");
+    when(groupRepository.getType().getValue()).thenReturn("group");
     when(proxyRepository.facet(SearchIndexFacet.class)).thenReturn(proxySearchIndexFacet);
     when(hostedRepository.facet(SearchIndexFacet.class)).thenReturn(hostedSearchIndexFacet);
     when(groupRepository.facet(SearchIndexFacet.class)).thenReturn(groupSearchIndexFacet);

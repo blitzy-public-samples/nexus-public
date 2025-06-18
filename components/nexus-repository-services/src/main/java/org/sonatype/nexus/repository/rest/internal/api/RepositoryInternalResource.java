@@ -120,7 +120,7 @@ public class RepositoryInternalResource
 
   @GET
   @RequiresAuthentication
-  public void getRepositories(
+  public List<RepositoryXO> getRepositories(
       @Suspended final AsyncResponse response,
       @QueryParam("type") final String type,
       @QueryParam("withAll") final boolean withAll,
@@ -161,6 +161,7 @@ public class RepositoryInternalResource
         response.resume(e);
       }
     });
+    return null;
   }
 
   @GET
@@ -182,6 +183,13 @@ public class RepositoryInternalResource
         response.resume(e);
       }
     });
+  }
+
+  public List<RepositoryDetailXO> getRepositoryDetailsSync() {
+    return stream(repositoryManager.browse())
+            .filter(repository -> repositoryPermissionChecker.userHasRepositoryAdminPermission(repository, READ))
+            .map(this::asRepositoryDetail)
+            .collect(toList());
   }
 
   @GET

@@ -42,7 +42,7 @@ public class BulkProcessorFlusherTest
 
   @Test
   public void shouldFlushBulkProcessor() {
-    underTest.call();
+    underTest.flush();
 
     verify(bulkProcessor).flush();
   }
@@ -55,10 +55,10 @@ public class BulkProcessorFlusherTest
     // Use a virtual thread to execute the flush operation
     Thread.ofVirtual().start(() -> {
       try {
-        underTest.call();
+        underTest.flush();
         latch.countDown();
       } catch (Exception e) {
-        log.error("Error in virtual thread", e);
+        logger.error("Error in virtual thread", e);
       }
     });
     

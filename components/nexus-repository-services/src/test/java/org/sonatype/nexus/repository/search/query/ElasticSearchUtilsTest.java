@@ -13,6 +13,7 @@
 package org.sonatype.nexus.repository.search.query;
 
 import java.lang.reflect.Field;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -24,9 +25,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.jboss.resteasy.specimpl.ResteasyUriInfo;
+import org.junit.experimental.categories.Category;
+import org.mockito.Mockito;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.rest.SearchMapping;
 import org.sonatype.nexus.repository.rest.SearchMappings;
 import org.sonatype.nexus.repository.rest.api.RepositoryManagerRESTAdapter;
@@ -38,13 +42,16 @@ import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.hamcrest.Matcher;
-import org.jboss.resteasy.spi.ResteasyUriInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import javax.ws.rs.core.MultivaluedHashMap;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.UriInfo;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static java.util.Collections.emptyMap;
@@ -57,7 +64,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @ExtendWith(MockitoExtension.class)
-@org.junit.Category(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class ElasticSearchUtilsTest
     extends TestSupport
 {
@@ -69,13 +76,16 @@ public class ElasticSearchUtilsTest
 
   private static final String QUERY_STRING = "continuationToken=1&parameter=test&wait=false";
 
-  private static final String URI = "http://localhost";
+//  private static final String URI = "http://localhost";
 
   private static final String CONTEXT_PATH = "/";
 
   private static final Field fieldNameField = getField(FieldSortBuilder.class, "fieldName");
 
   private static final Field orderField = getField(FieldSortBuilder.class, "order");
+
+  @Mock
+  private UriInfo uriInfo;
 
   @Mock
   RepositoryManagerRESTAdapter repositoryManagerRESTAdapter;
@@ -117,7 +127,18 @@ public class ElasticSearchUtilsTest
 
   @Test
   void buildQueryRemoveContinuationTokenByDefault() {
-    ResteasyUriInfo uriInfo = new ResteasyUriInfo(URI, QUERY_STRING, CONTEXT_PATH);
+    MultivaluedMap<String, String> queryParams = new MultivaluedHashMap<>();
+    queryParams.add("continuationToken", "1");
+    queryParams.add("parameter", "test");
+    queryParams.add("wait", "false");
+
+    // When uriInfo.getQueryParameters() is called, return our map
+    Mockito.when(uriInfo.getQueryParameters()).thenReturn(queryParams);
+    Mockito.when(uriInfo.getRequestUri()).thenReturn(URI.create("http://localhost/?" + QUERY_STRING));
+    Mockito.when(uriInfo.getBaseUri()).thenReturn(URI.create("http://localhost"));
+    Mockito.when(uriInfo.getPath()).thenReturn(CONTEXT_PATH);
+
+
     String query = underTest.buildQuery(uriInfo).toString();
 
     assertQueryParameters(query, containsString("wait"));
@@ -125,7 +146,17 @@ public class ElasticSearchUtilsTest
 
   @Test
   void buildQueryRemoveSelectedParametersIncludingDefault() {
-    ResteasyUriInfo uriInfo = new ResteasyUriInfo(URI, QUERY_STRING, CONTEXT_PATH);
+    MultivaluedMap<String, String> queryParams = new MultivaluedHashMap<>();
+    queryParams.add("continuationToken", "1");
+    queryParams.add("parameter", "test");
+    queryParams.add("wait", "false");
+
+    // When uriInfo.getQueryParameters() is called, return our map
+    Mockito.when(uriInfo.getQueryParameters()).thenReturn(queryParams);
+    Mockito.when(uriInfo.getRequestUri()).thenReturn(URI.create("http://localhost/?" + QUERY_STRING));
+    Mockito.when(uriInfo.getBaseUri()).thenReturn(URI.create("http://localhost"));
+    Mockito.when(uriInfo.getPath()).thenReturn(CONTEXT_PATH);
+
     String query = underTest.buildQuery(uriInfo, singletonList("wait")).toString();
 
     assertQueryParameters(query, not(containsString("wait")));
@@ -400,7 +431,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  @org.junit.Category(VirtualThreadTestGroup.class)
+  @Category(VirtualThreadTestGroup.class)
   void concurrentQueryBuildingWithVirtualThreads() throws Exception {
     int threadCount = 100;
     CountDownLatch latch = new CountDownLatch(threadCount);
@@ -444,7 +475,7 @@ public class ElasticSearchUtilsTest
   }
 
   @Test
-  @org.junit.Category(VirtualThreadTestGroup.class)
+  @Category(VirtualThreadTestGroup.class)
   void concurrentSortBuilderCreationWithVirtualThreads() throws Exception {
     int threadCount = 100;
     CountDownLatch latch = new CountDownLatch(threadCount);

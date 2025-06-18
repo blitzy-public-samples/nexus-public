@@ -25,8 +25,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -64,6 +62,9 @@ public class ReplicationIngesterSupportTest
   private ReplicationIngesterHelper replicationIngesterHelper;
 
   @Mock
+  private ReplicationVirtualThreadManager virtualThreadManager;
+
+  @Mock
   private BlobStore blobStore;
 
   @Mock
@@ -92,7 +93,7 @@ public class ReplicationIngesterSupportTest
     when(blobStore.get(any(BlobId.class))).thenReturn(blob);
     when(blobStore.getBlobAttributes(any(BlobId.class))).thenReturn(blobAttributes);
     when(blobAttributes.getHeaders()).thenReturn(getHeaders());
-    underTest = new TestReplicationIngester(blobStoreManager, replicationIngesterHelper);
+    underTest = new TestReplicationIngester(blobStoreManager, replicationIngesterHelper, virtualThreadManager);
   }
 
   @Test
@@ -295,9 +296,10 @@ public class ReplicationIngesterSupportTest
     }
 
     public TestReplicationIngester(final BlobStoreManager blobstoreManager,
-                                   final ReplicationIngesterHelper replicationIngesterHelper)
+                                   final ReplicationIngesterHelper replicationIngesterHelper,
+                                   final ReplicationVirtualThreadManager virtualThreadManager)
     {
-      super(blobstoreManager, replicationIngesterHelper);
+      super(blobstoreManager, replicationIngesterHelper, virtualThreadManager);
     }
   }
 }

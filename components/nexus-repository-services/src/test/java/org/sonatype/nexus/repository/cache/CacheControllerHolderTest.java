@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.repository.cache;
 
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.cache.CacheControllerHolder.CacheType;
-import org.sonatype.nexus.test.Java21TestGroup;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

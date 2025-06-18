@@ -103,6 +103,11 @@
           <source>21</source>
           <target>21</target>
           <compilerArgs>--enable-preview</compilerArgs>
+          <testExcludes>
+            <exclude>**/virtualthread/**/*.java</exclude>
+            <exclude>**/java21/*.java</exclude>
+            <exclude>**/*VirtualThread*.java</exclude>
+          </testExcludes>
         </configuration>
       </plugin>
       

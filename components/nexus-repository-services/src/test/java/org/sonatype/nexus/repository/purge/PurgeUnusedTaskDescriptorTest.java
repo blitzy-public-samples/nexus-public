@@ -14,7 +14,7 @@ package org.sonatype.nexus.repository.purge;
 
 import java.util.List;
 
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.formfields.FormField;
 import org.sonatype.nexus.formfields.NumberTextFormField;
 import org.sonatype.nexus.scheduling.TaskDescriptor;
@@ -53,10 +53,10 @@ public class PurgeUnusedTaskDescriptorTest
     assertThat(formFields.get(0).getId(), is(REPOSITORY_NAME_FIELD_ID));
 
     // Using record pattern matching for cleaner code
-    if (formFields.get(1) instanceof NumberTextFormField(var id, var minimumValue, var initialValue, var _, var __, var ___)) {
-      assertThat(id, is(PurgeUnusedTask.LAST_USED_FIELD_ID));
-      assertThat(minimumValue, is(LAST_USED_MIN_VALUE));
-      assertThat(initialValue, is(LAST_USED_INIT_VALUE));
+    if (formFields.get(1) instanceof NumberTextFormField numberTextFormField) {
+      assertThat(numberTextFormField.getId(), is(PurgeUnusedTask.LAST_USED_FIELD_ID));
+      assertThat(numberTextFormField.getMinimumValue(), is(LAST_USED_MIN_VALUE));
+      assertThat(numberTextFormField.getInitialValue(), is(LAST_USED_INIT_VALUE));
     }
   }
 }

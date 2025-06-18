@@ -34,10 +34,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.concurrent.ConcurrentRunner;
 import org.sonatype.goodies.testsupport.concurrent.ConcurrentTask;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.common.cooperation2.Cooperation2Factory;
 import org.sonatype.nexus.common.cooperation2.CooperationException;
@@ -79,7 +80,7 @@ import static org.sonatype.nexus.repository.http.HttpMethods.GET;
  * Concurrent {@link ProxyFacetSupport} tests.
  */
 @ExtendWith(MockitoExtension.class)
-@org.junit.jupiter.api.Tag(Java21TestGroup.NAME)
+@Category(Java21TestGroup.class)
 public class ConcurrentProxyTest
     extends TestSupport
 {
@@ -531,8 +532,8 @@ public class ConcurrentProxyTest
     long virtualThreadTime = measureDownloadTime(virtualThreadFactory, numThreads, numIterations, testContext);
     
     // Log results
-    log.info("Platform thread download time: {} ms", platformThreadTime);
-    log.info("Virtual thread download time: {} ms", virtualThreadTime);
+    logger.info("Platform thread download time: {} ms", platformThreadTime);
+    logger.info("Virtual thread download time: {} ms", virtualThreadTime);
     
     // Virtual threads should perform better under high concurrency
     assertThat("Virtual threads should be faster than platform threads", 
@@ -559,7 +560,7 @@ public class ConcurrentProxyTest
               latch.countDown();
             } 
             catch (Exception e) {
-              log.error("Error during download test", e);
+              logger.error("Error during download test", e);
               latch.countDown();
             }
           });
@@ -610,7 +611,7 @@ public class ConcurrentProxyTest
             latch.countDown();
           } 
           catch (Exception e) {
-            log.error("Error during thread pinning test", e);
+            logger.error("Error during thread pinning test", e);
             // If we detect pinning, increment counter
             if (e.toString().contains("pinned")) {
               pinnedThreadCount.incrementAndGet();

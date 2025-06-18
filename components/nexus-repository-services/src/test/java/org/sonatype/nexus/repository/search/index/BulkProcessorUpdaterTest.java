@@ -53,7 +53,7 @@ public class BulkProcessorUpdaterTest
   @Test
   public void should_add_request_to_bulk_processor() {
     // When
-    underTest.call();
+    underTest.process();
 
     // Then
     verify(bulkProcessor, times(1)).add(deleteRequest);
@@ -69,7 +69,7 @@ public class BulkProcessorUpdaterTest
       // When - execute multiple bulk operations concurrently with virtual threads
       Future<?>[] futures = new Future<?>[numOperations];
       for (int i = 0; i < numOperations; i++) {
-        futures[i] = executor.submit(underTest);
+        futures[i] = executor.submit(underTest.process());
       }
       
       // Wait for all operations to complete

@@ -23,10 +23,11 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.common.event.EventManager;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.cache.NegativeCacheFacet;
 import org.sonatype.nexus.repository.cache.RepositoryCacheInvalidationService;
@@ -60,20 +61,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.security.BreadActions.EDIT;
 
 @ExtendWith(MockitoExtension.class)
 @Tag("Java21")
-@org.junit.Category(Java21TestGroup.class)
+@org.junit.experimental.categories.Category(Java21TestGroup.class)
 public class AuthorizingRepositoryManagerTest
-    extends TestSupport
-{
+    extends TestSupport {
   @Mock
   private RepositoryManager repositoryManager;
 
@@ -99,9 +94,9 @@ public class AuthorizingRepositoryManagerTest
     lenient().when(repositoryManager.get(eq("absent"))).thenReturn(null);
 
     RepositoryCacheInvalidationService repositoryCacheInvalidationService =
-        new RepositoryCacheInvalidationService(repositoryManager, eventManager);
+            new RepositoryCacheInvalidationService(repositoryManager, eventManager);
     authorizingRepositoryManager = new AuthorizingRepositoryManagerImpl(
-        repositoryManager, repositoryPermissionChecker, taskScheduler, repositoryCacheInvalidationService);
+            repositoryManager, repositoryPermissionChecker, taskScheduler, repositoryCacheInvalidationService);
   }
 
   @Test
@@ -125,9 +120,9 @@ public class AuthorizingRepositoryManagerTest
   @Test
   void deleteShouldThrowExceptionIfInsufficientPermissions() throws Exception {
     doThrow(new AuthorizationException("User is not permitted."))
-        .when(repositoryPermissionChecker)
-        .ensureUserCanAdmin(any(), any());
-    
+            .when(repositoryPermissionChecker)
+            .ensureUserCanAdmin(any(), any());
+
     assertThrows(AuthorizationException.class, () -> {
       authorizingRepositoryManager.delete("repository");
     });
@@ -146,7 +141,7 @@ public class AuthorizingRepositoryManagerTest
   @Test
   void rebuildIndexShouldThrowExceptionIfRepositoryTypeIsNotHostedOrProxy() throws Exception {
     when(repository.getType()).thenReturn(new GroupType());
-    
+
     assertThrows(IncompatibleRepositoryException.class, () -> {
       authorizingRepositoryManager.rebuildSearchIndex("repository");
     });
@@ -160,9 +155,9 @@ public class AuthorizingRepositoryManagerTest
   void rebuildIndexShouldThrowExceptionIfInsufficientPermissions() throws Exception {
     when(repository.getType()).thenReturn(new HostedType());
     doThrow(new AuthorizationException("User is not permitted."))
-        .when(repositoryPermissionChecker)
-        .ensureUserCanAdmin(any(), any());
-    
+            .when(repositoryPermissionChecker)
+            .ensureUserCanAdmin(any(), any());
+
     assertThrows(AuthorizationException.class, () -> {
       authorizingRepositoryManager.rebuildSearchIndex("repository");
     });
@@ -202,7 +197,7 @@ public class AuthorizingRepositoryManagerTest
   @Test
   void invalidateCacheShouldThrowExceptionIfRepositoryTypeIsNotProxyOrGroup() throws Exception {
     when(repository.getType()).thenReturn(new HostedType());
-    
+
     assertThrows(IncompatibleRepositoryException.class, () -> {
       authorizingRepositoryManager.invalidateCache("repository");
     });
@@ -216,9 +211,9 @@ public class AuthorizingRepositoryManagerTest
   void invalidateCacheShouldThrowExceptionIfInsufficientPermissions() throws Exception {
     when(repository.getType()).thenReturn(new GroupType());
     doThrow(new AuthorizationException("User is not permitted."))
-        .when(repositoryPermissionChecker)
-        .ensureUserCanAdmin(any(), any());
-    
+            .when(repositoryPermissionChecker)
+            .ensureUserCanAdmin(any(), any());
+
     assertThrows(AuthorizationException.class, () -> {
       authorizingRepositoryManager.invalidateCache("repository");
     });
@@ -265,22 +260,22 @@ public class AuthorizingRepositoryManagerTest
 
   @Test
   @Tag("VirtualThread")
-  @org.junit.Category(VirtualThreadTestGroup.class)
+  @Category(VirtualThreadTestGroup.class)
   void concurrentRepositoryOperationsWithVirtualThreads() throws Exception {
     // Create a virtual thread factory
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
+
     int taskCount = 100;
     CountDownLatch latch = new CountDownLatch(taskCount);
     AtomicInteger errorCount = new AtomicInteger(0);
     List<Exception> exceptions = new ArrayList<>();
-    
+
     // Set up mock for proxy repository
     when(repository.getType()).thenReturn(new ProxyType());
     ProxyFacet proxyFacet = mock(ProxyFacet.class);
     when(repository.facet(ProxyFacet.class)).thenReturn(proxyFacet);
-    
+
     try {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
@@ -295,17 +290,17 @@ public class AuthorizingRepositoryManagerTest
           }
         });
       }
-      
+
       // Wait for all tasks to complete
       boolean completed = latch.await(30, TimeUnit.SECONDS);
-      
+
       // Verify results
       assertTrue(completed, "All tasks should complete within timeout");
       assertEquals(0, errorCount.get(), "No errors should occur during concurrent operations");
-      
+
       // Verify the proxy facet was called the expected number of times
-      verify(repositoryManager, lenient().times(taskCount)).get(eq("repository"));
-      verify(proxyFacet, lenient().times(taskCount)).invalidateProxyCaches();
+      verify(repositoryManager, times(taskCount)).get(eq("repository"));
+      verify(proxyFacet, times(taskCount)).invalidateProxyCaches();
     } finally {
       executor.shutdown();
     }
@@ -313,16 +308,16 @@ public class AuthorizingRepositoryManagerTest
 
   @Test
   @Tag("VirtualThread")
-  @org.junit.Category(VirtualThreadTestGroup.class)
+  @Category(VirtualThreadTestGroup.class)
   void concurrentRepositoryOperationsWithCompletableFuture() throws Exception {
     // Set up mock for proxy repository
     when(repository.getType()).thenReturn(new ProxyType());
     ProxyFacet proxyFacet = mock(ProxyFacet.class);
     when(repository.facet(ProxyFacet.class)).thenReturn(proxyFacet);
-    
+
     int taskCount = 50;
     List<CompletableFuture<Void>> futures = new ArrayList<>();
-    
+
     // Create tasks using CompletableFuture with virtual threads
     for (int i = 0; i < taskCount; i++) {
       CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
@@ -332,15 +327,16 @@ public class AuthorizingRepositoryManagerTest
           throw new RuntimeException(e);
         }
       }, Executors.newVirtualThreadPerTaskExecutor());
-      
+
       futures.add(future);
     }
-    
+
     // Wait for all futures to complete
     CompletableFuture<Void> allFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
     allFutures.join();
-    
+
     // Verify the proxy facet was called the expected number of times
-    verify(repositoryManager, lenient().times(taskCount)).get(eq("repository"));
-    verify(proxyFacet, lenient().times(taskCount)).invalidateProxyCaches();
+    verify(repositoryManager, times(taskCount)).get(eq("repository"));
+    verify(proxyFacet, times(taskCount)).invalidateProxyCaches();
   }
+}

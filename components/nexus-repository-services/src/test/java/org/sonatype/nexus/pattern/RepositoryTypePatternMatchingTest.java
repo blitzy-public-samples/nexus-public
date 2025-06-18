@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.common.test.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -52,11 +52,10 @@ public class RepositoryTypePatternMatchingTest
    * This hierarchy represents a simplified version of the repository types used in
    * Nexus Repository Manager: hosted, proxy, and group repositories.
    */
-  sealed interface Repository permits HostedRepository, ProxyRepository, GroupRepository {
+  sealed interface Repository permits AbstractRepository {
     String getName();
     Format getFormat();
   }
-  
   /**
    * Format interface representing the repository format (maven, npm, docker, etc.)
    */
@@ -83,7 +82,7 @@ public class RepositoryTypePatternMatchingTest
   /**
    * Base abstract class for all repository types, providing common name and format functionality.
    */
-  abstract static class AbstractRepository implements Repository {
+  non-sealed abstract static class AbstractRepository implements Repository {
     private final String name;
     private final Format format;
     
@@ -91,12 +90,12 @@ public class RepositoryTypePatternMatchingTest
       this.name = name;
       this.format = format;
     }
-    
+
     @Override
     public String getName() {
       return name;
     }
-    
+
     @Override
     public Format getFormat() {
       return format;
@@ -447,6 +446,7 @@ public class RepositoryTypePatternMatchingTest
       case GroupRepository group -> 
           String.format("%s group repository '%s' (members: %d)", 
               formatId, name, group.getMembers().length);
+        default -> throw new IllegalStateException("Unexpected value: " + repository);
     };
   }
   
@@ -471,6 +471,7 @@ public class RepositoryTypePatternMatchingTest
               formatId, name, group.getMembers().length);
       case GroupRepository group -> 
           String.format("%s single-member group repository '%s'", formatId, name);
+        default -> throw new IllegalStateException("Unexpected value: " + repository);
     };
   }
   
@@ -505,6 +506,7 @@ public class RepositoryTypePatternMatchingTest
       case ProxyRepository proxy -> "proxy";
       case GroupRepository group -> "group";
       // No default case needed - compiler ensures all cases are covered
+        default -> throw new IllegalStateException("Unexpected value: " + repository);
     };
   }
   

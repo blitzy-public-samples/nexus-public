@@ -137,13 +137,13 @@ public class RepositoryInternalResourceTest
     lenient().when(repositoryPermissionChecker.userCanBrowseRepositories(repositories)).thenReturn(repositories);
     lenient().when(repositoryManager.browse()).thenReturn(repositories);
 
-    List<RepositoryXO> response = underTest.getRepositories(null, false, false, null);
+    List<RepositoryXO> response = underTest.getRepositories(null, null, false, false, null);
 
-    assertThat(response.get(0).getName(), is(sortedRepositories.get(0).getName()));
-    assertThat(response.get(1).getName(), is(sortedRepositories.get(1).getName()));
-    assertThat(response.get(2).getName(), is(sortedRepositories.get(2).getName()));
-    assertThat(response.get(3).getName(), is(sortedRepositories.get(3).getName()));
-    assertThat(response.get(4).getName(), is(sortedRepositories.get(4).getName()));
+    assertThat(response.get(0).name(), is(sortedRepositories.get(0).getName()));
+    assertThat(response.get(1).name(), is(sortedRepositories.get(1).getName()));
+    assertThat(response.get(2).name(), is(sortedRepositories.get(2).getName()));
+    assertThat(response.get(3).name(), is(sortedRepositories.get(3).getName()));
+    assertThat(response.get(4).name(), is(sortedRepositories.get(4).getName()));
   }
 
   @Test
@@ -174,7 +174,7 @@ public class RepositoryInternalResourceTest
         repo -> lenient().when(repositoryPermissionChecker.userHasRepositoryAdminPermission(repo, READ)).thenReturn(true));
     lenient().when(repositoryManager.browse()).thenReturn(repositories);
 
-    List<RepositoryDetailXO> details = underTest.getRepositoryDetails();
+    List<RepositoryDetailXO> details = underTest.getRepositoryDetailsSync();
 
     assertThat(details.get(0).getName(), is("maven-central"));
     assertThat(details.get(0).getType(), is("proxy"));
@@ -289,7 +289,7 @@ public class RepositoryInternalResourceTest
    */
   private String formatRepositoryInfo(Repository repository) {
     String name = repository.getName();
-    String format = repository.getFormat().getId();
+    String format = repository.getFormat().getValue();
     String type = repository.getType().getValue();
     String url = repository.getUrl();
     String status = "Unknown";

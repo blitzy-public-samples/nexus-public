@@ -31,9 +31,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.*;
 
 /**
  * Test class demonstrating Java 21 record pattern matching with repository REST API models.
@@ -55,7 +53,7 @@ import static org.hamcrest.Matchers.notNullValue;
  * - Pattern matching with Optional values
  */
 @ExtendWith(MockitoExtension.class)
-public class RecordPatternTest
+  public class RecordPatternTest
     extends TestSupport
 {
   private ObjectMapper objectMapper;
@@ -267,13 +265,18 @@ public class RecordPatternTest
       assertThat(env, is("production"));
       
       // Access attributes from the extracted repository
-      Map<String, Map<String, Object>> attributes = repo.getAttributes();
+      Map<String, Object> attributes = repo.getAttributes();
       assertThat(attributes, notNullValue());
       assertThat(attributes.containsKey("proxy"), is(true));
       
       // Extract and verify the remote URL using pattern matching on the Map structure
-      if (attributes.get("proxy") instanceof Map<String, Object> proxyAttrs && 
-          proxyAttrs.get("remoteUrl") instanceof String remoteUrl) {
+      if (attributes.get("proxy") instanceof Map<?, ?> rawProxyAttrs) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> proxyAttrs = (Map<String, Object>) rawProxyAttrs;
+
+        Object remoteUrlObj = proxyAttrs.get("remoteUrl");
+        assertThat(remoteUrlObj, instanceOf(String.class));
+        String remoteUrl = (String) remoteUrlObj;
         assertThat(remoteUrl, is("https://repo1.maven.org/maven2/"));
       }
       else {
@@ -304,22 +307,17 @@ public class RecordPatternTest
     
     // Process repository with description using pattern matching
     String descResult = switch (repoWithDesc) {
-      // Match when description is present
-      case OptionalRepositoryModel(var name, var type, var format, Optional.of(var desc)) ->
-          "Repository " + name + " description: " + desc;
-      // Match when description is not present
-      case OptionalRepositoryModel(var name, var type, var format, Optional.empty()) ->
-          "Repository " + name + " has no description";
+      case OptionalRepositoryModel(var name, var type, var format, Optional<String> descOpt) ->
+              descOpt.map(desc -> "Repository " + name + " description: " + desc)
+                      .orElse("Repository " + name + " has no description");
     };
-    
+
+
     // Process repository without description using pattern matching
     String noDescResult = switch (repoWithoutDesc) {
-      // Match when description is present
-      case OptionalRepositoryModel(var name, var type, var format, Optional.of(var desc)) ->
-          "Repository " + name + " description: " + desc;
-      // Match when description is not present
-      case OptionalRepositoryModel(var name, var type, var format, Optional.empty()) ->
-          "Repository " + name + " has no description";
+      case OptionalRepositoryModel(var name, var type, var format, Optional<String> desc) ->
+              desc.map(desct -> "Repository " + name + " description: " + desct)
+                      .orElse("Repository " + name + " has no description");
     };
     
     // Verify results
@@ -340,39 +338,32 @@ public class RecordPatternTest
     RepositoryModel groupRepo = new RepositoryModel("maven-public", "group", "maven2", "http://localhost:8081/repository/maven-public");
     
     // Test proxy repository pattern matching
-    String proxyResult = switch (proxyRepo) {
-      case RepositoryModel(var name, "proxy", var format, var url) -> 
-          "Proxy repository " + name + " for format " + format;
-      case RepositoryModel(var name, "hosted", var format, var url) -> 
-          "Hosted repository " + name + " for format " + format;
-      case RepositoryModel(var name, "group", var format, var url) -> 
-          "Group repository " + name + " for format " + format;
+    String proxyResult = switch (proxyRepo.type()) {
+      case "proxy" -> "Proxy repository " + proxyRepo.name() + " for format " + proxyRepo.format();
+      case "hosted" -> "Hosted repository " + proxyRepo.name() + " for format " + proxyRepo.format();
+      case "group" -> "Group repository " + proxyRepo.name() + " for format " + proxyRepo.format();
       default -> "Unknown repository type";
     };
-    
+
+
     assertThat(proxyResult, is("Proxy repository maven-central for format maven2"));
     
     // Test hosted repository pattern matching
-    String hostedResult = switch (hostedRepo) {
-      case RepositoryModel(var name, "proxy", var format, var url) -> 
-          "Proxy repository " + name + " for format " + format;
-      case RepositoryModel(var name, "hosted", var format, var url) -> 
-          "Hosted repository " + name + " for format " + format;
-      case RepositoryModel(var name, "group", var format, var url) -> 
-          "Group repository " + name + " for format " + format;
+    String hostedResult = switch (hostedRepo.type()) {
+      case "proxy" -> "Proxy repository " + hostedRepo.name() + " for format " + hostedRepo.format();
+      case "hosted" -> "Hosted repository " + hostedRepo.name() + " for format " + hostedRepo.format();
+      case "group" -> "Group repository " + hostedRepo.name() + " for format " + hostedRepo.format();
       default -> "Unknown repository type";
     };
-    
+
+
     assertThat(hostedResult, is("Hosted repository maven-releases for format maven2"));
     
     // Test group repository pattern matching
-    String groupResult = switch (groupRepo) {
-      case RepositoryModel(var name, "proxy", var format, var url) -> 
-          "Proxy repository " + name + " for format " + format;
-      case RepositoryModel(var name, "hosted", var format, var url) -> 
-          "Hosted repository " + name + " for format " + format;
-      case RepositoryModel(var name, "group", var format, var url) -> 
-          "Group repository " + name + " for format " + format;
+    String groupResult = switch (groupRepo.type()) {
+      case "proxy" -> "Proxy repository " + hostedRepo.name() + " for format " + hostedRepo.format();
+      case "hosted" -> "Hosted repository " + hostedRepo.name() + " for format " + hostedRepo.format();
+      case "group" -> "Group repository " + hostedRepo.name() + " for format " + hostedRepo.format();
       default -> "Unknown repository type";
     };
     

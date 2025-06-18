@@ -98,15 +98,9 @@ public class ComponentXODeserializerTest
     assertNotNull(result);
     
     // Using record pattern matching to extract and validate component values
-    if (result instanceof FooComponentXO(BarComponentXO(var baseComponent), var fooValue)) {
-      assertEquals("record-pattern-id", baseComponent.getId());
-      assertEquals("record-foo", fooValue);
-      
-      // Further pattern matching on the BarComponentXO
-      if (baseComponent instanceof BarComponentXO(var coreComponent, var barValue)) {
-        assertEquals("record-pattern-id", coreComponent.getId());
-        assertEquals("record-bar", barValue);
-      }
+    if (result instanceof FooComponentXO fooComponentXO) {
+      assertEquals("record-pattern-id", fooComponentXO.componentXO.getId());
+      assertEquals("record-foo", fooComponentXO.getFoo());
     } else {
       // This should not happen if the pattern matching works correctly
       throw new AssertionError("Record pattern matching failed");

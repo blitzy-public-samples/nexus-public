@@ -19,9 +19,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.*;
 
 /**
  * Tests for Java 21 record pattern matching with API responses.
@@ -176,7 +174,8 @@ public class ApiResponseRecordPatternTest
       } else if (response instanceof SimpleApiResponse(int status, String message, Object data) && status >= 400) {
         // Error response
         errorCount++;
-        assertThat(status, is(equalTo(404)) || equalTo(400) || equalTo(401));
+        assertThat(status, anyOf(equalTo(404), equalTo(400), equalTo(401)));
+
       }
     }
     

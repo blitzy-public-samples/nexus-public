@@ -13,7 +13,7 @@
 package org.sonatype.nexus.repository.search.query;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.search.query.SearchSubjectHelper.SubjectRegistration;
 
 import org.apache.shiro.subject.Subject;

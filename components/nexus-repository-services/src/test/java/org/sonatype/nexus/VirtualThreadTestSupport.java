@@ -14,20 +14,15 @@ package org.sonatype.nexus;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -334,6 +329,45 @@ public class VirtualThreadTestSupport
           return delegate.submit(withMdc(task));
         }
 
+        @NotNull
+        @Override
+        public <T> List<Future<T>> invokeAll(@NotNull Collection<? extends Callable<T>> tasks) throws InterruptedException {
+          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
+          for (Callable<T> task : tasks) {
+            wrappedTasks.add(withMdc(task));
+          }
+          return delegate.invokeAll(wrappedTasks);
+        }
+
+        @NotNull
+        @Override
+        public <T> List<Future<T>> invokeAll(@NotNull Collection<? extends Callable<T>> tasks, long timeout, @NotNull TimeUnit unit) throws InterruptedException {
+          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
+          for (Callable<T> task : tasks) {
+            wrappedTasks.add(withMdc(task));
+          }
+          return delegate.invokeAll(wrappedTasks, timeout, unit);
+        }
+
+        @NotNull
+        @Override
+        public <T> T invokeAny(@NotNull Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
+          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
+          for (Callable<T> task : tasks) {
+            wrappedTasks.add(withMdc(task));
+          }
+          return delegate.invokeAny(wrappedTasks);
+        }
+
+        @Override
+        public <T> T invokeAny(@NotNull Collection<? extends Callable<T>> tasks, long timeout, @NotNull TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
+          for (Callable<T> task : tasks) {
+            wrappedTasks.add(withMdc(task));
+          }
+          return delegate.invokeAny(wrappedTasks, timeout, unit);
+        }
+
         @Override
         public void shutdown() {
           delegate.shutdown();
@@ -357,45 +391,6 @@ public class VirtualThreadTestSupport
         @Override
         public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
           return delegate.awaitTermination(timeout, unit);
-        }
-
-        @Override
-        public <T> List<Future<T>> invokeAll(List<? extends Callable<T>> tasks) throws InterruptedException {
-          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
-          for (Callable<T> task : tasks) {
-            wrappedTasks.add(withMdc(task));
-          }
-          return delegate.invokeAll(wrappedTasks);
-        }
-
-        @Override
-        public <T> List<Future<T>> invokeAll(List<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-            throws InterruptedException {
-          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
-          for (Callable<T> task : tasks) {
-            wrappedTasks.add(withMdc(task));
-          }
-          return delegate.invokeAll(wrappedTasks, timeout, unit);
-        }
-
-        @Override
-        public <T> T invokeAny(List<? extends Callable<T>> tasks) throws InterruptedException, 
-            java.util.concurrent.ExecutionException {
-          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
-          for (Callable<T> task : tasks) {
-            wrappedTasks.add(withMdc(task));
-          }
-          return delegate.invokeAny(wrappedTasks);
-        }
-
-        @Override
-        public <T> T invokeAny(List<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-            throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException {
-          List<Callable<T>> wrappedTasks = new ArrayList<>(tasks.size());
-          for (Callable<T> task : tasks) {
-            wrappedTasks.add(withMdc(task));
-          }
-          return delegate.invokeAny(wrappedTasks, timeout, unit);
         }
       };
     }

@@ -448,7 +448,7 @@ public class DefaultContentValidatorVirtualThreadTest
                 ContentTypes.TEXT_PLAIN);
           } catch (Exception e) {
             // Log but continue - we're testing for pinning, not validation correctness here
-            log.warn("Exception during validation", e);
+            logger.warn("Exception during validation", e);
           } finally {
             completionLatch.countDown();
           }

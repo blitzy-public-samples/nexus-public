@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 import jakarta.validation.ConstraintViolationException;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.repository.rest.api.ContentSelectorApiCreateRequest;
 import org.sonatype.nexus.repository.rest.api.ContentSelectorApiResponse;

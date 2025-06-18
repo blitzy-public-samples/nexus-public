@@ -65,7 +65,7 @@ public class StreamingObjectMapperTest
     underTest.readAndWrite(input, output);
 
     // Using Java 21 String Templates for formatting validation
-    String minifiedJson = STR."{prettyJson.replaceAll("\\n", "").replace(" ", "")}";
+    String minifiedJson = prettyJson.replaceAll("\\n", "").replace(" ", "");
     assertEquals(minifiedJson, new String(output.toByteArray()));
   }
 

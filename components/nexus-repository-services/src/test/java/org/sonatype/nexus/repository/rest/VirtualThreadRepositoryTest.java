@@ -141,7 +141,7 @@ public class VirtualThreadRepositoryTest extends TestSupport
     
     Thread virtualThread = virtualThreadFactory.newThread(() -> {
       try {
-        result.set(underTest.getRepositories(null, false, false, null));
+        result.set(underTest.getRepositories(null, null,false, false, null));
       } catch (Throwable t) {
         error.set(t);
       }
@@ -211,7 +211,7 @@ public class VirtualThreadRepositoryTest extends TestSupport
       
       // Verify all operations ran on virtual threads
       long virtualThreadCount = threadTypes.values().stream().filter(Boolean::booleanValue).count();
-      log.info("Operations executed on virtual threads: {}/{}", virtualThreadCount, taskCount);
+      logger.info("Operations executed on virtual threads: {}/{}", virtualThreadCount, taskCount);
       assertThat("All operations should run on virtual threads", virtualThreadCount, is((long)taskCount));
       
       // Verify the repository manager was called the expected number of times
@@ -262,9 +262,9 @@ public class VirtualThreadRepositoryTest extends TestSupport
     });
     
     // Log the results for analysis
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-    log.info("Performance ratio: platform/virtual = {}", (double) platformThreadTime / virtualThreadTime);
+    logger.info("Platform thread execution time: {} ms", platformThreadTime);
+    logger.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    logger.info("Performance ratio: platform/virtual = {}", (double) platformThreadTime / virtualThreadTime);
     
     // For high concurrency operations, virtual threads should generally be more efficient
     // However, this is a simple test and might not always show benefits in all environments
@@ -328,12 +328,12 @@ public class VirtualThreadRepositoryTest extends TestSupport
         threadName.get().startsWith("test-virtual-"), is(true));
     
     // Log the thread dump for analysis
-    log.info(threadDump.get());
+    logger.info(threadDump.get());
     
     // In a real test, you would verify that no pinning occurred
     // This could be done by checking JFR events or logs when jdk.tracePinnedThreads is enabled
-    log.info("In production, enable -Djdk.tracePinnedThreads=full to detect thread pinning");
-    log.info("Example command: java -Djdk.tracePinnedThreads=full -jar nexus-repository-services.jar");
+    logger.info("In production, enable -Djdk.tracePinnedThreads=full to detect thread pinning");
+    logger.info("Example command: java -Djdk.tracePinnedThreads=full -jar nexus-repository-services.jar");
   }
 
   /**
@@ -364,7 +364,7 @@ public class VirtualThreadRepositoryTest extends TestSupport
       executeRepositoryOperations(platformExecutor, operationCount);
       long executionTime = System.currentTimeMillis() - startTime;
       
-      log.info("Platform thread execution time with pool size {}: {} ms", threadPoolSize, executionTime);
+      logger.info("Platform thread execution time with pool size {}: {} ms", threadPoolSize, executionTime);
       
       // No specific assertions here as performance will vary by environment
       // This test is primarily for gathering metrics on different thread pool sizes

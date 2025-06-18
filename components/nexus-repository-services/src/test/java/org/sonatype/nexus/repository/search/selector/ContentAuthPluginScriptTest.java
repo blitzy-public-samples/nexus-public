@@ -16,7 +16,7 @@ import java.util.Collections;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 import org.sonatype.nexus.repository.security.ContentPermissionChecker;
 import org.sonatype.nexus.repository.security.VariableResolverAdapter;
@@ -105,10 +105,12 @@ public class ContentAuthPluginScriptTest
     when(contentPermissionChecker.isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE, variableSource))
         .thenReturn(true);
     assertThat(underTest.run(), is(true));
-    verify(contentPermissionChecker, times(1)).isPermitted(repositories -> repositories.equals(Collections.singleton(REPOSITORY_NAME)), 
-        format -> format.equals(FORMAT), 
-        action -> action.equals(BROWSE), 
-        source -> source.equals(variableSource));
+    verify(contentPermissionChecker, times(1)).isPermitted(
+            eq(Collections.singleton(REPOSITORY_NAME)),
+            eq(FORMAT),
+            eq(BROWSE),
+            eq(variableSource)
+    );
   }
 
   @Test
@@ -121,10 +123,12 @@ public class ContentAuthPluginScriptTest
     when(contentPermissionChecker.isPermitted(Collections.singleton(REPOSITORY_NAME), FORMAT, BROWSE, variableSource))
         .thenReturn(false);
     assertThat(underTest.run(), is(false));
-    verify(contentPermissionChecker, times(1)).isPermitted(repositories -> repositories.equals(Collections.singleton(REPOSITORY_NAME)), 
-        format -> format.equals(FORMAT), 
-        action -> action.equals(BROWSE), 
-        source -> source.equals(variableSource));
+    verify(contentPermissionChecker, times(1)).isPermitted(
+            eq(Collections.singleton(REPOSITORY_NAME)),
+            eq(FORMAT),
+            eq(BROWSE),
+            eq(variableSource)
+    );
   }
 
   @Test

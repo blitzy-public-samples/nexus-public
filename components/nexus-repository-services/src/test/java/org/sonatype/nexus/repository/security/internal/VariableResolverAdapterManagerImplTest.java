@@ -44,9 +44,9 @@ public class VariableResolverAdapterManagerImplTest
   @BeforeEach
   public void setUp() {
     // Using Java 21 concise Map initialization syntax
-    Map<String, VariableResolverAdapter> adaptersByFormat = HashMap.newHashMap(
-        Map.of("special", specializedAdapter, 
-               VariableResolverAdapterManagerImpl.DEFAULT_ADAPTER_NAME, defaultAdapter));
+    Map<String, VariableResolverAdapter> adaptersByFormat =
+        Map.of("special", specializedAdapter,
+               VariableResolverAdapterManagerImpl.DEFAULT_ADAPTER_NAME, defaultAdapter);
     manager = new VariableResolverAdapterManagerImpl(adaptersByFormat);
   }
 

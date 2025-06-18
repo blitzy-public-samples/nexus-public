@@ -16,8 +16,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.Type;
 import org.sonatype.nexus.repository.config.Configuration;
@@ -46,7 +48,7 @@ import static org.mockito.Mockito.when;
  * Tests for {@link RepositoryMemberGraph}.
  */
 @ExtendWith(MockitoExtension.class)
-@org.sonatype.nexus.common.test.Category(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class RepositoryMemberGraphTest
     extends TestSupport
 {

@@ -28,13 +28,13 @@ import java.util.stream.Stream;
 import javax.inject.Provider;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.common.app.FreezeService;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityMetadata;
 import org.sonatype.nexus.common.event.EventManager;
 import org.sonatype.nexus.common.node.NodeAccess;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Recipe;
 import org.sonatype.nexus.repository.Repository;
@@ -629,7 +629,6 @@ public class RepositoryManagerImplTest
       case Type t when "hosted".equals(t.getValue()) -> "Hosted repository type";
       case Type t when "proxy".equals(t.getValue()) -> "Proxy repository type";
       case Type t -> "Unknown repository type: " + t.getValue();
-      default -> "Repository has no type";
     };
   }
 

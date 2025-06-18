@@ -22,8 +22,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
@@ -249,7 +247,7 @@ public class ValidatingComponentUploadTest
           } catch (ValidationErrorsException e) {
             // Expected exception
             List<String> messages = e.getValidationErrors().stream()
-                .map(ValidationErrorXO::getMessage)
+                .map(ValidationErrorXO::message)
                 .collect(toList());
             if (messages.contains("Missing required asset field 'Foo' on '1'")) {
               errorCount.incrementAndGet();
@@ -282,24 +280,24 @@ public class ValidatingComponentUploadTest
     }
     catch (ValidationErrorsException exception) {
       List<String> messages = exception.getValidationErrors().stream()
-          .map(ValidationErrorXO::getMessage)
+          .map(ValidationErrorXO::message)
           .collect(toList());
       assertThat(messages, contains(message));
       
       // Use pattern matching for switch to determine error type
       for (ValidationErrorXO error : exception.getValidationErrors()) {
         switch (error) {
-          case ValidationErrorXO e when e.getMessage().contains("No assets found") -> 
-              log.info("Asset count validation error detected");
-          case ValidationErrorXO e when e.getMessage().contains("Missing required asset field") -> 
-              log.info("Asset field validation error detected");
-          case ValidationErrorXO e when e.getMessage().contains("Missing required component field") -> 
-              log.info("Component field validation error detected");
-          case ValidationErrorXO e when e.getMessage().contains("identical coordinates") -> 
-              log.info("Duplicate asset validation error detected");
-          case ValidationErrorXO e when e.getMessage().contains("Unknown") -> 
-              log.info("Unknown field validation error detected");
-          default -> log.info("Other validation error: {}", error.getMessage());
+          case ValidationErrorXO e when e.message().contains("No assets found") ->
+              logger.info("Asset count validation error detected");
+          case ValidationErrorXO e when e.message().contains("Missing required asset field") ->
+              logger.info("Asset field validation error detected");
+          case ValidationErrorXO e when e.message().contains("Missing required component field") ->
+              logger.info("Component field validation error detected");
+          case ValidationErrorXO e when e.message().contains("identical coordinates") ->
+              logger.info("Duplicate asset validation error detected");
+          case ValidationErrorXO e when e.message().contains("Unknown") ->
+              logger.info("Unknown field validation error detected");
+          default -> logger.info("Other validation error: {}", error.message());
         }
       }
     }

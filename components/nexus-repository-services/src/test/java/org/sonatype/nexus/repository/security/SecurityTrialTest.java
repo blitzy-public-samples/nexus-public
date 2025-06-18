@@ -13,7 +13,7 @@
 package org.sonatype.nexus.repository.security;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import org.apache.shiro.authz.permission.DomainPermission;
 import org.apache.shiro.authz.permission.WildcardPermission;

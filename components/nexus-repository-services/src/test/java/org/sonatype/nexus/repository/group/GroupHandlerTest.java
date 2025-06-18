@@ -203,7 +203,7 @@ public class GroupHandlerTest
         latch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in virtual thread 1", e);
+        logger.error("Error in virtual thread 1", e);
       }
     });
     
@@ -215,7 +215,7 @@ public class GroupHandlerTest
         latch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in virtual thread 2", e);
+        logger.error("Error in virtual thread 2", e);
       }
     });
     

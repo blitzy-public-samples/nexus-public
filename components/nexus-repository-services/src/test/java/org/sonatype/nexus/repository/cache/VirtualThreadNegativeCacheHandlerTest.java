@@ -368,22 +368,22 @@ public class VirtualThreadNegativeCacheHandlerTest
     
     // Measure performance with platform threads
     long platformThreadTime = measurePerformance(platformThreadFactory);
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
+    logger.info("Platform thread execution time: {} ms", platformThreadTime);
     
     // Measure performance with virtual threads
     long virtualThreadTime = measurePerformance(virtualThreadFactory);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    logger.info("Virtual thread execution time: {} ms", virtualThreadTime);
     
     // Virtual threads should generally be more efficient for this I/O-bound workload
     // but we don't make this a hard assertion as it depends on the test environment
-    log.info("Performance ratio (platform/virtual): {}", (double) platformThreadTime / virtualThreadTime);
+    logger.info("Performance ratio (platform/virtual): {}", (double) platformThreadTime / virtualThreadTime);
     
     // In most environments, virtual threads should be faster, but this is not guaranteed
     // so we log the results but don't assert on them
     if (virtualThreadTime < platformThreadTime) {
-      log.info("Virtual threads were faster than platform threads as expected");
+      logger.info("Virtual threads were faster than platform threads as expected");
     } else {
-      log.info("Platform threads were faster than virtual threads in this test run");
+      logger.info("Platform threads were faster than virtual threads in this test run");
     }
   }
   

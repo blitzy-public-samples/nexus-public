@@ -41,7 +41,7 @@ import org.sonatype.nexus.repository.types.HostedType;
 import org.sonatype.nexus.scheduling.CancelableHelper;
 import org.sonatype.nexus.scheduling.TaskInterruptedException;
 import org.sonatype.nexus.security.SecurityHelper;
-import org.sonatype.nexus.testcommon.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import org.elasticsearch.action.ListenableActionFuture;
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequestBuilder;

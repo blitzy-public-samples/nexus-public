@@ -134,6 +134,7 @@ public class CacheVirtualThreadTest
     
     // Test that we can put and get from the cache using a virtual thread
     CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> {
+
       cacheController.put(CACHE_KEY_VALUE, status);
       Status retrieved = cacheController.get(CACHE_KEY_VALUE);
       return retrieved != null && retrieved.getCode() == status.getCode();

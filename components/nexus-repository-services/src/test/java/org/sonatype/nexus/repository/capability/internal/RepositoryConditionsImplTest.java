@@ -15,6 +15,7 @@ package org.sonatype.nexus.repository.capability.internal;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.sonatype.nexus.common.event.EventManager;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.capability.RepositoryConditions;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
 

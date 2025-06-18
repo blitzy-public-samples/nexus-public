@@ -15,7 +15,6 @@ package org.sonatype.nexus.repository.rest.api;
 import java.util.Map;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -25,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -70,7 +70,7 @@ public class ComponentXOFactoryTest
     assertNotNull(componentXO);
     
     // Using record pattern to extract and validate the component
-    if (componentXO instanceof TestComponentXO(ComponentXO wrappedObject)) {
+    if (componentXO instanceof TestComponentXO wrappedObject) {
       assertInstanceOf(DefaultComponentXO.class, wrappedObject);
       
       // Get decorated attributes using the record pattern extracted component

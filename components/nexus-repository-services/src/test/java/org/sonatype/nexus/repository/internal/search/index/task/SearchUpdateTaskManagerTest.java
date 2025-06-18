@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.manager.RepositoryManager;
@@ -214,9 +214,9 @@ public class SearchUpdateTaskManagerTest
     Repository proxyRepo = repository2;
     Repository groupRepo = repository3;
     
-    when(hostedRepo.getType()).thenReturn("hosted");
-    when(proxyRepo.getType()).thenReturn("proxy");
-    when(groupRepo.getType()).thenReturn("group");
+    when(hostedRepo.getType().getValue()).thenReturn("hosted");
+    when(proxyRepo.getType().getValue()).thenReturn("proxy");
+    when(groupRepo.getType().getValue()).thenReturn("group");
     
     // Test pattern matching with different repository types
     List<Repository> repositories = ImmutableList.of(hostedRepo, proxyRepo, groupRepo);
@@ -230,7 +230,7 @@ public class SearchUpdateTaskManagerTest
       };
       
       // Verify the pattern matching worked correctly
-      switch (repo.getType()) {
+      switch (repo.getType().getValue()) {
         case "hosted" -> assertEquals("Hosted repository found", result);
         case "proxy" -> assertEquals("Proxy repository found", result);
         case "group" -> assertEquals("Group repository found", result);

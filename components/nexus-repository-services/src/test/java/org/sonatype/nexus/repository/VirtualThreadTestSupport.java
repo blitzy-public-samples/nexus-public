@@ -29,12 +29,12 @@ import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 
 import com.google.common.base.Stopwatch;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.greaterThan;
@@ -458,7 +458,6 @@ public class VirtualThreadTestSupport
    * This test is tagged with VirtualThreadTestGroup to allow selective execution.
    */
   @Test
-  @Tag(VirtualThreadTestGroup.NAME)
   public void testVirtualThreadPerformance() throws Exception {
     // A simple task that simulates I/O with sleep
     Runnable ioTask = () -> {
@@ -481,9 +480,9 @@ public class VirtualThreadTestSupport
         result.getImprovementRatio(), greaterThan(1.5));
     
     // Log the performance comparison results
-    log.info("Platform thread duration: {} ms", result.getPlatformDurationMs());
-    log.info("Virtual thread duration: {} ms", result.getVirtualDurationMs());
-    log.info("Improvement ratio: {}", result.getImprovementRatio());
+    logger.info("Platform thread duration: {} ms", result.getPlatformDurationMs());
+    logger.info("Virtual thread duration: {} ms", result.getVirtualDurationMs());
+    logger.info("Improvement ratio: {}", result.getImprovementRatio());
   }
 
   /**
@@ -491,7 +490,6 @@ public class VirtualThreadTestSupport
    * This test is tagged with VirtualThreadTestGroup to allow selective execution.
    */
   @Test
-  @Tag(VirtualThreadTestGroup.NAME)
   public void testThreadPinningDetection() throws Exception {
     // A task that will cause thread pinning due to synchronized block
     Runnable pinningTask = () -> {
@@ -520,7 +518,7 @@ public class VirtualThreadTestSupport
         pinningResult.isPinningDetected(), is(true));
     assertThat("Pinning stack trace should be available",
         pinningResult.getPinningStackTrace(), notNullValue());
-    log.info("Pinning stack trace:\n{}", pinningResult.getFormattedStackTrace());
+    logger.info("Pinning stack trace:\n{}", pinningResult.getFormattedStackTrace());
     
     // Test pinning detection with a task that should not cause pinning
     ThreadPinningResult nonPinningResult = detectThreadPinning(nonPinningTask);
@@ -533,7 +531,6 @@ public class VirtualThreadTestSupport
    * This test is tagged with VirtualThreadTestGroup to allow selective execution.
    */
   @Test
-  @Tag(VirtualThreadTestGroup.NAME)
   public void testHighConcurrencyVirtualThreads() throws Exception {
     // Counter to track task execution
     AtomicInteger counter = new AtomicInteger(0);
@@ -557,7 +554,7 @@ public class VirtualThreadTestSupport
     assertThat("All tasks should have been executed", 
         counter.get(), is(concurrency));
     
-    log.info("Executed {} concurrent tasks in {} ms using virtual threads", 
+    logger.info("Executed {} concurrent tasks in {} ms using virtual threads", 
         concurrency, executionTime);
   }
   
@@ -566,7 +563,6 @@ public class VirtualThreadTestSupport
    * This test is tagged with VirtualThreadTestGroup to allow selective execution.
    */
   @Test
-  @Tag(VirtualThreadTestGroup.NAME)
   public void testRepositoryOperationsPerformance() throws Exception {
     // Simulate repository operations with moderate concurrency and I/O latency
     int operationCount = 1000;
@@ -574,15 +570,15 @@ public class VirtualThreadTestSupport
     
     // Run with platform threads
     long platformTime = simulateRepositoryOperations(operationCount, ioLatencyMs, false);
-    log.info("Repository operations with platform threads: {} ms", platformTime);
+    logger.info("Repository operations with platform threads: {} ms", platformTime);
     
     // Run with virtual threads
     long virtualTime = simulateRepositoryOperations(operationCount, ioLatencyMs, true);
-    log.info("Repository operations with virtual threads: {} ms", virtualTime);
+    logger.info("Repository operations with virtual threads: {} ms", virtualTime);
     
     // Calculate improvement ratio
     double improvementRatio = (double) platformTime / virtualTime;
-    log.info("Improvement ratio: {}", improvementRatio);
+    logger.info("Improvement ratio: {}", improvementRatio);
     
     // Virtual threads should be more efficient for I/O-bound repository operations
     assertThat("Virtual threads should be faster for repository operations",

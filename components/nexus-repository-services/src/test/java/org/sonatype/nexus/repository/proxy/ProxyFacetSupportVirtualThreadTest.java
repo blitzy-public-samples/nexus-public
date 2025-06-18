@@ -431,8 +431,8 @@ public class ProxyFacetSupportVirtualThreadTest
     });
 
     // Virtual threads should be more efficient under high concurrency
-    log.info("Platform thread execution time: {} ms", platformThreadTime);
-    log.info("Virtual thread execution time: {} ms", virtualThreadTime);
+    logger.info("Platform thread execution time: {} ms", platformThreadTime);
+    logger.info("Virtual thread execution time: {} ms", virtualThreadTime);
     
     // Virtual threads should perform better with high concurrency I/O operations
     assertThat("Virtual threads should be faster than platform threads for I/O-bound operations",
@@ -484,7 +484,7 @@ public class ProxyFacetSupportVirtualThreadTest
     assertThat("Thread pinning should be detected during proxy operations",
         threadPinningCount.get(), greaterThan(0));
     
-    log.info("Detected {} thread pinning occurrences during proxy operations", threadPinningCount.get());
+    logger.info("Detected {} thread pinning occurrences during proxy operations", threadPinningCount.get());
   }
 
   /**
@@ -624,7 +624,7 @@ public class ProxyFacetSupportVirtualThreadTest
     // Verify that resource leaks were detected (our simulation intentionally leaks)
     int leakCount = resourceLeakCount.get() - initialLeakCount;
     assertThat("Resource leaks should be detected", leakCount, greaterThan(0));
-    log.info("Detected {} resource leaks during virtual thread operations", leakCount);
+    logger.info("Detected {} resource leaks during virtual thread operations", leakCount);
     
     // In a real implementation, we would verify that no leaks occurred,
     // but our test is designed to detect the leaks we're simulating
@@ -690,7 +690,7 @@ public class ProxyFacetSupportVirtualThreadTest
     // Verify that connection pooling worked correctly
     // The max concurrent connections should be less than the total request count,
     // indicating that connection pooling is working
-    log.info("Maximum concurrent connections: {}", maxConcurrentConnections.get());
+    logger.info("Maximum concurrent connections: {}", maxConcurrentConnections.get());
     assertThat("Connection pooling should limit concurrent connections",
         maxConcurrentConnections.get(), lessThan(requestCount));
     

@@ -26,8 +26,10 @@ import java.util.stream.Collectors;
 
 import javax.servlet.http.HttpServletRequest;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.event.EventManager;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.java21.Java21TestGroup;
 import org.sonatype.nexus.repository.Format;
 import org.sonatype.nexus.repository.Repository;
@@ -47,7 +49,6 @@ import org.sonatype.nexus.repository.upload.internal.BlobStoreMultipartForm.Temp
 import org.sonatype.nexus.repository.view.payloads.TempBlob;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
-import org.sonatype.nexus.virtualthread.VirtualThreadTestGroup;
 
 import org.apache.commons.fileupload.FileUploadException;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,7 +74,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@org.junit.jupiter.api.Tag(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class UploadManagerImplTest
     extends TestSupport
 {
@@ -201,7 +202,7 @@ public class UploadManagerImplTest
     ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
         () -> underTest.handle(repository, request));
     
-    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::message)
         .collect(Collectors.toList());
     assertThat(messages, contains("Uploading components to 'c' repositories is unsupported"));
   }
@@ -215,21 +216,21 @@ public class UploadManagerImplTest
       case GroupType gt -> {
         ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
             () -> underTest.handle(repository, request));
-        List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::message)
             .collect(Collectors.toList());
         assertThat(messages, contains("Uploading components to a 'group' type repository is unsupported, must be 'hosted'"));
       }
       case ProxyType pt -> {
         ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
             () -> underTest.handle(repository, request));
-        List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::message)
             .collect(Collectors.toList());
         assertThat(messages, contains("Uploading components to a 'proxy' type repository is unsupported, must be 'hosted'"));
       }
       case VirtualType vt -> {
         ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
             () -> underTest.handle(repository, request));
-        List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+        List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::message)
             .collect(Collectors.toList());
         assertThat(messages, contains("Uploading components to a 'virtual' type repository is unsupported, must be 'hosted'"));
       }
@@ -249,13 +250,13 @@ public class UploadManagerImplTest
     ValidationErrorsException exception = assertThrows(ValidationErrorsException.class, 
         () -> underTest.handle(repository, request));
     
-    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::getMessage)
+    List<String> messages = exception.getValidationErrors().stream().map(ValidationErrorXO::message)
         .collect(Collectors.toList());
     assertThat(messages, contains("Repository offline"));
   }
   
   @Test
-  @org.junit.jupiter.api.Tag(VirtualThreadTestGroup.class)
+  @Category(VirtualThreadTestGroup.class)
   void concurrentUploadHandlingWithVirtualThreads() throws Exception {
     // Setup for concurrent uploads
     int concurrentUploads = 100;

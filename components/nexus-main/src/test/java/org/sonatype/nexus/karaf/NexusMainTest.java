@@ -22,12 +22,13 @@ import org.junit.contrib.java.lang.system.RestoreSystemProperties;
 import org.junit.contrib.java.lang.system.SystemErrRule;
 import org.mockito.MockedConstruction;
 import org.mockito.Mockito;
+import org.sonatype.nexus.testcommon.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.StringContains.containsString;
 import static org.sonatype.nexus.karaf.NexusMain.requireMinimumJavaVersion;
 
-@Category(org.sonatype.goodies.testsupport.group.Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class NexusMainTest
     extends TestSupport
 {

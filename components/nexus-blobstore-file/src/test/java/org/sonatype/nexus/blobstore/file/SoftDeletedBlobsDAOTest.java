@@ -19,6 +19,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.file.store.SoftDeletedBlobsData;
 import org.sonatype.nexus.blobstore.file.store.internal.SoftDeletedBlobsDAO;
@@ -41,7 +43,7 @@ import static org.sonatype.nexus.datastore.api.DataStoreManager.DEFAULT_DATASTOR
 
 @Tag("SQLTestGroup")
 public class SoftDeletedBlobsDAOTest
-    extends TestSupport
+        extends TestSupport
 {
   @RegisterExtension
   public DataSessionRule sessionRule = new DataSessionRule().access(SoftDeletedBlobsDAO.class);
@@ -51,6 +53,8 @@ public class SoftDeletedBlobsDAOTest
   private SoftDeletedBlobsDAO dao;
 
   private static final String FAKE_BLOB_STORE_NAME = "fakeBlobStore";
+
+  private static final Logger log = LoggerFactory.getLogger(SoftDeletedBlobsDAOTest.class);
 
   @BeforeEach
   public void setup() {
@@ -73,10 +77,10 @@ public class SoftDeletedBlobsDAOTest
     int threadCount = 50; // Number of virtual threads to create
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger successCount = new AtomicInteger(0);
-    
+
     // Create a virtual thread per task executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      
+
       // Submit tasks to create records using virtual threads
       for (int i = 0; i < threadCount; i++) {
         final String blobId = "virtual-blob-" + i;
@@ -84,21 +88,21 @@ public class SoftDeletedBlobsDAOTest
           try {
             // Create a record
             dao.createRecord(FAKE_BLOB_STORE_NAME, blobId, UTC.now());
-            
+
             // Verify the record exists
             int limit = 10;
             Optional<SoftDeletedBlobsData> record = dao.readRecords(null, limit, FAKE_BLOB_STORE_NAME)
-                .stream()
-                .filter(data -> blobId.equals(data.getBlobId()))
-                .findFirst();
-            
+                    .stream()
+                    .filter(data -> blobId.equals(data.getBlobId()))
+                    .findFirst();
+
             if (record.isPresent() && blobId.equals(record.get().getBlobId())) {
               successCount.incrementAndGet();
             }
-            
+
             // Delete the record
             dao.deleteRecord(FAKE_BLOB_STORE_NAME, blobId);
-          } 
+          }
           catch (Exception e) {
             log.error("Error in virtual thread operation", e);
           }
@@ -107,20 +111,20 @@ public class SoftDeletedBlobsDAOTest
           }
         });
       }
-      
+
       // Wait for all threads to complete (with timeout)
       assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for virtual threads to complete");
     }
-    
+
     // Verify all operations were successful
     assertEquals(threadCount, successCount.get(), "All virtual thread operations should succeed");
-    
+
     // Verify all records were properly deleted
     int limit = 100;
     Continuation<SoftDeletedBlobsData> remainingData = dao.readRecords(null, limit, FAKE_BLOB_STORE_NAME);
     assertEquals(0, remainingData.size(), "All records should be deleted");
   }
-  
+
   /**
    * Test JDBC driver compatibility with Virtual Threads by performing
    * a large number of database operations concurrently.
@@ -130,49 +134,49 @@ public class SoftDeletedBlobsDAOTest
     int operationCount = 100; // Number of operations to perform
     CountDownLatch latch = new CountDownLatch(operationCount);
     AtomicInteger errorCount = new AtomicInteger(0);
-    
+
     // Create a virtual thread per task executor
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-      
+
       // Submit a mix of create, read, and delete operations
       for (int i = 0; i < operationCount; i++) {
         final int index = i;
         executor.submit(() -> {
           try {
             final String blobId = "jdbc-test-" + index;
-            
+
             // Perform different operations based on the index to test various JDBC operations
             if (index % 3 == 0) {
               // Create operation
               dao.createRecord(FAKE_BLOB_STORE_NAME, blobId, UTC.now());
-            } 
+            }
             else if (index % 3 == 1) {
               // Read operation
               dao.readRecords(null, 10, FAKE_BLOB_STORE_NAME);
-            } 
+            }
             else {
               // Create and then delete to test both operations
               dao.createRecord(FAKE_BLOB_STORE_NAME, blobId, UTC.now());
               dao.deleteRecord(FAKE_BLOB_STORE_NAME, blobId);
             }
-          } 
+          }
           catch (Exception e) {
             log.error("JDBC operation failed in virtual thread", e);
             errorCount.incrementAndGet();
-          } 
+          }
           finally {
             latch.countDown();
           }
         });
       }
-      
+
       // Wait for all operations to complete
       assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for JDBC operations");
     }
-    
+
     // Verify no errors occurred, which would indicate JDBC driver compatibility issues
     assertEquals(0, errorCount.get(), "No JDBC errors should occur with virtual threads");
-    
+
     // Clean up any remaining records
     dao.deleteAllRecords(FAKE_BLOB_STORE_NAME, "1000");
   }
@@ -185,7 +189,7 @@ public class SoftDeletedBlobsDAOTest
 
     dao.createRecord(FAKE_BLOB_STORE_NAME, "blobID", UTC.now());
     Optional<SoftDeletedBlobsData> initialBlobID =
-        dao.readRecords(null, limit, FAKE_BLOB_STORE_NAME).stream().findFirst();
+            dao.readRecords(null, limit, FAKE_BLOB_STORE_NAME).stream().findFirst();
 
     assertTrue(initialBlobID.isPresent(), "Blob record should be present");
     assertEquals("blobID", initialBlobID.get().getBlobId(), "Blob ID should match");

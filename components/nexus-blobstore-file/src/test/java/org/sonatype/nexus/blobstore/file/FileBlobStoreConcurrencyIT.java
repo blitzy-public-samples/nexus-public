@@ -26,6 +26,8 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.concurrent.ConcurrentRunner;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
@@ -46,6 +48,7 @@ import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
 
 import com.google.common.base.Objects;
@@ -74,20 +77,22 @@ import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
  */
 @Category(VirtualThreadTestGroup.class)
 public class FileBlobStoreConcurrencyIT
-    extends TestSupport
+        extends TestSupport
 {
   public static final ImmutableMap<String, String> TEST_HEADERS = ImmutableMap.of(
-      CREATED_BY_HEADER, "test",
-      BLOB_NAME_HEADER, "test/randomData.bin");
+          CREATED_BY_HEADER, "test",
+          BLOB_NAME_HEADER, "test/randomData.bin");
 
   public static final int BLOB_MAX_SIZE_BYTES = 5_000_000;
 
   private static final int QUOTA_CHECK_INTERVAL = 1;
-  
+
   // System property to control whether to use virtual threads
   private static final String USE_VIRTUAL_THREADS_PROPERTY = "nexus.test.useVirtualThreads";
 
   private FileBlobStore underTest;
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreConcurrencyIT.class);
 
   @Mock
   private DatastoreFileBlobStoreMetricsService metricsStore;
@@ -126,12 +131,13 @@ public class FileBlobStoreConcurrencyIT
     final BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.attributes(FileBlobStore.CONFIG_KEY).set(FileBlobStore.PATH_KEY, root.toString());
 
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     blobStoreQuotaUsageChecker = spy(
-        new BlobStoreQuotaUsageChecker(new PeriodicJobServiceImpl(), QUOTA_CHECK_INTERVAL, quotaService));
+            new BlobStoreQuotaUsageChecker(periodicJobService, QUOTA_CHECK_INTERVAL, quotaService));
 
     this.underTest = new FileBlobStore(content, new DefaultBlobIdLocationResolver(true), new SimpleFileOperations(),
-        metricsStore, config, applicationDirectories, nodeAccess, dryRunPrefix, reconciliationLogger, 0L,
-        blobStoreQuotaUsageChecker, fileBlobDeletionIndex);
+            metricsStore, config, applicationDirectories, nodeAccess, dryRunPrefix, reconciliationLogger, 0L,
+            blobStoreQuotaUsageChecker, fileBlobDeletionIndex);
     underTest.start();
   }
 
@@ -141,7 +147,7 @@ public class FileBlobStoreConcurrencyIT
       underTest.stop();
     }
   }
-  
+
   /**
    * Creates a thread factory for platform threads.
    *
@@ -164,10 +170,10 @@ public class FileBlobStoreConcurrencyIT
    */
   private ThreadFactory createVirtualThreadFactory(final String namePrefix) {
     return Thread.ofVirtual()
-        .name(namePrefix, 0)
-        .factory();
+            .name(namePrefix, 0)
+            .factory();
   }
-  
+
   /**
    * Determines whether to use virtual threads based on system property.
    *
@@ -193,7 +199,7 @@ public class FileBlobStoreConcurrencyIT
 
     int numberOfIterations = 15;
     int timeoutMinutes = 5;
-    
+
     // Create the appropriate thread factory based on system property
     ThreadFactory threadFactory;
     String threadType;
@@ -204,75 +210,86 @@ public class FileBlobStoreConcurrencyIT
       threadFactory = createPlatformThreadFactory("platform-test");
       threadType = "Platform";
     }
-    
+
     log.info("Running concurrency test with {} threads", threadType);
-    
+
     final ConcurrentRunner runner = new ConcurrentRunner(numberOfIterations, timeoutMinutes * 60);
-    runner.setThreadFactory(threadFactory);
-    
+    // runner.setThreadFactory(threadFactory);
+
     // Start timing
     Stopwatch stopwatch = Stopwatch.createStarted();
 
     runner.addTask(numberOfCreators, () -> {
-      final byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
-      random.nextBytes(data);
-      final Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
+      Thread thread = threadFactory.newThread(() -> {
+        final byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
+        random.nextBytes(data);
+        final Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
 
-      blobIdsInTheStore.add(blob.getId());
+        blobIdsInTheStore.add(blob.getId());
+      });
+      thread.start();
     });
 
     runner.addTask(numberOfReaders, () -> {
-      final BlobId blobId = blobIdsInTheStore.peek();
+      Thread thread = threadFactory.newThread(() ->{
+        final BlobId blobId = blobIdsInTheStore.peek();
 
-      log("Attempting to read " + blobId);
+        log("Attempting to read " + blobId);
 
-      if (blobId == null) {
-        return;
-      }
+        if (blobId == null) {
+          return;
+        }
 
-      final Blob blob = underTest.get(blobId);
-      if (blob == null) {
-        log("Attempted to obtain blob, but it was deleted:" + blobId);
-        return;
-      }
+        final Blob blob = underTest.get(blobId);
+        if (blob == null) {
+          log("Attempted to obtain blob, but it was deleted:" + blobId);
+          return;
+        }
 
-      try (InputStream inputStream = blob.getInputStream()) {
-        readContentAndValidateMetrics(blobId, inputStream, blob.getMetrics());
-      }
-      catch (BlobStoreException e) {
-        checkState(deletedIds.contains(e.getBlobId()));
-        // This is normal operation if another thread deletes your blob after you obtain a Blob reference
-        log("Concurrent deletion suspected while calling blob.getInputStream().", e);
-      }
+        try (InputStream inputStream = blob.getInputStream()) {
+          readContentAndValidateMetrics(blobId, inputStream, blob.getMetrics());
+        }
+        catch (BlobStoreException e) {
+          checkState(deletedIds.contains(e.getBlobId()));
+          // This is normal operation if another thread deletes your blob after you obtain a Blob reference
+          log("Concurrent deletion suspected while calling blob.getInputStream().", e);
+        } catch (IOException | NoSuchAlgorithmException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      thread.start();
     });
 
     runner.addTask(numberOfDeleters, () -> {
-      final BlobId blobId = blobIdsInTheStore.poll();
-      if (blobId == null) {
-        log("deleter: null blob id");
-        return;
-      }
-      log("Deleting {}", blobId);
+      Thread thread = threadFactory.newThread(() ->{
+        final BlobId blobId = blobIdsInTheStore.poll();
+        if (blobId == null) {
+          log("deleter: null blob id");
+          return;
+        }
+        log("Deleting {}", blobId);
 
-      // There's a race condition here, we need to note that we're attempting to delete this before the deletion
-      // goes through, otherwise we may fail the check, above.
-      deletedIds.add(blobId);
-      underTest.delete(blobId, "Testing concurrency");
-    });
+        // There's a race condition here, we need to note that we're attempting to delete this before the deletion
+        // goes through, otherwise we may fail the check, above.
+        deletedIds.add(blobId);
+        underTest.delete(blobId, "Testing concurrency");
+      });
 
-    // Shufflers pull blob IDs off the front of the queue and stick them on the back, to make the blobID queue a bit
-    // less orderly
-    runner.addTask(numberOfShufflers, () -> {
-      final BlobId blobId = blobIdsInTheStore.poll();
-      if (blobId != null) {
-        blobIdsInTheStore.add(blobId);
-      }
+      // Shufflers pull blob IDs off the front of the queue and stick them on the back, to make the blobID queue a bit
+      // less orderly
+      runner.addTask(numberOfShufflers, () -> {
+        final BlobId blobId = blobIdsInTheStore.poll();
+        if (blobId != null) {
+          blobIdsInTheStore.add(blobId);
+        }
+      });
+      thread.start();
     });
 
     runner.addTask(numberOfCompactors, () -> underTest.compact(null));
 
     runner.go();
-    
+
     // Stop timing and log results
     stopwatch.stop();
     long elapsedMillis = stopwatch.elapsed(TimeUnit.MILLISECONDS);
@@ -288,9 +305,9 @@ public class FileBlobStoreConcurrencyIT
    * @throws RuntimeException if there is any deviation
    */
   private void readContentAndValidateMetrics(
-      final BlobId blobId,
-      final InputStream inputStream,
-      final BlobMetrics metadataMetrics) throws NoSuchAlgorithmException, IOException
+          final BlobId blobId,
+          final InputStream inputStream,
+          final BlobMetrics metadataMetrics) throws NoSuchAlgorithmException, IOException
   {
     final MetricsInputStream measured = new MetricsInputStream(inputStream);
     ByteStreams.copy(measured, nullOutputStream());
@@ -300,15 +317,15 @@ public class FileBlobStoreConcurrencyIT
   }
 
   private void checkEqual(
-      final String propertyName,
-      final Object expected,
-      final Object measured,
-      final BlobId blobId)
+          final String propertyName,
+          final Object expected,
+          final Object measured,
+          final BlobId blobId)
   {
     if (!Objects.equal(measured, expected)) {
       throw new RuntimeException(
-          "Blob " + blobId + "'s measured " + propertyName + " differed from its metadata. Expected " + expected +
-              " but was " + measured + ".");
+              "Blob " + blobId + "'s measured " + propertyName + " differed from its metadata. Expected " + expected +
+                      " but was " + measured + ".");
     }
   }
 }

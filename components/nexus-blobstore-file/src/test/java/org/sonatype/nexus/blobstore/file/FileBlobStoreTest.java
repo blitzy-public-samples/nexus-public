@@ -40,6 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobIdLocationResolver;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
@@ -104,33 +106,35 @@ import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
  * Tests {@link FileBlobStore}.
  */
 public class FileBlobStoreTest
-    extends TestSupport
+        extends TestSupport
 {
   private static final byte[] VALID_BLOB_STORE_PROPERTIES = ("@BlobStore.created-by = admin\n" +
-      "size = 40\n" +
-      "@Bucket.repo-name = maven-releases\n" +
-      "creationTime = 1486679665325\n" +
-      "@BlobStore.blob-name = com/sonatype/training/nxs301/03-implicit-staging/maven-metadata.xml.sha1\n" +
-      "@BlobStore.content-type = text/plain\n" +
-      "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
+          "size = 40\n" +
+          "@Bucket.repo-name = maven-releases\n" +
+          "creationTime = 1486679665325\n" +
+          "@BlobStore.blob-name = com/sonatype/training/nxs301/03-implicit-staging/maven-metadata.xml.sha1\n" +
+          "@BlobStore.content-type = text/plain\n" +
+          "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
 
   private static final byte[] EMPTY_BLOB_STORE_PROPERTIES = ("").getBytes(StandardCharsets.ISO_8859_1);
 
   private static final String RECONCILIATION = "reconciliation";
-  
+
   private static final int CONCURRENT_OPERATIONS = 50;
   private static final int OPERATION_COUNT = 20;
   private static final int TEST_DATA_LENGTH = 1024;
   private static final int TIMEOUT_SECONDS = 30;
-  
+
   private static final String PINNING_DETECTION_FLAG = "jdk.tracePinnedThreads";
   private static final Pattern PINNING_PATTERN = Pattern.compile("VirtualThread\\[.*\\].*reason:(\\w+)\\s+(.+)");
 
   private AtomicBoolean cancelled = new AtomicBoolean(false);
-  
+
   private final List<String> pinnedThreadLogs = new ArrayList<>();
   private final AtomicInteger pinnedThreadCount = new AtomicInteger(0);
   private final AtomicBoolean pinnedThreadDetected = new AtomicBoolean(false);
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreTest.class);
 
   @Mock
   private BlobIdLocationResolver blobIdLocationResolver;
@@ -172,8 +176,8 @@ public class FileBlobStoreTest
   BlobStoreReconciliationLogger reconciliationLogger;
 
   public static final ImmutableMap<String, String> TEST_HEADERS = ImmutableMap.of(
-      CREATED_BY_HEADER, "test",
-      BLOB_NAME_HEADER, "test/randomData.bin");
+          CREATED_BY_HEADER, "test",
+          BLOB_NAME_HEADER, "test/randomData.bin");
 
   private FileBlobStore underTest;
 
@@ -206,8 +210,8 @@ public class FileBlobStoreTest
     configuration.setAttributes(attributes);
 
     underTest = new FileBlobStore(util.createTempDir().toPath(), blobIdLocationResolver, fileOperations, metrics,
-        configuration, appDirs, nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker,
-        fileBlobDeletionIndex);
+            configuration, appDirs, nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker,
+            fileBlobDeletionIndex);
 
     when(loadingCache.getUnchecked(any())).thenReturn(underTest.new FileBlob(new BlobId("fakeid")));
 
@@ -215,9 +219,9 @@ public class FileBlobStoreTest
     underTest.setLiveBlobs(loadingCache);
 
     fullPath = underTest.getAbsoluteBlobDir()
-        .resolve(CONTENT_PREFIX)
-        .resolve("vol-03")
-        .resolve("chap-44");
+            .resolve(CONTENT_PREFIX)
+            .resolve("vol-03")
+            .resolve("chap-44");
     Files.createDirectories(fullPath);
 
     directFullPath = underTest.getAbsoluteBlobDir().resolve(CONTENT_PREFIX).resolve("directpath");
@@ -231,7 +235,7 @@ public class FileBlobStoreTest
       return fullPath.resolve(blobId.asUniqueString()).toString();
     });
     when(blobIdLocationResolver.fromHeaders(any(Map.class)))
-        .thenAnswer(invocation -> new BlobId(UUID.randomUUID().toString()));
+            .thenAnswer(invocation -> new BlobId(UUID.randomUUID().toString()));
 
   }
 
@@ -281,7 +285,7 @@ public class FileBlobStoreTest
 
     verify(fileOperations, times(4)).exists(any());
     verify(reconciliationLogger, times(1))
-        .logBlobCreated(eq(underTest.getAbsoluteBlobDir().resolve(RECONCILIATION)), any());
+            .logBlobCreated(eq(underTest.getAbsoluteBlobDir().resolve(RECONCILIATION)), any());
   }
 
   @Test
@@ -304,13 +308,13 @@ public class FileBlobStoreTest
   }
 
   byte[] deletedBlobStoreProperties = ("deleted = true\n" +
-      "@BlobStore.created-by = admin\n" +
-      "size = 40\n" +
-      "@Bucket.repo-name = maven-releases\n" +
-      "creationTime = 1486679665325\n" +
-      "@BlobStore.blob-name = com/sonatype/training/nxs301/03-implicit-staging/maven-metadata.xml.sha1\n" +
-      "@BlobStore.content-type = text/plain\n" +
-      "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
+          "@BlobStore.created-by = admin\n" +
+          "size = 40\n" +
+          "@Bucket.repo-name = maven-releases\n" +
+          "creationTime = 1486679665325\n" +
+          "@BlobStore.blob-name = com/sonatype/training/nxs301/03-implicit-staging/maven-metadata.xml.sha1\n" +
+          "@BlobStore.content-type = text/plain\n" +
+          "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
 
   @Test
   public void testDoCompact_RebuildMetadataNeeded() throws Exception {
@@ -319,7 +323,7 @@ public class FileBlobStoreTest
     underTest.doStart();
 
     write(fullPath.resolve("e27f83a9-dc18-4818-b4ca-ae8a9cb813c7.properties"),
-        deletedBlobStoreProperties);
+            deletedBlobStoreProperties);
 
     checkDeletionsIndex(true);
     setRebuildMetadataToTrue();
@@ -374,10 +378,10 @@ public class FileBlobStoreTest
 
     BlobId blobId = new BlobId("0515c8b9-0de0-49d4-bcf0-7738c40c9c5e");
     Path bytesPath = underTest.getAbsoluteBlobDir()
-        .resolve(CONTENT_PREFIX)
-        .resolve("vol-03")
-        .resolve("chap-44")
-        .resolve("0515c8b9-0de0-49d4-bcf0-7738c40c9c5e.bytes");
+            .resolve(CONTENT_PREFIX)
+            .resolve("vol-03")
+            .resolve("chap-44")
+            .resolve("0515c8b9-0de0-49d4-bcf0-7738c40c9c5e.bytes");
     bytesPath.toFile().getParentFile().mkdirs();
     Path written = write(bytesPath, "hello".getBytes(StandardCharsets.UTF_8));
     assertThat(written.toFile().exists(), is(true));
@@ -388,10 +392,10 @@ public class FileBlobStoreTest
     }).when(fileOperations).delete(bytesPath);
 
     Path propertiesPath = underTest.getAbsoluteBlobDir()
-        .resolve(CONTENT_PREFIX)
-        .resolve("vol-03")
-        .resolve("chap-44")
-        .resolve("0515c8b9-0de0-49d4-bcf0-7738c40c9c5e.properties");
+            .resolve(CONTENT_PREFIX)
+            .resolve("vol-03")
+            .resolve("chap-44")
+            .resolve("0515c8b9-0de0-49d4-bcf0-7738c40c9c5e.properties");
 
     Map<String, String> properties = new HashMap<>();
     properties.put("sha1", "a5aa215f17898e21986cb19d4b72f6bebf86c4bd");
@@ -401,7 +405,7 @@ public class FileBlobStoreTest
     properties.put("creationTime", "1736870404222");
     properties.put("Bucket.repo-name", "raw");
     BlobMetrics blobMetrics =
-        new BlobMetrics(new DateTime(1736870404222L), "a5aa215f17898e21986cb19d4b72f6bebf86c4bd", 5);
+            new BlobMetrics(new DateTime(1736870404222L), "a5aa215f17898e21986cb19d4b72f6bebf86c4bd", 5);
     FileBlobAttributes attributes = new FileBlobAttributes(propertiesPath, properties, blobMetrics);
     attributes.store();
 
@@ -458,7 +462,7 @@ public class FileBlobStoreTest
 
   private void setRebuildMetadataToTrue() throws IOException {
     PropertiesFile metadataPropertiesFile = new PropertiesFile(
-        underTest.getAbsoluteBlobDir().resolve(FileBlobStore.METADATA_FILENAME).toFile());
+            underTest.getAbsoluteBlobDir().resolve(FileBlobStore.METADATA_FILENAME).toFile());
     metadataPropertiesFile.setProperty(FileBlobStore.REBUILD_DELETED_BLOB_INDEX_KEY, "true");
     metadataPropertiesFile.store();
   }
@@ -470,12 +474,12 @@ public class FileBlobStoreTest
   }
 
   byte[] deletedBlobStorePropertiesNoBlobName = ("deleted = true\n" +
-      "@BlobStore.created-by = admin\n" +
-      "size = 40\n" +
-      "@Bucket.repo-name = maven-releases\n" +
-      "creationTime = 1486679665325\n" +
-      "@BlobStore.content-type = text/plain\n" +
-      "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
+          "@BlobStore.created-by = admin\n" +
+          "size = 40\n" +
+          "@Bucket.repo-name = maven-releases\n" +
+          "creationTime = 1486679665325\n" +
+          "@BlobStore.content-type = text/plain\n" +
+          "sha1 = cbd5bce1c926e6b55b6b4037ce691b8f9e5dea0f").getBytes(StandardCharsets.ISO_8859_1);
 
   @Test
   public void testCompactCorruptAttributes() throws Exception {
@@ -483,7 +487,7 @@ public class FileBlobStoreTest
     underTest.doStart();
 
     write(fullPath.resolve("e27f83a9-dc18-4818-b4ca-ae8a9cb813c7.properties"),
-        deletedBlobStorePropertiesNoBlobName);
+            deletedBlobStorePropertiesNoBlobName);
 
     setRebuildMetadataToTrue();
 
@@ -498,7 +502,7 @@ public class FileBlobStoreTest
     underTest.doStart();
 
     write(fullPath.resolve("e27f83a9-dc18-4818-b4ca-ae8a9cb813c7.properties"),
-        deletedBlobStoreProperties);
+            deletedBlobStoreProperties);
 
     setRebuildMetadataToTrue();
     cancelled.set(true);
@@ -544,7 +548,7 @@ public class FileBlobStoreTest
   public void toBlobNamePropertiesSuffix() {
     // /full/path/on/disk/to/content/directpath/some/direct/path/file.properties.properties
     Path absolute =
-        underTest.getContentDir().resolve(DIRECT_PATH_ROOT).resolve("some/direct/path/file.properties.properties");
+            underTest.getContentDir().resolve(DIRECT_PATH_ROOT).resolve("some/direct/path/file.properties.properties");
     assertEquals("some/direct/path/file.properties", underTest.toBlobName(absolute));
   }
 
@@ -626,7 +630,7 @@ public class FileBlobStoreTest
 
     underTest.getBlobIdUpdatedSinceStream("test", fromDateTime, toDateTime, null, 10);
     verify(reconciliationLogger, times(1)).getBlobsCreatedSince(any(),
-        eq(fromSystemTime), eq(toSystemTime), anyMap());
+            eq(fromSystemTime), eq(toSystemTime), anyMap());
   }
 
   @Test
@@ -670,7 +674,7 @@ public class FileBlobStoreTest
     verify(attributes, never()).setDeletedDateTime(any());
     verifyNoInteractions(newBlobAttributes);
   }
-  
+
   /**
    * Tests for thread pinning during blob creation operations using virtual threads.
    * This test creates multiple blobs concurrently using virtual threads and monitors
@@ -686,9 +690,9 @@ public class FileBlobStoreTest
 
     // Use virtual threads for concurrent operations
     ThreadFactory virtualThreadFactory = Thread.ofVirtual()
-        .name("vt-blob-creation-", 0)
-        .factory();
-    
+            .name("vt-blob-creation-", 0)
+            .factory();
+
     try (var executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
         final int threadId = i;
@@ -697,9 +701,9 @@ public class FileBlobStoreTest
             // Create a blob with random content
             byte[] content = randomBytes();
             Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-                CREATED_BY_HEADER, "test",
-                BLOB_NAME_HEADER, String.format("test/thread-%d/data.bin", threadId)));
-            
+                    CREATED_BY_HEADER, "test",
+                    BLOB_NAME_HEADER, String.format("test/thread-%d/data.bin", threadId)));
+
             synchronized (createdBlobs) {
               createdBlobs.add(blob.getId());
             }
@@ -715,12 +719,12 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
 
     // Verify results
     assertEquals(CONCURRENT_OPERATIONS, createdBlobs.size());
-    
+
     // Clean up created blobs
     log.info("Cleaning up {} created blobs", createdBlobs.size());
     for (BlobId blobId : createdBlobs) {
@@ -741,8 +745,8 @@ public class FileBlobStoreTest
     for (int i = 0; i < OPERATION_COUNT; i++) {
       byte[] content = randomBytes();
       Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-          CREATED_BY_HEADER, "test",
-          BLOB_NAME_HEADER, String.format("test/retrieval-test-%d.bin", i)));
+              CREATED_BY_HEADER, "test",
+              BLOB_NAME_HEADER, String.format("test/retrieval-test-%d.bin", i)));
       blobIds.add(blob.getId());
     }
 
@@ -752,16 +756,16 @@ public class FileBlobStoreTest
 
     // Use virtual threads for concurrent retrieval operations
     ThreadFactory virtualThreadFactory = Thread.ofVirtual()
-        .name("vt-blob-retrieval-", 0)
-        .factory();
-    
+            .name("vt-blob-retrieval-", 0)
+            .factory();
+
     try (var executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
         executor.submit(() -> {
           try {
             // Get a blob ID from the list (cycling through them)
             BlobId blobId = blobIds.get(successCount.getAndIncrement() % blobIds.size());
-            
+
             // Retrieve the blob and read its content
             Blob blob = underTest.get(blobId);
             if (blob != null) {
@@ -785,7 +789,7 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
 
     // Clean up created blobs
@@ -808,8 +812,8 @@ public class FileBlobStoreTest
     for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
       byte[] content = randomBytes();
       Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-          CREATED_BY_HEADER, "test",
-          BLOB_NAME_HEADER, String.format("test/deletion-test-%d.bin", i)));
+              CREATED_BY_HEADER, "test",
+              BLOB_NAME_HEADER, String.format("test/deletion-test-%d.bin", i)));
       blobIds.add(blob.getId());
     }
 
@@ -818,9 +822,9 @@ public class FileBlobStoreTest
 
     // Use virtual threads for concurrent deletion operations
     ThreadFactory virtualThreadFactory = Thread.ofVirtual()
-        .name("vt-blob-deletion-", 0)
-        .factory();
-    
+            .name("vt-blob-deletion-", 0)
+            .factory();
+
     try (var executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
         final int index = i;
@@ -842,7 +846,7 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
 
     // Verify all blobs were deleted
@@ -858,32 +862,32 @@ public class FileBlobStoreTest
   @Test
   public void testThreadPinningDetection() throws Exception {
     log.info("Starting thread pinning detection test");
-    
+
     // Check if the pinning detection flag is set
     String pinnedThreadsFlag = System.getProperty(PINNING_DETECTION_FLAG);
     if (pinnedThreadsFlag == null || !pinnedThreadsFlag.equals("full")) {
-      log.warn("Thread pinning detection requires -D{}=full JVM flag to be set for accurate results", 
-          PINNING_DETECTION_FLAG);
+      log.warn("Thread pinning detection requires -D{}=full JVM flag to be set for accurate results",
+              PINNING_DETECTION_FLAG);
     }
-    
+
     // Create some test blobs
     List<BlobId> blobIds = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
       byte[] content = randomBytes();
       Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-          CREATED_BY_HEADER, "test",
-          BLOB_NAME_HEADER, String.format("test/pinning-test-%d.bin", i)));
+              CREATED_BY_HEADER, "test",
+              BLOB_NAME_HEADER, String.format("test/pinning-test-%d.bin", i)));
       blobIds.add(blob.getId());
     }
-    
+
     // Create a countdown latch to wait for all operations to complete
     CountDownLatch latch = new CountDownLatch(CONCURRENT_OPERATIONS);
-    
+
     // Use virtual threads for concurrent operations that might cause pinning
     ThreadFactory virtualThreadFactory = Thread.ofVirtual()
-        .name("vt-pinning-test-", 0)
-        .factory();
-    
+            .name("vt-pinning-test-", 0)
+            .factory();
+
     try (var executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
         final int index = i % blobIds.size();
@@ -891,7 +895,7 @@ public class FileBlobStoreTest
           try {
             // Perform operations that might cause pinning
             BlobId blobId = blobIds.get(index);
-            
+
             // Get and read the blob
             Blob blob = underTest.get(blobId);
             if (blob != null) {
@@ -900,13 +904,13 @@ public class FileBlobStoreTest
                 inputStream.readAllBytes();
               }
             }
-            
+
             // Create a temporary blob and then delete it
             byte[] content = randomBytes();
             Blob tempBlob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-                CREATED_BY_HEADER, "test",
-                BLOB_NAME_HEADER, String.format("test/temp-pinning-test-%d.bin", index)));
-            
+                    CREATED_BY_HEADER, "test",
+                    BLOB_NAME_HEADER, String.format("test/temp-pinning-test-%d.bin", index)));
+
             // Delete the temporary blob
             underTest.delete(tempBlob.getId(), "test cleanup");
           }
@@ -921,22 +925,22 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
-    
+
     // Clean up created blobs
     for (BlobId blobId : blobIds) {
       underTest.delete(blobId, "test cleanup");
     }
-    
+
     // Report any thread pinning that was detected
     if (pinnedThreadDetected.get()) {
       log.warn("Detected {} thread pinning events during file operations", pinnedThreadCount.get());
-      
+
       // Log the first few pinning events for analysis
       int logLimit = Math.min(pinnedThreadCount.get(), 5);
       log.warn("First {} pinning events:", logLimit);
-      
+
       for (int i = 0; i < logLimit && i < pinnedThreadLogs.size(); i++) {
         log.warn(pinnedThreadLogs.get(i));
       }
@@ -944,7 +948,7 @@ public class FileBlobStoreTest
       log.info("No thread pinning detected during file operations");
     }
   }
-  
+
   /**
    * Test that compares the performance of blob creation operations between platform and virtual threads.
    */
@@ -953,32 +957,32 @@ public class FileBlobStoreTest
     // Create executors
     ExecutorService platformExecutor = createPlatformThreadExecutor("platform", 10);
     ExecutorService virtualExecutor = createVirtualThreadExecutor("virtual");
-    
+
     try {
       // Run operations with platform threads
       long platformStartTime = System.currentTimeMillis();
       List<BlobId> platformBlobIds = runCreateBlobOperations(platformExecutor, OPERATION_COUNT);
       long platformEndTime = System.currentTimeMillis();
       long platformDuration = platformEndTime - platformStartTime;
-      
+
       // Run operations with virtual threads
       long virtualStartTime = System.currentTimeMillis();
       List<BlobId> virtualBlobIds = runCreateBlobOperations(virtualExecutor, OPERATION_COUNT);
       long virtualEndTime = System.currentTimeMillis();
       long virtualDuration = virtualEndTime - virtualStartTime;
-      
+
       // Log performance results
       log.info("Platform thread create blob operations took {} ms", platformDuration);
       log.info("Virtual thread create blob operations took {} ms", virtualDuration);
-      
+
       // Verify results
       assertEquals(OPERATION_COUNT, platformBlobIds.size());
       assertEquals(OPERATION_COUNT, virtualBlobIds.size());
-      
+
       // Clean up created blobs
       cleanupBlobs(platformBlobIds);
       cleanupBlobs(virtualBlobIds);
-      
+
       // Log performance ratio
       log.info("Virtual thread performance ratio: {}", (double) platformDuration / virtualDuration);
     } finally {
@@ -1000,25 +1004,25 @@ public class FileBlobStoreTest
     };
     return Executors.newFixedThreadPool(threadCount, threadFactory);
   }
-  
+
   /**
    * Creates a virtual thread executor that creates a new virtual thread for each task.
    */
   private ExecutorService createVirtualThreadExecutor(String name) {
     ThreadFactory threadFactory = Thread.ofVirtual()
-        .name(name + "-", 0)
-        .factory();
+            .name(name + "-", 0)
+            .factory();
     return Executors.newThreadPerTaskExecutor(threadFactory);
   }
-  
+
   /**
    * Runs blob creation operations concurrently using the provided executor.
    */
-  private List<BlobId> runCreateBlobOperations(ExecutorService executor, int operationCount) 
-      throws InterruptedException {
+  private List<BlobId> runCreateBlobOperations(ExecutorService executor, int operationCount)
+          throws InterruptedException {
     CountDownLatch latch = new CountDownLatch(operationCount);
     List<BlobId> blobIds = new ArrayList<>();
-    
+
     // Submit create operations
     for (int i = 0; i < operationCount; i++) {
       final int index = i;
@@ -1026,9 +1030,9 @@ public class FileBlobStoreTest
         try {
           byte[] content = randomBytes();
           Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-              CREATED_BY_HEADER, "test",
-              BLOB_NAME_HEADER, String.format("test/perf-test-%d.bin", index)));
-          
+                  CREATED_BY_HEADER, "test",
+                  BLOB_NAME_HEADER, String.format("test/perf-test-%d.bin", index)));
+
           synchronized (blobIds) {
             blobIds.add(blob.getId());
           }
@@ -1039,14 +1043,14 @@ public class FileBlobStoreTest
         }
       });
     }
-    
+
     // Wait for all operations to complete
     boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertTrue("All operations should complete within timeout", completed);
-    
+    assertTrue(completed,"All operations should complete within timeout");
+
     return blobIds;
   }
-  
+
   /**
    * Cleans up the blobs with the given IDs.
    */
@@ -1061,7 +1065,7 @@ public class FileBlobStoreTest
       }
     }
   }
-  
+
   /**
    * Processes a thread pinning log message, extracting relevant information and
    * adding it to the collection of pinning events.
@@ -1077,7 +1081,7 @@ public class FileBlobStoreTest
       pinnedThreadDetected.set(true);
     }
   }
-  
+
   /**
    * Generates random bytes for test data.
    */
@@ -1100,8 +1104,8 @@ public class FileBlobStoreTest
     configuration.setAttributes(attributes1);
 
     TestFileBlobStore underTest = spy(new TestFileBlobStore(
-        util.createTempDir().toPath(), blobIdLocationResolver, fileOperations, metrics, configuration, appDirs,
-        nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker, fileBlobDeletionIndex));
+            util.createTempDir().toPath(), blobIdLocationResolver, fileOperations, metrics, configuration, appDirs,
+            nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker, fileBlobDeletionIndex));
 
     underTest.init(configuration);
     underTest.setLiveBlobs(loadingCache);
@@ -1117,24 +1121,24 @@ public class FileBlobStoreTest
 
   // test class to provide isDateBasedLayoutEnabled() method
   private class TestFileBlobStore
-      extends FileBlobStore
+          extends FileBlobStore
   {
     public TestFileBlobStore(
-        Path root,
-        BlobIdLocationResolver blobIdLocationResolver,
-        FileOperations fileOperations,
-        DatastoreFileBlobStoreMetricsService metrics,
-        BlobStoreConfiguration configuration,
-        ApplicationDirectories appDirs,
-        NodeAccess nodeAccess,
-        DryRunPrefix dryRunPrefix,
-        BlobStoreReconciliationLogger reconciliationLogger,
-        long blobStoreQuota,
-        BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker,
-        FileBlobDeletionIndex fileBlobDeletionIndex)
+            Path root,
+            BlobIdLocationResolver blobIdLocationResolver,
+            FileOperations fileOperations,
+            DatastoreFileBlobStoreMetricsService metrics,
+            BlobStoreConfiguration configuration,
+            ApplicationDirectories appDirs,
+            NodeAccess nodeAccess,
+            DryRunPrefix dryRunPrefix,
+            BlobStoreReconciliationLogger reconciliationLogger,
+            long blobStoreQuota,
+            BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker,
+            FileBlobDeletionIndex fileBlobDeletionIndex)
     {
       super(root, blobIdLocationResolver, fileOperations, metrics, configuration, appDirs, nodeAccess, dryRunPrefix,
-          reconciliationLogger, blobStoreQuota, blobStoreQuotaUsageChecker, fileBlobDeletionIndex);
+              reconciliationLogger, blobStoreQuota, blobStoreQuotaUsageChecker, fileBlobDeletionIndex);
     }
 
     @Override

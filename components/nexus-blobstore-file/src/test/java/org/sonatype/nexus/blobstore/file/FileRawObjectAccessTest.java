@@ -28,6 +28,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
@@ -46,12 +48,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class FileRawObjectAccessTest
-    extends TestSupport
+        extends TestSupport
 {
   private FileRawObjectAccess underTest;
 
   @TempDir
   public Path temporaryFolder;
+
+  private static final Logger log = LoggerFactory.getLogger(FileRawObjectAccessTest.class);
 
   @BeforeEach
   public void initBlobStore() {
@@ -164,7 +168,7 @@ public class FileRawObjectAccessTest
     int numThreads = 100;
     CountDownLatch latch = new CountDownLatch(numThreads);
     AtomicBoolean anyFailures = new AtomicBoolean(false);
-    
+
     // Use virtual threads for I/O operations
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < numThreads; i++) {
@@ -174,28 +178,28 @@ public class FileRawObjectAccessTest
             // Create a unique path for each thread
             Path dir = Paths.get("concurrent", "thread" + threadNum);
             Files.createDirectories(temporaryFolder.resolve(dir));
-            
+
             // Write a file
             String content = "Content from thread " + threadNum;
-            underTest.putRawObject(dir.resolve("file.txt"), 
-                new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
-            
+            underTest.putRawObject(dir.resolve("file.txt"),
+                    new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+
             // Read it back and verify
             try (InputStream in = underTest.getRawObject(dir.resolve("file.txt"))) {
               String readContent = IOUtils.toString(in, StandardCharsets.UTF_8);
-              assertEquals(content, readContent, 
-                  "Content mismatch for thread " + threadNum);
+              assertEquals(content, readContent,
+                      "Content mismatch for thread " + threadNum);
             }
-            
+
             // List objects
             List<String> objects = underTest.listRawObjects(dir).collect(toList());
-            assertEquals(1, objects.size(), 
-                "Expected one file for thread " + threadNum);
-            
+            assertEquals(1, objects.size(),
+                    "Expected one file for thread " + threadNum);
+
             // Delete the file
             underTest.deleteRawObjectsInPath(dir);
-            assertFalse(Files.exists(temporaryFolder.resolve(dir)), 
-                "Directory should be deleted for thread " + threadNum);
+            assertFalse(Files.exists(temporaryFolder.resolve(dir)),
+                    "Directory should be deleted for thread " + threadNum);
           }
           catch (Exception e) {
             log.error("Error in thread " + threadNum, e);
@@ -206,7 +210,7 @@ public class FileRawObjectAccessTest
           }
         });
       }
-      
+
       // Wait for all threads to complete
       assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
       assertFalse(anyFailures.get(), "One or more threads encountered errors");
@@ -217,10 +221,10 @@ public class FileRawObjectAccessTest
   public void verifyNoPinningDuringFileOperations() throws Exception {
     // This test verifies that file operations don't cause thread pinning
     // by performing multiple concurrent I/O operations with virtual threads
-    
+
     int numThreads = 50;
     CountDownLatch latch = new CountDownLatch(numThreads);
-    
+
     // Use virtual threads for I/O operations
     try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
       for (int i = 0; i < numThreads; i++) {
@@ -230,29 +234,29 @@ public class FileRawObjectAccessTest
             // Create a unique path for each thread
             Path dir = Paths.get("pinning-test", "thread" + threadNum);
             Files.createDirectories(temporaryFolder.resolve(dir));
-            
+
             // Perform multiple I/O operations that would block if pinned
             for (int j = 0; j < 10; j++) {
               String fileName = "file" + j + ".txt";
               String content = "Content " + j + " from thread " + threadNum;
-              
+
               // Write file
-              underTest.putRawObject(dir.resolve(fileName), 
-                  new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
-              
+              underTest.putRawObject(dir.resolve(fileName),
+                      new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+
               // Small delay to increase chance of thread scheduling
               Thread.sleep(10);
-              
+
               // Read file
               try (InputStream in = underTest.getRawObject(dir.resolve(fileName))) {
                 String readContent = IOUtils.toString(in, StandardCharsets.UTF_8);
                 assertEquals(content, readContent);
               }
-              
+
               // List files
               underTest.listRawObjects(dir).collect(toList());
             }
-            
+
             // Clean up
             underTest.deleteRawObjectsInPath(dir);
           }
@@ -264,7 +268,7 @@ public class FileRawObjectAccessTest
           }
         });
       }
-      
+
       // If threads are pinned, this would likely time out as carrier threads would be blocked
       assertTrue(latch.await(30, TimeUnit.SECONDS), "Timed out waiting for threads to complete");
     }

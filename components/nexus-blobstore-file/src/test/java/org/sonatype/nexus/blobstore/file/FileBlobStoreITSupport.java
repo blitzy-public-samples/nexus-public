@@ -52,6 +52,7 @@ import org.sonatype.nexus.common.io.DirectoryHelper;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.property.PropertiesFile;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
 
 import com.google.common.collect.ImmutableMap;
@@ -65,6 +66,9 @@ import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.commons.lang3.tuple.Pair.of;
@@ -80,13 +84,7 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver.TEMPORARY_BLOB_ID_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_ATTRIBUTES_SUFFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_CONTENT_SUFFIX;
@@ -99,27 +97,28 @@ import static org.sonatype.nexus.blobstore.api.BlobStore.TEMPORARY_BLOB_HEADER;
  * {@link FileBlobStore} integration tests.
  */
 public abstract class FileBlobStoreITSupport
-    extends TestSupport
+        extends TestSupport
 {
   public static final int TEST_DATA_LENGTH = 10;
 
   private static final int METRICS_FLUSH_TIMEOUT = 1;
 
   private static final int QUOTA_CHECK_INTERVAL = 5;
-  
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreITSupport.class);
   /**
    * System property to enable virtual threads for tests
    */
   public static final String VIRTUAL_THREADS_ENABLED_PROPERTY = "test.virtual.threads";
 
   public static final ImmutableMap<String, String> TEST_HEADERS = ImmutableMap.of(
-      CREATED_BY_HEADER, "test",
-      BLOB_NAME_HEADER, "test/randomData.bin");
+          CREATED_BY_HEADER, "test",
+          BLOB_NAME_HEADER, "test/randomData.bin");
 
   public static final ImmutableMap<String, String> TEMP_HEADERS = ImmutableMap.of(
-      CREATED_BY_HEADER, "test",
-      BLOB_NAME_HEADER, "test/randomData.bin",
-      TEMPORARY_BLOB_HEADER, "");
+          CREATED_BY_HEADER, "test",
+          BLOB_NAME_HEADER, "test/randomData.bin",
+          TEMPORARY_BLOB_HEADER, "");
 
   private FileBlobStore underTest;
 
@@ -152,7 +151,7 @@ public abstract class FileBlobStoreITSupport
   private BlobStoreReconciliationLogger reconciliationLogger;
 
   protected abstract FileBlobDeletionIndex fileBlobDeletionIndex();
-  
+
   /**
    * Checks if virtual threads are enabled for testing.
    *
@@ -161,7 +160,7 @@ public abstract class FileBlobStoreITSupport
   public static boolean isVirtualThreadsEnabled() {
     return Boolean.getBoolean(VIRTUAL_THREADS_ENABLED_PROPERTY);
   }
-  
+
   /**
    * Creates an ExecutorService using virtual threads when enabled, or a fixed thread pool otherwise.
    *
@@ -176,7 +175,7 @@ public abstract class FileBlobStoreITSupport
       return Executors.newFixedThreadPool(threadCount);
     }
   }
-  
+
   /**
    * Checks if the current thread is a virtual thread.
    *
@@ -185,7 +184,7 @@ public abstract class FileBlobStoreITSupport
   public static boolean isVirtualThread() {
     return Thread.currentThread().isVirtual();
   }
-  
+
   /**
    * Detects if thread pinning is occurring during I/O operations.
    * This method can be used to identify potential performance bottlenecks when using virtual threads.
@@ -197,32 +196,33 @@ public abstract class FileBlobStoreITSupport
     if (!isVirtualThread()) {
       return false; // Not a virtual thread, so pinning is not applicable
     }
-    
+
     // Get the current stack trace to analyze for pinning causes
     StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
     boolean pinningDetected = false;
-    
+
     // Look for known causes of thread pinning in the stack trace
     for (StackTraceElement element : stackTrace) {
       String className = element.getClassName();
       String methodName = element.getMethodName();
-      
+
       // Check for synchronized methods or blocks that can cause pinning
-      if ((className.contains("java.io") || className.contains("java.nio")) && 
-          (methodName.contains("lock") || methodName.contains("synchronized"))) {
+      if ((className.contains("java.io") || className.contains("java.nio")) &&
+              (methodName.contains("lock") || methodName.contains("synchronized"))) {
         pinningDetected = true;
-        log.warn("Thread pinning detected during {} operation in {}.{}", 
-            operation, className, methodName);
+        log.warn("Thread pinning detected during {} operation in {}.{}",
+                operation, className, methodName);
       }
     }
-    
+
     return pinningDetected;
   }
 
   @Before
   public void setUp() throws Exception {
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     metricsStore = spy(new DatastoreFileBlobStoreMetricsService(METRICS_FLUSH_TIMEOUT, blobStoreMetricsStore,
-        new PeriodicJobServiceImpl()));
+            periodicJobService));
 
     when(nodeAccess.getId()).thenReturn(UUID.randomUUID().toString());
     when(nodeAccess.isOldestNode()).thenReturn(true);
@@ -240,14 +240,15 @@ public abstract class FileBlobStoreITSupport
   }
 
   protected FileBlobStore createBlobStore(final String name, final FileBlobDeletionIndex index) throws Exception {
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker =
-        new BlobStoreQuotaUsageChecker(new PeriodicJobServiceImpl(), QUOTA_CHECK_INTERVAL, quotaService);
+            new BlobStoreQuotaUsageChecker(periodicJobService, QUOTA_CHECK_INTERVAL, quotaService);
 
     final BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.setName(name);
     config.attributes(FileBlobStore.CONFIG_KEY).set(FileBlobStore.PATH_KEY, blobStoreDirectory.toString());
     FileBlobStore blobstore = new FileBlobStore(blobIdResolver, fileOperations, applicationDirectories, metricsStore,
-        nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker, index);
+            nodeAccess, dryRunPrefix, reconciliationLogger, 0L, blobStoreQuotaUsageChecker, index);
     blobstore.init(config);
     blobstore.start();
     return blobstore;
@@ -276,7 +277,7 @@ public abstract class FileBlobStoreITSupport
     final BlobStoreMetrics storeMetrics = underTest.getMetrics();
     verify(metricsStore).recordAddition(TEST_DATA_LENGTH);
     await().atMost(METRICS_FLUSH_TIMEOUT + 1, SECONDS)
-        .untilAsserted(() -> verifyBlobMetricsStore(TEST_DATA_LENGTH, 1l));
+            .untilAsserted(() -> verifyBlobMetricsStore(TEST_DATA_LENGTH, 1l));
 
     assertThat(storeMetrics.getAvailableSpace(), is(greaterThan(0L)));
 
@@ -289,7 +290,7 @@ public abstract class FileBlobStoreITSupport
     underTest.compact(null);
     verify(metricsStore).recordDeletion(TEST_DATA_LENGTH);
     await().atMost(METRICS_FLUSH_TIMEOUT + 1, SECONDS)
-        .untilAsserted(() -> verifyBlobMetricsStore(-TEST_DATA_LENGTH, -1));
+            .untilAsserted(() -> verifyBlobMetricsStore(-TEST_DATA_LENGTH, -1));
 
     final Blob deletedBlob = underTest.get(blob.getId());
     assertThat(deletedBlob, is(nullValue()));
@@ -300,9 +301,9 @@ public abstract class FileBlobStoreITSupport
     final byte[] content = randomBytes();
 
     final Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-        CREATED_BY_HEADER, "test",
-        BLOB_NAME_HEADER, "health-check/repositoryName/bundle.gz",
-        DIRECT_PATH_BLOB_HEADER, "true"));
+            CREATED_BY_HEADER, "test",
+            BLOB_NAME_HEADER, "health-check/repositoryName/bundle.gz",
+            DIRECT_PATH_BLOB_HEADER, "true"));
     verifyMoveOperationsAtomic(blob);
 
     final byte[] output = extractContent(blob);
@@ -340,9 +341,9 @@ public abstract class FileBlobStoreITSupport
   public void testExistsMethodForDirectPathBlob() {
     byte[] content = "hello".getBytes();
     final ImmutableMap<String, String> DIRECT_PATH_HEADERS = ImmutableMap.of(
-        CREATED_BY_HEADER, "test",
-        BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
-        DIRECT_PATH_BLOB_HEADER, "true");
+            CREATED_BY_HEADER, "test",
+            BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
+            DIRECT_PATH_BLOB_HEADER, "true");
     BlobId blobId = blobIdResolver.fromHeaders(DIRECT_PATH_HEADERS);
     // At this point the exist test should return false
     assertThat(underTest.exists(blobId), is(false));
@@ -357,9 +358,9 @@ public abstract class FileBlobStoreITSupport
   public void getDirectPathBlobIdStreamSuccess() throws IOException {
     byte[] content = "hello".getBytes();
     Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-        CREATED_BY_HEADER, "test",
-        BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
-        DIRECT_PATH_BLOB_HEADER, "true"));
+            CREATED_BY_HEADER, "test",
+            BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
+            DIRECT_PATH_BLOB_HEADER, "true"));
     verifyMoveOperationsAtomic(blob);
 
     assertThat(underTest.getDirectPathBlobIdStream("health-check").count(), is(1L));
@@ -381,13 +382,13 @@ public abstract class FileBlobStoreITSupport
   public void itWillReturnAllBlobIdsInTheStream() {
     byte[] content = "hello".getBytes();
     Blob regularBlob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-        BLOB_NAME_HEADER, "example",
-        CREATED_BY_HEADER, "test"));
+            BLOB_NAME_HEADER, "example",
+            CREATED_BY_HEADER, "test"));
 
     Blob directPathBlob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-        CREATED_BY_HEADER, "test",
-        BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
-        DIRECT_PATH_BLOB_HEADER, "true"));
+            CREATED_BY_HEADER, "test",
+            BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
+            DIRECT_PATH_BLOB_HEADER, "true"));
 
     List<BlobId> blobIds = underTest.getBlobIdStream().collect(Collectors.toList());
     assertThat(blobIds.size(), is(equalTo(2)));
@@ -404,9 +405,9 @@ public abstract class FileBlobStoreITSupport
     byte[] content = "hello".getBytes();
     final long initialSize = content.length;
     Blob blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-        CREATED_BY_HEADER, "test",
-        BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
-        DIRECT_PATH_BLOB_HEADER, "true"));
+            CREATED_BY_HEADER, "test",
+            BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
+            DIRECT_PATH_BLOB_HEADER, "true"));
     verifyMoveOperationsAtomic(blob);
 
     byte[] output = extractContent(blob);
@@ -424,9 +425,9 @@ public abstract class FileBlobStoreITSupport
     // now overwrite the blob
     content = "goodbye".getBytes();
     blob = underTest.create(new ByteArrayInputStream(content), ImmutableMap.of(
-        CREATED_BY_HEADER, "test",
-        BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
-        DIRECT_PATH_BLOB_HEADER, "true"));
+            CREATED_BY_HEADER, "test",
+            BLOB_NAME_HEADER, "health-check/repositoryName/file.txt",
+            DIRECT_PATH_BLOB_HEADER, "true"));
     verifyOverwriteOperationsAtomic(blob);
 
     output = extractContent(blob);
@@ -514,9 +515,9 @@ public abstract class FileBlobStoreITSupport
     final Blob blob = underTest.create(sourceFile, TEST_HEADERS, content.length, sha1);
     assertThat(blob.getId().asUniqueString(), not(startsWith(TEMPORARY_BLOB_ID_PREFIX)));
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(blob.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX)), is(true));
+            BLOB_FILE_CONTENT_SUFFIX)), is(true));
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(blob.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
+            BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
 
     // Now append some telltale bytes to the end of the original file
     final byte[] appendMe = new byte[100];
@@ -548,14 +549,14 @@ public abstract class FileBlobStoreITSupport
     }
 
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(temp.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX)), is(true));
+            BLOB_FILE_CONTENT_SUFFIX)), is(true));
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(temp.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
+            BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
 
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(copy.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX)), is(true));
+            BLOB_FILE_CONTENT_SUFFIX)), is(true));
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(copy.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
+            BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
 
     assertThat(temp.getId().asUniqueString(), startsWith(TEMPORARY_BLOB_ID_PREFIX));
     assertThat(copy.getId().asUniqueString(), not(startsWith(TEMPORARY_BLOB_ID_PREFIX)));
@@ -586,14 +587,14 @@ public abstract class FileBlobStoreITSupport
     }
 
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(temp.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX)), is(true));
+            BLOB_FILE_CONTENT_SUFFIX)), is(true));
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(temp.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
+            BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
 
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(copy.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX)), is(true));
+            BLOB_FILE_CONTENT_SUFFIX)), is(true));
     assertThat(Files.exists(contentDirectory.resolve(blobIdResolver.getLocation(copy.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
+            BLOB_FILE_ATTRIBUTES_SUFFIX)), is(true));
 
     assertThat(temp.getId().asUniqueString(), startsWith(TEMPORARY_BLOB_ID_PREFIX));
     assertThat(copy.getId().asUniqueString(), not(startsWith(TEMPORARY_BLOB_ID_PREFIX)));
@@ -602,7 +603,7 @@ public abstract class FileBlobStoreITSupport
     verify(fileOperations, times(2)).copy(any(), any());
     verify(fileOperations, times(6)).moveAtomic(any(), any());
   }
-  
+
   /**
    * Tests concurrent operations using virtual threads when enabled.
    * This test creates multiple blobs concurrently and verifies they are all created successfully.
@@ -614,10 +615,10 @@ public abstract class FileBlobStoreITSupport
     final CountDownLatch latch = new CountDownLatch(concurrentOperations);
     final AtomicInteger successCount = new AtomicInteger(0);
     final AtomicInteger failureCount = new AtomicInteger(0);
-    
+
     // Create an executor service based on the virtual threads configuration
     ExecutorService executor = createExecutorService(10);
-    
+
     try {
       // Submit concurrent blob creation tasks
       for (int i = 0; i < concurrentOperations; i++) {
@@ -629,17 +630,17 @@ public abstract class FileBlobStoreITSupport
             if (isVirtualThreadsEnabled()) {
               assertThat("Should be running on a virtual thread when enabled", isVirtual, is(true));
             }
-            
+
             // Create a blob with unique content
             byte[] content = ("test-content-" + index).getBytes();
             Blob blob = underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
-            
+
             // Check for thread pinning during I/O operations
             boolean pinningDetected = detectThreadPinning("blob creation");
             if (pinningDetected && isVirtualThreadsEnabled()) {
               log.warn("Thread pinning detected during concurrent blob creation test");
             }
-            
+
             // Verify the blob was created correctly
             byte[] retrievedContent = extractContent(blob);
             if (Arrays.equals(content, retrievedContent)) {
@@ -655,15 +656,15 @@ public abstract class FileBlobStoreITSupport
           }
         });
       }
-      
+
       // Wait for all operations to complete
       boolean completed = latch.await(30, TimeUnit.SECONDS);
       assertThat("All concurrent operations should complete in time", completed, is(true));
-      
+
       // Verify all operations succeeded
       assertThat("All operations should succeed", successCount.get(), is(concurrentOperations));
       assertThat("No operations should fail", failureCount.get(), is(0));
-      
+
     } finally {
       executor.shutdown();
       boolean terminated = executor.awaitTermination(5, TimeUnit.SECONDS);
@@ -753,8 +754,8 @@ public abstract class FileBlobStoreITSupport
     Path sourceFile = testFile(content);
 
     doThrow(new FileSystemException("The process cannot access the file because it is being used by another process."))
-        .when(fileOperations)
-        .moveAtomic(any(), any());
+            .when(fileOperations)
+            .moveAtomic(any(), any());
 
     underTest.create(sourceFile, TEST_HEADERS, content.length, sha1);
 
@@ -767,9 +768,9 @@ public abstract class FileBlobStoreITSupport
     byte[] content = new byte[TEST_DATA_LENGTH];
     Blob blob = underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
     Path bytesPath = contentDirectory.resolve(blobIdResolver.getLocation(blob.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX);
+            BLOB_FILE_CONTENT_SUFFIX);
     Path propertiesPath = contentDirectory.resolve(blobIdResolver.getLocation(blob.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX);
+            BLOB_FILE_ATTRIBUTES_SUFFIX);
 
     // truncate blob properties file to simulate corruption
     Files.write(propertiesPath, new byte[0], StandardOpenOption.TRUNCATE_EXISTING);
@@ -792,13 +793,13 @@ public abstract class FileBlobStoreITSupport
     final Blob blob4 = underTest.create(new ByteArrayInputStream(content), TEST_HEADERS);
 
     Path bytesPath1 = contentDirectory.resolve(blobIdResolver.getLocation(blob1.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX);
+            BLOB_FILE_CONTENT_SUFFIX);
     Path bytesPath2 = contentDirectory.resolve(blobIdResolver.getLocation(blob2.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX);
+            BLOB_FILE_CONTENT_SUFFIX);
     Path bytesPath3 = contentDirectory.resolve(blobIdResolver.getLocation(blob3.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX);
+            BLOB_FILE_CONTENT_SUFFIX);
     Path bytesPath4 = contentDirectory.resolve(blobIdResolver.getLocation(blob4.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX);
+            BLOB_FILE_CONTENT_SUFFIX);
 
     assertThat(bytesPath1.toFile().exists(), is(true));
     assertThat(bytesPath2.toFile().exists(), is(true));
@@ -815,7 +816,7 @@ public abstract class FileBlobStoreITSupport
     assertThat(bytesPath4.toFile().exists(), is(true));
 
     PropertiesFile metadataPropertiesFile = new PropertiesFile(
-        underTest.getAbsoluteBlobDir().resolve(FileBlobStore.METADATA_FILENAME).toFile());
+            underTest.getAbsoluteBlobDir().resolve(FileBlobStore.METADATA_FILENAME).toFile());
     metadataPropertiesFile.setProperty(FileBlobStore.REBUILD_DELETED_BLOB_INDEX_KEY, "true");
     metadataPropertiesFile.store();
 
@@ -854,9 +855,9 @@ public abstract class FileBlobStoreITSupport
    */
   Pair<Path, Path> verifyBlobPaths(final Blob blob) {
     final Path contentPath = contentDirectory.resolve(blobIdResolver.getLocation(blob.getId()) +
-        BLOB_FILE_CONTENT_SUFFIX);
+            BLOB_FILE_CONTENT_SUFFIX);
     final Path attributesPath = contentDirectory.resolve(blobIdResolver.getLocation(blob.getId()) +
-        BLOB_FILE_ATTRIBUTES_SUFFIX);
+            BLOB_FILE_ATTRIBUTES_SUFFIX);
     assertThat(blob.getId().asUniqueString(), not(startsWith(TEMPORARY_BLOB_ID_PREFIX)));
     assertThat(Files.exists(contentPath), is(true));
     assertThat(Files.exists(attributesPath), is(true));

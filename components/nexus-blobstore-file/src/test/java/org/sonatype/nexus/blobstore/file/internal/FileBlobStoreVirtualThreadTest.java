@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
 import org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver;
@@ -42,12 +44,14 @@ import org.sonatype.nexus.blobstore.api.BlobMetrics;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;
+import org.sonatype.nexus.blobstore.file.FileBlobStoreTest;
 import org.sonatype.nexus.blobstore.file.internal.datastore.metrics.DatastoreFileBlobStoreMetricsService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
 
 import com.google.common.base.Objects;
@@ -62,9 +66,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.io.ByteStreams.nullOutputStream;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -72,20 +74,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
+import org.sonatype.nexus.blobstore.file.FileBlobDeletionIndex;
 
 /**
  * Tests {@link FileBlobStore} operations using Java 21 Virtual Threads.
- * 
+ *
  * This test validates that file I/O operations performed by the FileBlobStore implementation
  * maintain correct behavior and thread safety when executed with virtual threads.
  */
 @ExtendWith(MockitoExtension.class)
 class FileBlobStoreVirtualThreadTest
-    extends TestSupport
+        extends TestSupport
 {
   private static final ImmutableMap<String, String> TEST_HEADERS = ImmutableMap.of(
-      CREATED_BY_HEADER, "test",
-      BLOB_NAME_HEADER, "test/randomData.bin");
+          CREATED_BY_HEADER, "test",
+          BLOB_NAME_HEADER, "test/randomData.bin");
 
   private static final int BLOB_MAX_SIZE_BYTES = 5_000;
   private static final int QUOTA_CHECK_INTERVAL = 1;
@@ -95,6 +98,8 @@ class FileBlobStoreVirtualThreadTest
   private static final int TIMEOUT_SECONDS = 30;
 
   private FileBlobStore underTest;
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreVirtualThreadTest.class);
 
   @Mock
   private DatastoreFileBlobStoreMetricsService metricsStore;
@@ -130,12 +135,13 @@ class FileBlobStoreVirtualThreadTest
     final BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.attributes(FileBlobStore.CONFIG_KEY).set(FileBlobStore.PATH_KEY, root.toString());
 
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     blobStoreQuotaUsageChecker = new BlobStoreQuotaUsageChecker(
-        new PeriodicJobServiceImpl(), QUOTA_CHECK_INTERVAL, quotaService);
+            periodicJobService, QUOTA_CHECK_INTERVAL, quotaService);
 
     this.underTest = new FileBlobStore(content, new DefaultBlobIdLocationResolver(true), new SimpleFileOperations(),
-        metricsStore, config, applicationDirectories, nodeAccess, dryRunPrefix, reconciliationLogger, 0L,
-        blobStoreQuotaUsageChecker, fileBlobDeletionIndex);
+            metricsStore, config, applicationDirectories, nodeAccess, dryRunPrefix, reconciliationLogger, 0L,
+            blobStoreQuotaUsageChecker, fileBlobDeletionIndex);
     underTest.start();
   }
 
@@ -148,7 +154,7 @@ class FileBlobStoreVirtualThreadTest
 
   /**
    * Tests concurrent blob creation using virtual threads.
-   * 
+   *
    * This test creates a large number of blobs concurrently using virtual threads to validate
    * that the FileBlobStore implementation handles high concurrency correctly with the new
    * Java 21 threading model.
@@ -157,13 +163,13 @@ class FileBlobStoreVirtualThreadTest
   void testConcurrentBlobCreationWithVirtualThreads() throws Exception {
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
+
     int threadCount = HIGH_THREAD_COUNT;
     CountDownLatch latch = new CountDownLatch(threadCount);
     AtomicInteger errorCount = new AtomicInteger(0);
     ConcurrentHashMap<BlobId, byte[]> blobDataMap = new ConcurrentHashMap<>();
     Random random = new Random();
-    
+
     try {
       // Create blobs concurrently using virtual threads
       for (int i = 0; i < threadCount; i++) {
@@ -172,12 +178,12 @@ class FileBlobStoreVirtualThreadTest
             // Create random blob data
             byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
             random.nextBytes(data);
-            
+
             // Create blob
             Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
             assertNotNull(blob, "Blob should not be null");
             assertNotNull(blob.getId(), "Blob ID should not be null");
-            
+
             // Store blob data for verification
             blobDataMap.put(blob.getId(), data);
           } catch (Exception e) {
@@ -188,15 +194,15 @@ class FileBlobStoreVirtualThreadTest
           }
         });
       }
-      
+
       // Wait for all threads to complete
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertTrue(completed, "All threads should complete within timeout");
       assertEquals(0, errorCount.get(), "No errors should occur during blob creation");
-      
+
       // Verify blob count
       assertEquals(threadCount, blobDataMap.size(), "All blobs should be created successfully");
-      
+
       // Verify metrics service was initialized
       verify(metricsStore).init(underTest);
       verify(quotaService, atLeastOnce()).checkQuota(underTest);
@@ -207,7 +213,7 @@ class FileBlobStoreVirtualThreadTest
 
   /**
    * Tests concurrent blob retrieval using virtual threads.
-   * 
+   *
    * This test creates a set of blobs and then retrieves them concurrently using virtual threads
    * to validate that the FileBlobStore implementation handles concurrent reads correctly with
    * the new Java 21 threading model.
@@ -218,7 +224,7 @@ class FileBlobStoreVirtualThreadTest
     List<BlobId> blobIds = new ArrayList<>();
     ConcurrentHashMap<BlobId, byte[]> blobDataMap = new ConcurrentHashMap<>();
     Random random = new Random();
-    
+
     for (int i = 0; i < MEDIUM_THREAD_COUNT; i++) {
       byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
       random.nextBytes(data);
@@ -226,15 +232,15 @@ class FileBlobStoreVirtualThreadTest
       blobIds.add(blob.getId());
       blobDataMap.put(blob.getId(), data);
     }
-    
+
     // Now retrieve blobs concurrently using virtual threads
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
+
     int retrievalThreadCount = HIGH_THREAD_COUNT;
     CountDownLatch latch = new CountDownLatch(retrievalThreadCount);
     AtomicInteger errorCount = new AtomicInteger(0);
-    
+
     try {
       for (int i = 0; i < retrievalThreadCount; i++) {
         final int index = i % blobIds.size(); // Cycle through available blobs
@@ -243,7 +249,7 @@ class FileBlobStoreVirtualThreadTest
             BlobId blobId = blobIds.get(index);
             Blob blob = underTest.get(blobId);
             assertNotNull(blob, "Retrieved blob should not be null");
-            
+
             // Verify blob content
             try (InputStream inputStream = blob.getInputStream()) {
               readContentAndValidateMetrics(blobId, inputStream, blob.getMetrics(), blobDataMap.get(blobId));
@@ -256,7 +262,7 @@ class FileBlobStoreVirtualThreadTest
           }
         });
       }
-      
+
       // Wait for all threads to complete
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertTrue(completed, "All threads should complete within timeout");
@@ -268,7 +274,7 @@ class FileBlobStoreVirtualThreadTest
 
   /**
    * Tests concurrent blob deletion using virtual threads.
-   * 
+   *
    * This test creates a set of blobs and then deletes them concurrently using virtual threads
    * to validate that the FileBlobStore implementation handles concurrent deletions correctly with
    * the new Java 21 threading model.
@@ -278,21 +284,21 @@ class FileBlobStoreVirtualThreadTest
     // Create a set of blobs first
     List<BlobId> blobIds = new ArrayList<>();
     Random random = new Random();
-    
+
     for (int i = 0; i < MEDIUM_THREAD_COUNT; i++) {
       byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
       random.nextBytes(data);
       Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
       blobIds.add(blob.getId());
     }
-    
+
     // Now delete blobs concurrently using virtual threads
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
+
     CountDownLatch latch = new CountDownLatch(blobIds.size());
     AtomicInteger errorCount = new AtomicInteger(0);
-    
+
     try {
       for (BlobId blobId : blobIds) {
         executor.submit(() -> {
@@ -306,17 +312,17 @@ class FileBlobStoreVirtualThreadTest
           }
         });
       }
-      
+
       // Wait for all threads to complete
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertTrue(completed, "All threads should complete within timeout");
       assertEquals(0, errorCount.get(), "No errors should occur during blob deletion");
-      
+
       // Verify blobs are deleted
       for (BlobId blobId : blobIds) {
         Blob blob = underTest.get(blobId);
-        assertTrue(blob == null || blob.getMetrics().isDeleted(), 
-            "Blob should be deleted or marked as deleted");
+        assertNull(blob, "Blob should be deleted");
+
       }
     } finally {
       executor.shutdown();
@@ -325,7 +331,7 @@ class FileBlobStoreVirtualThreadTest
 
   /**
    * Tests mixed blob operations (create, get, delete) using virtual threads.
-   * 
+   *
    * This test performs a mix of blob operations concurrently using virtual threads to validate
    * that the FileBlobStore implementation handles mixed workloads correctly with the new
    * Java 21 threading model.
@@ -334,18 +340,18 @@ class FileBlobStoreVirtualThreadTest
   void testMixedBlobOperationsWithVirtualThreads() throws Exception {
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
-    
+
     int creatorThreads = LOW_THREAD_COUNT;
     int readerThreads = MEDIUM_THREAD_COUNT;
     int deleterThreads = LOW_THREAD_COUNT;
     int totalThreads = creatorThreads + readerThreads + deleterThreads;
-    
+
     CountDownLatch latch = new CountDownLatch(totalThreads);
     AtomicInteger errorCount = new AtomicInteger(0);
     ConcurrentHashMap<BlobId, byte[]> blobDataMap = new ConcurrentHashMap<>();
     List<BlobId> blobIds = new ArrayList<>();
     Random random = new Random();
-    
+
     try {
       // Create some initial blobs
       for (int i = 0; i < LOW_THREAD_COUNT; i++) {
@@ -355,7 +361,7 @@ class FileBlobStoreVirtualThreadTest
         blobIds.add(blob.getId());
         blobDataMap.put(blob.getId(), data);
       }
-      
+
       // Creator threads
       for (int i = 0; i < creatorThreads; i++) {
         executor.submit(() -> {
@@ -377,7 +383,7 @@ class FileBlobStoreVirtualThreadTest
           }
         });
       }
-      
+
       // Reader threads
       for (int i = 0; i < readerThreads; i++) {
         executor.submit(() -> {
@@ -389,7 +395,7 @@ class FileBlobStoreVirtualThreadTest
                   blobId = blobIds.get(random.nextInt(blobIds.size()));
                 }
               }
-              
+
               if (blobId != null) {
                 Blob blob = underTest.get(blobId);
                 if (blob != null) {
@@ -413,7 +419,7 @@ class FileBlobStoreVirtualThreadTest
           }
         });
       }
-      
+
       // Deleter threads
       for (int i = 0; i < deleterThreads; i++) {
         executor.submit(() -> {
@@ -426,7 +432,7 @@ class FileBlobStoreVirtualThreadTest
                   blobId = blobIds.remove(index); // Remove from list to avoid duplicate deletions
                 }
               }
-              
+
               if (blobId != null) {
                 underTest.delete(blobId, "Testing mixed operations");
                 blobDataMap.remove(blobId);
@@ -440,7 +446,7 @@ class FileBlobStoreVirtualThreadTest
           }
         });
       }
-      
+
       // Wait for all threads to complete
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
       assertTrue(completed, "All threads should complete within timeout");
@@ -452,7 +458,7 @@ class FileBlobStoreVirtualThreadTest
 
   /**
    * Tests performance comparison between virtual threads and platform threads.
-   * 
+   *
    * This test compares the performance of blob operations using both virtual threads and
    * platform threads to validate the performance benefits of virtual threads for I/O-bound
    * operations in the FileBlobStore implementation.
@@ -462,17 +468,17 @@ class FileBlobStoreVirtualThreadTest
     // Create thread factories for both thread types
     ThreadFactory virtualThreadFactory = Thread.ofVirtual().factory();
     ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
-    
+
     int operationCount = MEDIUM_THREAD_COUNT;
     Random random = new Random();
-    
+
     // Prepare test data
     byte[][] testData = new byte[operationCount][];
     for (int i = 0; i < operationCount; i++) {
       testData[i] = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
       random.nextBytes(testData[i]);
     }
-    
+
     // Test with platform threads
     long platformThreadTime = measureExecutionTime(() -> {
       ExecutorService executor = Executors.newThreadPerTaskExecutor(platformThreadFactory);
@@ -480,7 +486,7 @@ class FileBlobStoreVirtualThreadTest
         CountDownLatch latch = new CountDownLatch(operationCount);
         AtomicInteger errorCount = new AtomicInteger(0);
         List<BlobId> blobIds = new ArrayList<>();
-        
+
         // Create blobs
         for (int i = 0; i < operationCount; i++) {
           final int index = i;
@@ -497,19 +503,21 @@ class FileBlobStoreVirtualThreadTest
             }
           });
         }
-        
+
         latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertEquals(0, errorCount.get(), "No errors should occur with platform threads");
-        
+
         // Clean up created blobs
         for (BlobId blobId : blobIds) {
           underTest.delete(blobId, "Cleanup after platform thread test");
         }
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
       } finally {
         executor.shutdown();
       }
     });
-    
+
     // Test with virtual threads
     long virtualThreadTime = measureExecutionTime(() -> {
       ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory);
@@ -517,7 +525,7 @@ class FileBlobStoreVirtualThreadTest
         CountDownLatch latch = new CountDownLatch(operationCount);
         AtomicInteger errorCount = new AtomicInteger(0);
         List<BlobId> blobIds = new ArrayList<>();
-        
+
         // Create blobs
         for (int i = 0; i < operationCount; i++) {
           final int index = i;
@@ -534,22 +542,24 @@ class FileBlobStoreVirtualThreadTest
             }
           });
         }
-        
+
         latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertEquals(0, errorCount.get(), "No errors should occur with virtual threads");
-        
+
         // Clean up created blobs
         for (BlobId blobId : blobIds) {
           underTest.delete(blobId, "Cleanup after virtual thread test");
         }
+      } catch (InterruptedException e) {
+        throw new RuntimeException(e);
       } finally {
         executor.shutdown();
       }
     });
-    
+
     log.info("Platform thread execution time: {} ms", platformThreadTime);
     log.info("Virtual thread execution time: {} ms", virtualThreadTime);
-    
+
     // We don't assert on specific performance improvements as they can vary by environment,
     // but we log the results for analysis
   }
@@ -565,19 +575,19 @@ class FileBlobStoreVirtualThreadTest
         // Create and delete some blobs to ensure there's something to compact
         List<BlobId> blobIds = new ArrayList<>();
         Random random = new Random();
-        
+
         for (int i = 0; i < LOW_THREAD_COUNT; i++) {
           byte[] data = new byte[random.nextInt(BLOB_MAX_SIZE_BYTES) + 1];
           random.nextBytes(data);
           Blob blob = underTest.create(new ByteArrayInputStream(data), TEST_HEADERS);
           blobIds.add(blob.getId());
         }
-        
+
         // Delete half the blobs
         for (int i = 0; i < blobIds.size() / 2; i++) {
           underTest.delete(blobIds.get(i), "Preparing for compact test");
         }
-        
+
         // Run compact operation
         underTest.compact(null);
       } catch (Exception e) {
@@ -585,10 +595,10 @@ class FileBlobStoreVirtualThreadTest
         throw new RuntimeException(e);
       }
     });
-    
+
     virtualThread.start();
     virtualThread.join(TIMEOUT_SECONDS * 1000);
-    
+
     // If the thread is still alive after timeout, it's likely stuck
     assertTrue(!virtualThread.isAlive(), "Compact operation should complete within timeout");
   }
@@ -612,17 +622,17 @@ class FileBlobStoreVirtualThreadTest
    * @throws RuntimeException if there is any deviation
    */
   private void readContentAndValidateMetrics(
-      final BlobId blobId,
-      final InputStream inputStream,
-      final BlobMetrics metadataMetrics,
-      final byte[] expectedData) throws NoSuchAlgorithmException, IOException
+          final BlobId blobId,
+          final InputStream inputStream,
+          final BlobMetrics metadataMetrics,
+          final byte[] expectedData) throws NoSuchAlgorithmException, IOException
   {
     final MetricsInputStream measured = new MetricsInputStream(inputStream);
     ByteStreams.copy(measured, nullOutputStream());
 
     checkEqual("stream length", metadataMetrics.getContentSize(), measured.getSize(), blobId);
     checkEqual("SHA1 hash", metadataMetrics.getSha1Hash(), measured.getMessageDigest(), blobId);
-    
+
     // If expected data is provided, verify content size matches
     if (expectedData != null) {
       checkEqual("content size", (long) expectedData.length, measured.getSize(), blobId);
@@ -630,15 +640,15 @@ class FileBlobStoreVirtualThreadTest
   }
 
   private void checkEqual(
-      final String propertyName,
-      final Object expected,
-      final Object measured,
-      final BlobId blobId)
+          final String propertyName,
+          final Object expected,
+          final Object measured,
+          final BlobId blobId)
   {
     if (!Objects.equal(measured, expected)) {
       throw new RuntimeException(
-          "Blob " + blobId + "'s measured " + propertyName + " differed from its metadata. Expected " + expected +
-              " but was " + measured + ".");
+              "Blob " + blobId + "'s measured " + propertyName + " differed from its metadata. Expected " + expected +
+                      " but was " + measured + ".");
     }
   }
 }

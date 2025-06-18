@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
+import org.mockito.ArgumentMatchers;
+import org.mockito.MockitoAnnotations;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.Before;
@@ -42,7 +44,7 @@ public class EmailStringTemplatesTest
   @Before
   public void setup() {
     // Initialize mocks
-    org.mockito.MockitoAnnotations.initMocks(this);
+    MockitoAnnotations.initMocks(this);
   }
 
   @Test
@@ -73,7 +75,7 @@ public class EmailStringTemplatesTest
 
   @Test
   public void testSecurityMessage() {
-    String message = EmailStringTemplates.securityMessage("password_change", "admin", "Password policy updated");
+    String message = EmailStringTemplates.securityAlertMessage("password_change", "admin", "Password policy updated");
     
     assertThat(message, notNullValue());
     assertThat(message, containsString("Security Alert: password_change"));
@@ -87,8 +89,8 @@ public class EmailStringTemplatesTest
     // This test assumes a ResourceBundle exists for testing
     // In a real test, you would create a test resource bundle
     try {
-      String message = EmailStringTemplates.i18nMessage("org.sonatype.nexus.email.internal.TestMessages", 
-          "test.key", Locale.ENGLISH, "param1");
+      StringTemplate stringTemplate = StringTemplate.of("Hello");
+      String message = EmailStringTemplates.i18nMessage(stringTemplate, Locale.ENGLISH);
       assertThat(message, notNullValue());
     } catch (Exception e) {
       // Expected in test environment without the actual resource bundle
@@ -105,7 +107,7 @@ public class EmailStringTemplatesTest
     EmailStringTemplates.logEmailOperation(mockLogger, "info", "Email sent", context);
     
     // Verify that logger.info was called with a message containing our context
-    verify(mockLogger).info(org.mockito.ArgumentMatchers.contains("Email sent"));
+    verify(mockLogger).info(ArgumentMatchers.contains("Email sent"));
   }
 
   @Test

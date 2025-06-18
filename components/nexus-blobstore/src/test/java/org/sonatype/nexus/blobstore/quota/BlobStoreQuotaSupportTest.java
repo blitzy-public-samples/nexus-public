@@ -22,7 +22,7 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.test.common.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 
 import static java.lang.StringTemplate.STR;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -135,11 +135,15 @@ public class BlobStoreQuotaSupportTest
     when(quotaService.checkQuota(blobStore)).thenReturn(result);
     
     // Run the quota check job in a virtual thread context
-    Thread.startVirtualThread(() -> {
-      BlobStoreQuotaSupport.quotaCheckJob(blobStore, quotaService, logger);
-    }).join();
-    
-    // Verify the warning was logged with the correct message using String Template
+      try {
+          Thread.startVirtualThread(() -> {
+            BlobStoreQuotaSupport.quotaCheckJob(blobStore, quotaService, logger);
+          }).join();
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+      }
+
+      // Verify the warning was logged with the correct message using String Template
     verify(logger).warn(STR."\{result.getMessage()}");
   }
   
@@ -153,11 +157,15 @@ public class BlobStoreQuotaSupportTest
     doThrow(testException).when(quotaService).checkQuota(blobStore);
     
     // Run the quota check job in a virtual thread context
-    Thread.startVirtualThread(() -> {
-      BlobStoreQuotaSupport.quotaCheckJob(blobStore, quotaService, logger);
-    }).join();
-    
-    // Verify error was logged with String Template message
+      try {
+          Thread.startVirtualThread(() -> {
+            BlobStoreQuotaSupport.quotaCheckJob(blobStore, quotaService, logger);
+          }).join();
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+      }
+
+      // Verify error was logged with String Template message
     verify(logger).error(contains("virtualThreadConfig"), eq("virtualThreadConfig"), eq(testException));
     verify(logger, never()).warn(anyString());
   }

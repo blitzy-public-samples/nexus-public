@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;

@@ -17,17 +17,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroup;
-import org.sonatype.nexus.common.test.Java21TestGroup;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -35,7 +36,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@Java21TestGroup
+@Category(Java21TestGroup.class)
 public class WriteToFirstMemberFillPolicyTest
     extends TestSupport
 {

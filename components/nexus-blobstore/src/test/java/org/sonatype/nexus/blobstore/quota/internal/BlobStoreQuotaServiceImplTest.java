@@ -12,25 +12,23 @@
  */
 package org.sonatype.nexus.blobstore.quota.internal;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuota;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaResult;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestSupport;
 import org.sonatype.nexus.rest.ValidationErrorsException;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestSupport;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -161,7 +159,7 @@ public class BlobStoreQuotaServiceImplTest
             if (result instanceof BlobStoreQuotaResult(boolean violation, String reason, String message)) {
               // Use string template for diagnostic message
               String diagnosticMessage = STR."Quota check result: violation=\{violation}, reason=\{reason}, message=\{message}";
-              log.debug(diagnosticMessage);
+              logger.debug(diagnosticMessage);
               
               // Verify the result is as expected
               if (violation) {
@@ -200,13 +198,24 @@ public class BlobStoreQuotaServiceImplTest
     // Use VirtualThreadTestSupport to run concurrent operations
     int concurrentTasks = 1000;
     AtomicInteger successCount = new AtomicInteger(0);
-    
-    VirtualThreadTestSupport.runConcurrently(concurrentTasks, () -> {
-      BlobStoreQuotaResult result = testService.checkQuota(blobStore);
-      if (result != null && !result.isViolation()) {
-        successCount.incrementAndGet();
-      }
-    });
+
+    ExecutorService executor = VirtualThreadTestSupport.newVirtualThreadExecutor("test");
+    List<Future<?>> futures = new ArrayList<>();
+
+    for (int i = 0; i < concurrentTasks; i++) {
+      futures.add(executor.submit(() -> {
+        BlobStoreQuotaResult result = testService.checkQuota(blobStore);
+        if (result != null && !result.isViolation()) {
+          successCount.incrementAndGet();
+        }
+      }));
+    }
+
+    for (Future<?> future : futures) {
+      future.get(); // wait for each task
+    }
+
+    executor.shutdown();
     
     // Verify all operations completed successfully
     assertThat(STR."Expected \{concurrentTasks} successful quota checks but got \{successCount.get()}", 

@@ -21,13 +21,15 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;

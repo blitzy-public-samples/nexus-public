@@ -97,7 +97,7 @@ public class ThreadPinningDetectionTest extends TestSupport
         rs.onEvent(VIRTUAL_THREAD_PINNED_EVENT, event -> {
           synchronized (pinnedEvents) {
             pinnedEvents.add(event);
-            log.warn("Virtual thread pinning detected: {} ms, thread: {}, stack trace: {}",
+            logger.warn("Virtual thread pinning detected: {} ms, thread: {}, stack trace: {}",
                 event.getDuration().toMillis(),
                 event.getString("eventThread"),
                 event.getStackTrace());
@@ -154,7 +154,7 @@ public class ThreadPinningDetectionTest extends TestSupport
             latch.countDown();
           }
           catch (Exception e) {
-            log.error("Error in BlobStore operation", e);
+            logger.error("Error in BlobStore operation", e);
           }
         });
       }
@@ -202,7 +202,7 @@ public class ThreadPinningDetectionTest extends TestSupport
             latch.countDown();
           }
           catch (Exception e) {
-            log.error("Error in BlobStore I/O operation", e);
+            logger.error("Error in BlobStore I/O operation", e);
           }
         });
       }
@@ -245,7 +245,7 @@ public class ThreadPinningDetectionTest extends TestSupport
         latch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in pinning test", e);
+        logger.error("Error in pinning test", e);
       }
     });
     
@@ -261,10 +261,10 @@ public class ThreadPinningDetectionTest extends TestSupport
     // synchronized blocks without pinning virtual threads (e.g., in Java 24+)
     synchronized (pinnedEvents) {
       if (pinnedEvents.isEmpty()) {
-        log.info("No thread pinning detected. This is expected if running on Java 24+ with JEP 491 implemented.");
+        logger.info("No thread pinning detected. This is expected if running on Java 24+ with JEP 491 implemented.");
       }
       else {
-        log.warn("Thread pinning detected in synchronized blocks as expected when running on Java 21.");
+        logger.warn("Thread pinning detected in synchronized blocks as expected when running on Java 21.");
       }
     }
     
@@ -302,7 +302,7 @@ public class ThreadPinningDetectionTest extends TestSupport
         latch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in third-party library test", e);
+        logger.error("Error in third-party library test", e);
       }
     });
     
@@ -318,11 +318,11 @@ public class ThreadPinningDetectionTest extends TestSupport
     // synchronized blocks without pinning virtual threads (e.g., in Java 24+)
     synchronized (pinnedEvents) {
       if (pinnedEvents.isEmpty()) {
-        log.info("No thread pinning detected in third-party library calls. " +
+        logger.info("No thread pinning detected in third-party library calls. " +
             "This is expected if running on Java 24+ with JEP 491 implemented.");
       }
       else {
-        log.warn("Thread pinning detected in third-party library calls as expected when running on Java 21.");
+        logger.warn("Thread pinning detected in third-party library calls as expected when running on Java 21.");
       }
     }
     
@@ -356,7 +356,7 @@ public class ThreadPinningDetectionTest extends TestSupport
         latch.countDown();
       }
       catch (Exception e) {
-        log.error("Error in native method test", e);
+        logger.error("Error in native method test", e);
       }
     });
     
@@ -374,7 +374,7 @@ public class ThreadPinningDetectionTest extends TestSupport
         String threadName = event.getString("eventThread");
         if (threadName != null && threadName.contains("native-call-test-thread")) {
           pinningDetected.set(true);
-          log.warn("Thread pinning detected in native method call as expected: {} ms",
+          logger.warn("Thread pinning detected in native method call as expected: {} ms",
               event.getDuration().toMillis());
           break;
         }

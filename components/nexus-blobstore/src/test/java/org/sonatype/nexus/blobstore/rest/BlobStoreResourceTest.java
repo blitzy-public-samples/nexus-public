@@ -15,7 +15,7 @@ package org.sonatype.nexus.blobstore.rest;
 import java.util.HashMap;
 import java.util.Map;
 
-import javax.ws.rs.WebApplicationException;
+import jakarta.ws.rs.WebApplicationException;
 
 import static java.lang.StringTemplate.STR;
 
@@ -154,10 +154,6 @@ public class BlobStoreResourceTest
     connectionDetails.put("containerName", "some container name");
     Map<String, Map<String, Object>> attributes = new HashMap<>();
     attributes.put("azure cloud storage", connectionDetails);
-    BlobStoreConnectionXO blobStoreConnectionXO = new BlobStoreConnectionXO();
-    blobStoreConnectionXO.setName("blobstoreName");
-    blobStoreConnectionXO.setType("azure cloud storage");
-    blobStoreConnectionXO.setAttributes(attributes);
-    return blobStoreConnectionXO;
+      return new BlobStoreConnectionXO("blobstoreName","azure cloud storage",attributes);
   }
 }

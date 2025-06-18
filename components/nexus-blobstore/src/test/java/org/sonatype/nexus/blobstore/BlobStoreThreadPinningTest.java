@@ -16,7 +16,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,19 +29,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
+import com.google.common.hash.HashCode;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.blobstore.api.Blob;
-import org.sonatype.nexus.blobstore.api.BlobId;
-import org.sonatype.nexus.blobstore.api.BlobStore;
-import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreManager;
-import org.sonatype.nexus.blobstore.file.FileBlobStore;
+import org.sonatype.nexus.blobstore.api.*;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
+import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsService;
+
+import javax.annotation.Nullable;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -79,8 +81,7 @@ public class BlobStoreThreadPinningTest
   @Before
   public void setUp() throws Exception {
     when(blobStoreConfiguration.getName()).thenReturn("test");
-    when(blobStoreConfiguration.getType()).thenReturn(FileBlobStore.TYPE);
-    
+
     // Create a virtual thread executor for testing
     virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     
@@ -112,7 +113,7 @@ public class BlobStoreThreadPinningTest
   public void testBlobCreationWithoutPinning() throws Exception {
     // Skip the test if not running on Java 21 or later
     if (!isJava21OrLater()) {
-      log.info("Skipping test as it requires Java 21 or later");
+      logger.info("Skipping test as it requires Java 21 or later");
       return;
     }
     
@@ -145,7 +146,7 @@ public class BlobStoreThreadPinningTest
         pinningMonitor.stopMonitoring();
       }
       catch (Exception e) {
-        log.error("Error in virtual thread operation", e);
+        logger.error("Error in virtual thread operation", e);
       }
     }).get(10, TimeUnit.SECONDS);
     
@@ -161,7 +162,7 @@ public class BlobStoreThreadPinningTest
   public void testConcurrentBlobOperationsForPinning() throws Exception {
     // Skip the test if not running on Java 21 or later
     if (!isJava21OrLater()) {
-      log.info("Skipping test as it requires Java 21 or later");
+      logger.info("Skipping test as it requires Java 21 or later");
       return;
     }
     
@@ -199,7 +200,7 @@ public class BlobStoreThreadPinningTest
           pinningMonitor.stopMonitoring();
         }
         catch (Exception e) {
-          log.error("Error in concurrent operation " + operationId, e);
+          logger.error("Error in concurrent operation " + operationId, e);
         }
         finally {
           latch.countDown();
@@ -223,7 +224,7 @@ public class BlobStoreThreadPinningTest
   public void testBlobReadOperationsForPinning() throws Exception {
     // Skip the test if not running on Java 21 or later
     if (!isJava21OrLater()) {
-      log.info("Skipping test as it requires Java 21 or later");
+      logger.info("Skipping test as it requires Java 21 or later");
       return;
     }
     
@@ -262,7 +263,7 @@ public class BlobStoreThreadPinningTest
         pinningMonitor.stopMonitoring();
       }
       catch (Exception e) {
-        log.error("Error in blob read operation", e);
+        logger.error("Error in blob read operation", e);
       }
     }).get(10, TimeUnit.SECONDS);
     
@@ -278,7 +279,7 @@ public class BlobStoreThreadPinningTest
   public void testBlobDeleteOperationsForPinning() throws Exception {
     // Skip the test if not running on Java 21 or later
     if (!isJava21OrLater()) {
-      log.info("Skipping test as it requires Java 21 or later");
+      logger.info("Skipping test as it requires Java 21 or later");
       return;
     }
     
@@ -308,7 +309,7 @@ public class BlobStoreThreadPinningTest
         pinningMonitor.stopMonitoring();
       }
       catch (Exception e) {
-        log.error("Error in blob delete operation", e);
+        logger.error("Error in blob delete operation", e);
       }
     }).get(10, TimeUnit.SECONDS);
     
@@ -327,7 +328,7 @@ public class BlobStoreThreadPinningTest
   public void testSynchronizedBlocksForPinning() throws Exception {
     // Skip the test if not running on Java 21 or later
     if (!isJava21OrLater()) {
-      log.info("Skipping test as it requires Java 21 or later");
+      logger.info("Skipping test as it requires Java 21 or later");
       return;
     }
     
@@ -353,7 +354,7 @@ public class BlobStoreThreadPinningTest
         pinningMonitor.stopMonitoring();
       }
       catch (Exception e) {
-        log.error("Error in synchronized block test", e);
+        logger.error("Error in synchronized block test", e);
       }
     }).get(10, TimeUnit.SECONDS);
     
@@ -491,8 +492,34 @@ public class BlobStoreThreadPinningTest
     }
 
     @Override
+    public Blob create(InputStream blobData, Map<String, String> headers, @Nullable BlobId blobId) {
+      return null;
+    }
+
+    @Override
+    public Blob create(Path sourceFile, Map<String, String> headers, long size, HashCode sha1) {
+      return null;
+    }
+
+    @Override
+    public BlobAttributes createBlobAttributesInstance(BlobId blobId, Map<String, String> headers, BlobMetrics metrics) {
+      return null;
+    }
+
+    @Override
+    public Blob copy(BlobId blobId, Map<String, String> headers) {
+      return null;
+    }
+
+    @Override
     public Blob get(BlobId blobId) {
       return blobs.get(blobId);
+    }
+
+    @Nullable
+    @Override
+    public Blob get(BlobId blobId, boolean includeDeleted) {
+      return null;
     }
 
     @Override
@@ -506,6 +533,11 @@ public class BlobStoreThreadPinningTest
     }
 
     @Override
+    public <B extends BlobStore> BlobStoreMetricsService<B> getMetricsService() {
+      return null;
+    }
+
+    @Override
     public BlobStoreConfiguration getBlobStoreConfiguration() {
       return null;
     }
@@ -513,6 +545,47 @@ public class BlobStoreThreadPinningTest
     @Override
     public void init(BlobStoreConfiguration configuration) {
       // No-op for mock
+    }
+
+    @Override
+    public void remove() {
+
+    }
+
+    @Override
+    public Stream<BlobId> getBlobIdStream() {
+      return Stream.empty();
+    }
+
+    @Override
+    public Stream<BlobId> getBlobIdUpdatedSinceStream(Duration duration) {
+      return Stream.empty();
+    }
+
+    @Override
+    public PaginatedResult<BlobId> getBlobIdUpdatedSinceStream(String prefix, OffsetDateTime fromDateTime, OffsetDateTime toDateTime, @Nullable String continuationToken, int pageSize) {
+      return null;
+    }
+
+    @Override
+    public Stream<BlobId> getDirectPathBlobIdStream(String prefix) {
+      return Stream.empty();
+    }
+
+    @Nullable
+    @Override
+    public BlobAttributes getBlobAttributes(BlobId blobId) {
+      return null;
+    }
+
+    @Override
+    public void setBlobAttributes(BlobId blobId, BlobAttributes blobAttributes) {
+
+    }
+
+    @Override
+    public boolean undelete(@Nullable BlobStoreUsageChecker inUseChecker, BlobId blobId, BlobAttributes attributes, boolean isDryRun) {
+      return false;
     }
 
     @Override
@@ -526,23 +599,33 @@ public class BlobStoreThreadPinningTest
     }
 
     @Override
-    public void compact() {
-      // No-op for mock
-    }
-
-    @Override
-    public void compact(BlobStoreUsageChecker blobStoreUsageChecker) {
-      // No-op for mock
-    }
-
-    @Override
     public BlobStoreMetrics getMetrics() {
       return null;
     }
 
     @Override
-    public void doMaintenance() {
-      // No-op for mock
+    public Map<OperationType, OperationMetrics> getOperationMetricsByType() {
+      return Map.of();
+    }
+
+    @Override
+    public Map<OperationType, OperationMetrics> getOperationMetricsDelta() {
+      return Map.of();
+    }
+
+    @Override
+    public void clearOperationMetrics() {
+
+    }
+
+    @Override
+    public void compact(@Nullable BlobStoreUsageChecker inUseChecker) {
+
+    }
+
+    @Override
+    public void deleteTempFiles(Integer daysOlderThan) {
+
     }
 
     @Override
@@ -556,32 +639,27 @@ public class BlobStoreThreadPinningTest
     }
 
     @Override
+    public boolean isStarted() {
+      return false;
+    }
+
+    @Override
+    public boolean isEmpty() {
+      return false;
+    }
+
+    @Override
+    public void shutdown() throws Exception {
+
+    }
+
+    @Override
+    public RawObjectAccess getRawObjectAccess() {
+      return null;
+    }
+
+    @Override
     public boolean isGroupable() {
-      return false;
-    }
-
-    @Override
-    public boolean hasReplicationCapability() {
-      return false;
-    }
-
-    @Override
-    public void setReplicationCapability(boolean enabled) {
-      // No-op for mock
-    }
-
-    @Override
-    public boolean isReplicationCapable() {
-      return false;
-    }
-
-    @Override
-    public boolean undelete(BlobId blobId, BlobAttributes attributes, boolean isDryRun) {
-      return false;
-    }
-
-    @Override
-    public boolean isStorageFeatureSupported(String featureId) {
       return false;
     }
 
@@ -591,43 +669,19 @@ public class BlobStoreThreadPinningTest
     }
 
     @Override
-    public boolean isAccessible() {
-      return true;
-    }
-
-    @Override
-    public boolean isReadable() {
-      return true;
-    }
-
-    @Override
-    public boolean isCompatible(BlobStore blobStore) {
+    public boolean bytesExists(BlobId blobId) {
       return false;
     }
 
     @Override
-    public boolean isFileBlobStore() {
+    public boolean isBlobEmpty(BlobId blobId) {
       return false;
     }
 
-    @Override
-    public boolean isCloudBlobStore() {
-      return false;
-    }
 
     @Override
-    public boolean isTemporary() {
-      return false;
-    }
-
-    @Override
-    public boolean isVolumeSupported() {
-      return false;
-    }
-
-    @Override
-    public Optional<String> getBucketName() {
-      return Optional.empty();
+    public BlobSession<?> openSession() {
+      return null;
     }
   }
 
@@ -665,6 +719,11 @@ public class BlobStoreThreadPinningTest
     @Override
     public InputStream getInputStream() {
       return new ByteArrayInputStream(content);
+    }
+
+    @Override
+    public BlobMetrics getMetrics() {
+      return null;
     }
   }
 }

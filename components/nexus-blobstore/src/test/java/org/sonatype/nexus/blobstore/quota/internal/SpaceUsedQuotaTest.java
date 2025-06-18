@@ -20,10 +20,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreMetrics;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
@@ -122,13 +122,14 @@ public class SpaceUsedQuotaTest
     try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       // Submit multiple concurrent tasks using virtual threads
       for (int i = 0; i < taskCount; i++) {
+        CountDownLatch finalLatch = latch;
         executor.submit(() -> {
           try {
             if (quota.check(blobStore).isViolation()) {
               violationCount.incrementAndGet();
             }
           } finally {
-            latch.countDown();
+            finalLatch.countDown();
           }
         });
       }
@@ -148,13 +149,14 @@ public class SpaceUsedQuotaTest
       
       // Run the test again with the new limit
       for (int i = 0; i < taskCount; i++) {
+        CountDownLatch finalLatch1 = latch;
         executor.submit(() -> {
           try {
             if (quota.check(blobStore).isViolation()) {
               violationCount.incrementAndGet();
             }
           } finally {
-            latch.countDown();
+            finalLatch1.countDown();
           }
         });
       }

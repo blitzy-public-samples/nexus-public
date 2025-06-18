@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

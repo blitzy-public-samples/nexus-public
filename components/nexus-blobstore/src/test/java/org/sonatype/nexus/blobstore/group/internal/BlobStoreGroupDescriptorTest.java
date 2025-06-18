@@ -19,7 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.blobstore.BlobStoreUtil;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -30,6 +30,7 @@ import org.sonatype.nexus.blobstore.group.BlobStoreGroup;
 import org.sonatype.nexus.blobstore.group.BlobStoreGroupService;
 import org.sonatype.nexus.blobstore.group.FillPolicy;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.rest.ValidationErrorsException;
 
 import java.util.Arrays;

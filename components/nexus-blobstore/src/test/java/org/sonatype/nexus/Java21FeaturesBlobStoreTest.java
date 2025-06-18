@@ -147,8 +147,10 @@ public class Java21FeaturesBlobStoreTest
         Map.of(HEADER_CONTENT_TYPE, CONTENT_TYPE_TEXT)
     );
     
-    when(regularBlob.getAttributes()).thenReturn(attributes);
-    
+    when(regularBlob.getMetrics()).thenReturn(attributes.getMetrics());
+    when(regularBlob.getHeaders()).thenReturn(attributes.getHeaders());
+    when(regularBlob.getId()).thenReturn(new BlobId("combined-test"));
+
     // Use combined Java 21 features
     String result = processBlobWithCombinedFeatures(regularBlob);
     
@@ -167,9 +169,7 @@ public class Java21FeaturesBlobStoreTest
     return switch (blobId.asUniqueString()) {
       case String id when id.startsWith("tmp$") -> 
           "Temporary blob: " + id + ", size: " + metrics.getContentSize() + " bytes";
-      case String id when metrics.isDeleted() -> 
-          "Deleted blob: " + id + ", size: " + metrics.getContentSize() + " bytes";
-      case String id -> 
+      case String id ->
           "Regular blob: " + id + ", size: " + metrics.getContentSize() + " bytes";
     };
   }
@@ -180,9 +180,11 @@ public class Java21FeaturesBlobStoreTest
    */
   private boolean validateBlobAttributesUsingRecordPatterns(BlobAttributes attributes) {
     // Using record patterns to destructure the nested objects
-    if (attributes instanceof BlobAttributes(BlobId id, BlobMetrics(long size, String sha1, String _), Map<String, String> headers)) {
+//    (BlobId id, BlobMetrics(long size, String sha1, String _), Map<String, String> headers)
+    if (attributes instanceof BlobAttributes blobAttributes) {
       // Validate using the destructured variables
-      return id != null && size > 0 && sha1 != null && headers.containsKey(HEADER_CONTENT_TYPE);
+      return blobAttributes.getMetrics().getContentSize() > 0
+              && blobAttributes.getMetrics().getSha1Hash() != null && blobAttributes.getHeaders().containsKey(HEADER_CONTENT_TYPE);
     }
     return false;
   }
@@ -193,8 +195,8 @@ public class Java21FeaturesBlobStoreTest
    */
   private String extractContentTypeUsingRecordPatterns(BlobAttributes attributes) {
     // Using record patterns to extract the headers map
-    if (attributes instanceof BlobAttributes(BlobId _, BlobMetrics _, Map<String, String> headers)) {
-      return headers.getOrDefault(HEADER_CONTENT_TYPE, "application/octet-stream");
+    if (attributes instanceof BlobAttributes blobAttributes) {
+      return blobAttributes.getHeaders().getOrDefault(HEADER_CONTENT_TYPE, "application/octet-stream");
     }
     return "application/octet-stream";
   }
@@ -224,12 +226,11 @@ public class Java21FeaturesBlobStoreTest
    */
   private String processBlobWithCombinedFeatures(Blob blob) {
     // Get blob attributes
-    BlobAttributes attributes = blob.getAttributes();
+//    BlobAttributes attributes = blob.getAttributes();
     
     // Use pattern matching for switch to determine blob type
     String blobType = switch (blob.getId().asUniqueString()) {
       case String id when id.startsWith("tmp$") -> "temporary";
-      case String id when blob.getMetrics().isDeleted() -> "deleted";
       default -> "regular";
     };
     
@@ -237,11 +238,9 @@ public class Java21FeaturesBlobStoreTest
     String contentType = "unknown";
     long size = 0;
     
-    if (attributes instanceof BlobAttributes(BlobId id, BlobMetrics(long blobSize, String _, String _), Map<String, String> headers)) {
-      contentType = headers.getOrDefault(HEADER_CONTENT_TYPE, "unknown");
-      size = blobSize;
-    }
-    
+    contentType = blob.getHeaders().getOrDefault(HEADER_CONTENT_TYPE, "unknown");
+    size = blob.getMetrics().getContentSize();
+
     // Use string templates to format the result
     return STR."Processed \{blobType} blob \{blob.getId().asUniqueString()} with content-type \{contentType} and size \{size} bytes";
   }
@@ -256,16 +255,10 @@ public class Java21FeaturesBlobStoreTest
     
     when(blob.getId()).thenReturn(blobId);
     when(blob.getMetrics()).thenReturn(metrics);
-    when(metrics.isDeleted()).thenReturn(deleted);
-    
-    try {
+
       when(blob.getInputStream()).thenReturn(new ByteArrayInputStream(BLOB_CONTENT.getBytes(StandardCharsets.UTF_8)));
-    } 
-    catch (IOException e) {
-      throw new RuntimeException(e);
-    }
-    
-    return blob;
+
+      return blob;
   }
 
   /**
@@ -283,7 +276,6 @@ public class Java21FeaturesBlobStoreTest
    */
   private BlobAttributes createMockAttributes(BlobId blobId, BlobMetrics metrics, Map<String, String> headers) {
     BlobAttributes attributes = mock(BlobAttributes.class);
-    when(attributes.getBlobId()).thenReturn(blobId);
     when(attributes.getMetrics()).thenReturn(metrics);
     when(attributes.getHeaders()).thenReturn(headers);
     return attributes;

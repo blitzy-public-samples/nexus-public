@@ -16,13 +16,13 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.blobstore.virtualthread.VirtualThreadTestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -76,7 +76,7 @@ public class PerformanceLoggingInputStreamTest
     when(source.read(buffer)).thenReturn((int) bytesRead);
     
     // Execute test in virtual thread context
-    int result = underTest.read(buffer);
+    Integer result = underTest.read(buffer);
     underTest.close();
     
     // Verify results using pattern matching

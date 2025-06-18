@@ -31,11 +31,11 @@ import java.util.stream.Stream;
 
 import javax.cache.Cache;
 import javax.cache.configuration.MutableConfiguration;
-import javax.inject.Provider;
+import jakarta.inject.Provider;
 
+import org.junit.experimental.categories.Category;
 import org.sonatype.goodies.common.Time;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -51,6 +51,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static java.util.Collections.emptyList;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -59,7 +60,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-@org.junit.Category(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class BlobStoreGroupTest
     extends TestSupport
 {

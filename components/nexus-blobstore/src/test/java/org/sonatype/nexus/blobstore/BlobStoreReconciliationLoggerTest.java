@@ -124,13 +124,13 @@ public class BlobStoreReconciliationLoggerTest
     Files.write(tempDir.resolve("2021-04-13"),
         STR."2021-04-13 00:00:00,00000000-0000-0000-0000-000000000001".getBytes(StandardCharsets.UTF_8),
         StandardOpenOption.CREATE);
-    
+
     Files.write(tempDir.resolve("2021-04-14"),
-        STR."2021-04-14 00:00:00,00000000-0000-0000-0000-000000000002\n"
-           + "00000000-0000-0000-0000-000000000003\n" // corrupted log line
-           + "2021-04-14 00:00:00,00000000-0000-0000-0000-000000000004\n".getBytes(StandardCharsets.UTF_8),
-        StandardOpenOption.CREATE);
-    
+            (STR."2021-04-14 00:00:00,00000000-0000-0000-0000-000000000002\n"
+                    + "00000000-0000-0000-0000-000000000003\n"
+                    + "2021-04-14 00:00:00,00000000-0000-0000-0000-000000000004\n").getBytes(StandardCharsets.UTF_8),
+            StandardOpenOption.CREATE);
+
     Files.write(tempDir.resolve("2021-04-15"),
         STR."2021-04-15 00:00:00,00000000-0000-0000-0000-000000000005".getBytes(StandardCharsets.UTF_8),
         StandardOpenOption.CREATE);
@@ -162,10 +162,11 @@ public class BlobStoreReconciliationLoggerTest
         .thenReturn(tempDir.toFile());
 
     Files.write(tempDir.resolve("2024-05-01"),
-        STR."2024-05-01 01:00:00,00000000-0000-0000-0000-000000000001,true\n"
-           + "2024-05-01 02:00:00,00000000-0000-0000-0000-000000000002,false\n"
-           + "2024-05-01 03:00:00,00000000-0000-0000-0000-000000000003,true\n"
-            .getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE);
+            (STR."2024-05-01 01:00:00,00000000-0000-0000-0000-000000000001,true\n"
+                    + "2024-05-01 02:00:00,00000000-0000-0000-0000-000000000002,false\n"
+                    + "2024-05-01 03:00:00,00000000-0000-0000-0000-000000000003,true\n"
+            ).getBytes(StandardCharsets.UTF_8),
+            StandardOpenOption.CREATE);
 
     var result = underTest.getBlobsCreatedSince(
             Paths.get(RECONCILIATION_LOG_DIRECTORY), 

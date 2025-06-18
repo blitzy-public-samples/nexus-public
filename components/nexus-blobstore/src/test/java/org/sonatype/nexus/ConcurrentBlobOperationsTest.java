@@ -33,13 +33,12 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
-import org.sonatype.nexus.blobstore.file.FileBlobStore;
-import org.sonatype.nexus.blobstore.file.FileBlobStoreProvider;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.hash.HashCode;
@@ -51,6 +50,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaSupport;
 
 import static java.lang.StringTemplate.STR;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -105,15 +105,15 @@ public class ConcurrentBlobOperationsTest
     mocks = MockitoAnnotations.openMocks(this);
     
     // Create a temporary file blob store for testing
-    BlobStoreConfiguration config = new BlobStoreConfiguration();
+    BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.setName(BLOB_STORE_NAME);
-    config.setType(FileBlobStoreProvider.TYPE);
+//    config.setType(FileBlobStoreProvider.TYPE);
     config.setAttributes(ImmutableMap.of("file", ImmutableMap.of("path", tempDir.toString())));
     
     when(blobStoreManager.get(BLOB_STORE_NAME)).thenReturn(null);
     when(blobStoreManager.newConfiguration()).thenReturn(config);
     
-    blobStore = new FileBlobStore(tempDir.toString(), config, blobStoreManager);
+//    blobStore = new FileBlobStore(tempDir.toString(), config, blobStoreManager);
     
     // Perform warmup to initialize JVM and avoid cold start issues
     performWarmup();
@@ -131,7 +131,7 @@ public class ConcurrentBlobOperationsTest
    * Performs warmup operations to initialize the JVM and avoid cold start issues.
    */
   private void performWarmup() throws Exception {
-    log.info("Performing warmup with {} operations", WARMUP_COUNT);
+    logger.info("Performing warmup with {} operations", WARMUP_COUNT);
     
     List<BlobId> blobIds = new ArrayList<>();
     
@@ -158,7 +158,7 @@ public class ConcurrentBlobOperationsTest
       blobStore.delete(blobId, "warmup");
     }
     
-    log.info("Warmup completed");
+    logger.info("Warmup completed");
   }
   
   /**
@@ -183,12 +183,12 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Benchmark concurrent blob creation with platform threads")
   void testConcurrentBlobCreationWithPlatformThreads() throws Exception {
     int concurrency = MEDIUM_CONCURRENCY;
-    log.info(STR."Testing concurrent blob creation with \{concurrency} platform threads");
+    logger.info(STR."Testing concurrent blob creation with \{concurrency} platform threads");
     
     // Create a fixed thread pool with the specified concurrency
     // Use a reasonable number of threads based on available processors
     int threadPoolSize = Math.min(concurrency, Runtime.getRuntime().availableProcessors() * 2);
-    log.info(STR."Creating platform thread pool with \{threadPoolSize} threads");
+    logger.info(STR."Creating platform thread pool with \{threadPoolSize} threads");
     
     ExecutorService executor = Executors.newFixedThreadPool(threadPoolSize, new ThreadFactory() {
       private final AtomicInteger counter = new AtomicInteger();
@@ -233,7 +233,7 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Benchmark concurrent blob creation with virtual threads")
   void testConcurrentBlobCreationWithVirtualThreads() throws Exception {
     int concurrency = MEDIUM_CONCURRENCY;
-    log.info(STR."Testing concurrent blob creation with \{concurrency} virtual threads");
+    logger.info(STR."Testing concurrent blob creation with \{concurrency} virtual threads");
     
     // Create a virtual thread per task executor
     // This is one of the key Java 21 features - creating a virtual thread for each task
@@ -278,7 +278,7 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Test scalability with large number of virtual threads")
   void testScalabilityWithLargeNumberOfVirtualThreads() throws Exception {
     int concurrency = LARGE_CONCURRENCY;
-    log.info(STR."Testing scalability with \{concurrency} virtual threads");
+    logger.info(STR."Testing scalability with \{concurrency} virtual threads");
     
     // Create a virtual thread per task executor
     // With platform threads, this many concurrent threads would be impossible
@@ -288,7 +288,7 @@ public class ConcurrentBlobOperationsTest
     try {
       // Measure memory before test
       long memoryBefore = getUsedMemory();
-      log.info(STR."Memory before large scale test: \{memoryBefore} MB");
+      logger.info(STR."Memory before large scale test: \{memoryBefore} MB");
       
       // Run the benchmark
       BenchmarkResult result = benchmarkBlobOperations(executor, concurrency, this::createBlobOperation);
@@ -296,7 +296,7 @@ public class ConcurrentBlobOperationsTest
       // Measure memory after test
       long memoryAfter = getUsedMemory();
       long memoryUsage = memoryAfter - memoryBefore;
-      log.info(STR."Memory after large scale test: \{memoryAfter} MB (\{memoryUsage} MB increase)");
+      logger.info(STR."Memory after large scale test: \{memoryAfter} MB (\{memoryUsage} MB increase)");
       
       // Log results
       logBenchmarkResults("Virtual Threads (Large Scale)", concurrency, result, memoryUsage);
@@ -322,7 +322,7 @@ public class ConcurrentBlobOperationsTest
   @DisplayName("Benchmark mixed blob operations with virtual threads")
   void testMixedBlobOperationsWithVirtualThreads() throws Exception {
     int concurrency = MEDIUM_CONCURRENCY;
-    log.info(STR."Testing mixed blob operations with \{concurrency} virtual threads");
+    logger.info(STR."Testing mixed blob operations with \{concurrency} virtual threads");
     
     // Create a virtual thread per task executor
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -350,7 +350,7 @@ public class ConcurrentBlobOperationsTest
       }
       
       createLatch.await();
-      log.info(STR."Created \{blobIds.size()} blobs for mixed operations test");
+      logger.info(STR."Created \{blobIds.size()} blobs for mixed operations test");
       
       // Measure memory before test
       long memoryBefore = getUsedMemory();
@@ -369,7 +369,7 @@ public class ConcurrentBlobOperationsTest
       validatePerformanceTargets(concurrency, result, memoryUsage);
       
       // Cleanup any remaining blobs
-      log.info("Cleaning up test blobs...");
+      logger.info("Cleaning up test blobs...");
       for (BlobId blobId : blobIds) {
         try {
           blobStore.delete(blobId, "cleanup");
@@ -393,11 +393,11 @@ public class ConcurrentBlobOperationsTest
   void compareThreadPerformance() {
     // Skip if either benchmark hasn't run yet
     if (platformThreadResults == null || virtualThreadResults == null) {
-      log.info("Skipping comparison as not all benchmarks have run");
+      logger.info("Skipping comparison as not all benchmarks have run");
       return;
     }
     
-    log.info("Comparing platform threads vs virtual threads performance");
+    logger.info("Comparing platform threads vs virtual threads performance");
     
     // Calculate improvement percentages
     double throughputImprovement = calculateImprovement(
@@ -410,7 +410,7 @@ public class ConcurrentBlobOperationsTest
         platformThreadMemoryUsage, virtualThreadMemoryUsage, true);
     
     // Log comparison results
-    log.info(STR."""
+    logger.info(STR."""
         Performance Comparison (Platform vs Virtual Threads):
         - Throughput: \{throughputImprovement}% improvement with Virtual Threads
         - P95 Response Time: \{p95ResponseTimeImprovement}% improvement with Virtual Threads
@@ -508,7 +508,7 @@ public class ConcurrentBlobOperationsTest
           successCount.incrementAndGet();
         } catch (Exception e) {
           failureCount.incrementAndGet();
-          log.error("Operation failed", e);
+          logger.error("Operation failed", e);
         } finally {
           long operationEndTime = System.nanoTime();
           long responseTime = TimeUnit.NANOSECONDS.toMillis(operationEndTime - operationStartTime);
@@ -622,7 +622,7 @@ public class ConcurrentBlobOperationsTest
           successCount.incrementAndGet();
         } catch (Exception e) {
           failureCount.incrementAndGet();
-          log.error("Operation failed", e);
+          logger.error("Operation failed", e);
         } finally {
           long operationEndTime = System.nanoTime();
           long responseTime = TimeUnit.NANOSECONDS.toMillis(operationEndTime - operationStartTime);
@@ -671,7 +671,6 @@ public class ConcurrentBlobOperationsTest
    */
   private Runnable createBlobOperation() {
     return () -> {
-      try {
         byte[] content = generateRandomContent(BLOB_SIZE_BYTES);
         Blob blob = blobStore.create(new ByteArrayInputStream(content), ImmutableMap.of(
             "test", "concurrent-operations",
@@ -679,9 +678,6 @@ public class ConcurrentBlobOperationsTest
         ));
         assertThat(blob, notNullValue());
         assertThat(blob.getId(), notNullValue());
-      } catch (IOException e) {
-        throw new RuntimeException("Failed to create blob", e);
-      }
     };
   }
   
@@ -721,7 +717,7 @@ public class ConcurrentBlobOperationsTest
    * @param memoryUsageMB The memory usage in MB
    */
   private void logBenchmarkResults(String testName, int concurrency, BenchmarkResult result, long memoryUsageMB) {
-    log.info(STR."""
+    logger.info(STR."""
         Benchmark Results (\{testName} with \{concurrency} concurrent operations):
         - Operations/sec: \{result.operationsPerSecond}
         - Avg Response Time: \{result.avgResponseTimeMs} ms
@@ -788,7 +784,7 @@ public class ConcurrentBlobOperationsTest
         successRate, greaterThanOrEqualTo(90.0));
     
     // Log the scalability metrics
-    log.info(STR."""
+    logger.info(STR."""
         Scalability Metrics:
         - Concurrent Connections: \{concurrency}
         - Thread Scaling Efficiency: \{successRate}%

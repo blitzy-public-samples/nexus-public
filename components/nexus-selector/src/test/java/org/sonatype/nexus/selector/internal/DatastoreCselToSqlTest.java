@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.selector.internal;
 
-import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.selector.JexlEngine;
 import org.sonatype.nexus.selector.SelectorSqlBuilder;
 

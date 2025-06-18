@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.apache.commons.jexl3.JexlException;
 import org.apache.commons.jexl3.JexlInfo;

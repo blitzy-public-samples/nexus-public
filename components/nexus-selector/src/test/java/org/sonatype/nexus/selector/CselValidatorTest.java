@@ -17,7 +17,7 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.sonatype.goodies.testsupport.TestSupport;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

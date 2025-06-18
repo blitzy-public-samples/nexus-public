@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.selector;
 
-import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.sonatype.goodies.testsupport.TestSupport;
 
 import org.junit.jupiter.api.Test;
 

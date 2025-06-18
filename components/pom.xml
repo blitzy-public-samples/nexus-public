@@ -151,6 +151,9 @@
               <goal>testCompile</goal>
             </goals>
             <configuration>
+              <source>21</source>
+              <target>21</target>
+              <compilerArgs>--enable-preview</compilerArgs>
               <testExcludes>
                 <exclude>**/virtualthread/**/*.java</exclude>
               </testExcludes>

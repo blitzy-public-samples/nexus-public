@@ -1260,6 +1260,7 @@ owners.
 							implementation="org.apache.maven.plugin.surefire.extensions.SurefireForkNodeFactory" />
 						<reuseForks>true</reuseForks>
 						<argLine>
+							--enable-preview
 							${test.argLine}
 							${surefire.maxHeap}
 							-XX:MaxDirectMemorySize=2G
@@ -1584,9 +1585,14 @@ owners.
 							<dependency>
 								<groupId>org.codehaus.groovy</groupId>
 								<artifactId>groovy-eclipse-batch</artifactId>
-								<version>3.0.8-01</version>
+								<version>4.0.26-01</version>
 							</dependency>
 						</dependencies>
+						<configuration>
+							<source>21</source>
+							<target>21</target>
+							<compilerArgs>--enable-preview</compilerArgs>
+						</configuration>
 					</plugin>
 					<plugin>
 						<!-- the default behavior is to run the apply goal,
@@ -1993,6 +1999,7 @@ owners.
 							<groupId>org.apache.maven.plugins</groupId>
 							<artifactId>maven-surefire-plugin</artifactId>
 							<configuration>
+								<argLine>--enable-preview</argLine>
 								<systemPropertyVariables>
 									<test.log.level>${test.log.level}</test.log.level>
 								</systemPropertyVariables>
@@ -2375,6 +2382,20 @@ owners.
 				</plugins>
 			</build>
 		</profile>
+
+		<profile>
+			<id>groovy-plugins-release</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<pluginRepositories>
+				<pluginRepository>
+					<id>groovy-plugins-release</id>
+					<url>https://groovy.jfrog.io/artifactory/plugins-release</url>
+				</pluginRepository>
+			</pluginRepositories>
+		</profile>
+
 	</profiles>
 
 </project>

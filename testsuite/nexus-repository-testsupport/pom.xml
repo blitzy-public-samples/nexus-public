@@ -307,7 +307,7 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
         <configuration>
-          <argLine>-Djava.version=21 ${test.additional.args}</argLine>
+          <argLine>-Djava.version=21 ${test.additional.args} --enable-preview</argLine>
           <systemPropertyVariables>
             <java.util.concurrent.ForkJoinPool.common.parallelism>16</java.util.concurrent.ForkJoinPool.common.parallelism>
             <test.virtual.threads>${virtual.threads}</test.virtual.threads>

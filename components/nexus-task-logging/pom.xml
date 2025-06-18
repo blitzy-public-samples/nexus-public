@@ -67,4 +67,35 @@
     </dependency>
   </dependencies>
 
+  <build>
+    <plugins>
+      <!-- Configure Java 21 compilation -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>21</release>
+          <source>21</source>
+          <target>21</target>
+          <compilerArgs>--enable-preview</compilerArgs>
+        </configuration>
+      </plugin>
+
+      <!-- OSGi bundle packaging with Java 21 support -->
+      <plugin>
+        <groupId>org.apache.felix</groupId>
+        <artifactId>maven-bundle-plugin</artifactId>
+        <version>5.1.9</version>
+        <extensions>true</extensions>
+      </plugin>
+
+      <!-- Karaf Maven Plugin with Java 21 compatibility -->
+      <plugin>
+        <groupId>org.apache.karaf.tooling</groupId>
+        <artifactId>karaf-maven-plugin</artifactId>
+        <version>4.4.3</version>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>

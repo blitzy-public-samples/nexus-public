@@ -37,7 +37,7 @@ import java.util.function.Supplier;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.goodies.testsupport.group.Perf;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityId;
@@ -48,11 +48,13 @@ import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.facet.ContentFacet;
 import org.sonatype.nexus.repository.content.fluent.FluentAsset;
 import org.sonatype.nexus.repository.content.fluent.FluentComponent;
+import org.sonatype.nexus.repository.content.fluent.FluentComponents;
 import org.sonatype.nexus.repository.content.store.AssetStore;
 import org.sonatype.nexus.repository.content.store.ComponentStore;
 import org.sonatype.nexus.repository.maven.VersionPolicy;
 import org.sonatype.nexus.repository.maven.internal.Maven2Format;
 import org.sonatype.nexus.repository.maven.tasks.RemoveSnapshotsConfig;
+import org.sonatype.nexus.repository.types.GroupType;
 import org.sonatype.nexus.repository.view.Content;
 
 import org.junit.jupiter.api.AfterEach;
@@ -99,6 +101,9 @@ public class RemoveSnapshotsPerformanceBenchmark
   
   @Mock
   private ContentFacet contentFacet;
+
+  @Mock
+  private FluentComponents fluentComponents;
   
   @Mock
   private MavenContentFacet mavenContentFacet;
@@ -139,11 +144,15 @@ public class RemoveSnapshotsPerformanceBenchmark
     
     // Configure the facet under test
     config = new RemoveSnapshotsConfig(1, 30, true, 14);
-    underTest = new RemoveSnapshotsFacetImpl();
-    underTest.attach(repository);
-    
-    // Mock component browsing
-    lenient().when(contentFacet.components()).thenReturn(new MockFluentComponents());
+    underTest = new RemoveSnapshotsFacetImpl(new GroupType());
+      try {
+          underTest.attach(repository);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+
+      // Mock component browsing
+    lenient().when(contentFacet.components()).thenReturn(fluentComponents);
   }
   
   @AfterEach
@@ -190,8 +199,8 @@ public class RemoveSnapshotsPerformanceBenchmark
     // Create mock component
     Component component = mock(Component.class);
     EntityId entityId = mock(EntityId.class);
-    when(component.entityId()).thenReturn(entityId);
-    
+//    when(component.entityId()).thenReturn(entityId);
+
     // Create attributes map
     NestedAttributesMap attributes = mock(NestedAttributesMap.class);
     NestedAttributesMap maven2Attributes = mock(NestedAttributesMap.class);
@@ -208,8 +217,8 @@ public class RemoveSnapshotsPerformanceBenchmark
       FluentAsset asset = mock(FluentAsset.class);
       Asset assetEntity = mock(Asset.class);
       EntityId assetId = mock(EntityId.class);
-      when(assetEntity.entityId()).thenReturn(assetId);
-      when(asset.component()).thenReturn(component);
+//      when(assetEntity.entityId()).thenReturn(assetId);
+      when(asset.component().get()).thenReturn(component);
       when(asset.path()).thenReturn(groupId.replace('.', '/') + "/" + artifactId + "/" + version + "/" + 
           artifactId + "-" + version + (i == 0 ? ".jar" : i == 1 ? ".pom" : "-sources.jar"));
       assets.add(asset);
@@ -222,8 +231,8 @@ public class RemoveSnapshotsPerformanceBenchmark
     when(fluentComponent.version()).thenReturn(version);
     when(fluentComponent.attributes()).thenReturn(attributes);
     when(fluentComponent.assets()).thenReturn(assets);
-    when(fluentComponent.component()).thenReturn(component);
-    
+//    when(fluentComponent.component()).thenReturn(component);
+
     return fluentComponent;
   }
   
@@ -241,12 +250,12 @@ public class RemoveSnapshotsPerformanceBenchmark
     PerformanceResult result = runBenchmark(ThreadingModel.PLATFORM, TOTAL_GAVS, CONCURRENT_OPERATIONS);
     
     // Log results
-    log.info("Platform Threads Performance:");
-    log.info("  Throughput: {} GAVs/sec", result.getThroughput());
-    log.info("  Average Latency: {} ms", result.getAverageLatency());
-    log.info("  P95 Latency: {} ms", result.getP95Latency());
-    log.info("  P99 Latency: {} ms", result.getP99Latency());
-    log.info("  Memory Used: {} MB", result.getMemoryUsedMB());
+    logger.info("Platform Threads Performance:");
+    logger.info("  Throughput: {} GAVs/sec", result.getThroughput());
+    logger.info("  Average Latency: {} ms", result.getAverageLatency());
+    logger.info("  P95 Latency: {} ms", result.getP95Latency());
+    logger.info("  P99 Latency: {} ms", result.getP99Latency());
+    logger.info("  Memory Used: {} MB", result.getMemoryUsedMB());
     
     // Basic assertions
     assertTrue(result.getThroughput() > 0, "Throughput should be positive");
@@ -270,12 +279,12 @@ public class RemoveSnapshotsPerformanceBenchmark
     PerformanceResult result = runBenchmark(ThreadingModel.VIRTUAL, TOTAL_GAVS, CONCURRENT_OPERATIONS);
     
     // Log results
-    log.info("Virtual Threads Performance:");
-    log.info("  Throughput: {} GAVs/sec", result.getThroughput());
-    log.info("  Average Latency: {} ms", result.getAverageLatency());
-    log.info("  P95 Latency: {} ms", result.getP95Latency());
-    log.info("  P99 Latency: {} ms", result.getP99Latency());
-    log.info("  Memory Used: {} MB", result.getMemoryUsedMB());
+    logger.info("Virtual Threads Performance:");
+    logger.info("  Throughput: {} GAVs/sec", result.getThroughput());
+    logger.info("  Average Latency: {} ms", result.getAverageLatency());
+    logger.info("  P95 Latency: {} ms", result.getP95Latency());
+    logger.info("  P99 Latency: {} ms", result.getP99Latency());
+    logger.info("  Memory Used: {} MB", result.getMemoryUsedMB());
     
     // Basic assertions
     assertTrue(result.getThroughput() > 0, "Throughput should be positive");
@@ -295,28 +304,28 @@ public class RemoveSnapshotsPerformanceBenchmark
     PerformanceResult virtualResult = runBenchmark(ThreadingModel.VIRTUAL, TOTAL_GAVS, CONCURRENT_OPERATIONS);
     
     // Log comparison
-    log.info("Performance Comparison (Virtual vs Platform):");
-    log.info("  Throughput: {} vs {} GAVs/sec ({}%)", 
+    logger.info("Performance Comparison (Virtual vs Platform):");
+    logger.info("  Throughput: {} vs {} GAVs/sec ({}%)", 
         virtualResult.getThroughput(), 
         platformResult.getThroughput(),
         calculatePercentDifference(virtualResult.getThroughput(), platformResult.getThroughput()));
     
-    log.info("  Average Latency: {} vs {} ms ({}%)", 
+    logger.info("  Average Latency: {} vs {} ms ({}%)", 
         virtualResult.getAverageLatency(), 
         platformResult.getAverageLatency(),
         calculatePercentDifference(platformResult.getAverageLatency(), virtualResult.getAverageLatency()));
     
-    log.info("  P95 Latency: {} vs {} ms ({}%)", 
+    logger.info("  P95 Latency: {} vs {} ms ({}%)", 
         virtualResult.getP95Latency(), 
         platformResult.getP95Latency(),
         calculatePercentDifference(platformResult.getP95Latency(), virtualResult.getP95Latency()));
     
-    log.info("  P99 Latency: {} vs {} ms ({}%)", 
+    logger.info("  P99 Latency: {} vs {} ms ({}%)", 
         virtualResult.getP99Latency(), 
         platformResult.getP99Latency(),
         calculatePercentDifference(platformResult.getP99Latency(), virtualResult.getP99Latency()));
     
-    log.info("  Memory Used: {} vs {} MB ({}%)", 
+    logger.info("  Memory Used: {} vs {} MB ({}%)", 
         virtualResult.getMemoryUsedMB(), 
         platformResult.getMemoryUsedMB(),
         calculatePercentDifference(platformResult.getMemoryUsedMB(), virtualResult.getMemoryUsedMB()));
@@ -523,7 +532,7 @@ public class RemoveSnapshotsPerformanceBenchmark
         .append("</html>");
     
     Files.write(reportFile.toPath(), html.toString().getBytes());
-    log.info("Generated report: {}", reportFile.getAbsolutePath());
+    logger.info("Generated report: {}", reportFile.getAbsolutePath());
   }
   
   /**
@@ -662,7 +671,7 @@ public class RemoveSnapshotsPerformanceBenchmark
         .append("</html>");
     
     Files.write(reportFile.toPath(), html.toString().getBytes());
-    log.info("Generated comparison report: {}", reportFile.getAbsolutePath());
+    logger.info("Generated comparison report: {}", reportFile.getAbsolutePath());
   }
   
   /**

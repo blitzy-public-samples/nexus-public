@@ -87,9 +87,7 @@ public class BrowseComponentTest
 
     List<BrowseNode> browseNodes = List.of(browseNode1, browseNode2, browseNode3);
 
-    TreeStoreLoadParameters treeStoreLoadParameters = new TreeStoreLoadParameters();
-    treeStoreLoadParameters.setRepositoryName(REPOSITORY_NAME);
-    treeStoreLoadParameters.setNode(ROOT);
+    TreeStoreLoadParameters treeStoreLoadParameters = new TreeStoreLoadParameters(ROOT, REPOSITORY_NAME, null);
 
     when(repositoryManager.get(REPOSITORY_NAME)).thenReturn(repository);
     when(browseNodeQueryService.getByPath(repository, Collections.emptyList(),
@@ -98,18 +96,18 @@ public class BrowseComponentTest
     List<BrowseNodeXO> xos = underTest.read(treeStoreLoadParameters);
 
     assertThat(xos, hasSize(3));
-    assertThat(xos.get(0).getText(), is("com"));
-    assertThat(xos.get(1).getText(), is("org"));
-    assertThat(xos.get(2).getText(), is("net"));
-    assertThat(xos.get(0).getId(), is("com"));
-    assertThat(xos.get(1).getId(), is("org"));
-    assertThat(xos.get(2).getId(), is("net"));
-    assertThat(xos.get(0).getType(), is(BrowseComponent.FOLDER));
-    assertThat(xos.get(1).getType(), is(BrowseComponent.COMPONENT));
-    assertThat(xos.get(2).getType(), is(BrowseComponent.ASSET));
-    assertFalse(xos.get(0).isLeaf());
-    assertFalse(xos.get(1).isLeaf());
-    assertTrue(xos.get(2).isLeaf());
+    assertThat(xos.get(0).text(), is("com"));
+    assertThat(xos.get(1).text(), is("org"));
+    assertThat(xos.get(2).text(), is("net"));
+    assertThat(xos.get(0).id(), is("com"));
+    assertThat(xos.get(1).id(), is("org"));
+    assertThat(xos.get(2).id(), is("net"));
+    assertThat(xos.get(0).type(), is(BrowseComponent.FOLDER));
+    assertThat(xos.get(1).type(), is(BrowseComponent.COMPONENT));
+    assertThat(xos.get(2).type(), is(BrowseComponent.ASSET));
+    assertFalse(xos.get(0).leaf());
+    assertFalse(xos.get(1).leaf());
+    assertTrue(xos.get(2).leaf());
   }
 
   @Test
@@ -128,9 +126,7 @@ public class BrowseComponentTest
 
     List<BrowseNode> browseNodes = List.of(browseNode1, browseNode2, browseNode3);
 
-    TreeStoreLoadParameters treeStoreLoadParameters = new TreeStoreLoadParameters();
-    treeStoreLoadParameters.setRepositoryName(REPOSITORY_NAME);
-    treeStoreLoadParameters.setNode("com/boogie/down");
+    TreeStoreLoadParameters treeStoreLoadParameters = new TreeStoreLoadParameters("com/boogie/down", REPOSITORY_NAME, null);
 
     when(repositoryManager.get(REPOSITORY_NAME)).thenReturn(repository);
     when(browseNodeQueryService.getByPath(repository, List.of("com", "boogie", "down"),
@@ -139,18 +135,18 @@ public class BrowseComponentTest
     List<BrowseNodeXO> xos = underTest.read(treeStoreLoadParameters);
 
     assertThat(xos, hasSize(3));
-    assertThat(xos.get(0).getText(), is("com"));
-    assertThat(xos.get(1).getText(), is("org"));
-    assertThat(xos.get(2).getText(), is("net"));
-    assertThat(xos.get(0).getId(), is("com/boogie/down/com"));
-    assertThat(xos.get(1).getId(), is("com/boogie/down/org"));
-    assertThat(xos.get(2).getId(), is("com/boogie/down/net"));
-    assertThat(xos.get(0).getType(), is(BrowseComponent.FOLDER));
-    assertThat(xos.get(1).getType(), is(BrowseComponent.COMPONENT));
-    assertThat(xos.get(2).getType(), is(BrowseComponent.ASSET));
-    assertFalse(xos.get(0).isLeaf());
-    assertFalse(xos.get(1).isLeaf());
-    assertTrue(xos.get(2).isLeaf());
+    assertThat(xos.get(0).text(), is("com"));
+    assertThat(xos.get(1).text(), is("org"));
+    assertThat(xos.get(2).text(), is("net"));
+    assertThat(xos.get(0).id(), is("com/boogie/down/com"));
+    assertThat(xos.get(1).id(), is("com/boogie/down/org"));
+    assertThat(xos.get(2).id(), is("com/boogie/down/net"));
+    assertThat(xos.get(0).type(), is(BrowseComponent.FOLDER));
+    assertThat(xos.get(1).type(), is(BrowseComponent.COMPONENT));
+    assertThat(xos.get(2).type(), is(BrowseComponent.ASSET));
+    assertFalse(xos.get(0).leaf());
+    assertFalse(xos.get(1).leaf());
+    assertTrue(xos.get(2).leaf());
   }
 
   @Test
@@ -169,9 +165,7 @@ public class BrowseComponentTest
 
     List<BrowseNode> browseNodes = List.of(browseNode1, browseNode2, browseNode3);
 
-    TreeStoreLoadParameters treeStoreLoadParameters = new TreeStoreLoadParameters();
-    treeStoreLoadParameters.setRepositoryName(REPOSITORY_NAME);
-    treeStoreLoadParameters.setNode("com/boo%2Fgie/down");
+    TreeStoreLoadParameters treeStoreLoadParameters = new TreeStoreLoadParameters("com/boo%2Fgie/down", REPOSITORY_NAME, null);
 
     when(repositoryManager.get(REPOSITORY_NAME)).thenReturn(repository);
     when(browseNodeQueryService.getByPath(repository, List.of("com", "boo/gie", "down"),
@@ -180,17 +174,17 @@ public class BrowseComponentTest
     List<BrowseNodeXO> xos = underTest.read(treeStoreLoadParameters);
 
     assertThat(xos, hasSize(3));
-    assertThat(xos.get(0).getText(), is("com"));
-    assertThat(xos.get(1).getText(), is("org"));
-    assertThat(xos.get(2).getText(), is("n/e/t"));
-    assertThat(xos.get(0).getId(), is("com/boo%2Fgie/down/com"));
-    assertThat(xos.get(1).getId(), is("com/boo%2Fgie/down/org"));
-    assertThat(xos.get(2).getId(), is("com/boo%2Fgie/down/n%2Fe%2Ft"));
-    assertThat(xos.get(0).getType(), is(BrowseComponent.FOLDER));
-    assertThat(xos.get(1).getType(), is(BrowseComponent.COMPONENT));
-    assertThat(xos.get(2).getType(), is(BrowseComponent.ASSET));
-    assertFalse(xos.get(0).isLeaf());
-    assertFalse(xos.get(1).isLeaf());
-    assertTrue(xos.get(2).isLeaf());
+    assertThat(xos.get(0).text(), is("com"));
+    assertThat(xos.get(1).text(), is("org"));
+    assertThat(xos.get(2).text(), is("n/e/t"));
+    assertThat(xos.get(0).id(), is("com/boo%2Fgie/down/com"));
+    assertThat(xos.get(1).id(), is("com/boo%2Fgie/down/org"));
+    assertThat(xos.get(2).id(), is("com/boo%2Fgie/down/n%2Fe%2Ft"));
+    assertThat(xos.get(0).type(), is(BrowseComponent.FOLDER));
+    assertThat(xos.get(1).type(), is(BrowseComponent.COMPONENT));
+    assertThat(xos.get(2).type(), is(BrowseComponent.ASSET));
+    assertFalse(xos.get(0).leaf());
+    assertFalse(xos.get(1).leaf());
+    assertTrue(xos.get(2).leaf());
   }
 }

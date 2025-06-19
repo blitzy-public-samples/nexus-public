@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.maven.internal.Maven2MavenPathParser;
-import org.sonatype.nexus.testsuite.testsupport.group.Java21TestGroup;
-import org.sonatype.nexus.testsuite.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import org.joda.time.DateTime;
 import org.junit.jupiter.api.BeforeEach;
@@ -294,7 +294,7 @@ public class MetadataBuilderTest
     // Skip test if not running on Java 21 or higher
     String javaVersion = System.getProperty("java.version");
     if (javaVersion.startsWith("1.") || Integer.parseInt(javaVersion.split("\\.")[0]) < 21) {
-      log.info("Skipping virtual thread test on Java version: {}", javaVersion);
+      logger.info("Skipping virtual thread test on Java version: {}", javaVersion);
       return;
     }
     
@@ -341,7 +341,7 @@ public class MetadataBuilderTest
             }
           } 
           catch (Exception e) {
-            log.error("Error in virtual thread {}", index, e);
+            logger.error("Error in virtual thread {}", index, e);
           }
         }, executor);
       }
@@ -369,7 +369,7 @@ public class MetadataBuilderTest
     // Skip test if not running on Java 21 or higher
     String javaVersion = System.getProperty("java.version");
     if (javaVersion.startsWith("1.") || Integer.parseInt(javaVersion.split("\\.")[0]) < 21) {
-      log.info("Skipping record pattern test on Java version: {}", javaVersion);
+      logger.info("Skipping record pattern test on Java version: {}", javaVersion);
       return;
     }
     

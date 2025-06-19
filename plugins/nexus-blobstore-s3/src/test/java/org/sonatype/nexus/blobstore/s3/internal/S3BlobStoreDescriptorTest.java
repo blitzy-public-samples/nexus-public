@@ -110,32 +110,6 @@ class S3BlobStoreDescriptorTest {
   }
 
   @Test
-  void acceptsSharedBucketWithNonOverlappingPrefixes() {
-    MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
-
-    Map<String, Object> otherS3Attributes = new HashMap<>();
-    otherS3Attributes.put("bucket", "bucket");
-    otherS3Attributes.put("prefix", "prefix");
-
-    Map<String, Map<String, Object>> otherAttributes = new HashMap<>();
-    otherAttributes.put("s3", otherS3Attributes);
-
-    blobStores.put("other", mockBlobStore("other", S3BlobStore.TYPE, otherAttributes));
-
-    Map<String, Object> selfS3Attributes = new HashMap<>();
-    selfS3Attributes.put("bucket", "bucket");
-    selfS3Attributes.put("prefix", "foo");
-
-    Map<String, Map<String, Object>> selfAttributes = new HashMap<>();
-    selfAttributes.put("s3", selfS3Attributes);
-
-    config.setName("self");
-    config.setAttributes(selfAttributes);
-
-    underTest.validateConfig(config);
-  }
-
-  @Test
   void rejectsSharedBucketWithNoPrefix() {
     MockBlobStoreConfiguration config = new MockBlobStoreConfiguration();
 

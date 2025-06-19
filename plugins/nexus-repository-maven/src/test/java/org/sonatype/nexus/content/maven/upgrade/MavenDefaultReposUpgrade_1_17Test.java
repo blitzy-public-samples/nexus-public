@@ -173,7 +173,7 @@ public class MavenDefaultReposUpgrade_1_17Test
             }
           } catch (Exception e) {
             // Count failures by not incrementing successCount
-            log.error("Error in virtual thread", e);
+            logger.error("Error in virtual thread", e);
           } finally {
             latch.countDown();
           }

@@ -40,6 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobIdLocationResolver;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
@@ -131,6 +133,8 @@ public class FileBlobStoreTest
   private final List<String> pinnedThreadLogs = new ArrayList<>();
   private final AtomicInteger pinnedThreadCount = new AtomicInteger(0);
   private final AtomicBoolean pinnedThreadDetected = new AtomicBoolean(false);
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreTest.class);
 
   @Mock
   private BlobIdLocationResolver blobIdLocationResolver;
@@ -715,7 +719,7 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
 
     // Verify results
@@ -785,7 +789,7 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
 
     // Clean up created blobs
@@ -842,7 +846,7 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
 
     // Verify all blobs were deleted
@@ -921,7 +925,7 @@ public class FileBlobStoreTest
 
       // Wait for all operations to complete or timeout
       boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-      assertTrue("All operations should complete within timeout", completed);
+      assertTrue(completed,"All operations should complete within timeout");
     }
     
     // Clean up created blobs
@@ -1042,7 +1046,7 @@ public class FileBlobStoreTest
     
     // Wait for all operations to complete
     boolean completed = latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    assertTrue("All operations should complete within timeout", completed);
+    assertTrue(completed,"All operations should complete within timeout");
     
     return blobIds;
   }

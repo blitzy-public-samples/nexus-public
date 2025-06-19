@@ -98,27 +98,20 @@ public class BlobStoreTaskConfigurationPatternTest
     
     // Using record pattern to extract configuration values
     // This demonstrates how record patterns can simplify data extraction
-    if (config instanceof Map<String, ?> map) {
-      // Create a record from the configuration map
-      TaskConfig taskConfig = new TaskConfig(
-          (String) map.get(TASK_NAME),
-          (String) map.get(TASK_TYPE_ID),
-          (Boolean) map.getOrDefault(TASK_ENABLED, false),
-          (String) map.get(TASK_ALERT_EMAIL));
-      
-      // Use record pattern to extract components
-      if (taskConfig instanceof TaskConfig(String taskName, String taskTypeId, boolean taskEnabled, String email)) {
-        // Verify extracted values
-        assertEquals("Test Task", taskName);
-        assertEquals("test-type", taskTypeId);
-        assertTrue(taskEnabled);
-        assertEquals("admin@example.com", email);
-        
-        // Demonstrate direct use of extracted values
-        String formattedConfig = formatTaskConfig(taskName, taskTypeId, taskEnabled, email);
-        assertThat(formattedConfig, notNullValue());
-        log.info("Formatted config: {}", formattedConfig);
-      }
+    TaskConfig taskConfig = new TaskConfig(name, typeId, enabled, alertEmail);
+
+    // Use record pattern to extract components
+    if (taskConfig instanceof TaskConfig(String taskName, String taskTypeId, boolean taskEnabled, String email)) {
+      // Verify extracted values
+      assertEquals("Test Task", taskName);
+      assertEquals("test-type", taskTypeId);
+      assertTrue(taskEnabled);
+      assertEquals("admin@example.com", email);
+
+      // Demonstrate direct use of extracted values
+      String formattedConfig = formatTaskConfig(taskName, taskTypeId, taskEnabled, email);
+      assertThat(formattedConfig, notNullValue());
+      logger.info("Formatted config: {}", formattedConfig);
     }
   }
 
@@ -130,24 +123,24 @@ public class BlobStoreTaskConfigurationPatternTest
   public void testNestedRecordPatternsWithTaskConfiguration() {
     // Create and populate a complete task configuration
     TaskConfiguration config = createCompleteTaskConfiguration();
-    
+    config.asMap();
     // Extract configuration components and create nested records
-    if (config instanceof Map<String, ?> map) {
+    if (config.asMap() instanceof Map<String, String> map) {
       // Create task config record
       TaskConfig taskConfig = new TaskConfig(
           (String) map.get(TASK_NAME),
           (String) map.get(TASK_TYPE_ID),
-          (Boolean) map.getOrDefault(TASK_ENABLED, false),
+          Boolean.valueOf(map.getOrDefault(TASK_ENABLED, "false")),
           (String) map.get(TASK_ALERT_EMAIL));
       
       // Create blobstore config record
       BlobStoreConfig blobStoreConfig = new BlobStoreConfig(
           (String) map.get(BLOB_STORE_NAME_FIELD_ID),
-          (Boolean) map.getOrDefault(RESTORE_BLOBS, false),
-          (Boolean) map.getOrDefault(UNDELETE_BLOBS, false),
-          (Boolean) map.getOrDefault(INTEGRITY_CHECK, false),
-          (Boolean) map.getOrDefault(DRY_RUN, false),
-          (Integer) map.getOrDefault(SINCE_DAYS, -1));
+          Boolean.valueOf(map.getOrDefault(RESTORE_BLOBS, "false")),
+          Boolean.valueOf(map.getOrDefault(UNDELETE_BLOBS, "false")),
+          Boolean.valueOf(map.getOrDefault(INTEGRITY_CHECK, "false")),
+          Boolean.valueOf(map.getOrDefault(DRY_RUN, "false")),
+          Integer.parseInt(map.getOrDefault(SINCE_DAYS, String.valueOf("-1"))));
       
       // Create schedule config record
       ScheduleConfig scheduleConfig = new ScheduleConfig(
@@ -185,7 +178,7 @@ public class BlobStoreTaskConfigurationPatternTest
         // Demonstrate direct use of extracted values
         String taskSummary = generateTaskSummary(name, blobStore, restore, undelete, sinceDays);
         assertThat(taskSummary, notNullValue());
-        log.info("Task summary: {}", taskSummary);
+        logger.info("Task summary: {}", taskSummary);
       }
     }
   }
@@ -238,14 +231,14 @@ public class BlobStoreTaskConfigurationPatternTest
     assertEquals(7, sinceDays);
     
     // Record pattern approach - more concise and type-safe
-    if (config instanceof Map<String, ?> map) {
+    if (config.asMap() instanceof Map<String, String> map) {
       BlobStoreConfig blobStoreConfig = new BlobStoreConfig(
           (String) map.get(BLOB_STORE_NAME_FIELD_ID),
-          (Boolean) map.getOrDefault(RESTORE_BLOBS, false),
-          (Boolean) map.getOrDefault(UNDELETE_BLOBS, false),
-          (Boolean) map.getOrDefault(INTEGRITY_CHECK, false),
-          (Boolean) map.getOrDefault(DRY_RUN, false),
-          (Integer) map.getOrDefault(SINCE_DAYS, -1));
+          Boolean.parseBoolean(map.getOrDefault(RESTORE_BLOBS, "false")),
+          Boolean.parseBoolean(map.getOrDefault(UNDELETE_BLOBS, "false")),
+          Boolean.parseBoolean(map.getOrDefault(INTEGRITY_CHECK, "false")),
+          Boolean.parseBoolean(map.getOrDefault(DRY_RUN, "false")),
+          Integer.parseInt(map.getOrDefault(SINCE_DAYS, "-1")));
       
       // Use record pattern to extract all components at once
       if (blobStoreConfig instanceof BlobStoreConfig(var name, var restore, var undelete, 
@@ -263,7 +256,7 @@ public class BlobStoreTaskConfigurationPatternTest
             "BlobStore: %s, Restore: %b, Undelete: %b, Integrity: %b, DryRun: %b, SinceDays: %d",
             name, restore, undelete, integrity, dry, days);
         
-        log.info("Config summary using record pattern: {}", configSummary);
+        logger.info("Config summary using record pattern: {}", configSummary);
       }
     }
   }
@@ -273,7 +266,7 @@ public class BlobStoreTaskConfigurationPatternTest
    * Demonstrates how record patterns can be used with switch expressions.
    */
   private String processTaskConfiguration(TaskConfiguration config) {
-    if (config instanceof Map<String, ?> map) {
+    if (config.asMap() instanceof Map<String, String> map) {
       // Extract type and blobstore name
       String typeId = (String) map.get(TASK_TYPE_ID);
       String blobStoreName = (String) map.get(BLOB_STORE_NAME_FIELD_ID);
@@ -286,17 +279,15 @@ public class BlobStoreTaskConfigurationPatternTest
       
       // Use switch expression with record pattern matching
       return switch (taskTypeConfig) {
-        case TaskTypeConfig("restore-task", var store) -> 
-            "Restore task for blob store: " + store;
-            
-        case TaskTypeConfig("compact-task", var store) -> 
-            "Compact task for blob store: " + store;
-            
-        case TaskTypeConfig("integrity-check-task", var store) -> 
-            "Integrity check task for blob store: " + store;
-            
-        case TaskTypeConfig(var type, var store) -> 
-            "Unknown task type: " + type + " for blob store: " + store;
+        case TaskTypeConfig(String id, String name)
+                when "restore-task".equals(id) -> "Restore task for blob store:" + name;
+        case TaskTypeConfig(String id, String name)
+                when "compact-task".equals(id) -> "Compact task for blob store:" + name;
+        case TaskTypeConfig(String id, String name)
+                when "integrity-check-task".equals(id) -> "Integrity check task for blob store:" + name;
+        case TaskTypeConfig(String type, String store)
+                when "Unknown-task".equals(type) -> "Unknown task type: " + type + " for blob store: " + store;
+        default -> "Unknown format";
       };
     }
     

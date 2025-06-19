@@ -31,6 +31,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobStoreReconciliationLogger;
 import org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver;
@@ -42,12 +44,14 @@ import org.sonatype.nexus.blobstore.api.BlobMetrics;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.api.BlobStoreException;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;
+import org.sonatype.nexus.blobstore.file.FileBlobStoreTest;
 import org.sonatype.nexus.blobstore.file.internal.datastore.metrics.DatastoreFileBlobStoreMetricsService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaService;
 import org.sonatype.nexus.blobstore.quota.BlobStoreQuotaUsageChecker;
 import org.sonatype.nexus.common.app.ApplicationDirectories;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
 
 import com.google.common.base.Objects;
@@ -62,9 +66,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.io.ByteStreams.nullOutputStream;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -72,6 +74,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
+import org.sonatype.nexus.blobstore.file.FileBlobDeletionIndex;
 
 /**
  * Tests {@link FileBlobStore} operations using Java 21 Virtual Threads.
@@ -95,6 +98,8 @@ class FileBlobStoreVirtualThreadTest
   private static final int TIMEOUT_SECONDS = 30;
 
   private FileBlobStore underTest;
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreVirtualThreadTest.class);
 
   @Mock
   private DatastoreFileBlobStoreMetricsService metricsStore;
@@ -130,8 +135,9 @@ class FileBlobStoreVirtualThreadTest
     final BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.attributes(FileBlobStore.CONFIG_KEY).set(FileBlobStore.PATH_KEY, root.toString());
 
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     blobStoreQuotaUsageChecker = new BlobStoreQuotaUsageChecker(
-        new PeriodicJobServiceImpl(), QUOTA_CHECK_INTERVAL, quotaService);
+            periodicJobService, QUOTA_CHECK_INTERVAL, quotaService);
 
     this.underTest = new FileBlobStore(content, new DefaultBlobIdLocationResolver(true), new SimpleFileOperations(),
         metricsStore, config, applicationDirectories, nodeAccess, dryRunPrefix, reconciliationLogger, 0L,
@@ -315,8 +321,8 @@ class FileBlobStoreVirtualThreadTest
       // Verify blobs are deleted
       for (BlobId blobId : blobIds) {
         Blob blob = underTest.get(blobId);
-        assertTrue(blob == null || blob.getMetrics().isDeleted(), 
-            "Blob should be deleted or marked as deleted");
+        assertNull(blob, "Blob should be deleted");
+
       }
     } finally {
       executor.shutdown();
@@ -505,6 +511,8 @@ class FileBlobStoreVirtualThreadTest
         for (BlobId blobId : blobIds) {
           underTest.delete(blobId, "Cleanup after platform thread test");
         }
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
       } finally {
         executor.shutdown();
       }
@@ -542,6 +550,8 @@ class FileBlobStoreVirtualThreadTest
         for (BlobId blobId : blobIds) {
           underTest.delete(blobId, "Cleanup after virtual thread test");
         }
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
       } finally {
         executor.shutdown();
       }

@@ -136,7 +136,7 @@ public class ScriptDAOVirtualThreadTest
             dao.create(script);
             
             // Read
-            Optional<Script> readResult = dao.read(scriptName);
+            Optional<ScriptData> readResult = dao.read(scriptName);
             assertThat(readResult.isPresent(), is(true));
             assertThat(readResult.get().getName(), is(scriptName));
             
@@ -145,7 +145,7 @@ public class ScriptDAOVirtualThreadTest
             dao.update(script);
             
             // Read again to verify update
-            Optional<Script> updateResult = dao.read(scriptName);
+            Optional<ScriptData> updateResult = dao.read(scriptName);
             assertThat(updateResult.isPresent(), is(true));
             assertThat(updateResult.get().getContent(), is(script.getContent()));
             
@@ -199,7 +199,7 @@ public class ScriptDAOVirtualThreadTest
         for (int i = 0; i < threadCount; i++) {
           executor.submit(() -> {
             try {
-              Optional<Script> result = dao.read(script.getName());
+              Optional<ScriptData> result = dao.read(script.getName());
               if (result.isPresent() && script.getName().equals(result.get().getName())) {
                 successCount.incrementAndGet();
               }

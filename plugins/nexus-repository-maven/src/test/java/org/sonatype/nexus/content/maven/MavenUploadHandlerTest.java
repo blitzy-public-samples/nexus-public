@@ -356,7 +356,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().getFirst().message(),
         is(STR."Not authorized for requested path '/org/apache/maven/tomcat/5.0.28/tomcat-5.0.28.jar'"));
   }
 
@@ -387,7 +387,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is(STR."Version policy mismatch, cannot upload SNAPSHOT content to RELEASE repositories for file 'org/apache/maven/tomcat/5.0.28-SNAPSHOT/tomcat-5.0.28-SNAPSHOT.jar'"));
   }
 
@@ -418,7 +418,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is("Upload to snapshot repositories not supported, use the maven client."));
   }
 
@@ -497,7 +497,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is(STR."Cannot generate maven coordinate from assembled path 'a</groupId>/a</artifactId>/a</version>/a</artifactId>-a</version>.jar'"));
   }
 
@@ -703,7 +703,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is(STR."Path is not allowed to have '.' or '..' segments: '/groupId//../g/a/v/a-v.jar/version//../g/a/v/a-v.jar-version.jar'"));
   }
 
@@ -731,7 +731,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is(STR."Path is not allowed to have '.' or '..' segments: '/groupId/artifactId//../g/a/v/a-v.jar/artifactId-/../g/a/v/a-v.jar.jar'"));
   }
 
@@ -759,7 +759,7 @@ public class MavenUploadHandlerTest
     
     assertNotNull(exception);
     assertThat(exception.getValidationErrors().size(), is(1));
-    assertThat(exception.getValidationErrors().get(0).getMessage(),
+    assertThat(exception.getValidationErrors().get(0).message(),
         is(STR."Path is not allowed to have '.' or '..' segments: '/groupId/artifactId/version/artifactId-version./../g/a/v/a-v.jar'"));
   }
 
@@ -828,14 +828,14 @@ public class MavenUploadHandlerTest
                                         final String classifier,
                                         final String extension)
   {
-    assertThat(actual.getGroupId(), is(groupId));
-    assertThat(actual.getArtifactId(), is(artifactId));
-    assertThat(actual.getVersion(), is(version));
-    assertThat(actual.getClassifier(), is(classifier));
-    assertThat(actual.getExtension(), is(extension));
+    assertThat(actual.groupId(), is(groupId));
+    assertThat(actual.artifactId(), is(artifactId));
+    assertThat(actual.version(), is(version));
+    assertThat(actual.classifier(), is(classifier));
+    assertThat(actual.extension(), is(extension));
 
-    assertNull(actual.getBuildNumber());
-    assertNull(actual.getTimestamp());
+    assertNull(actual.buildNumber());
+    assertNull(actual.timestamp());
   }
 
   private UploadFieldDefinition field(final String name,

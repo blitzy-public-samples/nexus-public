@@ -12,8 +12,10 @@
  */
 package org.sonatype.nexus.coreui.internal.capability;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.SequencedMap;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.capability.Capability;
@@ -64,6 +66,9 @@ public class CapabilityComponentTest
   private Capability capability;
 
   @Mock
+  private CapabilityXO capabilityXO;
+
+  @Mock
   private CapabilityContext capabilityContext;
 
   @Mock
@@ -103,8 +108,8 @@ public class CapabilityComponentTest
   public void readShouldNotReturnCleartextPasswords() {
     List<CapabilityXO> capabilities = underTest.read();
     assertThat(capabilities, hasSize(1));
-    assertThat(capabilities.get(0).getProperties().get("username"), is("username"));
-    assertThat(capabilities.get(0).getProperties().get("password"), is(PasswordPlaceholder.get()));
+    assertThat(capabilities.get(0).properties().get("username"), is("username"));
+    assertThat(capabilities.get(0).properties().get("password"), is(PasswordPlaceholder.get()));
     verify(capability, times(2)).isPasswordProperty(any());
   }
 
@@ -115,16 +120,17 @@ public class CapabilityComponentTest
     List<CapabilityXO> capabilities = underTest.read();
 
     assertThat(capabilities, hasSize(1));
-    assertThat(capabilities.get(0).getProperties().get("password"), is(""));
+    assertThat(capabilities.get(0).properties().get("password"), is(""));
   }
 
   @Test
   public void updateShouldRetainCurrentPasswordWhenPlaceholderProvided() {
-    CapabilityXO capabilityXO = new CapabilityXO();
-    capabilityXO.setId("mycap");
-    capabilityXO.setProperties(ImmutableMap.of("username", "username", "password", PasswordPlaceholder.get()));
-    capabilityXO.setEnabled(true);
 
+    when(capabilityXO.id()).thenReturn("mycap");
+    when(capabilityXO.enabled()).thenReturn(true);
+    SequencedMap<String, String> properties =
+            new LinkedHashMap<>(ImmutableMap.of("username", "username", "password", PasswordPlaceholder.get()));
+    when(capabilityXO.properties()).thenReturn(properties);
     underTest.update(capabilityXO);
 
     verify(capabilityRegistry).update(any(), anyBoolean(), any(), mapArgumentCaptor.capture());

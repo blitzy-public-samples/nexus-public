@@ -152,7 +152,7 @@ public class S3BlobStoreApiConfigurationMapperTest
     BlobStoreConfiguration configuration = aFullySetBlobStoreConfigurationWithEmptyStringMaxConnection();
     S3BlobStoreApiModel model = underTest.apply(configuration);
     S3BlobStoreApiBucketConfiguration bucketConfiguration = model.getBucketConfiguration();
-    assertThat(bucketConfiguration.getAdvancedBucketConnection().getMaxConnectionPoolSize(), nullValue());
+    assertThat(bucketConfiguration.getAdvancedBucketConnection().maxConnectionPoolSize(), nullValue());
   }
 
   @Test
@@ -165,10 +165,10 @@ public class S3BlobStoreApiConfigurationMapperTest
 
     assertThat(bucketConfiguration.getFailoverBuckets(), notNullValue());
     assertThat(bucketConfiguration.getFailoverBuckets().size(), is(2));
-    assertThat(bucketConfiguration.getFailoverBuckets().get(0).getRegion(), is(FAIL_OVER_REGION_1));
-    assertThat(bucketConfiguration.getFailoverBuckets().get(0).getBucketName(), is("bucket-1"));
-    assertThat(bucketConfiguration.getFailoverBuckets().get(1).getRegion(), is(FAIL_OVER_REGION_2));
-    assertThat(bucketConfiguration.getFailoverBuckets().get(1).getBucketName(), is("bucket-2"));
+    assertThat(bucketConfiguration.getFailoverBuckets().get(0).region(), is(FAIL_OVER_REGION_1));
+    assertThat(bucketConfiguration.getFailoverBuckets().get(0).bucketName(), is("bucket-1"));
+    assertThat(bucketConfiguration.getFailoverBuckets().get(1).region(), is(FAIL_OVER_REGION_2));
+    assertThat(bucketConfiguration.getFailoverBuckets().get(1).bucketName(), is("bucket-2"));
 
     assertThat(bucketConfiguration.getActiveRegion(), is(FAIL_OVER_REGION_1));
 
@@ -268,15 +268,15 @@ public class S3BlobStoreApiConfigurationMapperTest
   }
 
   private static void assertSoftQuota(final BlobStoreApiSoftQuota softQuota) {
-    assertThat(softQuota.getType(), is(QUOTA_TYPE));
-    assertThat(softQuota.getLimit().intValue(), is(QUOTA_LIMIT));
+    assertThat(softQuota.type(), is(QUOTA_TYPE));
+    assertThat(softQuota.limit().intValue(), is(QUOTA_LIMIT));
   }
 
   private static void assertRequiredBucketDetails(final S3BlobStoreApiBucket s3BlobStoreBucket) {
-    assertThat(s3BlobStoreBucket.getRegion(), is(AWS_REGION));
-    assertThat(s3BlobStoreBucket.getName(), is(S3_BUCKET_NAME));
-    assertThat(s3BlobStoreBucket.getExpiration(), is(BUCKET_EXPIRATION));
-    assertThat(s3BlobStoreBucket.getPrefix(), is(BUCKET_PREFIX));
+    assertThat(s3BlobStoreBucket.region(), is(AWS_REGION));
+    assertThat(s3BlobStoreBucket.name(), is(S3_BUCKET_NAME));
+    assertThat(s3BlobStoreBucket.expiration(), is(BUCKET_EXPIRATION));
+    assertThat(s3BlobStoreBucket.prefix(), is(BUCKET_PREFIX));
   }
 
   private static void assertBucketSecurityDetails(final S3BlobStoreApiBucketSecurity bucketSecurity) {
@@ -291,17 +291,17 @@ public class S3BlobStoreApiConfigurationMapperTest
   }
 
   private static void assertBucketEncryptionDetails(final S3BlobStoreApiEncryption s3BlobStoreEncryption) {
-    assertThat(s3BlobStoreEncryption.getEncryptionType(), is(S3_MANAGED_ENCRYPTION));
-    assertThat(s3BlobStoreEncryption.getEncryptionKey(), is(SUPER_SECURE_ENCRYPTION_KEY));
+    assertThat(s3BlobStoreEncryption.encryptionType(), is(S3_MANAGED_ENCRYPTION));
+    assertThat(s3BlobStoreEncryption.encryptionKey(), is(SUPER_SECURE_ENCRYPTION_KEY));
   }
 
   private static void assertBucketAdvancedConnectionDetails(
       final S3BlobStoreApiAdvancedBucketConnection advancedBucketConnection)
   {
-    assertThat(advancedBucketConnection.getEndpoint(), is(S3_ENDPOINT_URL));
-    assertThat(advancedBucketConnection.getSignerType(), is(S3_SIGNER_TYPE));
-    assertThat(advancedBucketConnection.getForcePathStyle(), is(FORCE_PATH_STYLE));
-    assertThat(advancedBucketConnection.getMaxConnectionPoolSize(), is(MAX_CONNECTION_POOL));
+    assertThat(advancedBucketConnection.endpoint(), is(S3_ENDPOINT_URL));
+    assertThat(advancedBucketConnection.signerType(), is(S3_SIGNER_TYPE));
+    assertThat(advancedBucketConnection.forcePathStyle(), is(FORCE_PATH_STYLE));
+    assertThat(advancedBucketConnection.maxConnectionPoolSize(), is(MAX_CONNECTION_POOL));
   }
 
   private void resetS3BlobStoreConfigHelper() throws Exception {

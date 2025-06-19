@@ -121,27 +121,27 @@ public class PrivilegesUIResourceTest
     assertThat(responses.size(), is(5));
 
     PrivilegesTypesUIResponse responseApplication = responses.stream()
-        .filter(r -> r.getId() == ApplicationPrivilegeDescriptor.TYPE)
+        .filter(r -> r.id() == ApplicationPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseApplication, HELP_TEXT, FORM_TYPE, CRUD_ACTION_STRINGS);
 
     PrivilegesTypesUIResponse responseRepositoryAdmin = responses.stream()
-        .filter(r -> r.getId() == RepositoryAdminPrivilegeDescriptor.TYPE)
+        .filter(r -> r.id() == RepositoryAdminPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseRepositoryAdmin, HELP_TEXT, FORM_TYPE, BREAD_ACTION_STRINGS);
 
     PrivilegesTypesUIResponse responseRepositoryView = responses.stream()
-        .filter(r -> r.getId() == RepositoryViewPrivilegeDescriptor.TYPE)
+        .filter(r -> r.id() == RepositoryViewPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseRepositoryView, HELP_TEXT, FORM_TYPE, BREAD_ACTION_STRINGS);
 
     PrivilegesTypesUIResponse responseRepositoryContentSelector = responses.stream()
-        .filter(r -> r.getId() == RepositoryContentSelectorPrivilegeDescriptor.TYPE)
+        .filter(r -> r.id() == RepositoryContentSelectorPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseRepositoryContentSelector, HELP_TEXT, FORM_TYPE, BREAD_ACTION_STRINGS);
 
     PrivilegesTypesUIResponse responseScript = responses.stream()
-        .filter(r -> r.getId() == ScriptPrivilegeDescriptor.TYPE)
+        .filter(r -> r.id() == ScriptPrivilegeDescriptor.TYPE)
         .findFirst().orElse(null);
     assertSetOfCheckboxesFormField(responseScript, HELP_TEXT, FORM_TYPE, BREAD_RUN_ACTION_STRINGS);
   }
@@ -151,7 +151,7 @@ public class PrivilegesUIResourceTest
                                String type,
                                List<String> actions)
   {
-    List<FormField> formFields = response.getFormFields();
+    List<FormField> formFields = response.formFields();
     SetOfCheckboxesFormField formField = (SetOfCheckboxesFormField) formFields.stream()
         .filter(r -> r.getId() == FORM_ID).findFirst().orElse(null);
     assertThat(formField.getType(), is(type));

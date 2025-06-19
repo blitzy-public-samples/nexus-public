@@ -29,6 +29,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.compact.internal.CompactBlobStoreTask;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
@@ -97,8 +98,11 @@ public class ErrorMessageStringTemplateTest
     ChangeRepositoryBlobStoreConfiguration record = createMockChangeRecord("test", BLOBSTORE_NAME, "target-blobstore");
     
     // Configure the task
-    CompactBlobStoreTask task = new CompactBlobStoreTask(blobStoreManager, changeBlobstoreStore, 
-        blobStoreUsageChecker, taskUtils);
+    CompactBlobStoreTask task = Mockito.mock(CompactBlobStoreTask.class,
+            Mockito.withSettings()
+                    .useConstructor(blobStoreManager, changeBlobstoreStore,
+                            blobStoreUsageChecker, taskUtils)
+                    .defaultAnswer(Mockito.CALLS_REAL_METHODS));
     task.configure(configuration);
     
     // Mock the behavior of taskUtils and changeBlobstoreStore
@@ -219,6 +223,11 @@ public class ErrorMessageStringTemplateTest
         // Simulate the task's getMessage method using String Templates
         return STR."Compacting blob store '\{configuration.getString("blobStoreName")}'";
       }
+
+      @Override
+      public void validate() {
+
+      }
     };
     task.configure(configuration);
     
@@ -245,9 +254,9 @@ public class ErrorMessageStringTemplateTest
     // Create a task that generates complex error messages
     CompactBlobStoreTask task = new CompactBlobStoreTask(blobStoreManager, changeBlobstoreStore, 
         blobStoreUsageChecker, taskUtils) {
-      public String generateErrorMessage(String repositoryName, String errorType, int errorCode) {
-        // Simulate a method that generates complex error messages using String Templates
-        return STR."Error \{errorType} (code: \{errorCode}) occurred while compacting blob store '\{configuration.getString("blobStoreName")}' for repository '\{repositoryName}'";
+      @Override
+      public void validate() {
+
       }
     };
     task.configure(configuration);
@@ -258,7 +267,7 @@ public class ErrorMessageStringTemplateTest
     int errorCode = 500;
     
     // Generate a complex error message
-    String errorMessage = task.generateErrorMessage(repositoryName, errorType, errorCode);
+    String errorMessage = STR."Error \{errorType} (code: \{errorCode}) occurred while compacting blob store '\{configuration.getString("blobStoreName")}' for repository '\{repositoryName}'";
     
     // The expected message should use String Templates instead of concatenation or String.format
     // Original format might be: String.format("Error %s (code: %d) occurred while compacting blob store '%s' for repository '%s'", 
@@ -344,15 +353,9 @@ public class ErrorMessageStringTemplateTest
     // Create a task that generates multiline error messages
     CompactBlobStoreTask task = new CompactBlobStoreTask(blobStoreManager, changeBlobstoreStore, 
         blobStoreUsageChecker, taskUtils) {
-      public String generateMultilineErrorMessage(String repositoryName, String errorDetails) {
-        // Simulate a method that generates multiline error messages using String Templates
-        return STR."""
-            Error occurred while processing blob store '\{configuration.getString("blobStoreName")}'
-            Repository: \{repositoryName}
-            Details: \{errorDetails}
-            Please check the logs for more information.
-            """;
-      }
+      @Override
+      public void validate() {}
+
     };
     task.configure(configuration);
     
@@ -361,7 +364,12 @@ public class ErrorMessageStringTemplateTest
     String errorDetails = "Connection timeout";
     
     // Generate a multiline error message
-    String errorMessage = task.generateMultilineErrorMessage(repositoryName, errorDetails);
+    String errorMessage = STR."""
+            Error occurred while processing blob store '\{configuration.getString("blobStoreName")}'
+            Repository: \{repositoryName}
+            Details: \{errorDetails}
+            Please check the logs for more information.
+            """;;
     
     // The expected message should use multiline String Templates
     String expectedMessage = STR."""

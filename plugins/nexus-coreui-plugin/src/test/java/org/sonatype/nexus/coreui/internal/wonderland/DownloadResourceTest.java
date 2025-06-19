@@ -97,7 +97,7 @@ public class DownloadResourceTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in virtual thread", e);
+          logger.error("Error in virtual thread", e);
         }
         finally {
           latch.countDown();

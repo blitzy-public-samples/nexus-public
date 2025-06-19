@@ -12,10 +12,10 @@
  */
 package org.sonatype.nexus.coreui;
 
-import javax.inject.Inject;
-import javax.validation.ConstraintViolation;
-import javax.validation.ConstraintViolationException;
-import javax.validation.Path;
+import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.validation.Path;
 
 import org.sonatype.goodies.testsupport.inject.InjectedTestSupport;
 import org.sonatype.nexus.security.SecuritySystem;
@@ -28,6 +28,8 @@ import org.sonatype.nexus.validation.ConstraintViolationFactory;
 import com.google.inject.Binder;
 import org.eclipse.sisu.space.BeanScanning;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -75,9 +77,15 @@ public class SelectorComponentTest
 
   @Test
   public void createJexlShouldFailWithInvalidExpression() {
-    SelectorXO xo = new SelectorXO();
-    xo.setExpression("a ==== b");
-    xo.setType("jexl");
+    SelectorXO xo = new SelectorXO(
+            "dummy-id",         // id (required, so put dummy value)
+            "dummy-name",       // name (required, so put dummy value)
+            "jexl",  // type (your value)
+            "",                 // description (empty string okay)
+            "a ==== b",         // expression (your value)
+            List.of(),          // usedBy (empty list okay)
+            0                   // usedByCount (default 0)
+    );
 
     try {
       component.create(xo);
@@ -91,9 +99,16 @@ public class SelectorComponentTest
 
   @Test
   public void createCselShouldFailWithInvalidExpression() {
-    SelectorXO xo = new SelectorXO();
-    xo.setExpression("a ==== b");
-    xo.setType(CselSelector.TYPE);
+    SelectorXO xo = new SelectorXO(
+            "dummy-id",         // id (required, so put dummy value)
+            "dummy-name",       // name (required, so put dummy value)
+            CselSelector.TYPE,  // type (your value)
+            "",                 // description (empty string okay)
+            "a ==== b",         // expression (your value)
+            List.of(),          // usedBy (empty list okay)
+            0                   // usedByCount (default 0)
+    );
+
 
     try {
       component.create(xo);
@@ -107,9 +122,15 @@ public class SelectorComponentTest
 
   @Test
   public void updateJexlShouldFailWithInvalidExpression() {
-    SelectorXO xo = new SelectorXO();
-    xo.setExpression("a ==== b");
-    xo.setType("jexl");
+    SelectorXO xo = new SelectorXO(
+            "dummy-id",         // id (required, so put dummy value)
+            "dummy-name",       // name (required, so put dummy value)
+            "jexl",  // type (your value)
+            "",                 // description (empty string okay)
+            "a ==== b",         // expression (your value)
+            List.of(),          // usedBy (empty list okay)
+            0                   // usedByCount (default 0)
+    );
 
     try {
       component.update(xo);
@@ -123,9 +144,16 @@ public class SelectorComponentTest
 
   @Test
   public void updateCselShouldFailWithInvalidExpression() {
-    SelectorXO xo = new SelectorXO();
-    xo.setExpression("a ==== b");
-    xo.setType(CselSelector.TYPE);
+    SelectorXO xo = new SelectorXO(
+            "dummy-id",         // id (required, so put dummy value)
+            "dummy-name",       // name (required, so put dummy value)
+            CselSelector.TYPE,  // type (your value)
+            "",                 // description (empty string okay)
+            "a ==== b",         // expression (your value)
+            List.of(),          // usedBy (empty list okay)
+            0                   // usedByCount (default 0)
+    );
+
 
     try {
       component.update(xo);

@@ -70,7 +70,7 @@ public abstract class BlobStoreTaskSupport
   }
 
   @Override
-  protected Object execute() throws Exception {
+  public Object execute() throws Exception {
     int processedBlobStores = 0;
     MultipleFailures failures = new MultipleFailures();
     Iterable<BlobStore> blobStores = findBlobStores();

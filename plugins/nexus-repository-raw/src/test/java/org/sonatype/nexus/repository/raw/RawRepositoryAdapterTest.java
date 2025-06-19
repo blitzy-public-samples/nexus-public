@@ -97,7 +97,7 @@ public class RawRepositoryAdapterTest
 
     RawHostedApiRepository hostedRepository = (RawHostedApiRepository) adapter.adapt(repository);
     assertRepository(hostedRepository, "hosted", true);
-    assertThat(hostedRepository.getRaw().getContentDisposition(), is("INLINE"));
+    assertThat(hostedRepository.getRaw().contentDisposition(), is("INLINE"));
     // Check fields are populated, actual values validated with SimpleApiRepositoryAdapterTest
     assertThat(hostedRepository.getCleanup(), nullValue());
     assertThat(hostedRepository.getStorage(), notNullValue());
@@ -116,7 +116,7 @@ public class RawRepositoryAdapterTest
 
     RawProxyApiRepository proxyRepository = (RawProxyApiRepository) adapter.adapt(repository);
     assertRepository(proxyRepository, "proxy", true);
-    assertThat(proxyRepository.getRaw().getContentDisposition(), is("INLINE"));
+    assertThat(proxyRepository.getRaw().contentDisposition(), is("INLINE"));
     // Check fields are populated, actual values validated with SimpleApiRepositoryAdapterTest
     assertThat(proxyRepository.getCleanup(), nullValue());
     assertThat(proxyRepository.getHttpClient(), notNullValue());

@@ -33,7 +33,7 @@ import org.sonatype.nexus.content.testsuite.groups.SQLTestGroup;
 import org.sonatype.nexus.datastore.api.DataSession;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.testdb.DataSessionRule;
-import org.sonatype.nexus.testsuite.testsupport.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -128,7 +128,7 @@ public class ScriptDAOTest
             dao.update(script);
           } 
           catch (Exception e) {
-            log.error("Error in virtual thread operation", e);
+            logger.error("Error in virtual thread operation", e);
             errorCount.incrementAndGet();
           } 
           finally {

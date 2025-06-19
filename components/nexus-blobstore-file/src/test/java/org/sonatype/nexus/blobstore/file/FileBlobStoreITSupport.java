@@ -52,6 +52,7 @@ import org.sonatype.nexus.common.io.DirectoryHelper;
 import org.sonatype.nexus.common.log.DryRunPrefix;
 import org.sonatype.nexus.common.node.NodeAccess;
 import org.sonatype.nexus.common.property.PropertiesFile;
+import org.sonatype.nexus.common.scheduling.PeriodicJobService;
 import org.sonatype.nexus.scheduling.internal.PeriodicJobServiceImpl;
 
 import com.google.common.collect.ImmutableMap;
@@ -65,6 +66,9 @@ import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.commons.lang3.tuple.Pair.of;
@@ -80,13 +84,7 @@ import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.blobstore.DefaultBlobIdLocationResolver.TEMPORARY_BLOB_ID_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_ATTRIBUTES_SUFFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_FILE_CONTENT_SUFFIX;
@@ -106,7 +104,8 @@ public abstract class FileBlobStoreITSupport
   private static final int METRICS_FLUSH_TIMEOUT = 1;
 
   private static final int QUOTA_CHECK_INTERVAL = 5;
-  
+
+  private static final Logger log = LoggerFactory.getLogger(FileBlobStoreITSupport.class);
   /**
    * System property to enable virtual threads for tests
    */
@@ -211,7 +210,7 @@ public abstract class FileBlobStoreITSupport
       if ((className.contains("java.io") || className.contains("java.nio")) && 
           (methodName.contains("lock") || methodName.contains("synchronized"))) {
         pinningDetected = true;
-        log.warn("Thread pinning detected during {} operation in {}.{}", 
+        log.warn("Thread pinning detected during {} operation in {}.{}",
             operation, className, methodName);
       }
     }
@@ -221,8 +220,9 @@ public abstract class FileBlobStoreITSupport
 
   @Before
   public void setUp() throws Exception {
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     metricsStore = spy(new DatastoreFileBlobStoreMetricsService(METRICS_FLUSH_TIMEOUT, blobStoreMetricsStore,
-        new PeriodicJobServiceImpl()));
+            periodicJobService));
 
     when(nodeAccess.getId()).thenReturn(UUID.randomUUID().toString());
     when(nodeAccess.isOldestNode()).thenReturn(true);
@@ -240,8 +240,9 @@ public abstract class FileBlobStoreITSupport
   }
 
   protected FileBlobStore createBlobStore(final String name, final FileBlobDeletionIndex index) throws Exception {
+    PeriodicJobService periodicJobService = mock(PeriodicJobService.class);
     BlobStoreQuotaUsageChecker blobStoreQuotaUsageChecker =
-        new BlobStoreQuotaUsageChecker(new PeriodicJobServiceImpl(), QUOTA_CHECK_INTERVAL, quotaService);
+        new BlobStoreQuotaUsageChecker(periodicJobService, QUOTA_CHECK_INTERVAL, quotaService);
 
     final BlobStoreConfiguration config = new MockBlobStoreConfiguration();
     config.setName(name);

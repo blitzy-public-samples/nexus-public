@@ -117,14 +117,14 @@ public class KeyValueDAOTest
     List<String> completeResults = new LinkedList<>();
 
     // Collect results for later
-    values.stream().map(KeyValue::getValue).forEach(completeResults::add);
+    values.stream().map(KeyValue::value).forEach(completeResults::add);
 
     values = browse.apply(values.nextContinuationToken());
     assertEquals(1, values.size());
     assertNotNull(values.nextContinuationToken());
 
     // Collect results for later
-    values.stream().map(KeyValue::getValue).forEach(completeResults::add);
+    values.stream().map(KeyValue::value).forEach(completeResults::add);
 
     values = browse.apply(values.nextContinuationToken());
     assertEquals(0, values.size());

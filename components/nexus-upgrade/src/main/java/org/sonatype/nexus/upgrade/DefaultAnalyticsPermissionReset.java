@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.upgrade;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 /**
  * A no-op implementation of {@link AnalyticsPermissionReset} to satisfy {@link org.sonatype.nexus.upgrade.internal.orient.UpgradeServiceImpl}

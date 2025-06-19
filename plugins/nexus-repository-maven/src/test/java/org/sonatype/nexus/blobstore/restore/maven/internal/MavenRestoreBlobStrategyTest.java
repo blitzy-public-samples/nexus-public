@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
-import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.joda.time.DateTime;
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobAttributes;
 import org.sonatype.nexus.blobstore.api.BlobId;
@@ -309,7 +310,9 @@ public class MavenRestoreBlobStrategyTest
       when(asset.component()).thenReturn(Optional.of(component));
       when(assetBlob.blobCreated()).thenReturn(OffsetDateTime.now());
       // Use java.time instead of Joda DateTime
-      when(blobMetrics.getCreationTime()).thenReturn(Instant.now().minusSeconds(86400).toEpochMilli());
+      when(blobMetrics.getCreationTime())
+              .thenReturn(new DateTime(Instant.now().minusSeconds(86400).toEpochMilli()));
+
       underTest.restore(properties, blob, blobStore, false);
       verifyNoMoreInteractions(mavenFacet);
     }
@@ -320,7 +323,8 @@ public class MavenRestoreBlobStrategyTest
       when(asset.component()).thenReturn(Optional.of(component));
       when(assetBlob.blobCreated()).thenReturn(OffsetDateTime.now().minusDays(1));
       // Use java.time instead of Joda DateTime
-      when(blobMetrics.getCreationTime()).thenReturn(Instant.now().toEpochMilli());
+      when(blobMetrics.getCreationTime())
+              .thenReturn(new DateTime(Instant.now().toEpochMilli()));
       underTest.restore(properties, blob, blobStore, false);
       verify(mavenFacet).put(eq(mavenPath), any(Payload.class));
       verifyNoMoreInteractions(mavenFacet);

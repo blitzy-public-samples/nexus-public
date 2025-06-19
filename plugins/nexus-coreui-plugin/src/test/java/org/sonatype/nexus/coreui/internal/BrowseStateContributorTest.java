@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.fest.assertions.api.Assertions;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.browse.node.BrowseNodeConfiguration;
 import org.sonatype.nexus.repository.browse.node.RebuildBrowseNodesTaskDescriptor;
@@ -33,7 +34,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -65,9 +65,9 @@ public class BrowseStateContributorTest
 
     Map<String, Object> state = underTest.getState();
 
-    assertThat(state).hasSize(2);
-    assertThat(state.get("rebuildingRepositories")).isEqualTo(Collections.singleton(ALL_REPOSITORIES));
-    assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
+    Assertions.assertThat(state).hasSize(2);
+    Assertions.assertThat(state.get("rebuildingRepositories")).isEqualTo(Collections.singleton(ALL_REPOSITORIES));
+    Assertions.assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
   }
 
   @Test
@@ -80,9 +80,9 @@ public class BrowseStateContributorTest
 
     Map<String, Object> state = underTest.getState();
 
-    assertThat(state).hasSize(2);
-    assertThat(state.get("rebuildingRepositories")).isEqualTo(Sets.newHashSet("repo1", "repo2", "repo3"));
-    assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
+    Assertions.assertThat(state).hasSize(2);
+    Assertions.assertThat(state.get("rebuildingRepositories")).isEqualTo(Sets.newHashSet("repo1", "repo2", "repo3"));
+    Assertions.assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
   }
 
   @Test
@@ -95,9 +95,9 @@ public class BrowseStateContributorTest
 
     Map<String, Object> state = underTest.getState();
 
-    assertThat(state).hasSize(2);
-    assertThat(state.get("rebuildingRepositories")).isEqualTo(Collections.singleton(ALL_REPOSITORIES));
-    assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
+    Assertions.assertThat(state).hasSize(2);
+    Assertions.assertThat(state.get("rebuildingRepositories")).isEqualTo(Collections.singleton(ALL_REPOSITORIES));
+    Assertions.assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
 
     verifyNoInteractions(tasks.get(1));
     verifyNoInteractions(tasks.get(2));
@@ -112,9 +112,9 @@ public class BrowseStateContributorTest
 
     Map<String, Object> state = underTest.getState();
 
-    assertThat(state).hasSize(2);
-    assertThat(state.get("rebuildingRepositories")).isEqualTo(Collections.singleton("repo1"));
-    assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
+    Assertions.assertThat(state).hasSize(2);
+    Assertions.assertThat(state.get("rebuildingRepositories")).isEqualTo(Collections.singleton("repo1"));
+    Assertions.assertThat(state.get("browseTreeMaxNodes")).isEqualTo(10);
   }
 
   private TaskInfo createTaskInfo(String typeId, TaskState runState, String repositoryName) {

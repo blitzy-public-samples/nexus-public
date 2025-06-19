@@ -12,6 +12,7 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal;
 
+import com.amazonaws.services.s3.model.GetObjectMetadataRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,7 +56,8 @@ class MultipartCopierTest
   @Test
   void copyWithMultipartApi() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
-    when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
+    GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest("bucketName","source");
+    when(s3.getObjectMetadata(getObjectMetadataRequest)).thenReturn(new ObjectMetadata() {{
       setContentLength(101);
     }});
     when(s3.copyPart(any())).thenReturn(new CopyPartResult());
@@ -63,7 +65,7 @@ class MultipartCopierTest
     multipartCopier.copy(s3, "bucketName", "source", "destination");
 
     verify(s3).initiateMultipartUpload(any());
-    verify(s3).getObjectMetadata("bucketName", "source");
+    verify(s3).getObjectMetadata(getObjectMetadataRequest);
     verify(s3, times(2)).copyPart(any());
     verify(s3).completeMultipartUpload(any());
     verify(s3, never()).abortMultipartUpload(any());
@@ -76,7 +78,8 @@ class MultipartCopierTest
   void copyAbortsMultipartOnError() {
     when(initiateMultipartUploadResult.getUploadId()).thenReturn("uploadId");
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
-    when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
+    GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest("bucketName","source");
+    when(s3.getObjectMetadata(getObjectMetadataRequest)).thenReturn(new ObjectMetadata() {{
       setContentLength(101);
     }});
     when(s3.copyPart(any())).thenThrow(new SdkClientException(""));
@@ -85,7 +88,7 @@ class MultipartCopierTest
         () -> multipartCopier.copy(s3, "bucketName", "source", "destination"));
 
     verify(s3).initiateMultipartUpload(any());
-    verify(s3).getObjectMetadata("bucketName", "source");
+    verify(s3).getObjectMetadata(getObjectMetadataRequest);
     verify(s3).copyPart(any());
     verify(s3).abortMultipartUpload(any());
   }
@@ -96,7 +99,8 @@ class MultipartCopierTest
   @Test
   void copySplitsParts() {
     when(s3.initiateMultipartUpload(any())).thenReturn(initiateMultipartUploadResult);
-    when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
+    GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest("bucketName","source");
+    when(s3.getObjectMetadata(getObjectMetadataRequest)).thenReturn(new ObjectMetadata() {{
       setContentLength(345);
     }});
     when(s3.copyPart(any())).thenReturn(new CopyPartResult());
@@ -104,7 +108,7 @@ class MultipartCopierTest
     multipartCopier.copy(s3, "bucketName", "source", "destination");
 
     verify(s3).initiateMultipartUpload(any());
-    verify(s3).getObjectMetadata("bucketName", "source");
+    verify(s3).getObjectMetadata(getObjectMetadataRequest);
     verify(s3, times(4)).copyPart(any());
     verify(s3).completeMultipartUpload(any());
     verify(s3, never()).abortMultipartUpload(any());
@@ -115,13 +119,14 @@ class MultipartCopierTest
    */
   @Test
   void copyUsesCopyObjectForSmallCopies() {
-    when(s3.getObjectMetadata("bucketName", "source")).thenReturn(new ObjectMetadata() {{
+    GetObjectMetadataRequest getObjectMetadataRequest = new GetObjectMetadataRequest("bucketName","source");
+    when(s3.getObjectMetadata(getObjectMetadataRequest)).thenReturn(new ObjectMetadata() {{
       setContentLength(99);
     }});
 
     multipartCopier.copy(s3, "bucketName", "source", "destination");
 
-    verify(s3).getObjectMetadata("bucketName", "source");
+    verify(s3).getObjectMetadata(getObjectMetadataRequest);
     verify(s3).copyObject(any(), any(), any(), any());
     verify(s3, never()).initiateMultipartUpload(any());
   }

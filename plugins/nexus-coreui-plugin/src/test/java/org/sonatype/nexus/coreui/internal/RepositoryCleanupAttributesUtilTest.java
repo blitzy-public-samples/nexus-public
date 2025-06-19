@@ -12,11 +12,11 @@
  */
 package org.sonatype.nexus.coreui.internal;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.beans.Beans;
+import java.util.*;
 
+import org.fest.assertions.api.Assertions;
+import org.junit.Assert;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.coreui.RepositoryXO;
 
@@ -28,8 +28,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.coreui.internal.RepositoryCleanupAttributesUtil.initializeCleanupAttributes;
 
@@ -50,22 +48,21 @@ public class RepositoryCleanupAttributesUtilTest
 
   @BeforeEach
   public void setup() {
-    when(repositoryXO.getAttributes()).thenReturn(attributes);
+    when(repositoryXO.attributes()).thenReturn((SequencedMap<String, Map<String, Object>>) attributes);
     attributes.put(CLEANUP_ATTRIBUTES_KEY, cleanup);
     cleanup.put(CLEANUP_NAME_KEY, asList("policy1", "policy2"));
   }
 
   @Test
   public void initializeCleanupAttributesShouldThrowExceptionWhenRepositoryXOIsNull() {
-    assertThatThrownBy(() -> initializeCleanupAttributes(null))
-        .isInstanceOf(NullPointerException.class);
+    Assert.assertThrows(NullPointerException.class, () -> initializeCleanupAttributes(null));
   }
 
   @Test
   public void initializeCleanupAttributesShouldConvertPoliciesIntoSet() {
     initializeCleanupAttributes(repositoryXO);
 
-    assertThat(getCleanupPolicyNames()).isInstanceOf(Set.class);
+    Assertions.assertThat(getCleanupPolicyNames()).isInstanceOf(Set.class);
   }
 
   @Test
@@ -74,11 +71,11 @@ public class RepositoryCleanupAttributesUtilTest
     initializeCleanupAttributes(repositoryXO);
 
     Set<String> setPolicyNames = getCleanupPolicyNamesAsSet();
-    assertThat(setPolicyNames).isNotEmpty();
+    Assertions.assertThat(setPolicyNames).isNotEmpty();
 
     int index = 0;
     for (String policyName : getCleanupPolicyNamesAsSet()) {
-      assertThat(listPolicyNames.get(index)).isEqualTo(policyName);
+      Assertions.assertThat(listPolicyNames.get(index)).isEqualTo(policyName);
       index++;
     }
   }
@@ -89,7 +86,7 @@ public class RepositoryCleanupAttributesUtilTest
 
     initializeCleanupAttributes(repositoryXO);
 
-    assertThat(getCleanupAttribute()).isNull();
+    Assertions.assertThat(getCleanupAttribute()).isNull();
   }
 
   @Test
@@ -98,7 +95,7 @@ public class RepositoryCleanupAttributesUtilTest
 
     initializeCleanupAttributes(repositoryXO);
 
-    assertThat(getCleanupAttribute()).isNull();
+    Assertions.assertThat(getCleanupAttribute()).isNull();
   }
 
   @Test
@@ -107,11 +104,11 @@ public class RepositoryCleanupAttributesUtilTest
 
     initializeCleanupAttributes(repositoryXO);
 
-    assertThat(getCleanupAttribute()).isNull();
+    Assertions.assertThat(getCleanupAttribute()).isNull();
   }
 
   private Map<String, Object> getCleanupAttribute() {
-    return repositoryXO.getAttributes().get(CLEANUP_ATTRIBUTES_KEY);
+    return repositoryXO.attributes().get(CLEANUP_ATTRIBUTES_KEY);
   }
 
   private Object getCleanupPolicyNames() {

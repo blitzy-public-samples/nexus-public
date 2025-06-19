@@ -114,13 +114,13 @@ public class BlobStoreInternalResourceTest
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
     assertEquals(1, responses.size());
     BlobStoreUIResponse response = responses.get(0);
-    assertEquals("fileStore", response.getName());
-    assertEquals(1L, response.getBlobCount());
-    assertEquals(FILE_TYPE_ID, response.getTypeId());
-    assertEquals(FILE_TYPE, response.getTypeName());
-    assertEquals(100L, response.getTotalSizeInBytes());
-    assertEquals(1000L, response.getAvailableSpaceInBytes());
-    assertEquals(false, response.isUnavailable());
+    assertEquals("fileStore", response.name());
+    assertEquals(1L, response.blobCount());
+    assertEquals(FILE_TYPE_ID, response.typeId());
+    assertEquals(FILE_TYPE, response.typeName());
+    assertEquals(100L, response.totalSizeInBytes());
+    assertEquals(1000L, response.availableSpaceInBytes());
+    assertEquals(false, response.unavailable());
   }
 
   @Test
@@ -132,31 +132,31 @@ public class BlobStoreInternalResourceTest
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
     assertEquals(3, responses.size());
     BlobStoreUIResponse response1 = responses.get(0);
-    assertEquals("fileStore1", response1.getName());
-    assertEquals(1L, response1.getBlobCount());
-    assertEquals(FILE_TYPE_ID, response1.getTypeId());
-    assertEquals(FILE_TYPE, response1.getTypeName());
-    assertEquals(100L, response1.getTotalSizeInBytes());
-    assertEquals(1000L, response1.getAvailableSpaceInBytes());
-    assertEquals(false, response1.isUnavailable());
+    assertEquals("fileStore1", response1.name());
+    assertEquals(1L, response1.blobCount());
+    assertEquals(FILE_TYPE_ID, response1.typeId());
+    assertEquals(FILE_TYPE, response1.typeName());
+    assertEquals(100L, response1.totalSizeInBytes());
+    assertEquals(1000L, response1.availableSpaceInBytes());
+    assertEquals(false, response1.unavailable());
 
     BlobStoreUIResponse response2 = responses.get(1);
-    assertEquals("fileStore2", response2.getName());
-    assertEquals(1L, response2.getBlobCount());
-    assertEquals(FILE_TYPE_ID, response2.getTypeId());
-    assertEquals(FILE_TYPE, response2.getTypeName());
-    assertEquals(100L, response2.getTotalSizeInBytes());
-    assertEquals(1000L, response2.getAvailableSpaceInBytes());
-    assertEquals(false, response2.isUnavailable());
+    assertEquals("fileStore2", response2.name());
+    assertEquals(1L, response2.blobCount());
+    assertEquals(FILE_TYPE_ID, response2.typeId());
+    assertEquals(FILE_TYPE, response2.typeName());
+    assertEquals(100L, response2.totalSizeInBytes());
+    assertEquals(1000L, response2.availableSpaceInBytes());
+    assertEquals(false, response2.unavailable());
 
     BlobStoreUIResponse response3 = responses.get(2);
-    assertEquals("s3BlobStore", response3.getName());
-    assertEquals(1L, response3.getBlobCount());
-    assertEquals(S3_TYPE_ID, response3.getTypeId());
-    assertEquals(S3_TYPE, response3.getTypeName());
-    assertEquals(100L, response3.getTotalSizeInBytes());
-    assertEquals(1000L, response3.getAvailableSpaceInBytes());
-    assertEquals(false, response2.isUnavailable());
+    assertEquals("s3BlobStore", response3.name());
+    assertEquals(1L, response3.blobCount());
+    assertEquals(S3_TYPE_ID, response3.typeId());
+    assertEquals(S3_TYPE, response3.typeName());
+    assertEquals(100L, response3.totalSizeInBytes());
+    assertEquals(1000L, response3.availableSpaceInBytes());
+    assertEquals(false, response2.unavailable());
   }
 
   @Test
@@ -168,31 +168,31 @@ public class BlobStoreInternalResourceTest
     List<BlobStoreUIResponse> responses = underTest.listBlobStores();
     assertEquals(3, responses.size());
     BlobStoreUIResponse response1 = responses.get(0);
-    assertEquals("fileStore", response1.getName());
-    assertEquals(1L, response1.getBlobCount());
-    assertEquals(FILE_TYPE_ID, response1.getTypeId());
-    assertEquals(FILE_TYPE, response1.getTypeName());
-    assertEquals(100L, response1.getTotalSizeInBytes());
-    assertEquals(1000L, response1.getAvailableSpaceInBytes());
+    assertEquals("fileStore", response1.name());
+    assertEquals(1L, response1.blobCount());
+    assertEquals(FILE_TYPE_ID, response1.typeId());
+    assertEquals(FILE_TYPE, response1.typeName());
+    assertEquals(100L, response1.totalSizeInBytes());
+    assertEquals(1000L, response1.availableSpaceInBytes());
 
     // non-started blobstore should show up but be unavailable
     BlobStoreUIResponse response2 = responses.get(1);
-    assertEquals("s3BlobStore", response2.getName());
-    assertEquals(0L, response2.getBlobCount());
-    assertEquals(S3_TYPE_ID, response2.getTypeId());
-    assertEquals(S3_TYPE, response2.getTypeName());
-    assertEquals(0L, response2.getTotalSizeInBytes());
-    assertEquals(0L, response2.getAvailableSpaceInBytes());
-    assertEquals(true, response2.isUnavailable());
+    assertEquals("s3BlobStore", response2.name());
+    assertEquals(0L, response2.blobCount());
+    assertEquals(S3_TYPE_ID, response2.typeId());
+    assertEquals(S3_TYPE, response2.typeName());
+    assertEquals(0L, response2.totalSizeInBytes());
+    assertEquals(0L, response2.availableSpaceInBytes());
+    assertEquals(true, response2.unavailable());
 
     BlobStoreUIResponse response3 = responses.get(2);
-    assertEquals("groupBS", response3.getName());
-    assertEquals(0L, response3.getBlobCount());
-    assertEquals(BlobStoreGroup.CONFIG_KEY, response3.getTypeId());
-    assertEquals(BlobStoreGroup.TYPE, response3.getTypeName());
-    assertEquals(0L, response3.getTotalSizeInBytes());
-    assertEquals(0L, response3.getAvailableSpaceInBytes());
-    assertEquals(true, response3.isUnavailable());
+    assertEquals("groupBS", response3.name());
+    assertEquals(0L, response3.blobCount());
+    assertEquals(BlobStoreGroup.CONFIG_KEY, response3.typeId());
+    assertEquals(BlobStoreGroup.TYPE, response3.typeName());
+    assertEquals(0L, response3.totalSizeInBytes());
+    assertEquals(0L, response3.availableSpaceInBytes());
+    assertEquals(true, response3.unavailable());
   }
 
   @Test

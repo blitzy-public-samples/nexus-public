@@ -92,6 +92,9 @@ public class DependencyResolver<T extends DependencySource<T>>
       this.ordered = ImmutableList.copyOf(ordered);
       this.dependsOn = ImmutableMultimap.copyOf(dependsOn);
     }
+    public List<T> getOrdered() {
+      return ordered;
+    }
   }
 
   /**

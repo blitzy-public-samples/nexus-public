@@ -117,7 +117,7 @@ public class S3BlobStoreApiUpdateValidationTest
         underTest.validateUpdateRequest(model, BLOB_STORE_NAME));
 
     List<String> messages = exception.getValidationErrors().stream()
-        .map(ValidationErrorXO::getMessage)
+        .map(ValidationErrorXO::message)
         .collect(Collectors.toList());
 
     assertThat(messages, contains(
@@ -155,7 +155,7 @@ public class S3BlobStoreApiUpdateValidationTest
         underTest.validateCreateRequest(model));
 
     List<String> messages = exception.getValidationErrors().stream()
-        .map(ValidationErrorXO::getMessage)
+        .map(ValidationErrorXO::message)
         .collect(Collectors.toList());
 
     assertThat(messages, containsInAnyOrder(
@@ -176,7 +176,7 @@ public class S3BlobStoreApiUpdateValidationTest
         underTest.validateUpdateRequest(model, BLOB_STORE_NAME));
 
     List<String> messages = exception.getValidationErrors().stream()
-        .map(ValidationErrorXO::getMessage)
+        .map(ValidationErrorXO::message)
         .collect(Collectors.toList());
 
     assertThat(messages, containsInAnyOrder(

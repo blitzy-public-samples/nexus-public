@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.Spliterator;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.junit.runners.model.MultipleFailureException;
 import org.sonatype.goodies.common.MultipleFailures;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.entity.Continuation;
@@ -45,7 +46,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.opentest4j.MultipleFailureException;
 import org.slf4j.LoggerFactory;
 
 import static java.lang.Thread.sleep;
@@ -126,7 +126,7 @@ public class MavenMetadataRebuilderTest
     Thread taskThread = new Thread(() -> {
       CancelableHelper.set(canceled);
 
-      new MavenMetadataRebuilder(20, 10).rebuild(repository, true, false, true,null, null, null);
+      new MavenMetadataRebuilder(20).rebuild(repository, true, false, true,null, null, null);
     });
     taskThread.setUncaughtExceptionHandler((t, e) -> {
       if (e instanceof TaskInterruptedException) {
@@ -165,7 +165,7 @@ public class MavenMetadataRebuilderTest
     Thread taskThread = new Thread(() -> {
       //CancelableHelper.set(canceled);
 
-      new MavenMetadataRebuilder(20, 10).rebuild(repository, true, false, false,"test_GroupId", "test_ArtifactId", null);
+      new MavenMetadataRebuilder(20).rebuild(repository, true, false, false,"test_GroupId", "test_ArtifactId", null);
     });
     taskThread.setUncaughtExceptionHandler((t, e) -> {
       if (e instanceof TaskInterruptedException) {
@@ -210,7 +210,7 @@ public class MavenMetadataRebuilderTest
     when(mavenContentFacet.findComponentsForBaseVersion(anyInt(), eq(null), eq(group1), eq(artifact1), eq(version1)))
         .thenReturn(fluentComponents);
 
-    MavenMetadataRebuilder mavenMetadataRebuilder = new MavenMetadataRebuilder(bufferSize, maxThreads);
+    MavenMetadataRebuilder mavenMetadataRebuilder = new MavenMetadataRebuilder(bufferSize);
 
     DatastoreMetadataUpdater metadataUpdaterSpy = Mockito.spy(new DatastoreMetadataUpdater(true, repository));
     MetadataRebuildWorker worker = new MetadataRebuildWorker(repository, true, group1, artifact1, null, bufferSize);
@@ -249,7 +249,7 @@ public class MavenMetadataRebuilderTest
     when(mavenContentFacet.get(nullable(MavenPath.class))).thenReturn(Optional.of(content));
     when(mavenContentFacet.getBaseVersions(group1, artifact1)).thenReturn(baseVersions);
 
-    MavenMetadataRebuilder mavenMetadataRebuilder = new MavenMetadataRebuilder(bufferSize, maxThreads);
+    MavenMetadataRebuilder mavenMetadataRebuilder = new MavenMetadataRebuilder(bufferSize);
 
     DatastoreMetadataUpdater metadataUpdaterSpy = Mockito.spy(new DatastoreMetadataUpdater(true, repository));
     MetadataRebuildWorker worker = new MetadataRebuildWorker(repository, true, group1, artifact1, null, bufferSize);

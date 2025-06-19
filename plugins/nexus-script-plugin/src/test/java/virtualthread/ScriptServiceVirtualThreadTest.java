@@ -195,7 +195,7 @@ public class ScriptServiceVirtualThreadTest
       try {
         resultRef.set(underTest.eval(ScriptEngineManagerProvider.DEFAULT_LANGUAGE, script, context));
       } catch (ScriptException e) {
-        log.error("Script execution failed", e);
+        logger.error("Script execution failed", e);
       } finally {
         latch.countDown();
       }
@@ -227,7 +227,7 @@ public class ScriptServiceVirtualThreadTest
       try {
         resultRef.set(underTest.eval(ScriptEngineManagerProvider.DEFAULT_LANGUAGE, script, customBindings));
       } catch (ScriptException e) {
-        log.error("Script execution failed", e);
+        logger.error("Script execution failed", e);
       } finally {
         latch.countDown();
       }
@@ -258,7 +258,7 @@ public class ScriptServiceVirtualThreadTest
           Object result = underTest.eval(ScriptEngineManagerProvider.DEFAULT_LANGUAGE, script, context);
           assertThat(result, equalTo(expectedResult));
         } catch (ScriptException e) {
-          log.error("Script execution failed", e);
+          logger.error("Script execution failed", e);
         } finally {
           latch.countDown();
         }

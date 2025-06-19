@@ -13,6 +13,7 @@
 package org.sonatype.nexus.common.upgrade.events;
 
 import java.util.Collection;
+import java.util.List;
 
 import javax.annotation.Nullable;
 
@@ -39,6 +40,20 @@ public class UpgradeCompletedEvent
     super(user, schemaVersion, migrations);
     this.nodeIds = checkNotNull(nodeIds);
   }
+
+  public UpgradeCompletedEvent(final String message) {
+    super(null, "test-schema", new String[]{message});
+    this.nodeIds = List.of("test-node");
+  }
+
+  //@Override
+  public String getMessage() {
+    if (getMigrations() != null && getMigrations().length > 0) {
+      return getMigrations()[0];
+    }
+    return "";
+  }
+
 
   /**
    * Return the nodes who participated in the quorum

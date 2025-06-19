@@ -25,13 +25,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobRef;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
 import org.sonatype.nexus.blobstore.internal.datastore.DefaultBlobStoreUsageChecker;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.content.AssetBlob;
 import org.sonatype.nexus.repository.content.facet.ContentFacet;
@@ -162,7 +162,7 @@ public class BlobStoreUsageCheckerVirtualThreadTest
               }
             }
           } catch (Exception e) {
-            log.error("Error in task {}", taskId, e);
+            logger.error("Error in task {}", taskId, e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -174,7 +174,7 @@ public class BlobStoreUsageCheckerVirtualThreadTest
       boolean completed = latch.await(30, TimeUnit.SECONDS);
       
       long duration = System.currentTimeMillis() - startTime;
-      log.info("Virtual Thread test completed in {} ms", duration);
+      logger.info("Virtual Thread test completed in {} ms", duration);
       
       // Verify all tasks completed successfully
       assertThat("All tasks should complete within the timeout", completed, is(true));
@@ -201,16 +201,16 @@ public class BlobStoreUsageCheckerVirtualThreadTest
     ThreadFactory platformThreadFactory = Thread.ofPlatform().factory();
     long platformThreadTime = runConcurrentBlobChecks(platformThreadFactory, "Platform Threads");
     
-    log.info("Performance comparison: Virtual Threads: {} ms, Platform Threads: {} ms", 
+    logger.info("Performance comparison: Virtual Threads: {} ms, Platform Threads: {} ms",
         virtualThreadTime, platformThreadTime);
     
     // Log the performance difference
     if (platformThreadTime > virtualThreadTime) {
       double improvement = (double) (platformThreadTime - virtualThreadTime) / platformThreadTime * 100.0;
-      log.info("Virtual Threads were {}% faster than Platform Threads", String.format("%.2f", improvement));
+      logger.info("Virtual Threads were {}% faster than Platform Threads", String.format("%.2f", improvement));
     } else {
       double difference = (double) (virtualThreadTime - platformThreadTime) / platformThreadTime * 100.0;
-      log.info("Platform Threads were {}% faster than Virtual Threads", String.format("%.2f", difference));
+      logger.info("Platform Threads were {}% faster than Virtual Threads", String.format("%.2f", difference));
     }
     
     // We don't assert on the actual performance difference as it can vary by environment,
@@ -257,7 +257,7 @@ public class BlobStoreUsageCheckerVirtualThreadTest
               errorCount.incrementAndGet();
             }
           } catch (Exception e) {
-            log.error("Error in high concurrency task {}", taskId, e);
+            logger.error("Error in high concurrency task {}", taskId, e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -269,9 +269,9 @@ public class BlobStoreUsageCheckerVirtualThreadTest
       boolean completed = latch.await(60, TimeUnit.SECONDS);
       
       long duration = System.currentTimeMillis() - startTime;
-      log.info("High concurrency test with {} tasks completed in {} ms", 
+      logger.info("High concurrency test with {} tasks completed in {} ms",
           highConcurrencyTaskCount, duration);
-      log.info("Success count: {}, Error count: {}", successCount.get(), errorCount.get());
+      logger.info("Success count: {}, Error count: {}", successCount.get(), errorCount.get());
       
       // Verify all tasks completed successfully
       assertThat("All high concurrency tasks should complete within the timeout", completed, is(true));
@@ -329,7 +329,7 @@ public class BlobStoreUsageCheckerVirtualThreadTest
       latch.await(30, TimeUnit.SECONDS);
       
       long duration = System.currentTimeMillis() - startTime;
-      log.info("{} test completed in {} ms with {} successful checks and {} errors", 
+      logger.info("{} test completed in {} ms with {} successful checks and {} errors",
           threadType, duration, successCount.get(), errorCount.get());
       
       return duration;

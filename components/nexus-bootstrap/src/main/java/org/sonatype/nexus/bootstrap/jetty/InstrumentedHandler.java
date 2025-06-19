@@ -17,6 +17,9 @@ import org.eclipse.jetty.server.Handler;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.SharedMetricRegistries;
 import io.dropwizard.metrics.jetty12.ee10.InstrumentedEE10Handler;
+import org.eclipse.jetty.server.Handler;
+
+
 
 /**
  * Extension of {@link io.dropwizard.metrics.jetty12.ee10.InstrumentedEE10Handler} for Jetty 12.0.5 that integrates with

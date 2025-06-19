@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.sonatype.goodies.testsupport.jupiter.TestSupport;
+import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.repository.browse.node.BrowsePath;
 import org.sonatype.nexus.repository.content.Component;
 import org.sonatype.nexus.repository.content.store.AssetData;
@@ -326,19 +326,25 @@ public class Maven2BrowseNodeGeneratorTest
       long platformThreadTime = measureExecutionTime(() -> {
         try (ExecutorService executor = Executors.newFixedThreadPool(100)) {
           runConcurrentBrowsePathGeneration(executor, operations);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
       });
       
       // Test with virtual threads
       long virtualThreadTime = measureExecutionTime(() -> {
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-          runConcurrentBrowsePathGeneration(executor, operations);
+            try {
+                runConcurrentBrowsePathGeneration(executor, operations);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
       });
       
-      log.info("Platform threads execution time: {} ms", platformThreadTime);
-      log.info("Virtual threads execution time: {} ms", virtualThreadTime);
-      log.info("Performance improvement: {}%", 
+      logger.info("Platform threads execution time: {} ms", platformThreadTime);
+      logger.info("Virtual threads execution time: {} ms", virtualThreadTime);
+      logger.info("Performance improvement: {}%",
           platformThreadTime > 0 ? (platformThreadTime - virtualThreadTime) * 100 / platformThreadTime : 0);
     }
     
@@ -418,13 +424,13 @@ public class Maven2BrowseNodeGeneratorTest
       for (BrowsePath path : paths) {
         // In Java 21 with preview features enabled:
         // String pathInfo = STR."  - \{path.displayName()} -> \{path.requestPath()}";
-        String pathInfo = "  - " + path.displayName() + " -> " + path.requestPath();
+        String pathInfo = "  - " + path.getDisplayName() + " -> " + path.getRequestPath();
         result.append(pathInfo).append("\n");
       }
       
       // In Java 21 with preview features enabled:
       // String footer = STR."Path: \{paths.get(paths.size() - 1).requestPath()}";
-      String footer = "Path: " + paths.get(paths.size() - 1).requestPath();
+      String footer = "Path: " + paths.get(paths.size() - 1).getRequestPath();
       result.append(footer);
       
       return result.toString();

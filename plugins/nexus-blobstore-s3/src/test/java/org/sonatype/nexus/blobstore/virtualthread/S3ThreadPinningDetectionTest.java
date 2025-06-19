@@ -57,6 +57,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mock;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.*;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -64,8 +67,7 @@ import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
@@ -119,7 +121,7 @@ public class S3ThreadPinningDetectionTest
   private BucketManager bucketManager;
 
   @Mock
-  private AmazonS3 s3;
+  private S3Client s3;
 
   private S3BlobStore blobStore;
   private BlobStoreConfiguration config;
@@ -199,7 +201,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in create operation", e);
+          logger.error("Error in create operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -251,7 +253,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in get operation", e);
+          logger.error("Error in get operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -302,7 +304,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in delete operation", e);
+          logger.error("Error in delete operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -350,7 +352,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in getBlobIdStream operation", e);
+          logger.error("Error in getBlobIdStream operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -402,7 +404,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in multipart upload operation", e);
+          logger.error("Error in multipart upload operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -433,8 +435,12 @@ public class S3ThreadPinningDetectionTest
     AtomicInteger successCount = new AtomicInteger(0);
     
     // Configure mock to return true for bucket existence
-    when(s3.doesBucketExistV2(BUCKET_NAME)).thenReturn(true);
-    
+    HeadBucketRequest headRequest = HeadBucketRequest.builder()
+            .bucket(BUCKET_NAME)
+            .build();
+
+    when(s3.headBucket(headRequest)).thenReturn(HeadBucketResponse.builder().build());
+
     // Execute multiple isStorageAvailable operations concurrently
     for (int i = 0; i < CONCURRENT_OPERATIONS; i++) {
       CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
@@ -444,7 +450,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in isStorageAvailable operation", e);
+          logger.error("Error in isStorageAvailable operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -502,7 +508,7 @@ public class S3ThreadPinningDetectionTest
           successCount.incrementAndGet();
         } 
         catch (Exception e) {
-          log.error("Error in makeBlobPermanent operation", e);
+          logger.error("Error in makeBlobPermanent operation", e);
         }
       }, virtualThreadExecutor);
       
@@ -530,23 +536,36 @@ public class S3ThreadPinningDetectionTest
     S3ObjectInputStream s3InputStream = new S3ObjectInputStream(
         new ByteArrayInputStream(CONTENT.getBytes(StandardCharsets.UTF_8)), null);
     when(s3Object.getObjectContent()).thenReturn(s3InputStream);
-    when(s3.getObject(anyString(), anyString())).thenReturn(s3Object);
-    
+    GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+            .bucket(anyString())
+            .key(anyString())
+            .build();
+
+    when(s3.getObject(eq(getObjectRequest), any(ResponseTransformer.class)))
+            .thenReturn(s3InputStream);
+
     // Mock object listing for getBlobIdStream
-    ObjectListing objectListing = mock(ObjectListing.class);
-    List<S3ObjectSummary> summaries = new ArrayList<>();
-    S3ObjectSummary summary = new S3ObjectSummary();
-    summary.setBucketName(BUCKET_NAME);
-    summary.setKey("content/vol-01/chap-01/test-blob.properties");
-    summaries.add(summary);
-    when(objectListing.getObjectSummaries()).thenReturn(summaries);
-    when(objectListing.isTruncated()).thenReturn(false);
-    when(s3.listObjects(anyString(), anyString())).thenReturn(objectListing);
-    
+
+    ListObjectsRequest request = ListObjectsRequest.builder()
+            .bucket(BUCKET_NAME)
+            .prefix("content/vol-01/chap-01/")
+            .build();
+
+    ListObjectsResponse response = ListObjectsResponse.builder()
+            .contents(software.amazon.awssdk.services.s3.model.S3Object.builder()
+                    .key("content/vol-01/chap-01/test-blob.properties")
+                    .build())
+            .isTruncated(false)
+            .build();
+
+    when(s3.listObjects(request)).thenReturn(response);
+
+
     // Mock object metadata
-    ObjectMetadata metadata = new ObjectMetadata();
-    metadata.setContentLength(CONTENT.length());
-    when(s3.getObjectMetadata(anyString(), anyString())).thenReturn(metadata);
+    HeadObjectRequest headRequest = HeadObjectRequest.builder().bucket(anyString()).key(anyString()).build();
+    HeadObjectResponse headResponse = HeadObjectResponse.builder().contentLength((long) CONTENT.length()).build();
+    when(s3.headObject(headRequest)).thenReturn(headResponse);
+
   }
 
   /**
@@ -557,13 +576,13 @@ public class S3ThreadPinningDetectionTest
   private void checkForThreadPinning() {
     // In a real environment, we would capture the logs and analyze them
     // For this test, we'll just log a message about how to detect pinning
-    log.info("To detect thread pinning, run this test with the JVM flag: -Djdk.tracePinnedThreads=full");
-    log.info("Then check the logs for lines containing 'VirtualThread' and 'reason:MONITOR'");
+    logger.info("To detect thread pinning, run this test with the JVM flag: -Djdk.tracePinnedThreads=full");
+    logger.info("Then check the logs for lines containing 'VirtualThread' and 'reason:MONITOR'");
     
     // If we had actual pinned thread logs, we would analyze them here
     if (!pinnedThreadLogs.isEmpty()) {
       for (String pinnedLog : pinnedThreadLogs) {
-        log.warn("Detected thread pinning: {}", pinnedLog);
+        logger.warn("Detected thread pinning: {}", pinnedLog);
       }
       // In a strict test, we might want to fail if pinning is detected
       // assertThat("Thread pinning detected", pinnedThreadLogs.isEmpty(), is(true));

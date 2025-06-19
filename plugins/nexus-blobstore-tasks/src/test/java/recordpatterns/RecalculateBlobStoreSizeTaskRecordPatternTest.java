@@ -19,11 +19,7 @@ import java.util.stream.Stream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.blobstore.BlobAttributesSupport;
-import org.sonatype.nexus.blobstore.api.BlobId;
-import org.sonatype.nexus.blobstore.api.BlobMetrics;
-import org.sonatype.nexus.blobstore.api.BlobStore;
-import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreManager;
+import org.sonatype.nexus.blobstore.api.*;
 import org.sonatype.nexus.blobstore.api.metrics.BlobStoreMetricsService;
 import org.sonatype.nexus.blobstore.file.FileBlobStore;
 import org.sonatype.nexus.blobstore.metrics.reconcile.RecalculateBlobStoreSizeTask;
@@ -361,7 +357,7 @@ public class RecalculateBlobStoreSizeTaskRecordPatternTest
     when(blobStore.getBlobIdStream()).thenReturn(Stream.of(id));
     
     // Return a String instead of a BlobMetrics object to trigger a ClassCastException
-    when(blobStore.getBlobAttributes(eq(id))).thenReturn("This is not a BlobAttributes object");
+    when(blobStore.getBlobAttributes(eq(id))).thenReturn(null);
     
     return blobStore;
   }

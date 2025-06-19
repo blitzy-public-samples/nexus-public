@@ -133,9 +133,7 @@ public class S3BlobStoreApiModelMapperTest
   }
 
   private static S3BlobStoreApiModel aFullySetS3BlobStoreApiModel() {
-    BlobStoreApiSoftQuota quota = new BlobStoreApiSoftQuota();
-    quota.setType(QUOTA_TYPE);
-    quota.setLimit(QUOTA_LIMIT);
+    BlobStoreApiSoftQuota quota = new BlobStoreApiSoftQuota(QUOTA_TYPE,QUOTA_LIMIT);
     return new S3BlobStoreApiModel(BLOB_STORE_NAME, quota, aS3BlobStoreBucketConfiguration());
   }
 

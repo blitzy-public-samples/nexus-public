@@ -232,7 +232,7 @@ public class S3BlobStore
   }
 
   @Override
-  protected void doStart() throws Exception {
+  public void doStart() throws Exception {
     // ensure blobstore is supported
     S3PropertiesFile metadata = new S3PropertiesFile(s3, getConfiguredBucket(), metadataFilePath());
     if (metadata.exists()) {
@@ -259,7 +259,7 @@ public class S3BlobStore
   }
 
   @Override
-  protected void doStop() throws Exception {
+  public void doStop() throws Exception {
     liveBlobs = null;
     if (executorService != null) {
       executorService.shutdown();

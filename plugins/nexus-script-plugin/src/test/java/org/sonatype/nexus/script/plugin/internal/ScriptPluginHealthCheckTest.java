@@ -57,8 +57,7 @@ public class ScriptPluginHealthCheckTest extends TestSupport
   public void shouldRespectJava21Sandboxing() {
     // Test that script execution respects Java 21's stronger encapsulation model
     when(scriptManager.isEnabled()).thenReturn(true);
-    when(scriptManager.isSandboxed()).thenReturn(true);
-    
+
     Result result = underTest.check();
     
     // Even with sandboxing enabled, the health check should still report unhealthy

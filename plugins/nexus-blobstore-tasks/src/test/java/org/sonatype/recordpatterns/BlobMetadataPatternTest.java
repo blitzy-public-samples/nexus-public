@@ -30,6 +30,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
@@ -173,12 +174,17 @@ public class BlobMetadataPatternTest
     // Use record pattern in switch expression
     for (BlobMetadata metadata : new BlobMetadata[] {mavenMetadata, npmMetadata, dockerMetadata}) {
       String formatType = switch (metadata) {
-        case BlobMetadata("maven-central", var name, var type) -> "Maven artifact: " + name;
-        case BlobMetadata("npm", var name, var type) -> "NPM package: " + name;
-        case BlobMetadata(var repo, var name, "application/x-tar") -> "Docker image in " + repo;
+        case BlobMetadata(String repoName, String blobName, String contentType)
+                when "maven-central".equals(repoName) -> "Maven artifact: " + blobName;
+        case BlobMetadata(String repoName, String blobName, String contentType)
+                when "npm".equals(repoName) -> "NPM package: " + blobName;
+        case BlobMetadata(String repoName, String blobName, String contentType)
+                when "application/x-tar".equals(contentType) -> "Docker image in " + repoName;
         default -> "Unknown format";
       };
-      
+
+
+
       // Verify the switch expression worked correctly
       if (metadata == mavenMetadata) {
         assertThat(formatType, is("Maven artifact: " + BLOB_NAME));

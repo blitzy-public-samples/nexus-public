@@ -32,11 +32,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
 import org.sonatype.nexus.script.Script;
 import org.sonatype.nexus.script.ScriptClient;
 import org.sonatype.nexus.script.ScriptManager;
+import org.sonatype.nexus.script.ScriptResultXO;
+import org.sonatype.nexus.testcommon.virtualthread.VirtualThreadTestGroup;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
@@ -84,8 +84,7 @@ public class VirtualThreadScriptExecutionTest
     
     // Setup mock behavior
     when(scriptManager.get(anyString())).thenReturn(script);
-    when(scriptClient.run(any(Script.class), any())).thenAnswer(invocation -> {
-      // Simulate I/O-bound operation with a small delay
+    when(scriptClient.run(any(String.class), any())).thenAnswer(invocation -> {
       Thread.sleep(50);
       return "Script executed successfully";
     });
@@ -108,9 +107,9 @@ public class VirtualThreadScriptExecutionTest
   @DisplayName("Basic script execution with virtual threads")
   void testBasicScriptExecutionWithVirtualThreads() throws Exception {
     // Execute a script using a virtual thread
-    CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    CompletableFuture<ScriptResultXO> future = CompletableFuture.supplyAsync(() -> {
       try {
-        return scriptClient.run(script, null);
+        return scriptClient.run(script.getName(), null);
       }
       catch (Exception e) {
         throw new RuntimeException("Script execution failed", e);
@@ -118,7 +117,7 @@ public class VirtualThreadScriptExecutionTest
     }, virtualThreadExecutor);
     
     // Wait for completion and verify result
-    String result = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    ScriptResultXO result = future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     assertThat(result, is(notNullValue()));
     assertThat(result, is(equalTo("Script executed successfully")));
   }
@@ -139,7 +138,7 @@ public class VirtualThreadScriptExecutionTest
     for (int i = 0; i < CONCURRENT_SCRIPT_COUNT; i++) {
       virtualThreadExecutor.submit(() -> {
         try {
-          scriptClient.run(script, null);
+          scriptClient.run(script.getName(), null);
         }
         catch (Exception e) {
           errorCount.incrementAndGet();
@@ -181,7 +180,7 @@ public class VirtualThreadScriptExecutionTest
     for (int i = 0; i < virtualThreadCount; i++) {
       platformThreadExecutor.submit(() -> {
         try {
-          scriptClient.run(script, null);
+          scriptClient.run(script.getName(), null);
           platformLatch.countDown();
         }
         catch (Exception e) {
@@ -197,7 +196,7 @@ public class VirtualThreadScriptExecutionTest
     for (int i = 0; i < virtualThreadCount; i++) {
       virtualThreadExecutor.submit(() -> {
         try {
-          scriptClient.run(script, null);
+          scriptClient.run(script.getName(), null);
         }
         catch (Exception e) {
           virtualErrorCount.incrementAndGet();
@@ -227,7 +226,6 @@ public class VirtualThreadScriptExecutionTest
    */
   @Test
   @DisplayName("Compare performance between platform and virtual threads")
-  @Java21TestGroup
   @VirtualThreadTestGroup
   void testComparePerformanceBetweenPlatformAndVirtualThreads() throws Exception {
     int testSize = 500; // Number of scripts to execute in each test
@@ -235,12 +233,12 @@ public class VirtualThreadScriptExecutionTest
     // Test with platform threads
     long platformStartTime = System.currentTimeMillis();
     CountDownLatch platformLatch = new CountDownLatch(testSize);
-    List<CompletableFuture<String>> platformFutures = new ArrayList<>();
+    List<CompletableFuture<ScriptResultXO>> platformFutures = new ArrayList<>();
     
     for (int i = 0; i < testSize; i++) {
-      CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+      CompletableFuture<ScriptResultXO> future = CompletableFuture.supplyAsync(() -> {
         try {
-          return scriptClient.run(script, null);
+          return scriptClient.run(script.getName(), null);
         }
         catch (Exception e) {
           throw new RuntimeException(e);
@@ -258,12 +256,12 @@ public class VirtualThreadScriptExecutionTest
     // Test with virtual threads
     long virtualStartTime = System.currentTimeMillis();
     CountDownLatch virtualLatch = new CountDownLatch(testSize);
-    List<CompletableFuture<String>> virtualFutures = new ArrayList<>();
+    List<CompletableFuture<ScriptResultXO>> virtualFutures = new ArrayList<>();
     
     for (int i = 0; i < testSize; i++) {
-      CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+      CompletableFuture<ScriptResultXO> future = CompletableFuture.supplyAsync(() -> {
         try {
-          return scriptClient.run(script, null);
+          return scriptClient.run(script.getName(), null);
         }
         catch (Exception e) {
           throw new RuntimeException(e);
@@ -279,8 +277,8 @@ public class VirtualThreadScriptExecutionTest
     long virtualDuration = System.currentTimeMillis() - virtualStartTime;
     
     // Log performance results
-    log.info("Platform threads execution time: {} ms", platformDuration);
-    log.info("Virtual threads execution time: {} ms", virtualDuration);
+    logger.info("Platform threads execution time: {} ms", platformDuration);
+    logger.info("Virtual threads execution time: {} ms", virtualDuration);
     
     // Virtual threads should be faster for I/O-bound operations with high concurrency
     assertThat("Virtual threads should be faster than platform threads", 
@@ -294,7 +292,6 @@ public class VirtualThreadScriptExecutionTest
    */
   @Test
   @DisplayName("High concurrency script execution with virtual threads")
-  @Java21TestGroup
   @VirtualThreadTestGroup
   void testHighConcurrencyScriptExecution() throws Exception {
     int highConcurrencyCount = 5000; // 5000 concurrent script executions
@@ -312,7 +309,7 @@ public class VirtualThreadScriptExecutionTest
       for (int i = 0; i < highConcurrencyCount; i++) {
         executor.submit(() -> {
           try {
-            scriptClient.run(script, null);
+            scriptClient.run(script.getName(), null);
             successCount.incrementAndGet();
           }
           catch (Exception e) {

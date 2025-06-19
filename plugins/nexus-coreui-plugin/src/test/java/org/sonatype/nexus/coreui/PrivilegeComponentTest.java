@@ -17,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.extdirect.model.PagedResponse;
 import org.sonatype.nexus.extdirect.model.StoreLoadParameters;
@@ -27,12 +26,7 @@ import org.sonatype.nexus.security.SecuritySystem;
 import org.sonatype.nexus.security.privilege.Privilege;
 import org.sonatype.nexus.security.privilege.PrivilegeDescriptor;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import static com.google.common.collect.Lists.reverse;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -102,27 +96,27 @@ public class PrivilegeComponentTest
     assertThat(page.getData(), is(privileges));
 
     page = underTest.extractPage(parameters(0, 100, sort("name", "DESC"), null), privileges);
-    assertThat(page.getData(), is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getName)))));
+    assertThat(page.getData(), is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::name)))));
 
     page = underTest.extractPage(parameters(0, 100, sort("description"), null), privileges);
-    assertThat(page.getData(), is(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getDescription))));
+    assertThat(page.getData(), is(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::description))));
 
     page = underTest.extractPage(parameters(0, 100, sort("description", "DESC"), null), privileges);
     assertThat(page.getData(),
-        is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getDescription)))));
+        is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::description)))));
 
     page = underTest.extractPage(parameters(0, 100, sort("permission"), null), privileges);
-    assertThat(page.getData(), is(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getPermission))));
+    assertThat(page.getData(), is(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::permission))));
 
     page = underTest.extractPage(parameters(0, 100, sort("permission", "DESC"), null), privileges);
     assertThat(page.getData(),
-        is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getPermission)))));
+        is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::permission)))));
 
     page = underTest.extractPage(parameters(0, 100, sort("type"), null), privileges);
-    assertThat(page.getData(), is(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getType))));
+    assertThat(page.getData(), is(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::type))));
 
     page = underTest.extractPage(parameters(0, 100, sort("type", "DESC"), null), privileges);
-    assertThat(page.getData(), is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::getType)))));
+    assertThat(page.getData(), is(reverse(sortPrivilegesBy(privileges, Comparator.comparing(PrivilegeXO::type)))));
   }
 
   @Test
@@ -164,7 +158,7 @@ public class PrivilegeComponentTest
   }
 
   private static PrivilegeXO privilege(String name, String description, String permission, String type) {
-    return new PrivilegeXO().withName(name).withDescription(description).withPermission(permission).withType(type);
+    return new PrivilegeXO("", "", name, description, type, false, null, permission);
   }
 
   private static StoreLoadParameters parameters(int start, int limit, Sort sort, Filter filter) {

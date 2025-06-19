@@ -28,6 +28,7 @@ import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
 import org.sonatype.nexus.blobstore.file.FileBlobAttributes;
 import org.sonatype.nexus.blobstore.restore.RestoreBlobStrategy;
+import org.sonatype.nexus.blobstore.restore.datastore.AssetBlobRefFormatCheck;
 import org.sonatype.nexus.blobstore.restore.datastore.DefaultIntegrityCheckStrategy;
 import org.sonatype.nexus.blobstore.restore.datastore.IntegrityCheckStrategy;
 import org.sonatype.nexus.blobstore.restore.datastore.RestoreMetadataTask;
@@ -148,7 +149,7 @@ public class RestoreMetadataTaskPatternMatchingTest
         dryRunPrefix,
         integrityCheckStrategies,
         maintenanceService,
-        mock(AssetBlobRefFormatCheck.class),
+        mock(org.sonatype.nexus.blobstore.restore.datastore.AssetBlobRefFormatCheck.class),
         taskUtils);
 
     configuration = new TaskConfiguration();
@@ -349,18 +350,11 @@ public class RestoreMetadataTaskPatternMatchingTest
     boolean shouldUndeleteTraditional = shouldUndeleteTraditional(blobExists, isDeleted);
     
     // Pattern Matching approach
-    record BlobState(boolean exists, boolean isDeleted) {}
-    BlobState state = new BlobState(blobExists, isDeleted);
-    
-    boolean shouldRestorePatternMatching = switch (state) {
-      case BlobState(true, false) -> true;  // Blob exists and is not deleted
-      default -> false;                     // All other cases
-    };
-    
-    boolean shouldUndeletePatternMatching = switch (state) {
-      case BlobState(true, true) -> true;   // Blob exists and is deleted
-      default -> false;                     // All other cases
-    };
+    boolean shouldRestorePatternMatching =
+            blobExists && !isDeleted;
+
+    boolean shouldUndeletePatternMatching =
+            blobExists && isDeleted;
     
     // Both approaches should yield the same result
     assertEquals(shouldRestoreTraditional, shouldRestorePatternMatching);
@@ -476,9 +470,13 @@ public class RestoreMetadataTaskPatternMatchingTest
     
     // Execute the task and verify the correct method was called
     underTest.configure(configuration);
-    underTest.execute();
-    
-    if (shouldUseAllBlobsPatternMatching) {
+      try {
+          underTest.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+
+      if (shouldUseAllBlobsPatternMatching) {
       verify(blobStore).getBlobIdStream();
       verify(blobStore, never()).getBlobIdUpdatedSinceStream(any(Duration.class));
     }

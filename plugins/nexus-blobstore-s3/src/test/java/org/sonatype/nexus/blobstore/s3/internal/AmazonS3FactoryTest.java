@@ -13,6 +13,7 @@
 package org.sonatype.nexus.blobstore.s3.internal;
 
 import java.net.URI;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,6 +29,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetUrlRequest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -68,18 +71,20 @@ class AmazonS3FactoryTest
     config.getAttributes().get("s3").put("endpoint", "http://localhost/");
     config.getAttributes().get("s3").put("region", "us-west-2");
 
-    AmazonS3 s3 = amazonS3Factory.create(config);
-    URI endpoint = (URI) MethodUtils.invokeMethod(s3, true, "getEndpoint");
-    assertEquals(new URI("http://localhost/"), endpoint);
+    S3Client s3 = amazonS3Factory.create(config);
+    URI actualEndpoint = s3.serviceClientConfiguration().endpointOverride().orElseThrow();
+    assertEquals(URI.create("http://localhost/"), actualEndpoint);
+
   }
 
   @Test
   void endpointIsSetWhenProvidedInConfigWithDefaultRegion() throws Exception {
     config.getAttributes().get("s3").put("endpoint", "http://localhost/");
 
-    AmazonS3 s3 = amazonS3Factory.create(config);
-    URI endpoint = (URI) MethodUtils.invokeMethod(s3, true, "getEndpoint");
-    assertEquals(new URI("http://localhost/"), endpoint);
+    S3Client s3 = amazonS3Factory.create(config);
+    URI actualEndpoint = s3.serviceClientConfiguration().endpointOverride().orElseThrow();
+    assertEquals(URI.create("http://localhost/"), actualEndpoint);
+
   }
 
   @Test
@@ -87,7 +92,7 @@ class AmazonS3FactoryTest
     config.getAttributes().get("s3").put("signertype", "AWSS3V4SignerType");
     config.getAttributes().get("s3").put("region", "us-west-2");
 
-    AmazonS3 s3 = amazonS3Factory.create(config);
+    S3Client s3 = amazonS3Factory.create(config);
     assertEquals("AWSS3V4SignerType", getSignerOverride(s3));
   }
 
@@ -110,7 +115,7 @@ class AmazonS3FactoryTest
     config.getAttributes().get("s3").put("region", "us-west-2");
     config.getAttributes().get("s3").put("signertype", signer);
 
-    AmazonS3 s3 = amazonS3Factory.create(config);
+    S3Client s3 = amazonS3Factory.create(config);
     assertNull(getSignerOverride(s3));
   }
 
@@ -119,8 +124,12 @@ class AmazonS3FactoryTest
     config.getAttributes().get("s3").put("region", "us-west-2");
     config.getAttributes().get("s3").put("forcepathstyle", "true");
 
-    AmazonS3 s3 = amazonS3Factory.create(config);
-    assertEquals("/bucket/key", s3.getUrl("bucket", "key").getPath());
+    S3Client s3 = amazonS3Factory.create(config);
+    URL url = s3.utilities().getUrl(GetUrlRequest.builder()
+            .bucket("bucket")
+            .key("key")
+            .build());
+    assertEquals("/bucket/key", url.getPath());
   }
 
   @Test
@@ -148,7 +157,7 @@ class AmazonS3FactoryTest
   /**
    * Helper method to extract the signer override from an AmazonS3 client instance.
    */
-  private String getSignerOverride(AmazonS3 s3) throws Exception {
+  private String getSignerOverride(S3Client s3) throws Exception {
     Object clientConfiguration = MethodUtils.invokeMethod(s3, true, "getClientConfiguration");
     return (String) MethodUtils.invokeMethod(clientConfiguration, true, "getSignerOverride");
   }

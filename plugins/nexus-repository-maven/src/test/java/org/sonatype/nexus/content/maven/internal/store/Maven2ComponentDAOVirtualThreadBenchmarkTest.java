@@ -35,8 +35,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.entity.EntityUUID;
 import org.sonatype.nexus.content.maven.store.GAV;
@@ -183,8 +183,8 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
     BenchmarkResult virtualThreadResult = benchmarkComponentReads(Thread.ofVirtual().factory());
     
     // Log results
-    log.info("Platform Thread Result:\n{}\n", platformThreadResult);
-    log.info("Virtual Thread Result:\n{}\n", virtualThreadResult);
+    logger.info("Platform Thread Result:\n{}\n", platformThreadResult);
+    logger.info("Virtual Thread Result:\n{}\n", virtualThreadResult);
     
     // Verify no errors occurred
     assertThat(platformThreadResult.errorCount(), is(0L));
@@ -209,8 +209,8 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
     BenchmarkResult virtualThreadResult = benchmarkGavQueries(Thread.ofVirtual().factory());
     
     // Log results
-    log.info("Platform Thread Result:\n{}\n", platformThreadResult);
-    log.info("Virtual Thread Result:\n{}\n", virtualThreadResult);
+    logger.info("Platform Thread Result:\n{}\n", platformThreadResult);
+    logger.info("Virtual Thread Result:\n{}\n", virtualThreadResult);
     
     // Verify no errors occurred
     assertThat(platformThreadResult.errorCount(), is(0L));
@@ -276,7 +276,7 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
       
       assertTrue(result.startsWith("Release: ") || result.startsWith("Snapshot: "),
           "Result should identify component as release or snapshot");
-      log.info("Component classification: {}", result);
+      logger.info("Component classification: {}", result);
     }
   }
 
@@ -302,11 +302,11 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
       
       // Using Java 21 record patterns in enhanced for loop
       double totalOps = 0;
-      for (BenchmarkResult(String name, long ops, Duration duration, long errors) : results) {
+      for (BenchmarkResult benchmarkResult : results) {
         // We can directly use the destructured fields
-        totalOps += ops;
-        log.info("Benchmark {} completed {} operations in {} ms with {} errors",
-            name, ops, duration.toMillis(), errors);
+        totalOps += benchmarkResult.operationCount();
+        logger.info("Benchmark {} completed {} operations in {} ms with {} errors",
+                benchmarkResult.name(), benchmarkResult.operationCount(), benchmarkResult.duration().toMillis(), benchmarkResult.errorCount());
       }
       
       assertEquals(3000, totalOps, "Total operations should be 3000");
@@ -338,7 +338,7 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
       // Using Java 21 string templates for logging
       String versionsStr = String.join(", ", baseVersions);
       String logMessage = STR."Found \{baseVersions.size()} base versions: \{versionsStr}";
-      log.info(logMessage);
+      logger.info(logMessage);
       
       // Using string templates for SQL-like operations
       String whereClause = baseVersions.stream()
@@ -352,7 +352,7 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
           ORDER BY version DESC
           """;
       
-      log.info("Generated SQL query:\n{}", sqlQuery);
+      logger.info("Generated SQL query:\n{}", sqlQuery);
       
       // Verify the SQL query contains the correct repository ID
       assertTrue(sqlQuery.contains(STR."repository_id = \{repositoryId}"), 
@@ -385,7 +385,7 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
             Optional<Component> component = dao.readComponent(componentId);
             results.put(componentId, component.isPresent());
           } catch (Exception e) {
-            log.error("Error in virtual thread operation", e);
+            logger.error("Error in virtual thread operation", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -431,7 +431,9 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
     long endTime = System.nanoTime();
     Duration duration = Duration.ofNanos(endTime - startTime);
     
-    String name = threadFactory instanceof Thread.Builder.OfVirtual ? "Virtual Threads" : "Platform Threads";
+    Thread thread = threadFactory.newThread(() -> {});
+    String name = thread.isVirtual() ? "Virtual Threads" : "Platform Threads";
+
     return new BenchmarkResult(name, totalOperations, duration, totalErrors);
   }
 
@@ -461,7 +463,9 @@ public class Maven2ComponentDAOVirtualThreadBenchmarkTest
     long endTime = System.nanoTime();
     Duration duration = Duration.ofNanos(endTime - startTime);
     
-    String name = threadFactory instanceof Thread.Builder.OfVirtual ? "Virtual Threads" : "Platform Threads";
+    Thread thread = threadFactory.newThread(() -> {});
+    String name = thread.isVirtual() ? "Virtual Threads" : "Platform Threads";
+
     return new BenchmarkResult(name, totalOperations, duration, totalErrors);
   }
 

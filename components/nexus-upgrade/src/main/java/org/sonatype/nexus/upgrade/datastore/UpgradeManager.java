@@ -16,7 +16,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Optional;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 import org.flywaydb.core.api.MigrationVersion;
 

@@ -12,38 +12,6 @@
  */
 package org.sonatype.nexus.blobstore.virtualthread;
 
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
-
-import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
-import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.Blob;
-import org.sonatype.nexus.blobstore.api.BlobId;
-import org.sonatype.nexus.blobstore.api.BlobStore;
-import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
-import org.sonatype.nexus.blobstore.api.BlobStoreManager;
-import org.sonatype.nexus.blobstore.s3.internal.S3BlobStore;
-import org.sonatype.nexus.common.log.DryRunPrefix;
-
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.junit.After;
@@ -51,12 +19,27 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.mockito.Mock;
+import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.blobstore.MockBlobStoreConfiguration;
+import org.sonatype.nexus.blobstore.api.Blob;
+import org.sonatype.nexus.blobstore.api.BlobId;
+import org.sonatype.nexus.blobstore.api.BlobStoreConfiguration;
+import org.sonatype.nexus.blobstore.api.BlobStoreManager;
+import org.sonatype.nexus.blobstore.s3.internal.S3BlobStore;
+import org.sonatype.nexus.common.log.DryRunPrefix;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThan;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.lessThan;
-import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.*;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -124,7 +107,7 @@ public class S3BlobStoreVirtualThreadIT
         blobStore.stop();
         blobStore.remove();
       } catch (Exception e) {
-        log.warn("Error during blob store cleanup", e);
+        logger.warn("Error during blob store cleanup", e);
       }
     }
     
@@ -132,13 +115,13 @@ public class S3BlobStoreVirtualThreadIT
     if (s3Client != null && s3Client.doesBucketExistV2(TEST_BUCKET_NAME)) {
       try {
         // Delete all objects in the bucket
-        s3Client.listObjects(TEST_BUCKET_NAME).getObjectSummaries().forEach(obj -> 
+        s3Client.listObjects(TEST_BUCKET_NAME, null).getObjectSummaries().forEach(obj ->
             s3Client.deleteObject(TEST_BUCKET_NAME, obj.getKey()));
         
         // Delete the bucket
         s3Client.deleteBucket(TEST_BUCKET_NAME);
       } catch (Exception e) {
-        log.warn("Error during S3 bucket cleanup", e);
+        logger.warn("Error during S3 bucket cleanup", e);
       }
     }
   }
@@ -158,9 +141,9 @@ public class S3BlobStoreVirtualThreadIT
         LOW_CONCURRENCY,
         BLOB_SIZE_SMALL);
     
-    log.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec",
         platformResult.avgOperationTimeMs, platformResult.operationsPerSecond);
-    log.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec",
         virtualResult.avgOperationTimeMs, virtualResult.operationsPerSecond);
     
     // At low concurrency, performance should be similar
@@ -184,9 +167,9 @@ public class S3BlobStoreVirtualThreadIT
         MEDIUM_CONCURRENCY,
         BLOB_SIZE_SMALL);
     
-    log.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec",
         platformResult.avgOperationTimeMs, platformResult.operationsPerSecond);
-    log.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec",
         virtualResult.avgOperationTimeMs, virtualResult.operationsPerSecond);
     
     // At medium concurrency, virtual threads should start showing benefits
@@ -209,9 +192,9 @@ public class S3BlobStoreVirtualThreadIT
         HIGH_CONCURRENCY,
         BLOB_SIZE_SMALL);
     
-    log.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec",
         platformResult.avgOperationTimeMs, platformResult.operationsPerSecond);
-    log.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec",
         virtualResult.avgOperationTimeMs, virtualResult.operationsPerSecond);
     
     // At high concurrency, virtual threads should show significant benefits
@@ -241,9 +224,9 @@ public class S3BlobStoreVirtualThreadIT
         MEDIUM_CONCURRENCY,
         blobIds);
     
-    log.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec",
         platformResult.avgOperationTimeMs, platformResult.operationsPerSecond);
-    log.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec",
         virtualResult.avgOperationTimeMs, virtualResult.operationsPerSecond);
     
     assertThat("No errors occurred during platform thread execution", platformResult.errorCount, is(0));
@@ -265,9 +248,9 @@ public class S3BlobStoreVirtualThreadIT
         MEDIUM_CONCURRENCY,
         BLOB_SIZE_SMALL);
     
-    log.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Platform threads - Avg time: {} ms, Throughput: {} ops/sec",
         platformResult.avgOperationTimeMs, platformResult.operationsPerSecond);
-    log.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec", 
+    logger.info("Virtual threads - Avg time: {} ms, Throughput: {} ops/sec",
         virtualResult.avgOperationTimeMs, virtualResult.operationsPerSecond);
     
     assertThat("No errors occurred during platform thread execution", platformResult.errorCount, is(0));
@@ -309,8 +292,8 @@ public class S3BlobStoreVirtualThreadIT
     long memoryAfterVirtual = getUsedMemory();
     long virtualMemoryUsage = memoryAfterVirtual - memoryBefore;
     
-    log.info("Platform thread memory usage: {} MB", platformMemoryUsage / (1024 * 1024));
-    log.info("Virtual thread memory usage: {} MB", virtualMemoryUsage / (1024 * 1024));
+    logger.info("Platform thread memory usage: {} MB", platformMemoryUsage / (1024 * 1024));
+    logger.info("Virtual thread memory usage: {} MB", virtualMemoryUsage / (1024 * 1024));
     
     // Virtual threads should use less memory per thread than platform threads
     // This is a general expectation but can vary based on environment and JVM settings
@@ -349,7 +332,7 @@ public class S3BlobStoreVirtualThreadIT
             // Store the blob ID and content for verification
             blobContents.put(blob.getId(), content);
           } catch (Exception e) {
-            log.error("Error creating blob", e);
+            logger.error("Error creating blob", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -381,12 +364,12 @@ public class S3BlobStoreVirtualThreadIT
             // Verify content
             String actualContent = new String(blob.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             if (!expectedContent.equals(actualContent)) {
-              log.error("Content mismatch for blob {}: expected '{}', got '{}'", 
+              logger.error("Content mismatch for blob {}: expected '{}', got '{}'",
                   blobId, expectedContent, actualContent);
               verifyErrorCount.incrementAndGet();
             }
           } catch (Exception e) {
-            log.error("Error verifying blob", e);
+            logger.error("Error verifying blob", e);
             verifyErrorCount.incrementAndGet();
           } finally {
             verifyLatch.countDown();
@@ -409,11 +392,11 @@ public class S3BlobStoreVirtualThreadIT
           try {
             boolean deleted = blobStore.delete(blobId, "virtual-thread-test");
             if (!deleted) {
-              log.error("Failed to delete blob {}", blobId);
+              logger.error("Failed to delete blob {}", blobId);
               deleteErrorCount.incrementAndGet();
             }
           } catch (Exception e) {
-            log.error("Error deleting blob", e);
+            logger.error("Error deleting blob", e);
             deleteErrorCount.incrementAndGet();
           } finally {
             deleteLatch.countDown();
@@ -486,7 +469,7 @@ public class S3BlobStoreVirtualThreadIT
               totalBytesRead.addAndGet(threadBytesRead);
             }
           } catch (Exception e) {
-            log.error("Error in long-running operation", e);
+            logger.error("Error in long-running operation", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -500,9 +483,9 @@ public class S3BlobStoreVirtualThreadIT
       long endTime = System.currentTimeMillis();
       long duration = endTime - startTime;
       
-      log.info("Completed {} concurrent long-running operations in {} ms", 
+      logger.info("Completed {} concurrent long-running operations in {} ms",
           concurrency, duration);
-      log.info("Total bytes read: {} MB", totalBytesRead.get() / (1024 * 1024));
+      logger.info("Total bytes read: {} MB", totalBytesRead.get() / (1024 * 1024));
       
       // Verify no errors occurred
       assertThat("No errors during long-running operations", errorCount.get(), is(0));
@@ -559,7 +542,7 @@ public class S3BlobStoreVirtualThreadIT
             // Clean up
             blobStore.delete(blobId, "virtual-thread-test");
           } catch (Exception e) {
-            log.error("Failed after retries", e);
+            logger.error("Failed after retries", e);
           } finally {
             latch.countDown();
           }
@@ -665,7 +648,7 @@ public class S3BlobStoreVirtualThreadIT
             // Clean up
             blobStore.delete(blob.getId(), "virtual-thread-test");
           } catch (Exception e) {
-            log.error("Error in blob creation performance test", e);
+            logger.error("Error in blob creation performance test", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -727,7 +710,7 @@ public class S3BlobStoreVirtualThreadIT
             long opEnd = System.currentTimeMillis();
             operationTimes.add(opEnd - opStart);
           } catch (Exception e) {
-            log.error("Error in blob retrieval performance test", e);
+            logger.error("Error in blob retrieval performance test", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -837,7 +820,7 @@ public class S3BlobStoreVirtualThreadIT
             long opEnd = System.currentTimeMillis();
             operationTimes.add(opEnd - opStart);
           } catch (Exception e) {
-            log.error("Error in mixed operations performance test", e);
+            logger.error("Error in mixed operations performance test", e);
             errorCount.incrementAndGet();
           } finally {
             latch.countDown();
@@ -865,7 +848,7 @@ public class S3BlobStoreVirtualThreadIT
         try {
           blobStore.delete(blobId, "virtual-thread-test");
         } catch (Exception e) {
-          log.warn("Error cleaning up blob {}", blobId, e);
+          logger.warn("Error cleaning up blob {}", blobId, e);
         }
       }
       
@@ -928,7 +911,7 @@ public class S3BlobStoreVirtualThreadIT
           throw e;
         }
         
-        log.info("Operation failed, retrying ({}/{}): {}", 
+        logger.info("Operation failed, retrying ({}/{}): {}",
             retryCount, maxRetries, e.getMessage());
         
         // Sleep with exponential backoff

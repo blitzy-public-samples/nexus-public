@@ -139,19 +139,21 @@ public class RecordPatternScriptDataTest
    * Helper method that uses pattern matching in switch expressions to generate validation messages.
    */
   private String getScriptValidationMessage(Script script) {
-    return switch (script) {
-      case Script(ScriptInfo(var name, "groovy"), ScriptContent(var content, true)) ->
-          "Valid Groovy script: " + name;
-          
-      case Script(ScriptInfo(var name, "groovy"), ScriptContent(var content, false)) ->
-          "Invalid Groovy script: " + name;
-          
-      case Script(ScriptInfo(var name, "javascript"), ScriptContent(var content, true)) ->
-          "Valid JavaScript script: " + name;
-          
-      case Script(ScriptInfo(var name, "javascript"), ScriptContent(var content, false)) ->
-          "Invalid JavaScript script: " + name;
-          
+    return switch (script.info().type()) {
+      case "groovy" -> {
+        if (script.content().isValid()) {
+          yield "Valid Groovy script: " + script.info().name();
+        } else {
+          yield "Invalid Groovy script: " + script.info().name();
+        }
+      }
+      case "javascript" -> {
+        if (script.content().isValid()) {
+          yield "Valid JavaScript script: " + script.info().name();
+        } else {
+          yield "Invalid JavaScript script: " + script.info().name();
+        }
+      }
       default -> "Unknown script type";
     };
   }

@@ -208,10 +208,11 @@ public class RawProxyRecipeTest
     
     // Use pattern matching with records to process results (Java 21 feature)
     for (OperationResult result : results) {
-      // Destructure the record using pattern matching
-      var OperationResult(name, success, duration) = result;
-      assertTrue(success, "Operation " + name + " failed");
-      assertTrue(duration.toMillis() >= 0, "Invalid duration for operation " + name);
+      if (result instanceof OperationResult(String name, boolean success, Duration duration)) {
+        assertTrue(success, "Operation " + name + " failed");
+        assertTrue(duration.toMillis() >= 0, "Invalid duration for operation " + name);
+      }
     }
+
   }
 }

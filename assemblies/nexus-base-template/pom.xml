@@ -217,12 +217,6 @@ owners.
 								<feature>system</feature>
 								<feature>nexus-startup-feature</feature>
 							</startupFeatures>
-							<libraries>
-							    <library>mvn:org.osgi/org.osgi.service.log/1.5.0</library>
-							</libraries>
-							<installedBundles>
-                        		<bundle>mvn:org.osgi/org.osgi.service.log/1.5.0</bundle>
-                    		</installedBundles>
 							<blacklistedFeatures>
 								<feature>pax-url-wrap</feature>
 							</blacklistedFeatures>
@@ -232,12 +226,12 @@ owners.
 						         <bundle>mvn:org.osgi/org.osgi.util.function/1.1.0</bundle>
 						    </blacklistedBundles>
 							<bootFeatures>
+							   <feature>mvn:jakarta.xml.bind/jakarta.xml.bind-api-2.3.3.jar</feature>
+							   <feature>mvn:org.glassfish.jaxb/jaxb-runtime-2.3.3.jar</feature>
 								<feature>nexus-boot-feature</feature>
 							</bootFeatures>
 							<includeTransitiveDependency>true</includeTransitiveDependency>
 							<installedFeatures>
-							    <feature>jaxb</feature>
-							    <feature>jaxb-runtime</feature>
 								<feature>management</feature>
 								<!--
                 To enable remote access to the karaf console, uncomment the ssh feature and add

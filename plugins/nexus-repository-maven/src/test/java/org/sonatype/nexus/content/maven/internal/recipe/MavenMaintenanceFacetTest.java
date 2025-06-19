@@ -13,13 +13,8 @@
 
 package org.sonatype.nexus.content.maven.internal.recipe;
 
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
-
+import org.junit.jupiter.api.*;
+import org.mockito.Mock;
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.content.maven.MavenContentFacet;
 import org.sonatype.nexus.repository.Repository;
@@ -32,24 +27,19 @@ import org.sonatype.nexus.repository.content.fluent.FluentComponent;
 import org.sonatype.nexus.repository.content.fluent.FluentComponents;
 import org.sonatype.nexus.repository.maven.MavenPath;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
-import static java.util.List.of;
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * Tests for {@link MavenMaintenanceFacet} with Java 21 compatibility.
@@ -216,9 +206,9 @@ public class MavenMaintenanceFacetTest
     
     // Execute with pattern matching
     String result = switch (obj) {
-      case Component c -> "Component: " + c;
-      case FluentComponent fc -> "FluentComponent: " + fc;
-      default -> "Unknown";
+        case FluentComponent fc -> "FluentComponent: " + fc;
+        case Component c -> "Component: " + c;
+        default -> "Unknown";
     };
     
     // Verify

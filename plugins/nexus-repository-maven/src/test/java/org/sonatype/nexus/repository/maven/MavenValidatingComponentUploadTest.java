@@ -30,8 +30,8 @@ import org.sonatype.nexus.repository.upload.UploadRegexMap;
 import org.sonatype.nexus.repository.view.PartPayload;
 import org.sonatype.nexus.rest.ValidationErrorXO;
 import org.sonatype.nexus.rest.ValidationErrorsException;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
-import org.sonatype.goodies.testsupport.group.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 
 import com.google.common.collect.ImmutableMap;
 
@@ -280,7 +280,7 @@ public class MavenValidatingComponentUploadTest
     });
     
     List<String> messages = exception.getValidationErrors().stream()
-        .map(ValidationErrorXO::getMessage)
+        .map(ValidationErrorXO::message)
         .collect(toList());
     
     assertThat(messages, contains(groupIdError, artifactIdError, versionError));
@@ -332,7 +332,7 @@ public class MavenValidatingComponentUploadTest
     });
     
     List<String> messages = exception.getValidationErrors().stream()
-        .map(ValidationErrorXO::getMessage)
+        .map(ValidationErrorXO::message)
         .collect(toList());
     assertThat(messages, contains(message));
   }

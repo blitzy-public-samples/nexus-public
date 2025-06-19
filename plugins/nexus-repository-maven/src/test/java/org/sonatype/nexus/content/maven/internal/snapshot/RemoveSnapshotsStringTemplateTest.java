@@ -78,9 +78,13 @@ class RemoveSnapshotsStringTemplateTest
 
     when(repository.getName()).thenReturn("test-repo");
     when(repository.facet(MavenContentFacet.class)).thenReturn(facet);
-    removeSnapshotsFacet.attach(repository);
+      try {
+          removeSnapshotsFacet.attach(repository);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
 
-    // Set up logger capture
+      // Set up logger capture
     logger = (Logger) org.slf4j.LoggerFactory.getLogger(RemoveSnapshotsFacetImpl.class);
     logger.addAppender(mockAppender);
   }

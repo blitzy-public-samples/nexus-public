@@ -27,4 +27,5 @@ public class UpgradeStartedEvent
   public UpgradeStartedEvent(@Nullable final String user, final String schemaVersion, final String... migrations) {
     super(user, schemaVersion, migrations);
   }
+
 }

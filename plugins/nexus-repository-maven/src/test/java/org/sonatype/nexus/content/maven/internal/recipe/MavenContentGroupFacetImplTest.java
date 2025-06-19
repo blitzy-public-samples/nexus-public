@@ -145,9 +145,13 @@ public class MavenContentGroupFacetImplTest
     when(repository.facet(ContentFacet.class)).thenReturn(contentFacet);
     
     doReturn(true).when(underTest).member(repository);
-    underTest.attach(repository);
-    
-    var asset = mock(Asset.class);
+      try {
+          underTest.attach(repository);
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+
+      var asset = mock(Asset.class);
     when(asset.path()).thenReturn("/com/example/foo/1.0-SNAPSHOT/maven-metadata.xml");
     when(asset.component()).thenReturn(Optional.empty());
     
@@ -196,11 +200,15 @@ public class MavenContentGroupFacetImplTest
         yield false;
       }
       // Multiple patterns in one case
-      case AssetDeletedEvent e, null -> {
+      case AssetDeletedEvent e -> {
         // Handle deleted event or null case
         yield false;
       }
-      // Default case to handle any other type of AssetEvent
+        case null -> {
+          // Handle deleted event or null case
+          yield false;
+        }
+        // Default case to handle any other type of AssetEvent
       default -> false;
     };
     

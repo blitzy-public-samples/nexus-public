@@ -17,10 +17,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.experimental.categories.Category;
+import org.mockito.Mockito;
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
 import org.sonatype.nexus.blobstore.api.BlobStoreManager;
 import org.sonatype.nexus.blobstore.api.BlobStoreUsageChecker;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
 import org.sonatype.nexus.repository.move.ChangeRepositoryBlobStoreConfiguration;
 import org.sonatype.nexus.repository.move.ChangeRepositoryBlobStoreStore;
 import org.sonatype.nexus.scheduling.TaskConfiguration;
@@ -52,7 +54,7 @@ import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescri
  * to ensure proper operation in the Java 21 runtime environment.
  */
 @ExtendWith(MockitoExtension.class)
-@org.junit.Category(Java21TestGroup.class)
+@Category(Java21TestGroup.class)
 public class CompactBlobStoreTaskTest
     extends TestSupport
 {
@@ -83,8 +85,11 @@ public class CompactBlobStoreTaskTest
     configuration.setString(".name", TASK_NAME);
     configuration.setTypeId(TYPE_ID);
     configuration.setId(TASK_NAME);
-
-    underTest = new CompactBlobStoreTask(blobStoreManager, changeBlobstoreStore, blobStoreUsageChecker, taskUtils);
+    underTest = Mockito.mock(CompactBlobStoreTask.class,
+            Mockito.withSettings()
+                    .useConstructor(blobStoreManager, changeBlobstoreStore,
+                            blobStoreUsageChecker, taskUtils)
+                    .defaultAnswer(Mockito.CALLS_REAL_METHODS));
   }
 
   /**

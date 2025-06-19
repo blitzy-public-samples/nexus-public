@@ -12,10 +12,12 @@
  */
 package org.sonatype.nexus.coreui;
 
+import org.mockito.Mock;
 import org.sonatype.goodies.testsupport.TestSupport;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.mockito.Mockito.when;
 import static org.sonatype.nexus.coreui.ConanAttributeTransformer.CONAN_FORMAT;
 import static org.sonatype.nexus.coreui.ConanAttributeTransformer.INFO_BINARY_ATTRIBUTE;
 
@@ -23,7 +25,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.SequencedMap;
 
 public class ConanAttributeTransformerTest
     extends TestSupport
@@ -33,6 +37,9 @@ public class ConanAttributeTransformerTest
   private static final String INVALID_JSON = "{\"settings\":{{\"os\":\"Windows\"}}";
 
   private ConanAttributeTransformer underTest;
+
+  @Mock
+  private AssetXO assetXO;
 
   @BeforeEach
   public void setUp() {
@@ -81,13 +88,11 @@ public class ConanAttributeTransformerTest
 
   @Test
   public void transformShouldSkipWhenNoInfoBinaryExists() {
-    AssetXO assetXO = new AssetXO();
-    Map<String, Object> attributes = new HashMap<>();
-    Map<String, Object> formatAttributes = new HashMap<>();
-    formatAttributes.put("foo", "bar");
-    attributes.put(CONAN_FORMAT, formatAttributes);
-    assetXO.setAttributes(attributes);
-    assetXO.setFormat(CONAN_FORMAT);
+    when(assetXO.attributes()).thenReturn(
+            new LinkedHashMap<>(Map.of(CONAN_FORMAT, Map.of("foo", "bar")))
+    );
+
+    when(assetXO.format()).thenReturn(CONAN_FORMAT);
     underTest.transform(assetXO);
 
     Map<String, Object> result = (Map<String, Object>) assetXO.getAttributes().get(CONAN_FORMAT);
@@ -95,15 +100,14 @@ public class ConanAttributeTransformerTest
     assertThat(result.size(), equalTo(1));
   }
 
-  private static AssetXO getAssetXO(final String json) {
+  private AssetXO getAssetXO(final String json) {
 
-    AssetXO assetXO = new AssetXO();
-    Map<String, Object> attributes = new HashMap<>();
-    Map<String, Object> formatAttributes = new HashMap<>();
-    formatAttributes.put(INFO_BINARY_ATTRIBUTE, json);
-    attributes.put(CONAN_FORMAT, formatAttributes);
-    assetXO.setAttributes(attributes);
-    assetXO.setFormat(CONAN_FORMAT);
+    when(assetXO.attributes()).thenReturn(
+            new LinkedHashMap<>(Map.of(CONAN_FORMAT, Map.of(INFO_BINARY_ATTRIBUTE, json)))
+    );
+
+    when(assetXO.format()).thenReturn(CONAN_FORMAT);
+
     return assetXO;
   }
 }

@@ -220,8 +220,7 @@ public class TaskLoggingStringTemplatesTest
   public void testBlobStoreTaskWithTemplates() {
     // Create a test implementation of BlobStoreTaskSupport that uses String Templates
     TestBlobStoreTask task = Mockito.spy(new TestBlobStoreTask(null));
-    task.setLogger(logger);
-    
+
     // Execute the task's processing method
     task.processBlob(blobStore, 100);
     
@@ -257,6 +256,11 @@ public class TaskLoggingStringTemplatesTest
     @Override
     protected void execute(BlobStore blobStore) {
       // Not needed for this test
+    }
+
+    @Override
+    public String getMessage() {
+      return "";
     }
   }
 }

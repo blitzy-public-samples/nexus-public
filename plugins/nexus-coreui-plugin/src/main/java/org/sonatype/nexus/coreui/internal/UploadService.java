@@ -131,7 +131,7 @@ public class UploadService extends ComponentSupport {
    * @return the common prefix to use as a search term, or null if no paths
    */
   @VisibleForTesting
-  String createSearchTerm(final Collection<String> createdPaths) {
+  public String createSearchTerm(final Collection<String> createdPaths) {
     if (createdPaths.isEmpty()) {
       return null;
     }

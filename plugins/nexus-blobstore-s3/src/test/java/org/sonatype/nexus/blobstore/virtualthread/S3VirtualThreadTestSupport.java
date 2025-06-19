@@ -37,8 +37,7 @@ import org.sonatype.nexus.blobstore.api.Blob;
 import org.sonatype.nexus.blobstore.api.BlobId;
 import org.sonatype.nexus.blobstore.api.BlobStore;
 
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.concurrent.TimeUnit.*;
 import static org.sonatype.nexus.blobstore.api.BlobStore.BLOB_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CONTENT_TYPE_HEADER;
 import static org.sonatype.nexus.blobstore.api.BlobStore.CREATED_BY_HEADER;
@@ -237,11 +236,14 @@ public class S3VirtualThreadTestSupport
   public static ThreadFactory createPlatformThreadFactory(String namePrefix) {
     AtomicInteger threadCount = new AtomicInteger(1);
     return r -> {
-      Thread thread = Thread.ofPlatform().name(namePrefix + "-" + threadCount.getAndIncrement()).build();
+      Thread thread = Thread.ofPlatform()
+              .name(namePrefix + "-" + threadCount.getAndIncrement())
+              .unstarted(r);
       thread.setDaemon(true);
       return thread;
     };
   }
+
 
   /**
    * Creates a virtual thread factory.
@@ -251,8 +253,13 @@ public class S3VirtualThreadTestSupport
    */
   public static ThreadFactory createVirtualThreadFactory(String namePrefix) {
     AtomicInteger threadCount = new AtomicInteger(1);
-    return r -> Thread.ofVirtual().name(namePrefix + "-" + threadCount.getAndIncrement()).build();
+    return r -> {
+        return Thread.ofPlatform()
+              .name(namePrefix + "-" + threadCount.getAndIncrement())
+              .unstarted(r);
+    };
   }
+
 
   /**
    * Creates an executor service using platform threads.

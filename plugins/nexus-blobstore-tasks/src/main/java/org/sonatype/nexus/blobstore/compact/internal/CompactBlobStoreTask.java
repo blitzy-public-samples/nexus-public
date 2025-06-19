@@ -46,7 +46,7 @@ import static org.sonatype.nexus.logging.task.TaskLoggingMarkers.TASK_LOG_ONLY;
  * @since 3.0
  */
 @Named
-public class CompactBlobStoreTask
+public abstract class CompactBlobStoreTask
     extends TaskSupport
     implements Cancelable
 {
@@ -73,7 +73,7 @@ public class CompactBlobStoreTask
   }
 
   @VisibleForTesting
-  void checkForConflicts() {
+  public void checkForConflicts() {
     String blobStoreName = requireNonNull(getBlobStoreField());
 
     taskUtils.checkForConflictingTasks(getId(), getName(), asList("repository.move"), Map.of(
@@ -97,7 +97,7 @@ public class CompactBlobStoreTask
   }
 
   @Override
-  protected Object execute() throws Exception {
+  public Object execute() throws Exception {
     checkForConflicts();
 
     String blobStoreName = getBlobStoreField();
@@ -139,4 +139,6 @@ public class CompactBlobStoreTask
     }
     return obj;
   }
+
+    public abstract void validate();
 }

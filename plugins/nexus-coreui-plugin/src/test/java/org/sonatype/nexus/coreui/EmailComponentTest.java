@@ -65,18 +65,18 @@ public class EmailComponentTest
     EmailConfigurationXO actualConfig = underTest.read();
 
     assertThat(actualConfig, is(notNullValue()));
-    assertThat(actualConfig.isEnabled(), is(false));
-    assertThat(actualConfig.getHost(), is("localhost"));
-    assertThat(actualConfig.getPort(), is(25));
-    assertThat(actualConfig.getUsername(), is("foo"));
-    assertThat(actualConfig.getFromAddress(), is("nexus@example.org"));
-    assertThat(actualConfig.getPassword(), is(PasswordPlaceholder.get()));
-    assertThat(actualConfig.isStartTlsEnabled(), is(true));
-    assertThat(actualConfig.isStartTlsRequired(), is(true));
-    assertThat(actualConfig.isSslOnConnectEnabled(), is(true));
-    assertThat(actualConfig.getSubjectPrefix(), is("prefix"));
-    assertThat(actualConfig.isNexusTrustStoreEnabled(), is(false));
-    assertThat(actualConfig.isSslCheckServerIdentityEnabled(), is(false));
+    assertThat(actualConfig.enabled(), is(false));
+    assertThat(actualConfig.host(), is("localhost"));
+    assertThat(actualConfig.port(), is(25));
+    assertThat(actualConfig.username(), is("foo"));
+    assertThat(actualConfig.fromAddress(), is("nexus@example.org"));
+    assertThat(actualConfig.password(), is(PasswordPlaceholder.get()));
+    assertThat(actualConfig.startTlsEnabled(), is(true));
+    assertThat(actualConfig.startTlsRequired(), is(true));
+    assertThat(actualConfig.sslOnConnectEnabled(), is(true));
+    assertThat(actualConfig.subjectPrefix(), is("prefix"));
+    assertThat(actualConfig.nexusTrustStoreEnabled(), is(false));
+    assertThat(actualConfig.sslCheckServerIdentityEnabled(), is(false));
   }
 
   @Test
@@ -86,18 +86,18 @@ public class EmailComponentTest
     EmailConfigurationXO actualConfig = underTest.read();
 
     assertThat(actualConfig, is(notNullValue()));
-    assertThat(actualConfig.isEnabled(), is(false));
-    assertThat(actualConfig.getHost(), is("localhost"));
-    assertThat(actualConfig.getPort(), is(25));
-    assertThat(actualConfig.getUsername(), is("foo"));
-    assertThat(actualConfig.getFromAddress(), is("nexus@example.org"));
-    assertThat(actualConfig.getPassword(), is(nullValue()));
-    assertThat(actualConfig.isStartTlsEnabled(), is(true));
-    assertThat(actualConfig.isStartTlsRequired(), is(true));
-    assertThat(actualConfig.isSslOnConnectEnabled(), is(true));
-    assertThat(actualConfig.getSubjectPrefix(), is("prefix"));
-    assertThat(actualConfig.isNexusTrustStoreEnabled(), is(false));
-    assertThat(actualConfig.isSslCheckServerIdentityEnabled(), is(false));
+    assertThat(actualConfig.enabled(), is(false));
+    assertThat(actualConfig.host(), is("localhost"));
+    assertThat(actualConfig.port(), is(25));
+    assertThat(actualConfig.username(), is("foo"));
+    assertThat(actualConfig.fromAddress(), is("nexus@example.org"));
+    assertThat(actualConfig.password(), is(nullValue()));
+    assertThat(actualConfig.startTlsEnabled(), is(true));
+    assertThat(actualConfig.startTlsRequired(), is(true));
+    assertThat(actualConfig.sslOnConnectEnabled(), is(true));
+    assertThat(actualConfig.subjectPrefix(), is("prefix"));
+    assertThat(actualConfig.nexusTrustStoreEnabled(), is(false));
+    assertThat(actualConfig.sslCheckServerIdentityEnabled(), is(false));
   }
 
   @Test

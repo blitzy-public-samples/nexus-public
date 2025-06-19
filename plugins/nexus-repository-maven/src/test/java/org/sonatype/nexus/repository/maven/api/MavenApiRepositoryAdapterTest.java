@@ -25,8 +25,8 @@ import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.common.collect.NestedAttributesMap;
 import org.sonatype.nexus.common.event.EventManager;
-import org.sonatype.nexus.common.thread.Java21TestGroup;
-import org.sonatype.nexus.common.thread.VirtualThreadTestGroup;
+import org.sonatype.nexus.content.testsuite.groups.Java21TestGroup;
+import org.sonatype.nexus.content.testsuite.groups.VirtualThreadTestGroup;
 import org.sonatype.nexus.repository.Repository;
 import org.sonatype.nexus.repository.Type;
 import org.sonatype.nexus.repository.config.Configuration;
@@ -103,9 +103,9 @@ class MavenApiRepositoryAdapterTest
 
     MavenHostedApiRepository hostedRepository = (MavenHostedApiRepository) underTest.adapt(repository);
     assertRepository(hostedRepository, "hosted", true);
-    assertThat(hostedRepository.getMaven().getLayoutPolicy(), is("STRICT"));
-    assertThat(hostedRepository.getMaven().getVersionPolicy(), is("MIXED"));
-    assertThat(hostedRepository.getMaven().getContentDisposition(), is("INLINE"));
+    assertThat(hostedRepository.getMaven().layoutPolicy(), is("STRICT"));
+    assertThat(hostedRepository.getMaven().versionPolicy(), is("MIXED"));
+    assertThat(hostedRepository.getMaven().contentDisposition(), is("INLINE"));
     // Check fields are populated, actual values validated with SimpleApiRepositoryAdapterTest
     assertThat(hostedRepository.getCleanup(), nullValue());
     assertThat(hostedRepository.getStorage(), notNullValue());
@@ -117,9 +117,9 @@ class MavenApiRepositoryAdapterTest
 
     MavenProxyApiRepository proxyRepository = (MavenProxyApiRepository) underTest.adapt(repository);
     assertRepository(proxyRepository, "proxy", true);
-    assertThat(proxyRepository.getMaven().getLayoutPolicy(), is("STRICT"));
-    assertThat(proxyRepository.getMaven().getVersionPolicy(), is("MIXED"));
-    assertThat(proxyRepository.getMaven().getContentDisposition(), is("INLINE"));
+    assertThat(proxyRepository.getMaven().layoutPolicy(), is("STRICT"));
+    assertThat(proxyRepository.getMaven().versionPolicy(), is("MIXED"));
+    assertThat(proxyRepository.getMaven().contentDisposition(), is("INLINE"));
     // Check fields are populated, actual values validated with SimpleApiRepositoryAdapterTest
     assertThat(proxyRepository.getCleanup(), nullValue());
     assertThat(proxyRepository.getHttpClient(), notNullValue());
@@ -185,9 +185,9 @@ class MavenApiRepositoryAdapterTest
     assertEquals(MavenHostedApiRepository.class, result.getClass());
     MavenHostedApiRepository hostedRepository = (MavenHostedApiRepository) result;
     assertRepository(hostedRepository, "hosted", true);
-    assertThat(hostedRepository.getMaven().getLayoutPolicy(), is("STRICT"));
-    assertThat(hostedRepository.getMaven().getVersionPolicy(), is("MIXED"));
-    assertThat(hostedRepository.getMaven().getContentDisposition(), is("INLINE"));
+    assertThat(hostedRepository.getMaven().layoutPolicy(), is("STRICT"));
+    assertThat(hostedRepository.getMaven().versionPolicy(), is("MIXED"));
+    assertThat(hostedRepository.getMaven().contentDisposition(), is("INLINE"));
   }
 
   /**
@@ -231,14 +231,13 @@ class MavenApiRepositoryAdapterTest
     AbstractApiRepository result = underTest.adapt(repository);
     
     // Use record pattern matching to extract and validate Maven attributes
-    if (result instanceof MavenHostedApiRepository(var name, var url, var online, var storage, var cleanup, 
-                                                 MavenAttributes(var versionPolicy, var layoutPolicy, var contentDisposition), var component)) {
+    if (result instanceof MavenHostedApiRepository mavenHostedApiRepository) {
       // Validate extracted fields using record pattern matching
-      assertEquals("my-repo", name);
-      assertEquals(true, online);
-      assertEquals("MIXED", versionPolicy);
-      assertEquals("STRICT", layoutPolicy);
-      assertEquals("INLINE", contentDisposition);
+      assertEquals("my-repo", mavenHostedApiRepository.getName());
+      assertEquals(true, mavenHostedApiRepository.getOnline());
+      assertEquals("MIXED", mavenHostedApiRepository.getMaven().versionPolicy());
+      assertEquals("STRICT", mavenHostedApiRepository.getMaven().layoutPolicy());
+      assertEquals("INLINE", mavenHostedApiRepository.getMaven().contentDisposition());
     } else {
       // This should not happen
       throw new AssertionError("Expected MavenHostedApiRepository but got " + result.getClass().getSimpleName());
@@ -271,9 +270,9 @@ class MavenApiRepositoryAdapterTest
     // Use string templates with Maven attributes
     String mavenAttrs = STR."""
         Maven Repository Configuration:
-        - Layout Policy: \{hostedResult.getMaven().getLayoutPolicy()}
-        - Version Policy: \{hostedResult.getMaven().getVersionPolicy()}
-        - Content Disposition: \{hostedResult.getMaven().getContentDisposition()}
+        - Layout Policy: \{hostedResult.getMaven().layoutPolicy()}
+        - Version Policy: \{hostedResult.getMaven().versionPolicy()}
+        - Content Disposition: \{hostedResult.getMaven().contentDisposition()}
         """;
     
     // Validate multi-line string template

@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import javax.inject.Provider;
-import javax.validation.Validator;
+import jakarta.inject.Provider;
+import jakarta.validation.Validator;
 
 import org.sonatype.goodies.testsupport.TestSupport;
 import org.sonatype.nexus.scheduling.CurrentState;

@@ -114,8 +114,12 @@ public class S3UploaderVirtualThreadTest
     when(multiPartUpload.time()).thenReturn(context);
     when(registry.timer("org.sonatype.nexus.blobstore.s3.internal.S3BlobStore.uploader.multiPartUpload")).thenReturn(multiPartUpload);
     
-    producerConsumerUploader = new ProducerConsumerUploader(CHUNK_SIZE, THREAD_COUNT, registry);
-    producerConsumerUploader.start();
+    producerConsumerUploader = new ProducerConsumerUploader(CHUNK_SIZE, registry);
+      try {
+          producerConsumerUploader.start();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
   }
   
   /**
@@ -242,7 +246,7 @@ public class S3UploaderVirtualThreadTest
     // Skip this test if not running on Java 21 or higher
     String javaVersion = System.getProperty("java.version");
     if (!javaVersion.startsWith("21.") && !javaVersion.startsWith("22.")) {
-      log.info("Skipping virtual thread performance test on Java version {}", javaVersion);
+      logger.info("Skipping virtual thread performance test on Java version {}", javaVersion);
       return;
     }
     
@@ -263,8 +267,8 @@ public class S3UploaderVirtualThreadTest
       return Thread.ofVirtual().factory();
     }, fileContent);
     
-    log.info("Platform thread time: {} ms", platformThreadTime);
-    log.info("Virtual thread time: {} ms", virtualThreadTime);
+    logger.info("Platform thread time: {} ms", platformThreadTime);
+    logger.info("Virtual thread time: {} ms", virtualThreadTime);
     
     // Virtual threads should be more efficient for I/O-bound operations
     // This assertion might need adjustment based on the test environment
@@ -282,7 +286,7 @@ public class S3UploaderVirtualThreadTest
     // Skip this test if not running on Java 21 or higher
     String javaVersion = System.getProperty("java.version");
     if (!javaVersion.startsWith("21.") && !javaVersion.startsWith("22.")) {
-      log.info("Skipping virtual thread high concurrency test on Java version {}", javaVersion);
+      logger.info("Skipping virtual thread high concurrency test on Java version {}", javaVersion);
       return;
     }
     
@@ -308,7 +312,7 @@ public class S3UploaderVirtualThreadTest
             successCount.incrementAndGet();
           }
           catch (Exception e) {
-            log.error("Upload failed for key {}", key, e);
+            logger.error("Upload failed for key {}", key, e);
           }
           finally {
             latch.countDown();
@@ -333,7 +337,7 @@ public class S3UploaderVirtualThreadTest
     // Skip this test if not running on Java 21 or higher
     String javaVersion = System.getProperty("java.version");
     if (!javaVersion.startsWith("21.") && !javaVersion.startsWith("22.")) {
-      log.info("Skipping virtual thread memory efficiency test on Java version {}", javaVersion);
+      logger.info("Skipping virtual thread memory efficiency test on Java version {}", javaVersion);
       return;
     }
     
@@ -403,8 +407,8 @@ public class S3UploaderVirtualThreadTest
       long memoryWithVirtual = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
       long virtualMemoryUsage = memoryWithVirtual - memoryBeforeVirtual;
       
-      log.info("Platform thread memory usage: {} bytes", platformMemoryUsage);
-      log.info("Virtual thread memory usage: {} bytes", virtualMemoryUsage);
+      logger.info("Platform thread memory usage: {} bytes", platformMemoryUsage);
+      logger.info("Virtual thread memory usage: {} bytes", virtualMemoryUsage);
       
       // Virtual threads should use significantly less memory
       // This assertion might need adjustment based on the test environment

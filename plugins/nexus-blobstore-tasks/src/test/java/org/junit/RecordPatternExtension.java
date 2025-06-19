@@ -800,4 +800,3 @@ public class RecordPatternExtension implements ExecutionCondition, ParameterReso
      */
     public static class ExampleUsage {}
 }
-}

@@ -93,7 +93,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
         underTest.call();
       }
       catch (Exception e) {
-        log.error("Error executing task in virtual thread", e);
+        logger.error("Error executing task in virtual thread", e);
       }
     });
     
@@ -130,7 +130,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
           underTest.call();
         }
         catch (Exception e) {
-          log.error("Error executing task with virtual threads", e);
+          logger.error("Error executing task with virtual threads", e);
         }
       }).get(30, TimeUnit.SECONDS); // Add timeout to prevent test hanging
     }
@@ -185,7 +185,7 @@ public class RecalculateBlobStoreSizeTaskVirtualThreadTest
           underTest.call();
         }
         catch (Exception e) {
-          log.error("Error executing concurrent task with virtual threads", e);
+          logger.error("Error executing concurrent task with virtual threads", e);
         }
       });
       

@@ -12,16 +12,14 @@
  */
 package org.sonatype.nexus.blobstore.s3.internal.encryption;
 
-import com.amazonaws.services.s3.model.AbstractPutObjectRequest;
-import com.amazonaws.services.s3.model.CopyObjectRequest;
-import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
-import com.amazonaws.services.s3.model.ObjectMetadata;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import static org.mockito.Mockito.*;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
 
 /**
  * Tests for {@link S3ManagedEncrypter} that verify server-side encryption is properly applied
@@ -30,47 +28,45 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class S3ManagedEncrypterTest
 {
-  @Mock
-  private InitiateMultipartUploadRequest initiateMultipartUploadRequest;
-
-  @Mock
-  private AbstractPutObjectRequest abstractPutObjectRequest;
-
-  @Mock
-  private CopyObjectRequest copyObjectRequest;
-
-  @Mock
-  private ObjectMetadata objectMetadata;
-
   private final S3ManagedEncrypter encrypter = new S3ManagedEncrypter();
 
   @Test
   void shouldApplyServerSideEncryptionToInitiateMultipartUploadRequest() {
-    when(initiateMultipartUploadRequest.getObjectMetadata()).thenReturn(objectMetadata);
+    CreateMultipartUploadRequest request = CreateMultipartUploadRequest.builder()
+            .bucket("my-bucket")
+            .key("my-key")
+            .build();
 
-    encrypter.addEncryption(initiateMultipartUploadRequest);
+    CreateMultipartUploadRequest modified = encrypter.addEncryption(request);
 
-    verify(initiateMultipartUploadRequest).setObjectMetadata(objectMetadata);
-    verify(objectMetadata).setSSEAlgorithm(ObjectMetadata.AES_256_SERVER_SIDE_ENCRYPTION);
+    Assertions.assertNotNull(modified);
+    Assertions.assertEquals(ServerSideEncryption.AES256, modified.serverSideEncryption());
   }
 
   @Test
   void shouldApplyServerSideEncryptionToAbstractPutObjectRequest() {
-    when(abstractPutObjectRequest.getMetadata()).thenReturn(objectMetadata);
+    PutObjectRequest request = PutObjectRequest.builder()
+            .bucket("my-bucket")
+            .key("my-key")
+            .build();
 
-    encrypter.addEncryption(abstractPutObjectRequest);
+    PutObjectRequest modified = encrypter.addEncryption(request);
 
-    verify(abstractPutObjectRequest).setMetadata(objectMetadata);
-    verify(objectMetadata).setSSEAlgorithm(ObjectMetadata.AES_256_SERVER_SIDE_ENCRYPTION);
+    Assertions.assertNotNull(modified);
+    Assertions.assertEquals(ServerSideEncryption.AES256, modified.serverSideEncryption());
   }
-
   @Test
   void shouldApplyServerSideEncryptionToCopyObjectRequest() {
-    when(copyObjectRequest.getNewObjectMetadata()).thenReturn(objectMetadata);
+    CopyObjectRequest request = CopyObjectRequest.builder()
+            .sourceBucket("source-bucket")
+            .sourceKey("source-key")
+            .destinationBucket("dest-bucket")
+            .destinationKey("dest-key")
+            .build();
 
-    encrypter.addEncryption(copyObjectRequest);
+    CopyObjectRequest modified = encrypter.addEncryption(request);
 
-    verify(copyObjectRequest).setNewObjectMetadata(objectMetadata);
-    verify(objectMetadata).setSSEAlgorithm(ObjectMetadata.AES_256_SERVER_SIDE_ENCRYPTION);
+    Assertions.assertNotNull(modified);
+    Assertions.assertEquals(ServerSideEncryption.AES256, modified.serverSideEncryption());
   }
 }

@@ -80,13 +80,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.blobstore.api.BlobAttributesConstants.HEADER_PREFIX;
 import static org.sonatype.nexus.blobstore.api.BlobStore.REPO_NAME_HEADER;
 import static org.sonatype.nexus.blobstore.restore.BaseRestoreMetadataTaskDescriptor.BLOB_STORE_NAME_FIELD_ID;
@@ -271,8 +265,12 @@ public class RestoreMetadataTaskVirtualThreadTest
 
     // Execute the task and measure performance
     Instant start = Instant.now();
-    virtualThreadTask.execute();
-    Duration virtualThreadDuration = Duration.between(start, Instant.now());
+      try {
+          virtualThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+      Duration virtualThreadDuration = Duration.between(start, Instant.now());
 
     // Verify that all blobs were processed
     ArgumentCaptor<Properties> propertiesCaptor = ArgumentCaptor.forClass(Properties.class);
@@ -283,7 +281,7 @@ public class RestoreMetadataTaskVirtualThreadTest
       verify(restoreBlobStrategy).after(eq(true), eq(repository));
     }
 
-    log.info("Processed {} blobs with Virtual Threads in {} ms", blobIds.size(), virtualThreadDuration.toMillis());
+    logger.info("Processed {} blobs with Virtual Threads in {} ms", blobIds.size(), virtualThreadDuration.toMillis());
     
     // The test passes if it completes without thread resource exhaustion
     assertThat("Should process all blobs without thread resource exhaustion", 
@@ -311,19 +309,27 @@ public class RestoreMetadataTaskVirtualThreadTest
 
     // Execute with platform threads and measure performance
     Instant platformStart = Instant.now();
-    platformThreadTask.execute();
-    Duration platformDuration = Duration.between(platformStart, Instant.now());
+      try {
+          platformThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
+      Duration platformDuration = Duration.between(platformStart, Instant.now());
 
     // Reset mock again
     reset(restoreBlobStrategy);
 
     // Execute with virtual threads and measure performance
     Instant virtualStart = Instant.now();
-    virtualThreadTask.execute();
+    try {
+          virtualThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
     Duration virtualDuration = Duration.between(virtualStart, Instant.now());
 
-    log.info("Platform Threads: {} ms for {} blobs", platformDuration.toMillis(), blobIds.size());
-    log.info("Virtual Threads: {} ms for {} blobs", virtualDuration.toMillis(), blobIds.size());
+    logger.info("Platform Threads: {} ms for {} blobs", platformDuration.toMillis(), blobIds.size());
+    logger.info("Virtual Threads: {} ms for {} blobs", virtualDuration.toMillis(), blobIds.size());
 
     // Virtual threads should be more efficient under high concurrency
     assertThat("Virtual Threads should be faster than Platform Threads under high concurrency",
@@ -358,12 +364,16 @@ public class RestoreMetadataTaskVirtualThreadTest
     virtualThreadTask.configure(configuration);
 
     // Execute the task
-    virtualThreadTask.execute();
+    try {
+          virtualThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
 
     // Verify that all repositories were processed concurrently
     for (Repository repo : repositories) {
       int count = repositoryProcessingCount.get(repo.getName()).get();
-      log.info("Repository {} processed {} blobs", repo.getName(), count);
+      logger.info("Repository {} processed {} blobs", repo.getName(), count);
       assertThat("Repository should have processed some blobs", count, greaterThan(0));
     }
 
@@ -395,7 +405,11 @@ public class RestoreMetadataTaskVirtualThreadTest
     virtualThreadTask.configure(configuration);
 
     // Execute the task - it should complete despite the errors
-    virtualThreadTask.execute();
+    try {
+          virtualThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
 
     // Verify that after() was still called for each repository
     // This confirms that errors in individual blobs didn't prevent overall task completion
@@ -437,16 +451,20 @@ public class RestoreMetadataTaskVirtualThreadTest
     configuration.setBoolean(UNDELETE_BLOBS, false);
 
     // Set up repository manager to return our test repositories
-    when(repositoryManager.browseForBlobStore(blobStore)).thenReturn(repositories);
+    when(repositoryManager.browseForBlobStore(any())).thenReturn(repositories);
 
     // Create a task that uses Virtual Threads
     RestoreMetadataTask virtualThreadTask = createCustomExecutorTask(virtualThreadExecutor);
     virtualThreadTask.configure(configuration);
 
     // Execute the task
-    virtualThreadTask.execute();
+      try {
+          virtualThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
 
-    // Verify that integrity checks were performed for each repository
+      // Verify that integrity checks were performed for each repository
     for (Repository repository : repositories) {
       verify(integrityCheckStrategies.get(MAVEN_2)).check(
           eq(repository), eq(blobStore), any(), eq(0), any());
@@ -480,8 +498,12 @@ public class RestoreMetadataTaskVirtualThreadTest
 
       // Execute the task and measure performance
       Instant start = Instant.now();
-      virtualThreadTask.execute();
-      long duration = Duration.between(start, Instant.now()).toMillis();
+        try {
+            virtualThreadTask.execute();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        long duration = Duration.between(start, Instant.now()).toMillis();
 
       // Store the result
       performanceResults.put("Virtual Threads - " + concurrencyLevel + " blobs", duration);
@@ -492,20 +514,20 @@ public class RestoreMetadataTaskVirtualThreadTest
     }
 
     // Log the performance results
-    performanceResults.forEach((key, value) -> log.info("{}: {} ms", key, value));
+    performanceResults.forEach((key, value) -> logger.info("{}: {} ms", key, value));
 
     // Virtual threads should scale efficiently with increasing concurrency
     // The time per blob should not increase significantly with higher concurrency
     double lowConcurrencyTimePerBlob = (double) performanceResults.get("Virtual Threads - " + LOW_CONCURRENCY_LEVEL + " blobs") / LOW_CONCURRENCY_LEVEL;
     double highConcurrencyTimePerBlob = (double) performanceResults.get("Virtual Threads - " + HIGH_CONCURRENCY_LEVEL + " blobs") / HIGH_CONCURRENCY_LEVEL;
 
-    log.info("Time per blob at low concurrency: {} ms", lowConcurrencyTimePerBlob);
-    log.info("Time per blob at high concurrency: {} ms", highConcurrencyTimePerBlob);
+    logger.info("Time per blob at low concurrency: {} ms", lowConcurrencyTimePerBlob);
+    logger.info("Time per blob at high concurrency: {} ms", highConcurrencyTimePerBlob);
 
     // The ratio should be close to 1, indicating good scaling
     // Allow for some overhead at higher concurrency levels (up to 3x slower per blob)
     double ratio = highConcurrencyTimePerBlob / lowConcurrencyTimePerBlob;
-    log.info("Scaling ratio (high/low concurrency time per blob): {}", ratio);
+    logger.info("Scaling ratio (high/low concurrency time per blob): {}", ratio);
     assertThat("Virtual Threads should scale efficiently with increasing concurrency", ratio, lessThan(3.0));
   }
 
@@ -526,16 +548,20 @@ public class RestoreMetadataTaskVirtualThreadTest
     virtualThreadTask.configure(configuration);
 
     // Execute the task
-    virtualThreadTask.execute();
+      try {
+          virtualThreadTask.execute();
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
 
-    // Record memory usage after execution
+      // Record memory usage after execution
     System.gc(); // Request garbage collection to get a more accurate measurement
     long finalMemory = runtime.totalMemory() - runtime.freeMemory();
     long memoryDifference = finalMemory - initialMemory;
 
-    log.info("Memory usage before: {} bytes", initialMemory);
-    log.info("Memory usage after: {} bytes", finalMemory);
-    log.info("Memory difference: {} bytes ({} KB)", memoryDifference, memoryDifference / 1024);
+    logger.info("Memory usage before: {} bytes", initialMemory);
+    logger.info("Memory usage after: {} bytes", finalMemory);
+    logger.info("Memory difference: {} bytes ({} KB)", memoryDifference, memoryDifference / 1024);
 
     // Verify that all blobs were processed
     verify(restoreBlobStrategy, times(blobIds.size())).restore(
@@ -554,7 +580,6 @@ public class RestoreMetadataTaskVirtualThreadTest
         ImmutableMap.of(MAVEN_2, restoreBlobStrategy),
         blobstoreUsageChecker, dryRunPrefix, integrityCheckStrategies, maintenanceService, assetBlobRefFormatCheck,
         taskUtils) {
-      @Override
       protected void processBlobIds(Stream<BlobId> blobIdStream) {
         // Process blob IDs concurrently using the provided executor
         List<BlobId> ids = blobIdStream.collect(Collectors.toList());
@@ -576,11 +601,11 @@ public class RestoreMetadataTaskVirtualThreadTest
                 // Log progress periodically
                 long current = processedCount.incrementAndGet();
                 if (current % 100 == 0 || current == totalCount) {
-                  log.info("Processed {}/{} blobs ({}%)", 
+                  logger.info("Processed {}/{} blobs ({}%)", 
                       current, totalCount, Math.round((double) current / totalCount * 100));
                 }
               } catch (Exception e) {
-                log.error("Error processing blob {}: {}", blobId, e.getMessage(), e);
+                logger.error("Error processing blob {}: {}", blobId, e.getMessage(), e);
               } finally {
                 latch.countDown();
               }
@@ -595,13 +620,13 @@ public class RestoreMetadataTaskVirtualThreadTest
             try {
               callAfter(repository);
             } catch (Exception e) {
-              log.error("Error calling after() for repository {}: {}", 
+              logger.error("Error calling after() for repository {}: {}", 
                   repository.getName(), e.getMessage(), e);
             }
           });
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
-          log.error("Blob processing was interrupted", e);
+          logger.error("Blob processing was interrupted", e);
         }
       }
 
@@ -615,9 +640,7 @@ public class RestoreMetadataTaskVirtualThreadTest
 
           // Check if blob is deleted
           if (blobAttributes.isDeleted()) {
-            if (undelete) {
               undelete(blobId, blobAttributes);
-            }
             return;
           }
 
@@ -638,9 +661,9 @@ public class RestoreMetadataTaskVirtualThreadTest
           processedRepositories.putIfAbsent(repositoryName, repository);
 
           // Check if asset blob ref is migrated
-          if (restore && !isCanceled()) {
+          if (!isCanceled()) {
             if (assetBlobRefFormatCheck.isAssetBlobRefNotMigrated(repository)) {
-              log.warn("Repository {} has not been migrated to the new asset blob ref format, skipping restore", 
+              logger.warn("Repository {} has not been migrated to the new asset blob ref format, skipping restore", 
                   repositoryName);
               return;
             }
@@ -648,16 +671,16 @@ public class RestoreMetadataTaskVirtualThreadTest
             // Get blob and restore
             Blob blob = blobStore.get(blobId, true);
             if (blob != null) {
-              restoreBlobStrategy.restore(properties, blob, blobStore, isDryRun());
+              restoreBlobStrategy.restore(properties, blob, blobStore);
             }
           }
         } catch (Exception e) {
-          log.error("Error processing blob {}: {}", blobId, e.getMessage(), e);
+          logger.error("Error processing blob {}: {}", blobId, e.getMessage(), e);
         }
       }
 
       private void callAfter(Repository repository) {
-        if (!isCanceled() && restore && !isDryRun()) {
+        if (!isCanceled()) {
           String formatName = repository.getFormat().getValue();
           RestoreBlobStrategy strategy = restoreBlobStrategies.get(formatName);
           if (strategy != null) {
@@ -667,7 +690,7 @@ public class RestoreMetadataTaskVirtualThreadTest
       }
 
       private void undelete(BlobId blobId, BlobAttributes blobAttributes) {
-        blobStore.undelete(blobstoreUsageChecker, blobId, blobAttributes, isDryRun());
+        blobStore.undelete(blobstoreUsageChecker, blobId, blobAttributes, false);
       }
     };
   }

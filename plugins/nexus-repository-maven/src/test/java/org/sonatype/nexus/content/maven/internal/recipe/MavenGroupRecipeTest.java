@@ -151,8 +151,9 @@ public class MavenGroupRecipeTest
               // Simulate repository operation
               underTest.apply(mavenGroupRepository);
               successCount.incrementAndGet();
-            } 
-            finally {
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            } finally {
               latch.countDown();
             }
           });

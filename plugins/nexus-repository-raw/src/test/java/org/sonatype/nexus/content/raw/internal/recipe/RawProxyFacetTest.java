@@ -26,9 +26,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.sonatype.goodies.testsupport.TestSupport;
+import org.sonatype.nexus.common.collect.AttributesMap;
 import org.sonatype.nexus.common.template.EscapeHelper;
 import org.sonatype.nexus.content.raw.RawContentFacet;
 import org.sonatype.nexus.repository.Repository;
+import org.sonatype.nexus.repository.content.facet.ContentProxyFacetSupport;
 import org.sonatype.nexus.repository.httpclient.HttpClientFacet;
 import org.sonatype.nexus.repository.view.Content;
 import org.sonatype.nexus.repository.view.Context;
@@ -170,7 +172,7 @@ class RawProxyFacetTest extends TestSupport
   @DisplayName("Should use virtual threads for content operations")
   void virtualThreadsForContentOperations() throws Exception {
     // Setup mocks for getCachedContent
-    Map<String, Object> attributes = mock(Map.class);
+    AttributesMap attributes = new AttributesMap();
     when(context.getAttributes()).thenReturn(attributes);
     when(attributes.require(TokenMatcher.State.class)).thenReturn(tokenMatcherState);
     when(tokenMatcherState.getTokens()).thenReturn(Map.of(RawRecipeSupport.PATH_NAME, "/test/path"));
@@ -191,7 +193,7 @@ class RawProxyFacetTest extends TestSupport
   @DisplayName("Should use pattern matching with instanceof for token state")
   void patternMatchingWithInstanceOf() throws Exception {
     // Setup context with TokenMatcher.State
-    Map<String, Object> attributes = mock(Map.class);
+    AttributesMap attributes = new AttributesMap();
     when(context.getAttributes()).thenReturn(attributes);
     when(attributes.require(TokenMatcher.State.class)).thenReturn(tokenMatcherState);
     when(tokenMatcherState.getTokens()).thenReturn(Map.of(RawRecipeSupport.PATH_NAME, "/pattern/matching/test"));
@@ -221,7 +223,7 @@ class RawProxyFacetTest extends TestSupport
       AtomicInteger successCount = new AtomicInteger(0);
       
       // Setup mocks
-      Map<String, Object> attributes = mock(Map.class);
+      AttributesMap attributes = new AttributesMap();
       when(context.getAttributes()).thenReturn(attributes);
       when(attributes.require(TokenMatcher.State.class)).thenReturn(tokenMatcherState);
       when(tokenMatcherState.getTokens()).thenReturn(Map.of(RawRecipeSupport.PATH_NAME, "/concurrent/test"));
@@ -241,7 +243,7 @@ class RawProxyFacetTest extends TestSupport
           } 
           catch (Exception e) {
             // Log exception but don't fail the test
-            log.error("Error in concurrent operation", e);
+            logger.error("Error in concurrent operation", e);
           }
         }, executor);
       }
@@ -262,7 +264,7 @@ class RawProxyFacetTest extends TestSupport
   @DisplayName("Should use string templates for error messages")
   void stringTemplatesForErrorMessages() throws Exception {
     // Setup mocks to force an exception
-    Map<String, Object> attributes = mock(Map.class);
+    AttributesMap attributes = new AttributesMap();
     when(context.getAttributes()).thenReturn(attributes);
     when(attributes.require(TokenMatcher.State.class)).thenReturn(tokenMatcherState);
     when(tokenMatcherState.getTokens()).thenReturn(Map.of(RawRecipeSupport.PATH_NAME, "/string/template/test"));

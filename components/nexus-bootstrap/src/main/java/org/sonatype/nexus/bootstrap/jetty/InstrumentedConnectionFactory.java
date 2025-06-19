@@ -123,12 +123,6 @@ public final class InstrumentedConnectionFactory
 	}
 
 	@Override
-	public boolean onIdleExpired(TimeoutException timeoutException) {
-		// TODO Auto-generated method stub
-		return false;
-	}
-
-	@Override
 	public long getMessagesIn() {
 		// TODO Auto-generated method stub
 		return 0;
@@ -156,6 +150,12 @@ public final class InstrumentedConnectionFactory
 	public long getCreatedTimeStamp() {
 		// TODO Auto-generated method stub
 		return 0;
+	}
+
+	@Override
+	public boolean onIdleExpired(TimeoutException timeoutException) {
+		// TODO Auto-generated method stub
+		return false;
 	}
   }
 }

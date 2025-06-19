@@ -84,7 +84,6 @@
     <dependency>
       <groupId>jakarta.enterprise</groupId>
       <artifactId>jakarta.enterprise.cdi-api</artifactId>
-      <version>4.0.1</version>
     </dependency>
 
     <dependency>
@@ -174,19 +173,16 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-core</artifactId>
-      <version>2.16.1</version>
     </dependency>
 
     <dependency>
       <groupId>com.fasterxml.jackson.datatype</groupId>
       <artifactId>jackson-datatype-joda</artifactId>
-      <version>2.16.1</version>
     </dependency>
 
     <dependency>
       <groupId>com.fasterxml.jackson.datatype</groupId>
       <artifactId>jackson-datatype-jdk8</artifactId>
-      <version>2.16.1</version>
     </dependency>
 
     <dependency>
@@ -232,44 +228,5 @@
       <artifactId>nexus-task-logging</artifactId>
     </dependency>
   </dependencies>
-
-  <build>
-    <plugins>
-      <!-- Configure Java 21 compilation -->
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <configuration>
-          <source>21</source>
-          <target>21</target>
-          <release>21</release>
-        </configuration>
-      </plugin>
-      
-      <!-- Configure OSGi bundle packaging for Java 21 compatibility -->
-      <plugin>
-        <groupId>org.apache.felix</groupId>
-        <artifactId>maven-bundle-plugin</artifactId>
-        <version>5.1.9</version>
-        <extensions>true</extensions>
-        <configuration>
-          <instructions>
-            <Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
-            <Bundle-Name>${project.name}</Bundle-Name>
-            <Bundle-Version>${project.version}</Bundle-Version>
-            <Export-Package>
-              org.sonatype.nexus.common.*
-            </Export-Package>
-            <Import-Package>
-              *
-            </Import-Package>
-            <Bundle-RequiredExecutionEnvironment>JavaSE-21</Bundle-RequiredExecutionEnvironment>
-            <Require-Capability>
-              osgi.ee;filter:="(&amp;(osgi.ee=JavaSE)(version=21))"</Require-Capability>
-          </instructions>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
   
 </project>

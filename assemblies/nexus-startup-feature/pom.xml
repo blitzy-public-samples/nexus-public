@@ -39,7 +39,12 @@
       <groupId>org.sonatype.nexus</groupId>
       <artifactId>nexus-pax-logging</artifactId>
     </dependency>
-
+    
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+    </dependency>
+    
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-logback</artifactId>
@@ -74,7 +79,12 @@
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-security</artifactId>
     </dependency>
-
+	
+	<dependency>
+	    <groupId>ch.qos.logback.access</groupId>
+	    <artifactId>logback-access-jetty12</artifactId>
+	</dependency>
+	  
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-server</artifactId>
@@ -128,6 +138,7 @@
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-jetty12</artifactId>
+      <version>4.2.29</version>
     </dependency>
 
     <dependency>
@@ -222,6 +233,18 @@
       <artifactId>groovy-xml</artifactId>
       <scope>provided</scope>
     </dependency>
+    <dependency>
+	  <groupId>jakarta.validation</groupId>
+	  <artifactId>jakarta.validation-api</artifactId>
+    </dependency>
+    
+    <!-- https://mvnrepository.com/artifact/org.osgi/org.osgi.util.pushstream -->
+	<dependency>
+	    <groupId>org.osgi</groupId>
+	    <artifactId>org.osgi.util.pushstream</artifactId>
+	    <version>1.1.0</version>
+	</dependency>
+     
   </dependencies>
 
   <build>
@@ -257,6 +280,12 @@
           <enableGeneration>true</enableGeneration>
           <aggregateFeatures>true</aggregateFeatures>
           <startLevel>8</startLevel>
+          <!--ignoreScopeProvided>true</ignoreScopeProvided-->
+          <javase>${maven.compiler.version}</javase>
+          <blacklistedBundles>
+          	<bundle>txw2</bundle>
+          </blacklistedBundles>
+          <includeTransitiveDependency>true</includeTransitiveDependency>
         </configuration>
       </plugin>
     </plugins>

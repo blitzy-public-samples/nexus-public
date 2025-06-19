@@ -66,7 +66,7 @@ public class NexusRequestCustomizer
     this.dockerBehindReverseProxyTokenRequestPattern = initDockerBehindReverseProxyTokenRequestPattern();
   }
   
-  @Override
+  //@Override
   public Request customize(Request request, HttpFields.Mutable responseHeaders) {
 	  // TODO: FIXME
 	  return request;

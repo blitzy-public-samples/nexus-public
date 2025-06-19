@@ -708,7 +708,7 @@ owners.
 				<plugin>
 					<groupId>org.apache.felix</groupId>
 					<artifactId>maven-bundle-plugin</artifactId>
-					<version>5.1.6</version>
+					<version>5.1.9</version>
 					<extensions>true</extensions>
 					<configuration>
 						<instructions>
@@ -1634,7 +1634,7 @@ owners.
 					<dependency>
 						<groupId>io.dropwizard.metrics</groupId>
 						<artifactId>metrics-core</artifactId>
-						<version>4.1.35</version>
+						<version>4.2.29</version>
 					</dependency>
 					<dependency>
 						<groupId>org.apache.shiro</groupId>
@@ -1679,8 +1679,8 @@ owners.
 							<release>13/14/15</release> -->
 							<compilerArgs>
 								<arg>--enable-preview</arg>
-								<arg>-Xmaxerrs</arg>
-								<arg>10000</arg>
+								<arg>--add-opens</arg>
+								<arg>jdk.management/com.sun.management=ALL-UNNAMED</arg>
 							</compilerArgs>
 						</configuration>
 					</plugin>

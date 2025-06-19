@@ -42,6 +42,6 @@ public final class InstrumentedQueuedThreadPool
     super(registry);
     // Configure Virtual Thread support for I/O-bound operations
     // Platform threads are maintained for CPU-bound operations by default
-    setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    //setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
   }
 }

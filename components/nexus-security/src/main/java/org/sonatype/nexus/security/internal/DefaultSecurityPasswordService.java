@@ -68,9 +68,9 @@ public class DefaultSecurityPasswordService
     // Create and set a hash service according to our hashing policies
     // Java 21 provides optimized implementations of SHA-512 on 64-bit platforms
     DefaultHashService hashService = new DefaultHashService();
-    hashService.setHashAlgorithmName(DEFAULT_HASH_ALGORITHM);
-    hashService.setHashIterations(DEFAULT_HASH_ITERATIONS);
-    hashService.setGeneratePublicSalt(true); // Always use a public salt for better security
+    hashService.setDefaultAlgorithmName(DEFAULT_HASH_ALGORITHM);
+    //hashService.setHashIterations(DEFAULT_HASH_ITERATIONS);
+    //hashService.setGeneratePublicSalt(true); // Always use a public salt for better security
     this.passwordService.setHashService(hashService);
   }
 

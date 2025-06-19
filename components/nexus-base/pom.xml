@@ -84,13 +84,11 @@
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-core</artifactId>
-      <version>3.2.0</version>
     </dependency>
 
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-httpclient</artifactId>
-      <version>3.2.0</version>
       <exclusions>
           <exclusion>
             <groupId>commons-logging</groupId>
@@ -107,12 +105,16 @@
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-servlet</artifactId>
-      <version>3.2.0</version>
     </dependency>
     <dependency>
       <groupId>io.dropwizard.metrics</groupId>
       <artifactId>metrics-healthchecks</artifactId>
-      <version>3.2.0</version>
+      <exclusions>
+	        <exclusion>
+	            <groupId>io.dropwizard.metrics</groupId>
+	            <artifactId>metrics-core</artifactId>
+	        </exclusion>
+	    </exclusions>
     </dependency>
 
     <dependency>

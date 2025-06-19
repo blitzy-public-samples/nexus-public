@@ -16,6 +16,7 @@ import org.slf4j.helpers.ThreadLocalMapOfStacks;
 import org.slf4j.spi.MDCAdapter;
 
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -337,4 +338,15 @@ public class VirtualThreadMDCAdapter
       return false;
     }
   }
+  
+  public void clearDequeByKey(String key) {
+	  //TODOs: FIXME
+	  throw new RuntimeException("Not Implemented yet.");
+  }
+
+	@Override
+	public Deque<String> getCopyOfDequeByKey(String arg0) {
+		// TODO Auto-generated method stub
+		return null;
+	}
 }

@@ -1,0 +1,142 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.sonatype.nexus.assemblies</groupId>
+		<artifactId>nexus-assemblies</artifactId>
+		<version>3.77.0-08</version>
+	</parent>
+	<artifactId>nexus-blitzy-base-template</artifactId>
+	<packaging>karaf-assembly</packaging>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.apache.karaf.features</groupId>
+			<artifactId>framework</artifactId>
+			<type>kar</type>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.karaf.features</groupId>
+			<artifactId>standard</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+		</dependency>
+
+		<dependency>
+			<groupId>org.sonatype.nexus.assemblies</groupId>
+			<artifactId>nexus-startup-feature</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+		</dependency>
+		
+		<!-- https://mvnrepository.com/artifact/org.apache.karaf.features/enterprise -->
+		<dependency>
+		    <groupId>org.apache.karaf.features</groupId>
+		    <artifactId>enterprise</artifactId>
+		    <version>4.4.7</version>
+		    <type>pom</type>
+		    <scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.sonatype.nexus.assemblies</groupId>
+			<artifactId>nexus-boot-feature</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.sonatype.nexus.assemblies</groupId>
+			<artifactId>nexus-base-feature</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.sonatype.nexus</groupId>
+			<artifactId>nexus-open-core-edition</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.sonatype.nexus.assemblies</groupId>
+			<artifactId>nexus-core-feature</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.sonatype.nexus</groupId>
+			<artifactId>nexus-datastore-mybatis</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+			<scope>runtime</scope>
+		</dependency>
+
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.karaf.tooling</groupId>
+				<artifactId>karaf-maven-plugin</artifactId>
+				<extensions>true</extensions>
+				<configuration>
+				    <javase>21</javase>
+					<finalName>${project.artifactId}</finalName>
+					<installedBundles>
+						<installedBundle>${additional.bundle}</installedBundle>
+					</installedBundles>
+					<features>
+					     <feature>spifly</feature>
+						<feature>mvn:com.google.code.findbugs/jsr305/3.0.2</feature>
+					</features>
+					<startupFeatures>
+						<feature>nexus-startup-feature</feature>
+					</startupFeatures>
+					<blacklistedFeatures>
+						<feature>pax-url-wrap</feature>
+					</blacklistedFeatures>
+					<bootFeatures>
+
+					</bootFeatures>
+				</configuration>
+				<dependencies>
+					<dependency>
+						<groupId>org.osgi</groupId>
+						<artifactId>org.osgi.service.log</artifactId>
+						<version>1.4.0</version>
+					</dependency>
+				</dependencies>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-assembly-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>archive-assembly</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<appendAssemblyId>false</appendAssemblyId>
+							<descriptors>
+								<descriptor>
+									${project.basedir}/src/main/assembly/bundle.xml</descriptor>
+							</descriptors>
+
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>

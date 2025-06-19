@@ -265,7 +265,7 @@ public class Launcher
    * Customize logging overrides presented as properties. These will be superseded by any logback overrides.
    */
   private void configureInitialLoggingOverrides(final Map<String, String> props) {
-    LoggerContext loggerContext = loggerContext();
+	  ILoggerFactory  loggerContext = loggerContext();
     if (props != null) {
       props.entrySet()
           .stream()
@@ -277,16 +277,16 @@ public class Launcher
     }
   }
 
-  private void setLoggerLevel(final LoggerContext loggerContext, final String logger, final String level) {
-    loggerContext.getLogger(Launcher.class).debug("Initialising logger: {} = {}", logger, level);
-    loggerContext.getLogger(logger).setLevel(Level.valueOf(level));
+  private void setLoggerLevel(final ILoggerFactory loggerContext, final String logger, final String level) {
+    loggerContext.getLogger(Launcher.class.getName()).debug("Initialising logger: {} = {}", logger, level);
+    loggerContext.getLogger(logger).atLevel(org.slf4j.event.Level.valueOf(level));
   }
 
-  private LoggerContext loggerContext() {
+  private ILoggerFactory loggerContext() {
     ILoggerFactory factory = LoggerFactory.getILoggerFactory();
     if (factory instanceof LoggerContext) {
       return (LoggerContext) factory;
     }
-    return (LoggerContext) LoggerFactory.getILoggerFactory();
+    return LoggerFactory.getILoggerFactory();
   }
 }

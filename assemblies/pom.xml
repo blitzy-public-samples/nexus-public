@@ -35,6 +35,7 @@
     <module>nexus-core-feature</module>
     <module>nexus-base-overlay</module>
     <module>nexus-base-template</module>
+    <module>nexus-blitzy-base-template</module>
   </modules>
 
   <dependencyManagement>

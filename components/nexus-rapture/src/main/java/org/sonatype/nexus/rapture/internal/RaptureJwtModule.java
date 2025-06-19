@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.rapture.internal;
 
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.common.app.FeatureFlag;
 import org.sonatype.nexus.rapture.internal.security.JwtAuthenticationFilter;

@@ -152,13 +152,13 @@ public class JettyServer
     // For all arguments, load properties or parse XMLs
     XmlConfiguration last = null;
     for (String arg : args) {
-      //URL url = Resource.newResource(arg).getURL();
+      //Resource url = Resource.newResource(arg);
       Resource url = ResourceFactory.root().newResource(arg);
 
       if (url.getFileName().toLowerCase(Locale.ENGLISH).endsWith(".properties")) {
         log.info("Loading properties: {}", url);
         
-        props.load(new FileInputStream(url.getPath().toFile()));
+        props.load(url.newInputStream());
       }
       else {
         log.info("Applying configuration: {}", url);

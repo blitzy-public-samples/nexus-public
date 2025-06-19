@@ -1,22 +1,22 @@
-<?xml version="1.0"?>
-<!DOCTYPE Configure PUBLIC "-//Jetty//Configure//EN" "http://www.eclipse.org/jetty/configure_9_0.dtd">
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Configure PUBLIC "-//Jetty//Configure//EN" "https://jetty.org/configure_10_0.dtd">
 <Configure id="Server" class="org.eclipse.jetty.server.Server">
-
+<!--
   <Arg name="threadpool">
     <New id="threadpool" class="org.sonatype.nexus.bootstrap.jetty.InstrumentedQueuedThreadPool">
       <Set name="maxThreads">400</Set>
     </New>
   </Arg>
-
+  -->
   <New id="NexusHandler" class="org.sonatype.nexus.bootstrap.jetty.InstrumentedHandler">
     <Arg>
-      <New id="NexusWebAppContext" class="org.eclipse.jetty.webapp.WebAppContext">
+      <New id="NexusWebAppContext" class="org.eclipse.jetty.ee10.webapp.WebAppContext">
         <Set name="descriptor"><Property name="jetty.etc"/>/nexus-web.xml</Set>
         <Set name="contextPath"><Property name="nexus-context-path"/></Set>
         <Set name="throwUnavailableOnStartupException">true</Set>
         <Set name="configurationClasses">
           <Array type="java.lang.String">
-            <Item>org.eclipse.jetty.webapp.WebXmlConfiguration</Item>
+            <Item>org.eclipse.jetty.ee10.webapp.WebXmlConfiguration</Item>
           </Array>
         </Set>
       </New>
@@ -24,7 +24,7 @@
   </New>
 
   <Set name="handler">
-    <New id="Handlers" class="org.eclipse.jetty.server.handler.HandlerCollection">
+    <New id="Handlers" class="org.eclipse.jetty.server.Handler$Sequence">
       <Set name="handlers">
         <Array type="org.eclipse.jetty.server.Handler">
           <Item>
@@ -103,11 +103,11 @@
     </Arg>
   </Call>
 
-  <!-- Add the static log -->
+  <!-- Add the static log 
   <Call name="addBean">
     <Arg>
       <Get class="org.eclipse.jetty.util.log.Log" name="Log" />
     </Arg>
   </Call>
-
+-->
 </Configure>

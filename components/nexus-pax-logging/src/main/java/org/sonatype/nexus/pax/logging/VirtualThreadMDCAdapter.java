@@ -17,6 +17,7 @@ import org.slf4j.spi.MDCAdapter;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -386,4 +387,27 @@ public class VirtualThreadMDCAdapter implements MDCAdapter
     // Use MDCUtils to ensure proper context application
     MDC.setContextMap(contextMap);
   }
+  
+  public void clearDequeByKey(String key) {
+	  //TODOs: FIXME
+	  throw new RuntimeException("Not Implemented yet.");
+  }
+
+@Override
+public Deque<String> getCopyOfDequeByKey(String arg0) {
+	// TODO Auto-generated method stub
+	return null;
+}
+
+@Override
+public String popByKey(String arg0) {
+	// TODO Auto-generated method stub
+	return null;
+}
+
+@Override
+public void pushByKey(String arg0, String arg1) {
+	// TODO Auto-generated method stub
+	
+}
 }

@@ -84,13 +84,6 @@ owners.
 			<type>xml</type>
 		</dependency>
 
-		<dependency>
-			<groupId>org.sonatype.nexus.assemblies</groupId>
-			<artifactId>nexus-startup-feature</artifactId>
-			<classifier>features</classifier>
-			<type>xml</type>
-		</dependency>
-
 		<!-- override to exclude sshd-osgi from dependency list -->
 		<dependency>
 			<groupId>org.apache.karaf</groupId>
@@ -105,6 +98,12 @@ owners.
 			<scope>provided</scope>
 		</dependency>
 
+		<dependency>
+			<groupId>org.sonatype.nexus.assemblies</groupId>
+			<artifactId>nexus-startup-feature</artifactId>
+			<classifier>features</classifier>
+			<type>xml</type>
+		</dependency>
 		<!--
     Installed/boot features (runtime-scope)
     -->
@@ -148,36 +147,34 @@ owners.
 			<scope>runtime</scope>
 		</dependency>
 		
-		
 	</dependencies>
-
 	<build>
 		<plugins>
-			<plugin>
-				<groupId>org.codehaus.gmavenplus</groupId>
-				<artifactId>gmavenplus-plugin</artifactId>
-				<executions>
-					<execution>
-						<id>pax-url-settings</id>
-						<phase>initialize</phase>
-						<goals>
-							<goal>execute</goal>
-						</goals>
-						<configuration>
-							<scripts>
-								<script>
-									// workaround https://issues.apache.org/jira/browse/KARAF-4288
-									def settingsFile = session.request.userSettingsFile
-									if (settingsFile?.isFile()) {
-									// pass custom settings file to pax-url as karaf-maven-plugin may need it to fetch content
-									System.setProperty('org.ops4j.pax.url.mvn.settings', session.request.userSettingsFile.path)
-									}
-								</script>
-							</scripts>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
+			 <plugin>
+                               <groupId>org.codehaus.gmavenplus</groupId>
+                               <artifactId>gmavenplus-plugin</artifactId>
+                               <executions>
+                                      <execution>
+                                              <id>pax-url-settings</id>
+                                              <phase>initialize</phase>
+                                              <goals>
+                                                      <goal>execute</goal>
+                                              </goals>
+                                              <configuration>
+                                                      <scripts>
+                                                              <script>
+                                                                      // workaround https://issues.apache.org/jira/browse/KARAF-4288
+                                                                      def settingsFile = session.request.userSettingsFile
+                                                                      if (settingsFile?.isFile()) {
+                                                                      // pass custom settings file to pax-url as karaf-maven-plugin may need it to fetch content
+                                                                      System.setProperty('org.ops4j.pax.url.mvn.settings', session.request.userSettingsFile.path)
+                                                                      }
+                                                              </script>
+                                                      </scripts>
+                                              </configuration>
+                                      </execution>
+                              </executions>
+                      </plugin>
 
 			<plugin>
 				<groupId>org.apache.karaf.tooling</groupId>
@@ -204,7 +201,7 @@ owners.
 							avoids copying -->
 							<useReferenceUrls>true</useReferenceUrls>
 							<startupFeatures>
-								<feature>wrap</feature>
+							    <feature>wrap</feature>
 								<feature>bundle</feature>
 								<feature>config</feature>
 								<feature>deployer</feature>
@@ -220,10 +217,27 @@ owners.
 								<feature>system</feature>
 								<feature>nexus-startup-feature</feature>
 							</startupFeatures>
+							<libraries>
+							    <library>mvn:org.osgi/org.osgi.service.log/1.5.0</library>
+							</libraries>
+							<installedBundles>
+                        		<bundle>mvn:org.osgi/org.osgi.service.log/1.5.0</bundle>
+                    		</installedBundles>
+							<blacklistedFeatures>
+								<feature>pax-url-wrap</feature>
+							</blacklistedFeatures>
+							<blacklistedBundles>
+							    <bundle>mvn:com.google.guava/guava/33.0.0-jre</bundle> 
+						         <bundle>mvn:org.glassfish.jaxb/txw2/4.0.2</bundle>
+						         <bundle>mvn:org.osgi/org.osgi.util.function/1.1.0</bundle>
+						    </blacklistedBundles>
 							<bootFeatures>
 								<feature>nexus-boot-feature</feature>
 							</bootFeatures>
+							<includeTransitiveDependency>true</includeTransitiveDependency>
 							<installedFeatures>
+							    <feature>jaxb</feature>
+							    <feature>jaxb-runtime</feature>
 								<feature>management</feature>
 								<!--
                 To enable remote access to the karaf console, uncomment the ssh feature and add
@@ -324,12 +338,10 @@ owners.
 									append="true">
 									<string>${line.separator}</string>
 									<string>
-										# SONATYPE: disable .cfg store on
-										feature install
+										# SONATYPE: disable .cfg store on feature install
 										configCfgStore=false
 
-										# SONATYPE: disable automatic updates
-										and retries
+										# SONATYPE: disable automatic updates and retries
 										serviceRequirements=disable
 										updateSnapshots=false
 										scheduleMaxRun=1
@@ -392,5 +404,5 @@ owners.
 			</plugin>
 		</plugins>
 	</build>
-
+	
 </project>

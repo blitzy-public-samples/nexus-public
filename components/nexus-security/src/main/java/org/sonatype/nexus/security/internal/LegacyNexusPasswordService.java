@@ -66,22 +66,22 @@ public class LegacyNexusPasswordService
     //Initialize and configure sha1 password service
     this.sha1PasswordService = new DefaultPasswordService();
     DefaultHashService sha1HashService = new DefaultHashService();
-    sha1HashService.setHashAlgorithmName("SHA-1");
-    sha1HashService.setHashIterations(1);
-    sha1HashService.setGeneratePublicSalt(false);
+    sha1HashService.setDefaultAlgorithmName("SHA-1");
+    //sha1HashService.setHashIterations(1);
+    //sha1HashService.setGeneratePublicSalt(false);
     // Set the secure random number generator
-    sha1HashService.setRandomNumberGenerator(secureRng);
+    //sha1HashService.setRandomNumberGenerator(secureRng);
     this.sha1PasswordService.setHashService(sha1HashService);
     this.sha1PasswordService.setHashFormat(new HexFormat());
 
     //Initialize and configure md5 password service
     this.md5PasswordService = new DefaultPasswordService();
     DefaultHashService md5HashService = new DefaultHashService();
-    md5HashService.setHashAlgorithmName("MD5");
-    md5HashService.setHashIterations(1);
-    md5HashService.setGeneratePublicSalt(false);
+    md5HashService.setDefaultAlgorithmName("MD5");
+    //md5HashService.setHashIterations(1);
+    //md5HashService.setGeneratePublicSalt(false);
     // Set the secure random number generator
-    md5HashService.setRandomNumberGenerator(secureRng);
+    //md5HashService.setRandomNumberGenerator(secureRng);
     this.md5PasswordService.setHashService(md5HashService);
     this.md5PasswordService.setHashFormat(new HexFormat());
   }

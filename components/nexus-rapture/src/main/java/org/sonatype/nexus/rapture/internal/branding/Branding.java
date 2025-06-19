@@ -16,8 +16,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.regex.Matcher;
 import javax.annotation.Nullable;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import org.sonatype.nexus.common.app.BaseUrlHolder;
 import org.sonatype.nexus.rapture.StateContributor;
 

@@ -15,7 +15,7 @@ package org.sonatype.nexus.capability;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import jakarta.annotation.Nullable;
+import javax.annotation.Nullable;
 import jakarta.validation.ValidationException;
 
 import org.sonatype.goodies.testsupport.TestSupport;

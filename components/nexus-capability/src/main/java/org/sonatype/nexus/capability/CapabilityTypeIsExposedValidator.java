@@ -14,9 +14,8 @@ package org.sonatype.nexus.capability;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
-
-import org.sonatype.nexus.validation.ConstraintValidatorSupport;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -26,7 +25,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
  */
 @Named
 public class CapabilityTypeIsExposedValidator
-    extends ConstraintValidatorSupport<CapabilityTypeIsExposed, String>
+    implements ConstraintValidator<CapabilityTypeIsExposed, String>
 {
   private final CapabilityFactoryRegistry capabilityFactoryRegistry;
 
@@ -43,7 +42,6 @@ public class CapabilityTypeIsExposedValidator
   @Override
   public boolean isValid(final String value, final ConstraintValidatorContext context) {
     if (value != null) {
-      log.trace("Validating capability type is exposed: {}", value);
       CapabilityType type = CapabilityType.capabilityType(value);
       CapabilityDescriptor capabilityDescriptor = capabilityDescriptorRegistry.get(type);
       return capabilityFactoryRegistry.get(type) != null && capabilityDescriptor != null && capabilityDescriptor.isExposed();

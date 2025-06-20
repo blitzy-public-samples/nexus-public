@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.capability.condition.internal;
 
-import jakarta.annotation.Priority;
+import javax.annotation.Priority;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Provider;

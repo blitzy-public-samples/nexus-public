@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import jakarta.annotation.Nullable;
+import javax.annotation.Nullable;
 import jakarta.inject.Inject;
 import jakarta.inject.Provider;
 import jakarta.validation.ConstraintViolation;
@@ -167,8 +167,12 @@ public abstract class CapabilityDescriptorSupport<ConfigT>
     }
 
     Validator validator = validatorProvider.get();
-    Set<ConstraintViolation<Object>> violations = validator.validate(value, validationGroups.toArray(new Class<?>[]{}));
-    ConstraintViolations.maybePropagate(violations, log);
+//    Set<ConstraintViolation<Object>> violations = validator.validate(value, validationGroups.toArray(new Class<?>[]{}));
+//    ConstraintViolations.maybePropagate(violations, log);
+
+    Set<jakarta.validation.ConstraintViolation<Object>> violations = validator.validate(value, validationGroups.toArray(new Class<?>[]{}));
+    ConstraintViolations.maybePropagate((Set) violations, log);
+
   }
 
   private CapabilityReferenceFilter duplicatesFilter(

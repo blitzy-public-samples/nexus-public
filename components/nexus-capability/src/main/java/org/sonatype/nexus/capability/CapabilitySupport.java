@@ -16,7 +16,7 @@ import java.net.URL;
 import java.util.Map;
 import java.util.Optional;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.goodies.i18n.I18N;

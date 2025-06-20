@@ -49,6 +49,12 @@ owners.
 		<dependency>
 			<groupId>org.sonatype.nexus</groupId>
 			<artifactId>nexus-validation</artifactId>
+			<exclusions>
+				<exclusion>
+					<groupId>javax.validation</groupId>
+					<artifactId>validation-api</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 
 		<dependency>

@@ -265,7 +265,7 @@ public class VirtualThreadBlobStoreTest
             }
           }
           catch (Exception e) {
-            log.error("Error in virtual thread operation", e);
+            logger.error("Error in virtual thread operation", e);
           }
           finally {
             completionLatch.countDown();

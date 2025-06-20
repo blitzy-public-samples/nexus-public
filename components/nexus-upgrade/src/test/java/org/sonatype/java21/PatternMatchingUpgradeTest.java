@@ -19,7 +19,8 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.sonatype.goodies.testsupport.TestSupport;
-import org.sonatype.goodies.testsupport.group.Java21TestGroup;
+import org.sonatype.java21.Java21TestGroup;
+import org.sonatype.nexus.upgrade.plan.Dependency;
 import org.sonatype.nexus.upgrade.plan.DependencyResolver;
 import org.sonatype.nexus.upgrade.plan.DependencyResolver.CyclicDependencyException;
 import org.sonatype.nexus.upgrade.plan.DependencyResolver.UnresolvedDependencyException;
@@ -275,7 +276,7 @@ public class PatternMatchingUpgradeTest
     resolver.add(usersSchema, rolesData, securityConfig);
     
     // Resolve dependencies
-    List<UpgradeModel> resolved = resolver.resolve().ordered;
+    List<UpgradeModel> resolved = resolver.resolve().getOrdered();
     
     // Verify resolution order using pattern matching
     assertEquals(3, resolved.size());

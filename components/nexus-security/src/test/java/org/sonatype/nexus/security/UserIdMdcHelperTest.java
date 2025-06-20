@@ -41,7 +41,7 @@ import static org.sonatype.nexus.security.UserIdMdcHelper.KEY;
  * Tests for {@link UserIdMdcHelper}.
  */
 @ExtendWith(MockitoExtension.class)
-class UserIdMdcHelperTest
+public class UserIdMdcHelperTest
   extends TestSupport
 {
   private void reset() {

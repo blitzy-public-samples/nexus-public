@@ -18,13 +18,14 @@ import org.apache.shiro.authc.credential.PasswordService;
 import org.apache.shiro.authc.credential.DefaultPasswordService;
 import org.apache.shiro.authz.Permission;
 import org.apache.shiro.authz.permission.WildcardPermission;
-import org.apache.shiro.config.IniSecurityManagerFactory;
+//import org.apache.shiro.config.IniSecurityManagerFactory;
 import org.apache.shiro.mgt.DefaultSecurityManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.SimpleAccountRealm;
+import org.apache.shiro.realm.text.IniRealm;
 import org.apache.shiro.subject.Subject;
 import org.apache.shiro.util.ThreadContext;
-import org.apache.shiro.util.Factory;
+//import org.apache.shiro.util.Factory;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
@@ -210,13 +211,18 @@ public class ShiroJava21CompatibilityTest {
                            "admin = *\n";
         
         // Load the configuration
-        Factory<SecurityManager> factory = new IniSecurityManagerFactory(iniConfig);
-        SecurityManager manager = factory.getInstance();
-        
-        assertNotNull(manager, "SecurityManager should be created from INI configuration");
+//        Factory<SecurityManager> factory = new IniSecurityManagerFactory(iniConfig);
+            DefaultSecurityManager securityManager = new DefaultSecurityManager();
+//        SecurityManager manager = factory.getInstance();
+        IniRealm realm = new IniRealm(iniConfig);  // You can reuse parts of INI here
+        securityManager.setRealm(realm);
+
+
+
+        assertNotNull(securityManager, "SecurityManager should be created from INI configuration");
         
         // Test the configuration by authenticating a user defined in the INI
-        SecurityUtils.setSecurityManager(manager);
+        SecurityUtils.setSecurityManager(securityManager);
         Subject subject = SecurityUtils.getSubject();
         UsernamePasswordToken token = new UsernamePasswordToken("configuser", "configpass");
         subject.login(token);

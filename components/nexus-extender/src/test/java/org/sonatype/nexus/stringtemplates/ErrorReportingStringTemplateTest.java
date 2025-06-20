@@ -145,7 +145,8 @@ public class ErrorReportingStringTemplateTest
     // Test the negative condition
     retryCount = 2;
     Exception exception2 = assertThrows(IOException.class, () -> {
-      throw new IOException(STR."Operation failed after \{retryCount} attempts " +
+      throw new IOException(STR."Operation failed after \{
+              retryCount} attempts " +
           STR."\{retryCount > maxRetries ? "(exceeded maximum of " + maxRetries + " retries)" : ""}");
     });
     

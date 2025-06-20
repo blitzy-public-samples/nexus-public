@@ -154,7 +154,7 @@ public class StringTemplatesTest
     // Escaping the backslash to include literal \{ in output
     String escaped = STR."This shows a literal brace: \\{not a template} but this is: \{value}";
     
-    assertEquals("This shows a literal brace: \{not a template} but this is: sensitive", escaped);
+    assertEquals("This shows a literal brace: \\{not a template} but this is: sensitive", escaped);
   }
   
   /**

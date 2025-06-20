@@ -261,7 +261,9 @@ public class FeatureFlagPatternMatchingTest
         new FlagConfig(MultipleFeatureFlagsClass.class, new String[]{FLAG_1, FLAG_2}),
         new FlagConfig(InvertedFeatureFlagClass.class, new String[]{/* FLAG_1 should be false */}),
         new FlagConfig(EnabledByDefaultClass.class, new String[]{}), // Already enabled by default
-        new FlagConfig(MixedFeatureFlagsClass.class, new String[]{FLAG_1, /* FLAG_2 should be false */, FLAG_3})
+        new FlagConfig(MixedFeatureFlagsClass.class, new String[]{FLAG_1,
+                /* FLAG_2 should be false */
+                FLAG_3})
     };
     
     for (FlagConfig config : configs) {

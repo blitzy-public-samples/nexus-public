@@ -20,6 +20,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests for Java 21 record pattern matching with Nexus Extender configuration objects.
@@ -180,7 +181,7 @@ public class ExtenderConfigRecordPatternTest
     // Pattern matching with nested patterns and null-safe access
     String moduleVersion = switch (fullConfig) {
       case OptionalConfig(var n, var d, ModuleConfig(var mn, var mv, var me)) -> mv;
-      case OptionalConfig(var n, var d, null) -> "N/A";
+      case OptionalConfig(var n, var d, var m) when m == null -> "N/A";
       default -> "unknown";
     };
     
@@ -189,7 +190,7 @@ public class ExtenderConfigRecordPatternTest
     // Same check with the null module config
     String nullModuleVersion = switch (config) {
       case OptionalConfig(var n, var d, ModuleConfig(var mn, var mv, var me)) -> mv;
-      case OptionalConfig(var n, var d, null) -> "N/A";
+      case OptionalConfig(var n, var d, var m) when m==null -> "N/A";
       default -> "unknown";
     };
     

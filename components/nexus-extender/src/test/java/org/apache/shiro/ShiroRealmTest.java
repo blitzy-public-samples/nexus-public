@@ -13,6 +13,7 @@
 package org.apache.shiro;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -159,7 +160,7 @@ public class ShiroRealmTest
         containsInAnyOrder("MockRealmA", "MockRealmB", "MockRealmC"));
 
     // Verify that the realms are properly registered with the security manager
-    List<Realm> realms = realmSecurityManager.getRealms();
+    Collection<Realm> realms = realmSecurityManager.getRealms();
     assertThat(realms, hasSize(4)); // 3 mock realms + AuthorizingRealmImpl
 
     // Verify that each realm has the correct name

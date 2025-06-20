@@ -362,7 +362,7 @@ public class PatternMatchingTest
    */
   private String formatOptionalValue(Optional<String> optional) {
     return switch (optional) {
-      case Optional.empty() -> "No value present";
+      case Optional<String> opt when opt.isEmpty() -> "No value present";
       case Optional<String> opt when opt.get().length() > 10 -> "Long value: " + opt.get();
       case Optional<String> opt -> "Value: " + opt.get();
     };

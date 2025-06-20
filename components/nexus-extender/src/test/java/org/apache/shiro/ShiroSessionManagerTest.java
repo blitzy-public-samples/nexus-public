@@ -33,20 +33,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.shiro.session.ExpiredSessionException;
 import org.apache.shiro.session.InvalidSessionException;
 import org.apache.shiro.session.Session;
-import org.apache.shiro.session.mgt.DefaultSessionKey;
-import org.apache.shiro.session.mgt.DefaultSessionManager;
-import org.apache.shiro.session.mgt.SessionContext;
-import org.apache.shiro.session.mgt.SessionKey;
-import org.apache.shiro.session.mgt.SimpleSession;
+import org.apache.shiro.session.mgt.*;
 import org.apache.shiro.web.servlet.ShiroHttpServletRequest;
+import org.apache.shiro.web.session.mgt.DefaultWebSessionContext;
 import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
 import org.apache.shiro.web.session.mgt.WebSessionKey;
 import org.apache.shiro.web.session.mgt.WebSessionManager;
@@ -54,6 +49,9 @@ import org.apache.shiro.web.util.WebUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 
 /**
  * Tests for Apache Shiro 2.0.0 session management compatibility with Java 21.
@@ -86,8 +84,15 @@ public class ShiroSessionManagerTest
     
     assertNotNull(session);
     assertNotNull(session.getId());
-    assertFalse(session.isExpired());
-    
+
+    long timeout = session.getTimeout(); // in ms
+    Date lastAccess = session.getLastAccessTime();
+    Date now = new Date();
+
+    boolean expired = now.getTime() - lastAccess.getTime() > timeout;
+
+    assertFalse(expired);
+
     // Verify session timeout is set correctly
     assertEquals(500, session.getTimeout());
     
@@ -220,9 +225,13 @@ public class ShiroSessionManagerTest
     
     // Create a session context with the request and response
     SessionContext context = new DefaultWebSessionContext();
-    WebUtils.saveServletRequest(request, context);
-    WebUtils.saveServletResponse(response, context);
-    
+    //WebUtils.saveServletRequest(request, context);
+    //WebUtils.saveServletResponse(response, context);
+    DefaultWebSessionContext webContext = (DefaultWebSessionContext) context;
+    webContext.setServletRequest((ServletRequest) request);
+    webContext.setServletResponse((ServletResponse) response);
+
+
     // Start a session
     Session session = sessionManager.start(context);
     assertNotNull(session);
@@ -342,7 +351,14 @@ public class ShiroSessionManagerTest
       SessionKey key = new DefaultSessionKey(sessionId);
       Session session = sessionManager.getSession(key);
       assertNotNull(session);
-      assertFalse(session.isExpired());
+      long timeout = session.getTimeout(); // in ms
+      Date lastAccess = session.getLastAccessTime();
+      Date now = new Date();
+
+      boolean expired = now.getTime() - lastAccess.getTime() > timeout;
+
+      assertFalse(expired);
+      //assertFalse(session.isExpired());
       
       // Verify all thread-specific attributes are present
       for (int i = 0; i < threadCount; i++) {

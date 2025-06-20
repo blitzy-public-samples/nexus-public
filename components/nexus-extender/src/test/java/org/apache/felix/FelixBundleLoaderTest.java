@@ -101,7 +101,7 @@ public class FelixBundleLoaderTest
   }
   
   @AfterEach
-  public void tearDown() throws BundleException, IOException {
+  public void tearDown() throws BundleException, IOException, InterruptedException {
     if (framework != null) {
       framework.stop();
       framework.waitForStop(5000);

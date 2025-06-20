@@ -176,7 +176,7 @@ public class ShiroRealmTest
   @Test
   public void testMockRealmAAuthentication() {
     // Configure security manager with MockRealmA
-    securityManager.setRealms(List.of(new MockRealmA()));
+    securityManager.setRealms(List.of(new MockRealmA(null)));
 
     // Create subject and authenticate
     Subject subject = new Subject.Builder(securityManager).buildSubject();
@@ -261,7 +261,7 @@ public class ShiroRealmTest
   public void testRealmChainingAndFallback() {
     // Configure security manager with multiple realms in a specific order
     securityManager.setRealms(List.of(
-        new MockRealmA(),
+        new MockRealmA(null),
         new MockRealmB(),
         new MockRealmC()
     ));
@@ -338,7 +338,7 @@ public class ShiroRealmTest
   public void testRealmAuthenticationWithVirtualThreads() throws Exception {
     // Configure security manager with multiple realms
     securityManager.setRealms(List.of(
-        new MockRealmA(),
+        new MockRealmA(null),
         new MockRealmB(),
         new MockRealmC()
     ));

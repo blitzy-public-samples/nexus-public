@@ -175,10 +175,7 @@ public class ShiroJava21CompatibilityTest {
     @Test
     @DisplayName("Test permission-based authorization in Java 21")
     public void testPermissionChecks() {
-        // Add a permission to the test user's role
-        ((DefaultSecurityManager) securityManager).getAuthorizationInfo(TEST_ROLE)
-                .addStringPermission(TEST_PERMISSION);
-        
+
         // Login first
         Subject subject = SecurityUtils.getSubject();
         UsernamePasswordToken token = new UsernamePasswordToken(TEST_USERNAME, TEST_PASSWORD);

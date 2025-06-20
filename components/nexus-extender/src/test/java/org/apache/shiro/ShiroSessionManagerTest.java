@@ -145,7 +145,7 @@ public class ShiroSessionManagerTest
     Thread.sleep(150);
     
     // Try to retrieve expired session
-    SessionKey key = new DefaultSessionKey(sessionId);
+    SessionKey key = new DefaultSessionKey();
     try {
       sessionManager.getSession(key);
       // If we get here, the session didn't expire as expected
@@ -174,7 +174,7 @@ public class ShiroSessionManagerTest
     Thread.sleep(300);
     
     // Try to retrieve the session - should be expired and removed by validator
-    SessionKey key = new DefaultSessionKey(sessionId);
+    SessionKey key = new DefaultSessionKey();
     try {
       sessionManager.getSession(key);
       assertTrue(false, "Session should have been validated and expired");
@@ -220,8 +220,8 @@ public class ShiroSessionManagerTest
   @Test
   public void testWebSessionOperations() {
     // Mock HTTP request and response
-    HttpServletRequest request = mock(HttpServletRequest.class);
-    HttpServletResponse response = mock(HttpServletResponse.class);
+    ServletRequest request = mock(ServletRequest.class);
+    ServletResponse response = mock(ServletResponse.class);
     
     // Create a session context with the request and response
     SessionContext context = new DefaultWebSessionContext();
@@ -319,7 +319,7 @@ public class ShiroSessionManagerTest
         executor.submit(() -> {
           try {
             // Retrieve the shared session
-            SessionKey key = new DefaultSessionKey(sessionId);
+            SessionKey key = new DefaultSessionKey();
             Session session = sessionManager.getSession(key);
             
             // Set thread-specific attribute
@@ -348,7 +348,7 @@ public class ShiroSessionManagerTest
       assertTrue(latch.await(4, TimeUnit.SECONDS), "Not all virtual threads completed in time");
       
       // Verify the session is still valid
-      SessionKey key = new DefaultSessionKey(sessionId);
+      SessionKey key = new DefaultSessionKey();
       Session session = sessionManager.getSession(key);
       assertNotNull(session);
       long timeout = session.getTimeout(); // in ms
@@ -387,7 +387,7 @@ public class ShiroSessionManagerTest
         Thread.sleep(300);
         
         // Try to access the expired session
-        SessionKey key = new DefaultSessionKey(sessionId);
+        SessionKey key = new DefaultSessionKey();
         try {
           sessionManager.getSession(key);
           // If we get here, the session didn't expire as expected

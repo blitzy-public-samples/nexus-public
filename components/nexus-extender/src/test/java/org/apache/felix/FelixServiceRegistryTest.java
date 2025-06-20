@@ -109,7 +109,7 @@ public class FelixServiceRegistryTest
   @Mock
   private BundleContext bundleContext;
 
-  //private ServiceRegistry serviceRegistry;
+  private ServiceRegistry serviceRegistry;
 
   @BeforeEach
   void setUp() {
@@ -325,8 +325,7 @@ public class FelixServiceRegistryTest
     try (ExecutorService executor = Executors.newThreadPerTaskExecutor(virtualThreadFactory)) {
       int numServices = 100;
       CountDownLatch registrationLatch = new CountDownLatch(numServices);
-      List<ServiceRegistration<?>> registrations = new ConcurrentHashMap<Integer, ServiceRegistration<?>>().newKeySet()
-          .stream().collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+      List<ServiceRegistration<?>> registrations = new ArrayList<>(new ConcurrentHashMap<Integer, ServiceRegistration<?>>().values());
 
       // Register services concurrently using virtual threads
       List<CompletableFuture<Void>> registrationFutures = new ArrayList<>();
@@ -379,8 +378,6 @@ public class FelixServiceRegistryTest
                 successfulLookups.incrementAndGet();
               }
             }
-          } catch (InvalidSyntaxException e) {
-            throw new RuntimeException(e);
           } finally {
             lookupLatch.countDown();
           }
@@ -429,19 +426,21 @@ public class FelixServiceRegistryTest
 
       // Register the tracker with the service registry
       serviceRegistry.addServiceListener(bundleContext, event -> {
-        if (event.getType() == ServiceEvent.REGISTERED) {
-          ServiceReference<?> reference = event.getServiceReference();
-          if (TestService.class.getName().equals(reference.getProperty(Constants.OBJECTCLASS))) {
-            TestService service = (TestService) serviceRegistry.getService(bundleContext, reference);
-            tracker.addingService(reference);
-          }
-        } else if (event.getType() == ServiceEvent.UNREGISTERING) {
-          ServiceReference<?> reference = event.getServiceReference();
-          if (TestService.class.getName().equals(reference.getProperty(Constants.OBJECTCLASS))) {
-            tracker.removedService(reference, null);
+        ServiceReference<?> ref = event.getServiceReference();
+
+        if (TestService.class.getName().equals(ref.getProperty(Constants.OBJECTCLASS))) {
+          @SuppressWarnings("unchecked")
+          ServiceReference<TestService> typedRef = (ServiceReference<TestService>) ref;
+
+          if (event.getType() == ServiceEvent.REGISTERED) {
+            TestService service = (TestService) serviceRegistry.getService(bundleContext, typedRef);
+            tracker.addingService(typedRef);
+          } else if (event.getType() == ServiceEvent.UNREGISTERING) {
+            tracker.removedService(typedRef, null);
           }
         }
       }, "(objectClass=" + TestService.class.getName() + ")");
+
 
       // Register services concurrently
       int numServices = 50;

@@ -261,12 +261,16 @@ public class PatternMatchingTest
    * with additional predicates for powerful and expressive pattern matching.
    */
   private BundleType getBundleType(Bundle bundle) {
-    return switch (bundle.getBundleId()) {
-      case 0L -> BundleType.SYSTEM;
-      case Long l when bundle.getSymbolicName().startsWith("org.sonatype.nexus.core") -> BundleType.NEXUS_CORE;
-      default -> BundleType.PLUGIN;
-    };
+    long id = bundle.getBundleId();
+    if (id == 0L) {
+      return BundleType.SYSTEM;
+    } else if (bundle.getSymbolicName().startsWith("org.sonatype.nexus.core")) {
+      return BundleType.NEXUS_CORE;
+    } else {
+      return BundleType.PLUGIN;
+    }
   }
+
 
   /**
    * Gets a description of the feature flag using nested pattern matching.

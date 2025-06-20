@@ -133,10 +133,11 @@ public class ErrorReportingStringTemplateTest
   void testExceptionWithConditionalExpression() {
     int retryCount = 5;
     int maxRetries = 3;
-    
+
+    int finalRetryCount = retryCount;
     Exception exception = assertThrows(IOException.class, () -> {
-      throw new IOException(STR."Operation failed after \{retryCount} attempts " +
-          STR."\{retryCount > maxRetries ? "(exceeded maximum of " + maxRetries + " retries)" : ""}");
+      throw new IOException(STR."Operation failed after \{finalRetryCount} attempts " +
+          STR."\{finalRetryCount > maxRetries ? "(exceeded maximum of " + maxRetries + " retries)" : ""}");
     });
     
     assertThat(exception.getMessage(), 
@@ -144,10 +145,11 @@ public class ErrorReportingStringTemplateTest
     
     // Test the negative condition
     retryCount = 2;
+    int finalRetryCount1 = retryCount;
     Exception exception2 = assertThrows(IOException.class, () -> {
       throw new IOException(STR."Operation failed after \{
-              retryCount} attempts " +
-          STR."\{retryCount > maxRetries ? "(exceeded maximum of " + maxRetries + " retries)" : ""}");
+              finalRetryCount1} attempts " +
+          STR."\{finalRetryCount1 > maxRetries ? "(exceeded maximum of " + maxRetries + " retries)" : ""}");
     });
     
     assertThat(exception2.getMessage(), equalTo("Operation failed after 2 attempts "));

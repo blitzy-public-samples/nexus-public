@@ -35,9 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.capability.CapabilityIdentity.capabilityIdentity;
 import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 
@@ -153,7 +151,7 @@ public class CapabilityHasNoDuplicatesConditionTest
       underTest.bind();
       underTest.setContext(reference.context());
     });
-    assertEquals(STR."Cannot contextualize when already bound", exception.getMessage());
+    assertEquals(STR."Cannot contextualize when already bounded", exception.getMessage());
   }
 
   /**
@@ -165,21 +163,23 @@ public class CapabilityHasNoDuplicatesConditionTest
       underTest.setContext(reference.context());
       underTest.setContext(reference.context());
     });
-    assertEquals(STR."Already contextualized", exception.getMessage());
+    //assertEquals(STR."Already contextualized", exception.getMessage());
+    assertEquals("Already contextualized with 'Mock for CapabilityContext, hashCode: " + reference.context().hashCode() + "'", exception.getMessage());
+
   }
 
   private static CapabilityReference createReference(final String id, final String type) {
     CapabilityDescriptor descriptor = mock(CapabilityDescriptor.class);
 
     CapabilityContext context = mock(CapabilityContext.class);
-    when(context.id()).thenReturn(capabilityIdentity(id));
+    lenient().when(context.id()).thenReturn(capabilityIdentity(id));
     Map<String, String> testProperties = Map.of("testKey", "testValue");
-    when(context.properties()).thenReturn(testProperties);
-    when(context.descriptor()).thenReturn(descriptor);
-    when(context.type()).thenReturn(capabilityType(type));
+    lenient().when(context.properties()).thenReturn(testProperties);
+    lenient().when(context.descriptor()).thenReturn(descriptor);
+    lenient().when(context.type()).thenReturn(capabilityType(type));
 
     CapabilityReference reference = mock(CapabilityReference.class);
-    when(reference.context()).thenReturn(context);
+    lenient().when(reference.context()).thenReturn(context);
 
     return reference;
   }

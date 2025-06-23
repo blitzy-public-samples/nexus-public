@@ -78,10 +78,12 @@ public class EmailStringTemplatesTest
     String message = EmailStringTemplates.securityAlertMessage("password_change", "admin", "Password policy updated");
     
     assertThat(message, notNullValue());
-    assertThat(message, containsString("Security Alert: password_change"));
+    assertThat(message, containsString("SECURITY ALERT - Nexus Repository Manager"));
+    assertThat(message, containsString("Alert Type: password_change"));
     assertThat(message, containsString("User: admin"));
-    assertThat(message, containsString("Details: Password policy updated"));
     assertThat(message, containsString("Time:"));
+    assertThat(message, containsString("Details:\nPassword policy updated"));
+
   }
 
   @Test

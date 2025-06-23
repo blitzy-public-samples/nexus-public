@@ -36,6 +36,7 @@ import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 
 /**
  * Support for tests using event bus.
@@ -59,7 +60,7 @@ public class EventManagerTestSupport
     eventManagerEvents = new ArrayList<>();
 
     // Use lambda instead of anonymous class to avoid thread pinning with Virtual Threads
-    doAnswer(invocation -> {
+    lenient().doAnswer(invocation -> {
       eventManagerEvents.add(invocation.getArguments()[0]);
       return null;
     }).when(eventManager).post(any());

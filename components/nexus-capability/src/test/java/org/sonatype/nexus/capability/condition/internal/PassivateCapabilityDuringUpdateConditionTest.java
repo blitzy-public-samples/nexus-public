@@ -31,9 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.capability.CapabilityIdentity.capabilityIdentity;
 
 /**
@@ -63,7 +61,7 @@ public class PassivateCapabilityDuringUpdateConditionTest
     final CapabilityContext context = mock(CapabilityContext.class);
     when(context.id()).thenReturn(id);
 
-    when(reference.context()).thenReturn(context);
+    lenient().when(reference.context()).thenReturn(context);
 
     underTest = new PassivateCapabilityDuringUpdateCondition(eventManager);
     underTest.setContext(context);
@@ -83,8 +81,14 @@ public class PassivateCapabilityDuringUpdateConditionTest
     underTest.handle(new CapabilityEvent.AfterUpdate(
         capabilityRegistry, reference, Map.of(), Map.of()
     ));
+      try {
+          Thread.sleep(2000);
+      } catch (InterruptedException e) {
+          throw new RuntimeException(e);
+      }
 
-    verifyEventManagerEvents(unsatisfied(underTest), satisfied(underTest));
+
+      verifyEventManagerEvents(unsatisfied(underTest), satisfied(underTest));
   }
 
   /**

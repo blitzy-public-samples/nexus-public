@@ -31,10 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
 
 /**
@@ -65,10 +62,10 @@ public class CapabilityOfTypeExistsConditionTest
     final CapabilityType capabilityType = capabilityType(this.getClass().getName());
 
     when(ref1.context()).thenReturn(mock(CapabilityContext.class));
-    when(ref1.context().type()).thenReturn(capabilityType);
+    lenient().when(ref1.context().type()).thenReturn(capabilityType);
 
     when(ref2.context()).thenReturn(mock(CapabilityContext.class));
-    when(ref2.context().type()).thenReturn(capabilityType);
+    lenient().when(ref2.context().type()).thenReturn(capabilityType);
 
     final CapabilityDescriptorRegistry descriptorRegistry = mock(CapabilityDescriptorRegistry.class);
     final CapabilityDescriptor descriptor = mock(CapabilityDescriptor.class);
@@ -98,7 +95,7 @@ public class CapabilityOfTypeExistsConditionTest
   @Test
   public void capabilityOfTypeExists01() {
     doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
-    when(ref1.context().isActive()).thenReturn(true);
+    lenient().when(ref1.context().isActive()).thenReturn(true);
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
     assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding active capability \{ref1}");
 
@@ -111,7 +108,7 @@ public class CapabilityOfTypeExistsConditionTest
   @Test
   public void capabilityOfTypeExists02() {
     doReturn(List.of(ref1)).when(capabilityRegistry).getAll();
-    when(ref1.context().isActive()).thenReturn(false);
+    lenient().when(ref1.context().isActive()).thenReturn(false);
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
     assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding non-active capability \{ref1}");
 
@@ -127,7 +124,7 @@ public class CapabilityOfTypeExistsConditionTest
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
     assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding first capability \{ref1}");
 
-    doReturn(List.of(ref1, ref2)).when(capabilityRegistry).getAll();
+    lenient().doReturn(List.of(ref1, ref2)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref2));
     assertTrue(underTest.isSatisfied(), STR."Condition should remain satisfied after adding second capability \{ref2}");
 
@@ -143,7 +140,7 @@ public class CapabilityOfTypeExistsConditionTest
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref1));
     assertTrue(underTest.isSatisfied(), STR."Condition should be satisfied after adding first capability \{ref1}");
 
-    doReturn(List.of(ref1, ref2)).when(capabilityRegistry).getAll();
+    lenient().doReturn(List.of(ref1, ref2)).when(capabilityRegistry).getAll();
     underTest.handle(new CapabilityEvent.Created(capabilityRegistry, ref2));
     assertTrue(underTest.isSatisfied(), STR."Condition should remain satisfied after adding second capability \{ref2}");
 

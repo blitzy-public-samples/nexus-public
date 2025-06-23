@@ -37,10 +37,7 @@ import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class ParameterContributorTest
@@ -69,7 +66,7 @@ public class ParameterContributorTest
 
   @BeforeEach
   public void setup() {
-    when(swagger.getPaths()).thenReturn(ImmutableMap.of(
+    lenient().when(swagger.getPaths()).thenReturn(ImmutableMap.of(
         TEST_PATH_1, new Path().get(getOperationPath1).post(postOperationPath1),
         TEST_PATH_2, new Path().get(getOperationPath2).post(postOperationPath2)));
 

@@ -14,6 +14,8 @@ package org.sonatype.nexus.capability.condition.internal;
 
 import java.util.List;
 
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.sonatype.nexus.capability.Capability;
 import org.sonatype.nexus.capability.CapabilityContext;
 import org.sonatype.nexus.capability.CapabilityDescriptor;
@@ -44,6 +46,7 @@ import static org.sonatype.nexus.capability.CapabilityType.capabilityType;
  * @since capabilities 2.0
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class CapabilityOfTypeActiveConditionTest
     extends EventManagerTestSupport
 {

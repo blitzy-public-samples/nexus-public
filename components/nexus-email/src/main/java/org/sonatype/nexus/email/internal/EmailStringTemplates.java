@@ -106,6 +106,8 @@ public final class EmailStringTemplates
    * @return The formatted verification message
    */
   public static String verificationMessage(String recipient, String serverUrl) {
+    requireNonNull(recipient, "Recipient must not be null");
+    requireNonNull(serverUrl, "Server URL must not be null");
     return STR."""
         Verification email for Nexus Repository Manager
         
@@ -524,8 +526,9 @@ public final class EmailStringTemplates
     requireNonNull(message, "Message cannot be null");
 
     // Create a structured logging message using String Templates
-    var template = RAW."{message} {context.toString()}";
-    String logMessage = template.process(STR);
+
+    String logMessage = STR."\{message} \{context}";
+
 
     // Log at the appropriate level
     switch (level.toLowerCase()) {

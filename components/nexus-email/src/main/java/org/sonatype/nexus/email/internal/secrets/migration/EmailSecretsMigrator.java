@@ -12,8 +12,8 @@
  */
 package org.sonatype.nexus.email.internal.secrets.migration;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 
 import org.sonatype.goodies.common.ComponentSupport;
 import org.sonatype.nexus.crypto.secrets.Secret;

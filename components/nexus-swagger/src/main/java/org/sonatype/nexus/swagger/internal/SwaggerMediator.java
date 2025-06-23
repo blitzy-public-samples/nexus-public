@@ -12,7 +12,7 @@
  */
 package org.sonatype.nexus.swagger.internal;
 
-import javax.inject.Named;
+import jakarta.inject.Named;
 
 import org.sonatype.nexus.rest.Resource;
 

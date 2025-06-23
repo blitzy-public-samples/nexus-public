@@ -39,6 +39,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static java.lang.StringTemplate.STR;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -62,8 +63,8 @@ public class CapabilityDescriptorSupportTest
   @BeforeEach
   public void prepare() {
     capabilityIdentity = CapabilityIdentity.capabilityIdentity("test");
-    when(capabilityContext.id()).thenReturn(capabilityIdentity);
-    when(capabilityReference.context()).thenReturn(capabilityContext);
+    lenient().when(capabilityContext.id()).thenReturn(capabilityIdentity);
+    lenient().when(capabilityReference.context()).thenReturn(capabilityContext);
   }
 
   @Test

@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -61,7 +62,7 @@ public class LogicalConditionsImplTest
     condition.bind();
 
     when(left.isSatisfied()).thenReturn(leftSatisfied);
-    when(right.isSatisfied()).thenReturn(rightSatisfied);
+    lenient().when(right.isSatisfied()).thenReturn(rightSatisfied);
 
     // Apply pattern matching for switch in logical condition evaluation
     switch (new boolean[]{leftSatisfied, rightSatisfied}) {

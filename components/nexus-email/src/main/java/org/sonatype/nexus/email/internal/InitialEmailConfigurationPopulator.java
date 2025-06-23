@@ -15,8 +15,8 @@ package org.sonatype.nexus.email.internal;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 
 import org.sonatype.nexus.email.EmailConfiguration;
 

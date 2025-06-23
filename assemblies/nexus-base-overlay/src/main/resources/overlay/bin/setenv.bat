@@ -24,7 +24,7 @@ rem SET KARAF_TITLE
 rem Location of Java installation
 rem SET JAVA_HOME
 rem Generic JVM options (for instance, where you can provide memory configuration)
-SET JAVA_OPTS = --enable-preview  --add-opens=jdk.management/com.sun.management=ALL-UNNAMED -Dnexus.enableVirtualThreads=true
+SET JAVA_OPTS=--enable-preview -Djdk.virtualThreadScheduler.parallelism=10 --add-opens=jdk.management/com.sun.management=ALL-UNNAMED -Dnexus.enableVirtualThreads=true
 rem Minimum Java heap memory for the JVM
 rem SET JAVA_MIN_MEM
 rem Maximum Java heap memory for the JVM
